@@ -5,7 +5,7 @@ import pytest
 from quantlab.data.models import DailyBar, DataValidationError, TradingCalendar
 from quantlab.data.provider import DataProvider
 from quantlab.data.storage import ParquetStorage
-from quantlab.data.sync import sync_daily_history, validate_daily_bars
+from quantlab.data.sync import filter_unlisted_placeholders, sync_daily_history, validate_daily_bars
 
 
 def _bar(**overrides) -> DailyBar:
@@ -105,6 +105,36 @@ def test_validate_nonpositive_price_rejected() -> None:
         validate_daily_bars([_bar(close=0.0)], date(2026, 1, 2))
     with pytest.raises(DataValidationError):
         validate_daily_bars([_bar(open=-1.0)], date(2026, 1, 2))
+
+
+def test_filter_unlisted_placeholder() -> None:
+    trade_date = date(2011, 12, 12)
+    bar = _bar(instrument_id="920090.BJ", trade_date=trade_date, pre_close=None)
+    list_dates = {"920090.BJ": date(2021, 8, 9)}
+    kept, filtered = filter_unlisted_placeholders([bar], list_dates, trade_date)
+    assert kept == []
+    assert filtered == 1
+
+
+def test_filter_listed_stock_missing_pre_close_not_filtered() -> None:
+    trade_date = date(2026, 1, 2)
+    bar = _bar(trade_date=trade_date, pre_close=None)
+    list_dates = {"600519.SH": date(2001, 8, 27)}
+    kept, filtered = filter_unlisted_placeholders([bar], list_dates, trade_date)
+    assert kept == [bar]
+    assert filtered == 0
+    with pytest.raises(DataValidationError):
+        validate_daily_bars(kept, trade_date)
+
+
+def test_filter_normal_stock_unaffected() -> None:
+    trade_date = date(2026, 1, 2)
+    bar = _bar(trade_date=trade_date)
+    list_dates = {"600519.SH": date(2001, 8, 27)}
+    kept, filtered = filter_unlisted_placeholders([bar], list_dates, trade_date)
+    assert kept == [bar]
+    assert filtered == 0
+    validate_daily_bars(kept, trade_date)
 
 
 def test_sync_only_downloads_open_days(tmp_path) -> None:

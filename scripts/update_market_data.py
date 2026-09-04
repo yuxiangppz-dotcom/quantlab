@@ -87,8 +87,8 @@ def main() -> None:
     if args.daily_all:
         result = sync_daily_history(provider, storage, args.start, args.end, force=args.force)
         print(
-            f"daily: {result.total} open days, "
-            f"{result.synced} downloaded, {result.skipped} skipped"
+            f"daily: {result.total} open days, {result.synced} downloaded, "
+            f"{result.skipped} skipped, {result.filtered} placeholders filtered"
         )
     elif args.symbols:
         bars = provider.get_daily_bars(args.symbols, args.start, args.end)
