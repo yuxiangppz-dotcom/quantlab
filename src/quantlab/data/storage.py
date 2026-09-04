@@ -9,7 +9,7 @@ from typing import Any
 
 import pandas as pd
 
-from quantlab.data.models import DailyBar, Security, TradingCalendar
+from quantlab.data.models import DailyBar, DataValidationError, Security, TradingCalendar
 
 
 class DuplicateDataError(Exception):
@@ -34,12 +34,21 @@ def _to_date(value: Any) -> date | None:
     return pd.Timestamp(value).date()
 
 
+def _to_required_date(value: Any) -> date:
+    result = _to_date(value)
+    if result is None:
+        raise DataValidationError(f"Required date is missing: {value!r}")
+    return result
+
+
 _SECURITY_COLUMNS = [
     "instrument_id",
     "symbol",
     "name",
     "exchange",
     "market",
+    "board",
+    "list_status",
     "list_date",
     "delist_date",
 ]
@@ -72,7 +81,9 @@ def _frame_to_securities(frame: pd.DataFrame) -> list[Security]:
             name=row["name"],
             exchange=row["exchange"],
             market=row["market"],
-            list_date=_to_date(row["list_date"]),
+            board=row["board"],
+            list_status=row["list_status"],
+            list_date=_to_required_date(row["list_date"]),
             delist_date=_to_date(row["delist_date"]),
         )
         for row in frame.to_dict("records")
@@ -89,7 +100,7 @@ def _frame_to_calendar(frame: pd.DataFrame) -> list[TradingCalendar]:
     return [
         TradingCalendar(
             exchange=row["exchange"],
-            trade_date=_to_date(row["trade_date"]),
+            trade_date=_to_required_date(row["trade_date"]),
             is_open=bool(row["is_open"]),
         )
         for row in frame.to_dict("records")
@@ -106,7 +117,7 @@ def _frame_to_bars(frame: pd.DataFrame) -> list[DailyBar]:
     return [
         DailyBar(
             instrument_id=row["instrument_id"],
-            trade_date=_to_date(row["trade_date"]),
+            trade_date=_to_required_date(row["trade_date"]),
             open=float(row["open"]),
             high=float(row["high"]),
             low=float(row["low"]),

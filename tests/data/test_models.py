@@ -3,9 +3,11 @@ from datetime import date
 import pytest
 
 from quantlab.data.models import (
+    DataValidationError,
     format_yyyymmdd,
     market_from_symbol,
     parse_instrument_id,
+    parse_required_yyyymmdd,
     parse_yyyymmdd,
     to_instrument_id,
 )
@@ -44,6 +46,15 @@ def test_parse_instrument_id() -> None:
 def test_parse_yyyymmdd() -> None:
     assert parse_yyyymmdd("20260101") == date(2026, 1, 1)
     assert parse_yyyymmdd(None) is None
+
+
+def test_parse_required_yyyymmdd() -> None:
+    assert parse_required_yyyymmdd("20260101") == date(2026, 1, 1)
+
+
+def test_parse_required_yyyymmdd_missing_raises() -> None:
+    with pytest.raises(DataValidationError):
+        parse_required_yyyymmdd(None)
 
 
 def test_format_yyyymmdd() -> None:

@@ -14,6 +14,8 @@ def _make_security(**overrides) -> Security:
         name="贵州茅台",
         exchange="SSE",
         market="SH",
+        board="主板",
+        list_status="L",
         list_date=date(2001, 8, 27),
         delist_date=None,
     )

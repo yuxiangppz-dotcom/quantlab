@@ -7,10 +7,10 @@ from collections.abc import Mapping
 from datetime import date
 from typing import Any
 
+import pandas as pd
 import tushare as ts
 
 from quantlab.data.models import (
-    EXCHANGE_BY_MARKET,
     SSE,
     SZSE,
     DailyBar,
@@ -18,11 +18,13 @@ from quantlab.data.models import (
     TradingCalendar,
     format_yyyymmdd,
     parse_instrument_id,
+    parse_required_yyyymmdd,
     parse_yyyymmdd,
 )
 from quantlab.data.provider import DataProvider
 
-_SECURITY_FIELDS = "ts_code,symbol,name,list_date,delist_date"
+_SECURITY_FIELDS = "ts_code,symbol,name,exchange,market,list_status,list_date,delist_date"
+_LIST_STATUSES = ("L", "D", "P")
 _CALENDAR_EXCHANGES = (SSE, SZSE)
 
 
@@ -33,9 +35,11 @@ def security_from_row(row: Mapping[str, Any]) -> Security:
         instrument_id=row["ts_code"],
         symbol=symbol,
         name=str(row["name"]),
-        exchange=EXCHANGE_BY_MARKET[market],
+        exchange=str(row["exchange"]),
         market=market,
-        list_date=parse_yyyymmdd(row["list_date"]),
+        board=str(row["market"]),
+        list_status=str(row["list_status"]),
+        list_date=parse_required_yyyymmdd(row["list_date"]),
         delist_date=parse_yyyymmdd(row.get("delist_date")),
     )
 
@@ -44,7 +48,7 @@ def calendar_from_row(row: Mapping[str, Any]) -> TradingCalendar:
     """Map a Tushare ``trade_cal`` row to a :class:`TradingCalendar`."""
     return TradingCalendar(
         exchange=str(row["exchange"]),
-        trade_date=parse_yyyymmdd(row["cal_date"]),
+        trade_date=parse_required_yyyymmdd(row["cal_date"]),
         is_open=bool(int(row["is_open"])),
     )
 
@@ -53,18 +57,18 @@ def daily_bar_from_row(row: Mapping[str, Any]) -> DailyBar:
     """Map a Tushare ``daily`` row to a :class:`DailyBar`.
 
     Tushare's ``vol`` is in hands (lots of 100 shares) and ``amount`` is in
-    thousands of yuan; both are preserved verbatim as ``volume``/``amount``.
+    thousands of yuan; both are converted to canonical units (shares and CNY).
     """
     return DailyBar(
         instrument_id=row["ts_code"],
-        trade_date=parse_yyyymmdd(row["trade_date"]),
+        trade_date=parse_required_yyyymmdd(row["trade_date"]),
         open=float(row["open"]),
         high=float(row["high"]),
         low=float(row["low"]),
         close=float(row["close"]),
         pre_close=float(row["pre_close"]),
-        volume=float(row["vol"]),
-        amount=float(row["amount"]),
+        volume=float(row["vol"]) * 100,
+        amount=float(row["amount"]) * 1000,
     )
 
 
@@ -81,12 +85,17 @@ class TushareProvider(DataProvider):
         self._pro = ts.pro_api(self._token)
 
     def get_securities(self) -> list[Security]:
-        frame = self._pro.stock_basic(
-            exchange="",
-            list_status="",
-            fields=_SECURITY_FIELDS,
-        )
-        return [security_from_row(row) for row in frame.to_dict("records")]
+        frames = []
+        for status in _LIST_STATUSES:
+            frame = self._pro.stock_basic(
+                exchange="",
+                list_status=status,
+                fields=_SECURITY_FIELDS,
+            )
+            frames.append(frame)
+        merged = pd.concat(frames, ignore_index=True)
+        merged = merged.drop_duplicates(subset=["ts_code"])
+        return [security_from_row(row) for row in merged.to_dict("records")]
 
     def get_trading_calendar(self, start_date: date, end_date: date) -> list[TradingCalendar]:
         rows: list[dict[str, Any]] = []

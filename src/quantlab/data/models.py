@@ -34,12 +34,21 @@ _BEIJING_PREFIXES = ("43", "83", "87", "92")
 
 @dataclass(frozen=True)
 class Security:
+    """A-share security master entry.
+
+    ``market`` is the market code ("SH"/"SZ"/"BJ") used as the instrument_id
+    suffix, ``board`` is the listing board (e.g. 主板/创业板/科创板/北交所), and
+    ``list_status`` is "L" (listed), "D" (delisted), or "P" (suspended).
+    """
+
     instrument_id: str
     symbol: str
     name: str
     exchange: str
     market: str
-    list_date: date | None
+    board: str
+    list_status: str
+    list_date: date
     delist_date: date | None
 
 
@@ -52,6 +61,11 @@ class TradingCalendar:
 
 @dataclass(frozen=True)
 class DailyBar:
+    """A single daily bar.
+
+    ``volume`` is in shares and ``amount`` is in Chinese yuan (CNY).
+    """
+
     instrument_id: str
     trade_date: date
     open: float
@@ -93,8 +107,12 @@ def parse_instrument_id(instrument_id: str) -> tuple[str, str]:
     return symbol, market
 
 
+class DataValidationError(ValueError):
+    """Raised when a required field is missing or invalid."""
+
+
 def parse_yyyymmdd(value: Any) -> date | None:
-    """Parse a "YYYYMMDD" string (or date/datetime/NaN) into a date, or None."""
+    """Parse an optional "YYYYMMDD" date; return None for missing/empty values."""
     if value is None:
         return None
     if isinstance(value, float) and math.isnan(value):
@@ -109,6 +127,17 @@ def parse_yyyymmdd(value: Any) -> date | None:
             return None
         return datetime.strptime(text, "%Y%m%d").date()
     raise ValueError(f"Cannot parse date value: {value!r}")
+
+
+def parse_required_yyyymmdd(value: Any) -> date:
+    """Parse a required "YYYYMMDD" date; raise if missing or invalid."""
+    try:
+        parsed = parse_yyyymmdd(value)
+    except (ValueError, TypeError) as exc:
+        raise DataValidationError(f"Invalid required date: {value!r}") from exc
+    if parsed is None:
+        raise DataValidationError(f"Required date is missing: {value!r}")
+    return parsed
 
 
 def format_yyyymmdd(value: date) -> str:
