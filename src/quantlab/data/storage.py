@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
@@ -214,5 +216,15 @@ class ParquetStorage:
     @staticmethod
     def _write(frame: pd.DataFrame, path: Path) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
-        frame.to_parquet(path, index=False)
+        fd, temp_name = tempfile.mkstemp(
+            dir=path.parent, prefix=path.name + ".", suffix=".tmp"
+        )
+        os.close(fd)
+        temp_path = Path(temp_name)
+        try:
+            frame.to_parquet(temp_path, index=False)
+            os.replace(temp_path, path)
+        except Exception:
+            temp_path.unlink(missing_ok=True)
+            raise
         return path

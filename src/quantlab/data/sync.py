@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import date
 
@@ -44,18 +45,17 @@ def validate_daily_bars(bars: list[DailyBar], expected_date: date) -> None:
             ("low", bar.low),
             ("close", bar.close),
             ("pre_close", bar.pre_close),
-            ("volume", bar.volume),
-            ("amount", bar.amount),
         ):
-            if value is None or value != value:  # NaN check
+            if value is None or not math.isfinite(value) or value <= 0:
                 raise DataValidationError(
-                    f"Missing {field_name} for {bar.instrument_id} on {bar.trade_date}"
+                    f"Invalid {field_name} for {bar.instrument_id} on {bar.trade_date}"
                 )
 
-        if bar.volume < 0 or bar.amount < 0:
-            raise DataValidationError(
-                f"Negative volume/amount for {bar.instrument_id} on {bar.trade_date}"
-            )
+        for field_name, value in (("volume", bar.volume), ("amount", bar.amount)):
+            if value is None or not math.isfinite(value) or value < 0:
+                raise DataValidationError(
+                    f"Invalid {field_name} for {bar.instrument_id} on {bar.trade_date}"
+                )
 
         if bar.high < bar.open or bar.high < bar.close or bar.high < bar.low:
             raise DataValidationError(

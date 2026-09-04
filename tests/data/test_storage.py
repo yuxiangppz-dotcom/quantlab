@@ -88,6 +88,30 @@ def test_daily_bars_duplicate_instrument_raises(tmp_path) -> None:
         storage.save_daily_bars_by_date([_make_bar(), _make_bar()], trade_date)
 
 
+def test_atomic_write_failure_leaves_no_file(tmp_path, monkeypatch) -> None:
+    storage = ParquetStorage(tmp_path)
+    trade_date = date(2026, 1, 2)
+    path = storage.daily_bars_path(trade_date)
+
+    def _fail(self, *args, **kwargs):
+        raise OSError("simulated write failure")
+
+    monkeypatch.setattr("pandas.DataFrame.to_parquet", _fail)
+    with pytest.raises(OSError):
+        storage.save_daily_bars_by_date([_make_bar()], trade_date)
+    assert not path.exists()
+    assert list(path.parent.glob("*.tmp")) == []
+
+
+def test_atomic_write_no_temp_leftover(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    trade_date = date(2026, 1, 2)
+    path = storage.daily_bars_path(trade_date)
+    storage.save_daily_bars_by_date([_make_bar()], trade_date)
+    assert path.exists()
+    assert list(path.parent.glob("*.tmp")) == []
+
+
 def test_find_duplicates() -> None:
     frame = pd.DataFrame({
         "instrument_id": ["a", "a", "b"],

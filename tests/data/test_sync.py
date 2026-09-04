@@ -93,6 +93,20 @@ def test_validate_negative_amount_raises() -> None:
         validate_daily_bars([_bar(amount=-1.0)], date(2026, 1, 2))
 
 
+def test_validate_inf_rejected() -> None:
+    with pytest.raises(DataValidationError):
+        validate_daily_bars([_bar(open=float("inf"))], date(2026, 1, 2))
+    with pytest.raises(DataValidationError):
+        validate_daily_bars([_bar(volume=float("-inf"))], date(2026, 1, 2))
+
+
+def test_validate_nonpositive_price_rejected() -> None:
+    with pytest.raises(DataValidationError):
+        validate_daily_bars([_bar(close=0.0)], date(2026, 1, 2))
+    with pytest.raises(DataValidationError):
+        validate_daily_bars([_bar(open=-1.0)], date(2026, 1, 2))
+
+
 def test_sync_only_downloads_open_days(tmp_path) -> None:
     open_day = date(2026, 1, 5)
     closed_day = date(2026, 1, 4)
