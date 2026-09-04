@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 import quantlab.data.tushare_provider as tushare_provider
-from quantlab.data.models import DailyBar, DataValidationError, Security, TradingCalendar
+from quantlab.data.models import AdjFactor, DailyBar, DataValidationError, Security, TradingCalendar
 from quantlab.data.tushare_provider import TushareProvider
 
 
@@ -79,6 +79,27 @@ def test_daily_bar_volume_unit_conversion() -> None:
 def test_daily_bar_amount_unit_conversion() -> None:
     # Tushare amount (thousands of yuan) -> canonical amount (yuan)
     assert tushare_provider.daily_bar_from_row(_daily_row(amount=123.4)).amount == 123400.0
+
+
+def test_daily_bar_pre_close_none_becomes_nan() -> None:
+    bar = tushare_provider.daily_bar_from_row(_daily_row(pre_close=None))
+    assert bar.pre_close != bar.pre_close  # NaN
+
+
+def test_adj_factor_from_row() -> None:
+    row = {"ts_code": "600519.SH", "trade_date": "20260901", "adj_factor": 1.5}
+    assert tushare_provider.adj_factor_from_row(row) == AdjFactor(
+        instrument_id="600519.SH",
+        trade_date=date(2026, 9, 1),
+        adj_factor=1.5,
+    )
+
+
+def test_adj_factor_required_trade_date_raises() -> None:
+    with pytest.raises(DataValidationError):
+        tushare_provider.adj_factor_from_row(
+            {"ts_code": "600519.SH", "trade_date": None, "adj_factor": 1.5}
+        )
 
 
 def test_required_trade_date_missing_raises() -> None:

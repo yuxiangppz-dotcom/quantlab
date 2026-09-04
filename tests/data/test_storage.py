@@ -3,7 +3,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from quantlab.data.models import DailyBar, Security, TradingCalendar
+from quantlab.data.models import AdjFactor, DailyBar, Security, TradingCalendar
 from quantlab.data.storage import DuplicateDataError, ParquetStorage, find_duplicates
 
 
@@ -37,6 +37,16 @@ def _make_bar(**overrides) -> DailyBar:
     )
     values.update(overrides)
     return DailyBar(**values)
+
+
+def _make_factor(**overrides) -> AdjFactor:
+    values = dict(
+        instrument_id="600519.SH",
+        trade_date=date(2026, 1, 2),
+        adj_factor=1.5,
+    )
+    values.update(overrides)
+    return AdjFactor(**values)
 
 
 def test_securities_round_trip(tmp_path) -> None:
@@ -109,6 +119,37 @@ def test_atomic_write_no_temp_leftover(tmp_path) -> None:
     path = storage.daily_bars_path(trade_date)
     storage.save_daily_bars_by_date([_make_bar()], trade_date)
     assert path.exists()
+    assert list(path.parent.glob("*.tmp")) == []
+
+
+def test_adj_factors_round_trip(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    trade_date = date(2026, 1, 2)
+    expected = [_make_factor()]
+    storage.save_adj_factors_by_date(expected, trade_date)
+    loaded = storage.load_adj_factors_by_date(trade_date)
+    assert loaded == expected
+    assert isinstance(loaded[0].trade_date, date)
+
+
+def test_adj_factor_path(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    path = storage.adj_factor_path(date(2026, 9, 1))
+    assert str(path).endswith("adj_factor/year=2026/month=09/2026-09-01.parquet")
+
+
+def test_adj_factors_atomic_write(tmp_path, monkeypatch) -> None:
+    storage = ParquetStorage(tmp_path)
+    trade_date = date(2026, 1, 2)
+    path = storage.adj_factor_path(trade_date)
+
+    def _fail(self, *args, **kwargs):
+        raise OSError("simulated write failure")
+
+    monkeypatch.setattr("pandas.DataFrame.to_parquet", _fail)
+    with pytest.raises(OSError):
+        storage.save_adj_factors_by_date([_make_factor()], trade_date)
+    assert not path.exists()
     assert list(path.parent.glob("*.tmp")) == []
 
 

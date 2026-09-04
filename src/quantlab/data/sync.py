@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 from datetime import date
 
-from quantlab.data.models import DailyBar, DataValidationError
+from quantlab.data.models import AdjFactor, DailyBar, DataValidationError
 from quantlab.data.provider import DataProvider
 from quantlab.data.storage import ParquetStorage
 
@@ -19,6 +19,20 @@ class SyncResult:
     synced: int
     skipped: int
     filtered: int
+
+
+@dataclass(frozen=True)
+class CoverageResult:
+    """Daily vs adj_factor coverage for a single trading date."""
+
+    trade_date: date
+    daily_count: int
+    adj_factor_count: int
+    overlap_count: int
+    daily_missing_adj_count: int
+    adj_extra_count: int
+    missing_sample: tuple[str, ...]
+    extra_sample: tuple[str, ...]
 
 
 def validate_daily_bars(bars: list[DailyBar], expected_date: date) -> None:
@@ -66,6 +80,53 @@ def validate_daily_bars(bars: list[DailyBar], expected_date: date) -> None:
             raise DataValidationError(
                 f"Invalid low for {bar.instrument_id} on {bar.trade_date}"
             )
+
+
+def validate_adj_factors(factors: list[AdjFactor], expected_date: date) -> None:
+    """Validate one trading day's adj factors; raise on failure."""
+    if not factors:
+        raise DataValidationError(f"No adj factors for {expected_date}")
+
+    seen: set[tuple[str, date]] = set()
+    for factor in factors:
+        if factor.trade_date != expected_date:
+            raise DataValidationError(
+                f"Unexpected trade_date {factor.trade_date} (expected {expected_date}) "
+                f"for {factor.instrument_id}"
+            )
+        key = (factor.instrument_id, factor.trade_date)
+        if key in seen:
+            raise DataValidationError(
+                f"Duplicate adj factor for {factor.instrument_id} on {factor.trade_date}"
+            )
+        seen.add(key)
+
+        if (
+            factor.adj_factor is None
+            or not math.isfinite(factor.adj_factor)
+            or factor.adj_factor <= 0
+        ):
+            raise DataValidationError(
+                f"Invalid adj_factor for {factor.instrument_id} on {factor.trade_date}"
+            )
+
+
+def audit_daily_adj_coverage(storage: ParquetStorage, trade_date: date) -> CoverageResult:
+    """Compare daily and adj_factor instrument sets for a single trading date."""
+    daily_ids = {bar.instrument_id for bar in storage.load_daily_bars_by_date(trade_date)}
+    adj_ids = {factor.instrument_id for factor in storage.load_adj_factors_by_date(trade_date)}
+    missing = daily_ids - adj_ids
+    extra = adj_ids - daily_ids
+    return CoverageResult(
+        trade_date=trade_date,
+        daily_count=len(daily_ids),
+        adj_factor_count=len(adj_ids),
+        overlap_count=len(daily_ids & adj_ids),
+        daily_missing_adj_count=len(missing),
+        adj_extra_count=len(extra),
+        missing_sample=tuple(sorted(missing)[:10]),
+        extra_sample=tuple(sorted(extra)[:10]),
+    )
 
 
 def _open_trade_dates(provider: DataProvider, start_date: date, end_date: date) -> list[date]:
@@ -132,3 +193,33 @@ def sync_daily_history(
         storage.save_daily_bars_by_date(bars, trade_date)
         synced += 1
     return SyncResult(total=len(open_dates), synced=synced, skipped=skipped, filtered=filtered)
+
+
+def sync_adj_factor_history(
+    provider: DataProvider,
+    storage: ParquetStorage,
+    start_date: date,
+    end_date: date,
+    force: bool = False,
+) -> SyncResult:
+    """Download and store full-market adj factors for every open trading day.
+
+    Existing files are skipped unless ``force`` is true. A failure on any day
+    raises immediately but leaves already-synced days on disk, so a re-run
+    resumes from the missing dates.
+    """
+    open_dates = _open_trade_dates(provider, start_date, end_date)
+    synced = 0
+    skipped = 0
+    for trade_date in open_dates:
+        if not force and storage.adj_factor_exists(trade_date):
+            skipped += 1
+            continue
+        try:
+            factors = provider.get_adj_factors_by_date(trade_date)
+        except Exception as exc:
+            raise RuntimeError(f"Failed to download adj factors for {trade_date}") from exc
+        validate_adj_factors(factors, trade_date)
+        storage.save_adj_factors_by_date(factors, trade_date)
+        synced += 1
+    return SyncResult(total=len(open_dates), synced=synced, skipped=skipped, filtered=0)

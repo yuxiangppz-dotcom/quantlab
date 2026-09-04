@@ -14,7 +14,12 @@ from __future__ import annotations
 import argparse
 from datetime import date
 
-from quantlab.data import ParquetStorage, TushareProvider, sync_daily_history
+from quantlab.data import (
+    ParquetStorage,
+    TushareProvider,
+    sync_adj_factor_history,
+    sync_daily_history,
+)
 
 
 def _parse_date(value: str) -> date:
@@ -51,9 +56,14 @@ def main() -> None:
         help="Download full-market daily bars for every open trading day.",
     )
     parser.add_argument(
+        "--adj-factor",
+        action="store_true",
+        help="Download full-market adjustment factors for every open trading day.",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
-        help="Re-download daily bars even if the local file already exists.",
+        help="Re-download data even if the local file already exists.",
     )
     parser.add_argument(
         "--symbols",
@@ -66,9 +76,10 @@ def main() -> None:
     if args.start > args.end:
         parser.error(f"--start ({args.start}) must be <= --end ({args.end})")
 
-    if not (args.securities or args.calendar or args.daily_all or args.symbols):
+    if not (args.securities or args.calendar or args.daily_all or args.adj_factor or args.symbols):
         parser.error(
-            "at least one of --securities/--calendar/--daily-all/--symbols is required"
+            "at least one of --securities/--calendar/--daily-all/--adj-factor/--symbols "
+            "is required"
         )
 
     provider = TushareProvider()
@@ -94,6 +105,15 @@ def main() -> None:
         bars = provider.get_daily_bars(args.symbols, args.start, args.end)
         paths = storage.save_daily_bars(bars)
         print(f"daily: saved {len(bars)} rows -> {', '.join(str(p) for p in paths)}")
+
+    if args.adj_factor:
+        result = sync_adj_factor_history(
+            provider, storage, args.start, args.end, force=args.force
+        )
+        print(
+            f"adj_factor: {result.total} open days, {result.synced} downloaded, "
+            f"{result.skipped} skipped"
+        )
 
 
 if __name__ == "__main__":

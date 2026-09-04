@@ -77,6 +77,15 @@ class DailyBar:
     amount: float
 
 
+@dataclass(frozen=True)
+class AdjFactor:
+    """A single cumulative adjustment factor (Tushare's raw cumulative factor)."""
+
+    instrument_id: str
+    trade_date: date
+    adj_factor: float
+
+
 def market_from_symbol(symbol: str) -> str:
     """Return the market code ("SH"/"SZ"/"BJ") for a 6-digit A-share symbol."""
     if len(symbol) != 6 or not symbol.isdigit():

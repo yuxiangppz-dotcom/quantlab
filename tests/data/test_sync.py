@@ -2,10 +2,17 @@ from datetime import date
 
 import pytest
 
-from quantlab.data.models import DailyBar, DataValidationError, TradingCalendar
+from quantlab.data.models import AdjFactor, DailyBar, DataValidationError, TradingCalendar
 from quantlab.data.provider import DataProvider
 from quantlab.data.storage import ParquetStorage
-from quantlab.data.sync import filter_unlisted_placeholders, sync_daily_history, validate_daily_bars
+from quantlab.data.sync import (
+    audit_daily_adj_coverage,
+    filter_unlisted_placeholders,
+    sync_adj_factor_history,
+    sync_daily_history,
+    validate_adj_factors,
+    validate_daily_bars,
+)
 
 
 def _bar(**overrides) -> DailyBar:
@@ -34,11 +41,23 @@ def _calendar(*open_dates, closed_dates=()):
     return entries
 
 
+def _factor(**overrides) -> AdjFactor:
+    values = dict(
+        instrument_id="600519.SH",
+        trade_date=date(2026, 1, 2),
+        adj_factor=1.5,
+    )
+    values.update(overrides)
+    return AdjFactor(**values)
+
+
 class FakeProvider(DataProvider):
-    def __init__(self, calendar, daily_by_date):
+    def __init__(self, calendar, daily_by_date, adj_by_date=None):
         self._calendar = calendar
         self._daily_by_date = daily_by_date
+        self._adj_by_date = adj_by_date or {}
         self.downloaded_dates = []
+        self.adj_downloaded_dates = []
 
     def get_securities(self):
         return []
@@ -52,6 +71,10 @@ class FakeProvider(DataProvider):
     def get_daily_bars_by_date(self, trade_date):
         self.downloaded_dates.append(trade_date)
         return self._daily_by_date.get(trade_date, [])
+
+    def get_adj_factors_by_date(self, trade_date):
+        self.adj_downloaded_dates.append(trade_date)
+        return self._adj_by_date.get(trade_date, [])
 
 
 def test_validate_ok() -> None:
@@ -214,3 +237,129 @@ def test_sync_resumes_missing_dates(tmp_path) -> None:
     assert resumed.downloaded_dates == [day2]
     assert result.synced == 1
     assert result.skipped == 1
+
+
+def test_validate_adj_factors_ok() -> None:
+    validate_adj_factors([_factor()], date(2026, 1, 2))
+
+
+def test_validate_adj_factors_nonpositive_raises() -> None:
+    with pytest.raises(DataValidationError):
+        validate_adj_factors([_factor(adj_factor=0.0)], date(2026, 1, 2))
+
+
+def test_validate_adj_factors_nan_raises() -> None:
+    with pytest.raises(DataValidationError):
+        validate_adj_factors([_factor(adj_factor=float("nan"))], date(2026, 1, 2))
+
+
+def test_validate_adj_factors_inf_raises() -> None:
+    with pytest.raises(DataValidationError):
+        validate_adj_factors([_factor(adj_factor=float("inf"))], date(2026, 1, 2))
+
+
+def test_validate_adj_factors_duplicate_raises() -> None:
+    with pytest.raises(DataValidationError):
+        validate_adj_factors([_factor(), _factor()], date(2026, 1, 2))
+
+
+def test_validate_adj_factors_wrong_date_raises() -> None:
+    with pytest.raises(DataValidationError):
+        validate_adj_factors([_factor(trade_date=date(2026, 1, 3))], date(2026, 1, 2))
+
+
+def test_sync_adj_factor_only_open_days(tmp_path) -> None:
+    open_day = date(2026, 1, 5)
+    closed_day = date(2026, 1, 4)
+    provider = FakeProvider(
+        calendar=_calendar(open_day, closed_dates=(closed_day,)),
+        daily_by_date={},
+        adj_by_date={open_day: [_factor(trade_date=open_day)]},
+    )
+    storage = ParquetStorage(tmp_path)
+    result = sync_adj_factor_history(provider, storage, date(2026, 1, 1), date(2026, 1, 5))
+    assert provider.adj_downloaded_dates == [open_day]
+    assert result.synced == 1
+
+
+def test_sync_adj_factor_skips_existing(tmp_path) -> None:
+    day = date(2026, 1, 5)
+    storage = ParquetStorage(tmp_path)
+    storage.save_adj_factors_by_date([_factor(trade_date=day)], day)
+    provider = FakeProvider(
+        calendar=_calendar(day),
+        daily_by_date={},
+        adj_by_date={day: [_factor(trade_date=day)]},
+    )
+    result = sync_adj_factor_history(provider, storage, date(2026, 1, 1), date(2026, 1, 5))
+    assert provider.adj_downloaded_dates == []
+    assert result.skipped == 1
+
+
+def test_sync_adj_factor_force_overwrites(tmp_path) -> None:
+    day = date(2026, 1, 5)
+    storage = ParquetStorage(tmp_path)
+    storage.save_adj_factors_by_date([_factor(trade_date=day)], day)
+    provider = FakeProvider(
+        calendar=_calendar(day),
+        daily_by_date={},
+        adj_by_date={day: [_factor(trade_date=day, adj_factor=2.0)]},
+    )
+    result = sync_adj_factor_history(
+        provider, storage, date(2026, 1, 1), date(2026, 1, 5), force=True
+    )
+    assert result.synced == 1
+    assert provider.adj_downloaded_dates == [day]
+    assert storage.load_adj_factors_by_date(day)[0].adj_factor == 2.0
+
+
+def test_sync_adj_factor_resumes_missing(tmp_path) -> None:
+    day1 = date(2026, 1, 5)
+    day2 = date(2026, 1, 6)
+    storage = ParquetStorage(tmp_path)
+    failing = FakeProvider(
+        calendar=_calendar(day1, day2),
+        daily_by_date={},
+        adj_by_date={day1: [_factor(trade_date=day1)], day2: []},
+    )
+    with pytest.raises(DataValidationError):
+        sync_adj_factor_history(failing, storage, date(2026, 1, 1), date(2026, 1, 6))
+    assert storage.adj_factor_exists(day1)
+    assert not storage.adj_factor_exists(day2)
+
+    resumed = FakeProvider(
+        calendar=_calendar(day1, day2),
+        daily_by_date={},
+        adj_by_date={day2: [_factor(trade_date=day2)]},
+    )
+    result = sync_adj_factor_history(resumed, storage, date(2026, 1, 1), date(2026, 1, 6))
+    assert resumed.adj_downloaded_dates == [day2]
+    assert result.synced == 1
+    assert result.skipped == 1
+
+
+def test_audit_daily_adj_coverage(tmp_path) -> None:
+    day = date(2026, 1, 5)
+    storage = ParquetStorage(tmp_path)
+    storage.save_daily_bars_by_date(
+        [
+            _bar(instrument_id="600519.SH", trade_date=day),
+            _bar(instrument_id="000001.SZ", trade_date=day),
+        ],
+        day,
+    )
+    storage.save_adj_factors_by_date(
+        [
+            _factor(instrument_id="600519.SH", trade_date=day),
+            _factor(instrument_id="300750.SZ", trade_date=day),
+        ],
+        day,
+    )
+    cov = audit_daily_adj_coverage(storage, day)
+    assert cov.daily_count == 2
+    assert cov.adj_factor_count == 2
+    assert cov.overlap_count == 1
+    assert cov.daily_missing_adj_count == 1
+    assert cov.adj_extra_count == 1
+    assert cov.missing_sample == ("000001.SZ",)
+    assert cov.extra_sample == ("300750.SZ",)

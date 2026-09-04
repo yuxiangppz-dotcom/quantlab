@@ -11,7 +11,7 @@ from typing import Any
 
 import pandas as pd
 
-from quantlab.data.models import DailyBar, DataValidationError, Security, TradingCalendar
+from quantlab.data.models import AdjFactor, DailyBar, DataValidationError, Security, TradingCalendar
 
 
 class DuplicateDataError(Exception):
@@ -66,6 +66,7 @@ _BAR_COLUMNS = [
     "volume",
     "amount",
 ]
+_ADJ_COLUMNS = ["instrument_id", "trade_date", "adj_factor"]
 
 
 def _securities_to_frame(securities: list[Security]) -> pd.DataFrame:
@@ -139,6 +140,23 @@ def _group_bars_by_date(bars: list[DailyBar]) -> list[tuple[date, list[DailyBar]
     return sorted(grouped.items())
 
 
+def _adj_factors_to_frame(factors: list[AdjFactor]) -> pd.DataFrame:
+    frame = pd.DataFrame([asdict(item) for item in factors], columns=_ADJ_COLUMNS)
+    frame["trade_date"] = pd.to_datetime(frame["trade_date"], errors="coerce")
+    return frame
+
+
+def _frame_to_adj_factors(frame: pd.DataFrame) -> list[AdjFactor]:
+    return [
+        AdjFactor(
+            instrument_id=row["instrument_id"],
+            trade_date=_to_required_date(row["trade_date"]),
+            adj_factor=float(row["adj_factor"]),
+        )
+        for row in frame.to_dict("records")
+    ]
+
+
 class ParquetStorage:
     """Store canonical market data as local Parquet files.
 
@@ -147,9 +165,11 @@ class ParquetStorage:
         data/canonical/securities/securities.parquet
         data/canonical/calendar/calendar.parquet
         data/canonical/daily/year={year}/month={month}/{trade_date}.parquet
+        data/canonical/adj_factor/year={year}/month={month}/{trade_date}.parquet
 
-    Daily bars are stored one file per trading date, sorted by instrument_id.
-    Dates are stored as ``datetime64[ns]`` and returned as ``datetime.date``.
+    Daily bars and adj factors are stored one file per trading date, sorted
+    by instrument_id. Dates are stored as ``datetime64[ns]`` and returned as
+    ``datetime.date``.
     """
 
     def __init__(self, base_dir: str | Path = "data/canonical") -> None:
@@ -212,6 +232,29 @@ class ParquetStorage:
         if not path.exists():
             return []
         return _frame_to_bars(pd.read_parquet(path))
+
+    def adj_factor_path(self, trade_date: date) -> Path:
+        return (
+            self.base_dir / "adj_factor"
+            / f"year={trade_date.year}"
+            / f"month={trade_date.month:02d}"
+            / f"{trade_date.isoformat()}.parquet"
+        )
+
+    def adj_factor_exists(self, trade_date: date) -> bool:
+        return self.adj_factor_path(trade_date).exists()
+
+    def save_adj_factors_by_date(self, factors: list[AdjFactor], trade_date: date) -> Path:
+        frame = _adj_factors_to_frame(factors)
+        _ensure_unique(frame, ["instrument_id", "trade_date"])
+        frame = frame.sort_values("instrument_id")
+        return self._write(frame, self.adj_factor_path(trade_date))
+
+    def load_adj_factors_by_date(self, trade_date: date) -> list[AdjFactor]:
+        path = self.adj_factor_path(trade_date)
+        if not path.exists():
+            return []
+        return _frame_to_adj_factors(pd.read_parquet(path))
 
     @staticmethod
     def _write(frame: pd.DataFrame, path: Path) -> Path:

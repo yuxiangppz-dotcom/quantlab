@@ -13,6 +13,7 @@ import tushare as ts
 from quantlab.data.models import (
     SSE,
     SZSE,
+    AdjFactor,
     DailyBar,
     Security,
     TradingCalendar,
@@ -53,6 +54,13 @@ def calendar_from_row(row: Mapping[str, Any]) -> TradingCalendar:
     )
 
 
+def _to_float(value: Any) -> float:
+    """Convert a provider numeric value to float; None/NaN become float('nan')."""
+    if value is None or pd.isna(value):
+        return float("nan")
+    return float(value)
+
+
 def daily_bar_from_row(row: Mapping[str, Any]) -> DailyBar:
     """Map a Tushare ``daily`` row to a :class:`DailyBar`.
 
@@ -62,13 +70,22 @@ def daily_bar_from_row(row: Mapping[str, Any]) -> DailyBar:
     return DailyBar(
         instrument_id=row["ts_code"],
         trade_date=parse_required_yyyymmdd(row["trade_date"]),
-        open=float(row["open"]),
-        high=float(row["high"]),
-        low=float(row["low"]),
-        close=float(row["close"]),
-        pre_close=float(row["pre_close"]),
-        volume=float(row["vol"]) * 100,
-        amount=float(row["amount"]) * 1000,
+        open=_to_float(row["open"]),
+        high=_to_float(row["high"]),
+        low=_to_float(row["low"]),
+        close=_to_float(row["close"]),
+        pre_close=_to_float(row["pre_close"]),
+        volume=_to_float(row["vol"]) * 100,
+        amount=_to_float(row["amount"]) * 1000,
+    )
+
+
+def adj_factor_from_row(row: Mapping[str, Any]) -> AdjFactor:
+    """Map a Tushare ``adj_factor`` row to a :class:`AdjFactor`."""
+    return AdjFactor(
+        instrument_id=row["ts_code"],
+        trade_date=parse_required_yyyymmdd(row["trade_date"]),
+        adj_factor=_to_float(row["adj_factor"]),
     )
 
 
@@ -124,3 +141,7 @@ class TushareProvider(DataProvider):
     def get_daily_bars_by_date(self, trade_date: date) -> list[DailyBar]:
         frame = self._pro.daily(trade_date=format_yyyymmdd(trade_date))
         return [daily_bar_from_row(row) for row in frame.to_dict("records")]
+
+    def get_adj_factors_by_date(self, trade_date: date) -> list[AdjFactor]:
+        frame = self._pro.adj_factor(trade_date=format_yyyymmdd(trade_date))
+        return [adj_factor_from_row(row) for row in frame.to_dict("records")]
