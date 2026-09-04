@@ -1,0 +1,43 @@
+[project]
+name = "quantlab"
+version = "0.1.0"
+description = "A-share quantitative research toolkit"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "tushare>=1.4.0",
+    "pandas>=2.2.0",
+    "pyarrow>=15.0.0",
+]
+
+[project.scripts]
+quantlab = "quantlab.__main__:main"
+
+[build-system]
+requires = ["uv_build>=0.12.9,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["quantlab"]
+
+[[tool.uv.index]]
+url = "https://uv.agentsmirror.com/pypi/simple"
+default = true
