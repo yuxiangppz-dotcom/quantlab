@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import date
 
-import numpy as np
 import pandas as pd
 
 from quantlab.data.models import DataValidationError
@@ -49,32 +48,36 @@ def _session_lookup_returns(
     *,
     forward: bool,
 ) -> pd.DataFrame:
-    """Compute exact-session returns per instrument for each horizon."""
+    """Vectorized exact-session return lookup per instrument.
+
+    ``target_session = session + offset`` where ``offset = +horizon`` for
+    forward and ``-horizon`` for historical. The target price is looked up in a
+    unique ``(instrument_id, session)`` index; a missing target key yields NaN.
+    """
+    if frame.duplicated(subset=["instrument_id", "trade_date"]).any():
+        raise DataValidationError("duplicate instrument_id + trade_date in prices")
+
+    frame = frame.copy()
+    frame["_session"] = frame["trade_date"].map(index_map)
+
+    price = frame.set_index(["instrument_id", "_session"])["adj_close"]
+    current_price = frame["adj_close"].to_numpy()
+
     for horizon in horizons:
-        column = f"future_return_{horizon}d" if forward else f"return_{horizon}d"
-        frame[column] = np.nan
         offset = horizon if forward else -horizon
-        for _, group in frame.groupby("instrument_id", sort=False):
-            price_by_date = dict(zip(group["trade_date"], group["adj_close"], strict=True))
-            values: list[float] = []
-            for trade_date in group["trade_date"]:
-                current_index = index_map.get(trade_date)
-                target_index = None if current_index is None else current_index + offset
-                if target_index is not None and 0 <= target_index < len(open_dates):
-                    target_date = open_dates[target_index]
-                    target_price = price_by_date.get(target_date)
-                    if target_price is not None:
-                        current_price = price_by_date[trade_date]
-                        if forward:
-                            values.append(target_price / current_price - 1)
-                        else:
-                            values.append(current_price / target_price - 1)
-                    else:
-                        values.append(np.nan)
-                else:
-                    values.append(np.nan)
-            frame.loc[group.index, column] = values
-    return frame
+        target_session = frame["_session"].to_numpy() + offset
+        keys = pd.MultiIndex.from_arrays(
+            [frame["instrument_id"].to_numpy(), target_session]
+        )
+        target_price = price.reindex(keys).to_numpy()
+        if forward:
+            result = target_price / current_price - 1
+        else:
+            result = current_price / target_price - 1
+        column = f"future_return_{horizon}d" if forward else f"return_{horizon}d"
+        frame[column] = result
+
+    return frame.drop(columns=["_session"])
 
 
 def calculate_returns(

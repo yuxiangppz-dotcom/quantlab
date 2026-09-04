@@ -221,3 +221,15 @@ def test_upsert_calendar_atomic_write(tmp_path, monkeypatch) -> None:
         storage.upsert_trading_calendar([_cal("SSE", date(2026, 1, 6))])
     loaded = storage.load_trading_calendar()
     assert [(c.exchange, c.trade_date) for c in loaded] == [("SSE", date(2026, 1, 5))]
+
+
+def test_upsert_calendar_first_write_sorted(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    storage.upsert_trading_calendar([
+        _cal("SSE", date(2026, 1, 6)),
+        _cal("SZSE", date(2026, 1, 5)),
+        _cal("SSE", date(2026, 1, 5)),
+    ])
+    loaded = storage.load_trading_calendar()
+    keys = [(c.trade_date, c.exchange) for c in loaded]
+    assert keys == sorted(keys)

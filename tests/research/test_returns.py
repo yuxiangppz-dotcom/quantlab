@@ -212,3 +212,10 @@ def test_forward_horizon_non_integer_raises() -> None:
     frame = _frame("600519.SH", [(days[0], 100.0), (days[1], 110.0)])
     with pytest.raises(ValueError):
         calculate_forward_returns(frame, days, horizons=(1.5,))
+
+
+def test_duplicate_instrument_trade_date_raises() -> None:
+    days = [date(2026, 1, 5), date(2026, 1, 6)]
+    frame = _frame("600519.SH", [(days[0], 100.0), (days[0], 110.0)])
+    with pytest.raises(DataValidationError):
+        calculate_returns(frame, days, horizons=(1,))

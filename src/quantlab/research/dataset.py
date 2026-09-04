@@ -9,7 +9,11 @@ import pandas as pd
 from quantlab.data.models import DataValidationError
 from quantlab.data.storage import ParquetStorage
 from quantlab.research.price import build_prices, filter_point_in_time, prices_to_frame
-from quantlab.research.returns import calculate_forward_returns, calculate_returns
+from quantlab.research.returns import (
+    _validate_horizons,
+    calculate_forward_returns,
+    calculate_returns,
+)
 
 
 def _empty_frame(
@@ -38,13 +42,30 @@ def build_research_dataset(
     ``max(forward_horizons)`` sessions after ``end_date`` (market sessions,
     not calendar days); the output is trimmed to ``[start_date, end_date]``.
     """
+    if start_date > end_date:
+        raise ValueError(f"start_date ({start_date}) must be <= end_date ({end_date})")
+    _validate_horizons(return_horizons)
+    _validate_horizons(forward_horizons)
+
     securities = storage.load_securities()
+    if not securities:
+        raise DataValidationError("securities canonical data is missing or empty")
+    calendar = storage.load_trading_calendar()
+    if not calendar:
+        raise DataValidationError("trading calendar canonical data is missing or empty")
+
+    cal_min = min(c.trade_date for c in calendar)
+    cal_max = max(c.trade_date for c in calendar)
+    if start_date < cal_min or end_date > cal_max:
+        raise DataValidationError(
+            f"requested range [{start_date}, {end_date}] is outside "
+            f"calendar coverage [{cal_min}, {cal_max}]"
+        )
+
     list_dates = {s.instrument_id: s.list_date for s in securities}
     delist_dates = {s.instrument_id: s.delist_date for s in securities}
 
-    calendar = storage.load_trading_calendar()
     open_dates = sorted({c.trade_date for c in calendar if c.is_open})
-
     in_range = [d for d in open_dates if start_date <= d <= end_date]
     if not in_range:
         return _empty_frame(return_horizons, forward_horizons)

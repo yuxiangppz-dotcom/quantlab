@@ -177,13 +177,70 @@ def test_calendar_duplicate_ok(tmp_path) -> None:
     assert df["trade_date"].nunique() == 6
 
 
-def test_empty_range(tmp_path) -> None:
+def test_invalid_horizon_raises(tmp_path) -> None:
     dates = _days(10)
     storage = _make_storage(tmp_path, dates, ["600519.SH"])
-    df = build_research_dataset(storage, date(2026, 2, 1), date(2026, 2, 28))
+    with pytest.raises(ValueError):
+        build_research_dataset(storage, dates[0], dates[9], return_horizons=(0,))
+
+
+def test_invalid_horizon_with_empty_range_raises(tmp_path) -> None:
+    dates = _days(10)
+    storage = _make_storage(tmp_path, dates, ["600519.SH"])
+    with pytest.raises(ValueError):
+        build_research_dataset(
+            storage, date(2026, 2, 1), date(2026, 2, 28), return_horizons=(-1,)
+        )
+
+
+def test_start_after_end_raises(tmp_path) -> None:
+    dates = _days(10)
+    storage = _make_storage(tmp_path, dates, ["600519.SH"])
+    with pytest.raises(ValueError):
+        build_research_dataset(storage, dates[5], dates[2])
+
+
+def test_missing_securities_raises(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    with pytest.raises(DataValidationError):
+        build_research_dataset(storage, date(2026, 1, 5), date(2026, 1, 6))
+
+
+def test_missing_calendar_raises(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    storage.save_securities([_security("600519.SH", date(2026, 1, 5))])
+    with pytest.raises(DataValidationError):
+        build_research_dataset(storage, date(2026, 1, 5), date(2026, 1, 6))
+
+
+def test_weekend_only_range_empty(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    storage.save_securities([_security("600519.SH", date(2026, 1, 5))])
+    calendar = []
+    for i in range(7):
+        d = date(2026, 1, 5) + timedelta(days=i)
+        is_open = i < 5
+        calendar.append(TradingCalendar(exchange="SSE", trade_date=d, is_open=is_open))
+        calendar.append(TradingCalendar(exchange="SZSE", trade_date=d, is_open=is_open))
+    storage.save_trading_calendar(calendar)
+    df = build_research_dataset(storage, date(2026, 1, 10), date(2026, 1, 11))
     assert df.empty
     assert list(df.columns) == [
         "instrument_id", "trade_date", "close", "adj_factor", "adj_close",
         "return_1d", "return_5d", "return_20d",
         "future_return_1d", "future_return_5d", "future_return_20d",
     ]
+
+
+def test_range_before_calendar_min_raises(tmp_path) -> None:
+    dates = _days(10)
+    storage = _make_storage(tmp_path, dates, ["600519.SH"])
+    with pytest.raises(DataValidationError):
+        build_research_dataset(storage, date(2025, 12, 1), date(2025, 12, 31))
+
+
+def test_range_after_calendar_max_raises(tmp_path) -> None:
+    dates = _days(10)
+    storage = _make_storage(tmp_path, dates, ["600519.SH"])
+    with pytest.raises(DataValidationError):
+        build_research_dataset(storage, date(2026, 3, 1), date(2026, 3, 31))

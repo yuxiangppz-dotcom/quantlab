@@ -214,6 +214,9 @@ class ParquetStorage:
             return []
         return _frame_to_securities(pd.read_parquet(self.securities_path))
 
+    def securities_exists(self) -> bool:
+        return self.securities_path.exists()
+
     def save_trading_calendar(self, calendar: list[TradingCalendar]) -> Path:
         frame = _calendar_to_frame(calendar)
         _ensure_unique(frame, ["exchange", "trade_date"])
@@ -222,12 +225,14 @@ class ParquetStorage:
     def upsert_trading_calendar(self, calendar: list[TradingCalendar]) -> Path:
         """Merge incoming calendar into the existing one (incoming wins per key).
 
-        Keys are (exchange, trade_date); the merged result is sorted by
+        Keys are (exchange, trade_date); the result is always sorted by
         trade_date then exchange and written atomically.
         """
-        if not self.calendar_path.exists():
-            return self.save_trading_calendar(calendar)
-        merged = _merge_calendar(self.load_trading_calendar(), calendar)
+        merged = (
+            calendar
+            if not self.calendar_path.exists()
+            else _merge_calendar(self.load_trading_calendar(), calendar)
+        )
         frame = _calendar_to_frame(merged)
         _ensure_unique(frame, ["exchange", "trade_date"])
         frame = frame.sort_values(["trade_date", "exchange"])
@@ -237,6 +242,9 @@ class ParquetStorage:
         if not self.calendar_path.exists():
             return []
         return _frame_to_calendar(pd.read_parquet(self.calendar_path))
+
+    def trading_calendar_exists(self) -> bool:
+        return self.calendar_path.exists()
 
     def save_daily_bars(self, bars: list[DailyBar]) -> list[Path]:
         """Group bars by trade_date and write one file per date."""
