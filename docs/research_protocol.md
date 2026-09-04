@@ -21,3 +21,9 @@
 
 7. **No hindsight lookback search**: do not scan the full history, pick the best
    lookback, and report a single best result as if it were pre-registered.
+
+8. **Period isolation**: a future label used in an evaluation period must fall
+   entirely within that same period. A Discovery label must not use Validation
+   data, and a Validation label must not use Test data (historical feature
+   lookback may still cross `period_start`, since that information was already
+   available at signal time `t`).

@@ -8,6 +8,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import bisect
 import json
 import subprocess
 import time
@@ -27,6 +28,8 @@ from quantlab.research import (
     summarize_quantiles,
 )
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 MOMENTUM_20D = {
     "experiment_name": "momentum_20d",
     "universe": "V1 SH/SZ A-share",
@@ -37,16 +40,39 @@ MOMENTUM_20D = {
     "validation": ["2020-01-01", "2024-12-31"],
     "test": ["2025-01-01", "2026-09-04"],
     "test_observed": True,
+    "label_period_policy": "target_session_must_be_within_period",
+    "quantile_tie_policy": "average_rank_keep_ties",
 }
 
 _EXPERIMENTS = {"momentum_20d": MOMENTUM_20D}
 
+_YEARS = list(range(2010, 2027))
+
 
 def _git_sha() -> str | None:
     try:
-        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT, text=True
+        ).strip()
     except Exception:
         return None
+
+
+def _eligible_signal_end(
+    open_trade_dates: list[date],
+    period_end: date,
+    horizon: int,
+) -> date | None:
+    """Latest signal date whose forward label stays within ``period_end``.
+
+    ``t`` is eligible only if ``t + horizon`` sessions (on the market calendar)
+    is still ``<= period_end``.
+    """
+    dates = sorted(set(open_trade_dates))
+    last_idx = bisect.bisect_right(dates, period_end) - 1
+    if last_idx < horizon:
+        return None
+    return dates[last_idx - horizon]
 
 
 def _run_year(storage: ParquetStorage, year: int, lookback: int) -> dict:
@@ -66,21 +92,25 @@ def _run_year(storage: ParquetStorage, year: int, lookback: int) -> dict:
     }
 
 
-def _period_metrics(data: dict, years: range) -> dict:
-    ic5 = pd.concat([data[y]["ic5"] for y in years])
-    ic20 = pd.concat([data[y]["ic20"] for y in years])
-    q5 = pd.concat([data[y]["q5"] for y in years])
-    q20 = pd.concat([data[y]["q20"] for y in years])
-    return {
-        "future_5d": {
-            "rank_ic": summarize_ic(ic5),
-            "quantiles": summarize_quantiles(q5),
-        },
-        "future_20d": {
-            "rank_ic": summarize_ic(ic20),
-            "quantiles": summarize_quantiles(q20),
-        },
-    }
+def _period_metrics(data: dict, open_dates: list[date], period: list[str]) -> dict:
+    start = date.fromisoformat(period[0])
+    end = date.fromisoformat(period[1])
+    result = {}
+    for horizon in (5, 20):
+        eligible_end = _eligible_signal_end(open_dates, end, horizon)
+        ic = pd.concat([data[y][f"ic{horizon}"] for y in _YEARS])
+        q = pd.concat([data[y][f"q{horizon}"] for y in _YEARS])
+        if eligible_end is not None:
+            ic = ic[(ic.index >= start) & (ic.index <= eligible_end)]
+            q = q[(q["trade_date"] >= start) & (q["trade_date"] <= eligible_end)]
+        else:
+            ic = ic.iloc[0:0]
+            q = q.iloc[0:0]
+        result[f"future_{horizon}d"] = {
+            "rank_ic": summarize_ic(ic),
+            "quantiles": summarize_quantiles(q),
+        }
+    return result
 
 
 def _print_period(label: str, metrics: dict) -> None:
@@ -100,12 +130,14 @@ def _print_period(label: str, metrics: dict) -> None:
 
 
 def run_momentum_20d(config: dict) -> Path:
-    storage = ParquetStorage()
+    storage = ParquetStorage(PROJECT_ROOT / "data" / "canonical")
+    calendar = storage.load_trading_calendar()
+    open_dates = sorted({c.trade_date for c in calendar if c.is_open})
+
     t0 = time.perf_counter()
-    years = list(range(2010, 2027))
     data = {}
     yearly_ic_rows = []
-    for year in years:
+    for year in _YEARS:
         data[year] = _run_year(storage, year, config["lookback"])
         s5 = summarize_ic(data[year]["ic5"])
         s20 = summarize_ic(data[year]["ic20"])
@@ -117,13 +149,13 @@ def run_momentum_20d(config: dict) -> Path:
             "ic_20d_pos_ratio": s20["positive_ratio"],
         })
 
-    discovery = _period_metrics(data, range(2010, 2020))
-    validation = _period_metrics(data, range(2020, 2025))
-    test = _period_metrics(data, range(2025, 2027))
+    discovery = _period_metrics(data, open_dates, config["discovery"])
+    validation = _period_metrics(data, open_dates, config["validation"])
+    test = _period_metrics(data, open_dates, config["test"])
     runtime = time.perf_counter() - t0
 
     run_id = datetime.now().strftime("%Y%m%dT%H%M%S")
-    out_dir = Path("data/experiments") / config["experiment_name"] / run_id
+    out_dir = PROJECT_ROOT / "data" / "experiments" / config["experiment_name"] / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
     summary = {
@@ -141,6 +173,8 @@ def run_momentum_20d(config: dict) -> Path:
         "validation": config["validation"],
         "test": config["test"],
         "test_observed": config["test_observed"],
+        "label_period_policy": config["label_period_policy"],
+        "quantile_tie_policy": config["quantile_tie_policy"],
         "discovery_metrics": discovery,
         "validation_metrics": validation,
         "test_metrics": test,

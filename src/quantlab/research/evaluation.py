@@ -49,18 +49,16 @@ def summarize_ic(ic: pd.Series) -> dict[str, float]:
 
 
 def _assign_quantiles(frame: pd.DataFrame, n_quantiles: int) -> pd.Series:
-    """Assign deterministic equal-count quantiles (0 = lowest alpha).
+    """Assign quantiles via average rank so ties share the same quantile.
 
-    Sorts stably by ``(alpha_score, instrument_id)`` so ties are broken by
-    ``instrument_id``, never by input row order. This is an equal-count
-    portfolio diagnostic: names with identical alpha may land in adjacent
-    quantiles, which does not imply an economic ranking difference.
+    Uses ``rank(method='average', pct=True)``: identical alpha scores map to the
+    same quantile and are never split by instrument_id or row order. As a
+    result, groups are not necessarily equal-sized and some quantiles may be
+    empty (an empty Q1 or Q5 makes the Q5-Q1 spread NaN).
     """
-    ordered = frame.sort_values(["alpha_score", "instrument_id"], kind="stable")
-    n = len(ordered)
-    ranks = pd.Series(range(n), index=ordered.index)
-    quantile = (ranks * n_quantiles // n).clip(0, n_quantiles - 1)
-    return quantile.sort_index()
+    pct = frame["alpha_score"].rank(method="average", pct=True)
+    quantile = np.ceil(pct * n_quantiles).astype(int) - 1
+    return quantile.clip(0, n_quantiles - 1)
 
 
 def quantile_returns(

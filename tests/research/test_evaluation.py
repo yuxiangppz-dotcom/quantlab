@@ -69,12 +69,12 @@ def test_cross_sectional_independent() -> None:
     assert ic.loc[2] == -1.0
 
 
-def test_quantile_all_equal_no_crash() -> None:
-    frame = _frame([1.0] * 10, [5.0] * 10)
+def test_quantile_all_equal_spread_nan() -> None:
+    frame = _frame([1.0] * 10, list(range(10)))
     q = quantile_returns(frame, "future_return_5d", n_quantiles=5, min_count=5)
     assert len(q) == 1
     assert "Q5_minus_Q1" in q.columns
-    assert q["Q5_minus_Q1"].iloc[0] == 0.0
+    assert pd.isna(q["Q5_minus_Q1"].iloc[0])
 
 
 def test_quantile_many_ties_no_crash() -> None:
