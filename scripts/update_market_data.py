@@ -87,8 +87,8 @@ def main() -> None:
 
     if args.securities:
         securities = provider.get_securities()
-        storage.save_securities(securities)
-        print(f"securities: saved {len(securities)} rows -> {storage.securities_path}")
+        storage.upsert_securities(securities)
+        print(f"securities: upserted {len(securities)} rows -> {storage.securities_path}")
 
     if args.calendar:
         calendar = provider.get_trading_calendar(args.start, args.end)

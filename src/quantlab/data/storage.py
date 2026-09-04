@@ -120,6 +120,16 @@ def _merge_calendar(
     return list(by_key.values())
 
 
+def _merge_securities(
+    existing: list[Security],
+    incoming: list[Security],
+) -> list[Security]:
+    by_id = {item.instrument_id: item for item in existing}
+    for item in incoming:
+        by_id[item.instrument_id] = item  # incoming wins
+    return list(by_id.values())
+
+
 def _bars_to_frame(bars: list[DailyBar]) -> pd.DataFrame:
     frame = pd.DataFrame([asdict(item) for item in bars], columns=_BAR_COLUMNS)
     frame["trade_date"] = pd.to_datetime(frame["trade_date"], errors="coerce")
@@ -207,6 +217,22 @@ class ParquetStorage:
     def save_securities(self, securities: list[Security]) -> Path:
         frame = _securities_to_frame(securities)
         _ensure_unique(frame, ["instrument_id"])
+        return self._write(frame, self.securities_path)
+
+    def upsert_securities(self, securities: list[Security]) -> Path:
+        """Merge incoming securities into the existing ones (incoming wins per id).
+
+        Historical securities not present in ``incoming`` are preserved; the
+        result is sorted by instrument_id and written atomically.
+        """
+        merged = (
+            securities
+            if not self.securities_path.exists()
+            else _merge_securities(self.load_securities(), securities)
+        )
+        frame = _securities_to_frame(merged)
+        _ensure_unique(frame, ["instrument_id"])
+        frame = frame.sort_values("instrument_id")
         return self._write(frame, self.securities_path)
 
     def load_securities(self) -> list[Security]:

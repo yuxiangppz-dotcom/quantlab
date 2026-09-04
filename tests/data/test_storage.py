@@ -233,3 +233,59 @@ def test_upsert_calendar_first_write_sorted(tmp_path) -> None:
     loaded = storage.load_trading_calendar()
     keys = [(c.trade_date, c.exchange) for c in loaded]
     assert keys == sorted(keys)
+
+
+def test_upsert_securities_first_write(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    entry = _make_security()
+    storage.upsert_securities([entry])
+    assert storage.load_securities() == [entry]
+
+
+def test_upsert_securities_keeps_old(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    storage.upsert_securities([_make_security()])
+    storage.upsert_securities([_make_security(instrument_id="000001.SZ", symbol="000001")])
+    loaded = storage.load_securities()
+    assert {s.instrument_id for s in loaded} == {"600519.SH", "000001.SZ"}
+
+
+def test_upsert_securities_incoming_wins(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    storage.upsert_securities([_make_security(name="旧名")])
+    storage.upsert_securities([_make_security(name="新名")])
+    loaded = storage.load_securities()
+    assert len(loaded) == 1
+    assert loaded[0].name == "新名"
+
+
+def test_upsert_securities_no_duplicate(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    storage.upsert_securities([_make_security()])
+    storage.upsert_securities([_make_security()])
+    assert len(storage.load_securities()) == 1
+
+
+def test_upsert_securities_sorted(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    storage.upsert_securities([
+        _make_security(instrument_id="600519.SH"),
+        _make_security(instrument_id="000001.SZ", symbol="000001"),
+    ])
+    loaded = storage.load_securities()
+    ids = [s.instrument_id for s in loaded]
+    assert ids == sorted(ids)
+
+
+def test_upsert_securities_atomic_write(tmp_path, monkeypatch) -> None:
+    storage = ParquetStorage(tmp_path)
+    storage.upsert_securities([_make_security()])
+
+    def _fail(self, *args, **kwargs):
+        raise OSError("simulated write failure")
+
+    monkeypatch.setattr("pandas.DataFrame.to_parquet", _fail)
+    with pytest.raises(OSError):
+        storage.upsert_securities([_make_security(instrument_id="000001.SZ", symbol="000001")])
+    loaded = storage.load_securities()
+    assert [s.instrument_id for s in loaded] == ["600519.SH"]

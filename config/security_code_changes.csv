@@ -1,0 +1,4 @@
+old_instrument_id,new_instrument_id,effective_date,old_name,original_list_date,source,note
+000022.SZ,001872.SZ,2018-12-26,深赤湾Ａ,1993-05-05,Tushare bak_basic + successor stock_basic list_date,successor 001872.SZ 招商港口
+000043.SZ,001914.SZ,2019-12-16,中航善达,1994-09-28,Tushare bak_basic + successor stock_basic list_date,successor 001914.SZ 招商积余
+300114.SZ,302132.SZ,2025-02-17,中航电测,2010-08-27,Tushare bak_basic + successor stock_basic list_date,successor 302132.SZ 中航成飞

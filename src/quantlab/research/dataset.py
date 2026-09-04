@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
+from pathlib import Path
 
 import pandas as pd
 
-from quantlab.data.models import DataValidationError
+from quantlab.data.models import DataValidationError, Security, SecurityCodeChange
+from quantlab.data.security_history import load_security_code_changes
 from quantlab.data.storage import ParquetStorage
 from quantlab.research.price import build_prices, filter_point_in_time, prices_to_frame
 from quantlab.research.returns import (
@@ -14,6 +16,8 @@ from quantlab.research.returns import (
     calculate_forward_returns,
     calculate_returns,
 )
+
+_CODE_CHANGES_PATH = Path("config/security_code_changes.csv")
 
 
 def _empty_frame(
@@ -24,6 +28,27 @@ def _empty_frame(
     columns += [f"return_{h}d" for h in return_horizons]
     columns += [f"future_return_{h}d" for h in forward_horizons]
     return pd.DataFrame(columns=columns)
+
+
+def _build_list_dates(
+    securities: list[Security],
+    code_changes: list[SecurityCodeChange],
+) -> dict[str, date]:
+    list_dates = {s.instrument_id: s.list_date for s in securities}
+    for change in code_changes:
+        list_dates[change.old_instrument_id] = change.original_list_date
+        list_dates[change.new_instrument_id] = change.effective_date
+    return list_dates
+
+
+def _build_delist_dates(
+    securities: list[Security],
+    code_changes: list[SecurityCodeChange],
+) -> dict[str, date | None]:
+    delist_dates = {s.instrument_id: s.delist_date for s in securities}
+    for change in code_changes:
+        delist_dates[change.old_instrument_id] = change.effective_date - timedelta(days=1)
+    return delist_dates
 
 
 def build_research_dataset(
@@ -62,8 +87,9 @@ def build_research_dataset(
             f"calendar coverage [{cal_min}, {cal_max}]"
         )
 
-    list_dates = {s.instrument_id: s.list_date for s in securities}
-    delist_dates = {s.instrument_id: s.delist_date for s in securities}
+    code_changes = load_security_code_changes(_CODE_CHANGES_PATH)
+    list_dates = _build_list_dates(securities, code_changes)
+    delist_dates = _build_delist_dates(securities, code_changes)
 
     open_dates = sorted({c.trade_date for c in calendar if c.is_open})
     in_range = [d for d in open_dates if start_date <= d <= end_date]

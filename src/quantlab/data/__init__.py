@@ -1,7 +1,15 @@
 """Market data acquisition and storage."""
 
-from quantlab.data.models import AdjFactor, DailyBar, DataValidationError, Security, TradingCalendar
+from quantlab.data.models import (
+    AdjFactor,
+    DailyBar,
+    DataValidationError,
+    Security,
+    SecurityCodeChange,
+    TradingCalendar,
+)
 from quantlab.data.provider import DataProvider
+from quantlab.data.security_history import load_security_code_changes
 from quantlab.data.storage import DuplicateDataError, ParquetStorage
 from quantlab.data.sync import (
     CoverageResult,
@@ -23,10 +31,12 @@ __all__ = [
     "DuplicateDataError",
     "ParquetStorage",
     "Security",
+    "SecurityCodeChange",
     "SyncResult",
     "TradingCalendar",
     "TushareProvider",
     "audit_daily_adj_coverage",
+    "load_security_code_changes",
     "sync_adj_factor_history",
     "sync_daily_history",
     "validate_adj_factors",

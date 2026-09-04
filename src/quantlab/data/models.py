@@ -86,6 +86,22 @@ class AdjFactor:
     adj_factor: float
 
 
+@dataclass(frozen=True)
+class SecurityCodeChange:
+    """A historical security code change (old code -> new code).
+
+    The old code is valid on ``[original_list_date, effective_date - 1]`` and
+    the new code from ``effective_date`` onward. This describes instrument code
+    validity, not an actual delisting event.
+    """
+
+    old_instrument_id: str
+    new_instrument_id: str
+    effective_date: date
+    old_name: str
+    original_list_date: date
+
+
 def market_from_symbol(symbol: str) -> str:
     """Return the market code ("SH"/"SZ"/"BJ") for a 6-digit A-share symbol."""
     if len(symbol) != 6 or not symbol.isdigit():
