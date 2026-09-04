@@ -110,6 +110,16 @@ def _frame_to_calendar(frame: pd.DataFrame) -> list[TradingCalendar]:
     ]
 
 
+def _merge_calendar(
+    existing: list[TradingCalendar],
+    incoming: list[TradingCalendar],
+) -> list[TradingCalendar]:
+    by_key = {(item.exchange, item.trade_date): item for item in existing}
+    for item in incoming:
+        by_key[(item.exchange, item.trade_date)] = item  # incoming wins
+    return list(by_key.values())
+
+
 def _bars_to_frame(bars: list[DailyBar]) -> pd.DataFrame:
     frame = pd.DataFrame([asdict(item) for item in bars], columns=_BAR_COLUMNS)
     frame["trade_date"] = pd.to_datetime(frame["trade_date"], errors="coerce")
@@ -207,6 +217,20 @@ class ParquetStorage:
     def save_trading_calendar(self, calendar: list[TradingCalendar]) -> Path:
         frame = _calendar_to_frame(calendar)
         _ensure_unique(frame, ["exchange", "trade_date"])
+        return self._write(frame, self.calendar_path)
+
+    def upsert_trading_calendar(self, calendar: list[TradingCalendar]) -> Path:
+        """Merge incoming calendar into the existing one (incoming wins per key).
+
+        Keys are (exchange, trade_date); the merged result is sorted by
+        trade_date then exchange and written atomically.
+        """
+        if not self.calendar_path.exists():
+            return self.save_trading_calendar(calendar)
+        merged = _merge_calendar(self.load_trading_calendar(), calendar)
+        frame = _calendar_to_frame(merged)
+        _ensure_unique(frame, ["exchange", "trade_date"])
+        frame = frame.sort_values(["trade_date", "exchange"])
         return self._write(frame, self.calendar_path)
 
     def load_trading_calendar(self) -> list[TradingCalendar]:

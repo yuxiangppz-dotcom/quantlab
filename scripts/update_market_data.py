@@ -92,8 +92,8 @@ def main() -> None:
 
     if args.calendar:
         calendar = provider.get_trading_calendar(args.start, args.end)
-        storage.save_trading_calendar(calendar)
-        print(f"calendar: saved {len(calendar)} rows -> {storage.calendar_path}")
+        storage.upsert_trading_calendar(calendar)
+        print(f"calendar: upserted {len(calendar)} rows -> {storage.calendar_path}")
 
     if args.daily_all:
         result = sync_daily_history(provider, storage, args.start, args.end, force=args.force)

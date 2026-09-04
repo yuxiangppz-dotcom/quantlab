@@ -160,3 +160,64 @@ def test_find_duplicates() -> None:
     })
     duplicates = find_duplicates(frame, ["instrument_id", "trade_date"])
     assert len(duplicates) == 2
+
+
+def _cal(exchange, trade_date, is_open=True) -> TradingCalendar:
+    return TradingCalendar(exchange=exchange, trade_date=trade_date, is_open=is_open)
+
+
+def test_upsert_calendar_first_write(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    entry = _cal("SSE", date(2026, 1, 5))
+    storage.upsert_trading_calendar([entry])
+    assert storage.load_trading_calendar() == [entry]
+
+
+def test_upsert_calendar_keeps_old_dates(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    storage.upsert_trading_calendar([_cal("SSE", date(2026, 1, 5))])
+    storage.upsert_trading_calendar([_cal("SSE", date(2026, 1, 6))])
+    loaded = storage.load_trading_calendar()
+    assert {(c.exchange, c.trade_date) for c in loaded} == {
+        ("SSE", date(2026, 1, 5)),
+        ("SSE", date(2026, 1, 6)),
+    }
+
+
+def test_upsert_calendar_incoming_wins(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    storage.upsert_trading_calendar([_cal("SSE", date(2026, 1, 5), is_open=True)])
+    storage.upsert_trading_calendar([_cal("SSE", date(2026, 1, 5), is_open=False)])
+    loaded = storage.load_trading_calendar()
+    assert len(loaded) == 1
+    assert loaded[0].is_open is False
+
+
+def test_upsert_calendar_sse_szse_separate(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    storage.upsert_trading_calendar([
+        _cal("SSE", date(2026, 1, 5)),
+        _cal("SZSE", date(2026, 1, 5)),
+    ])
+    assert len(storage.load_trading_calendar()) == 2
+
+
+def test_upsert_calendar_no_duplicate_key(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    storage.upsert_trading_calendar([_cal("SSE", date(2026, 1, 5))])
+    storage.upsert_trading_calendar([_cal("SSE", date(2026, 1, 5))])
+    assert len(storage.load_trading_calendar()) == 1
+
+
+def test_upsert_calendar_atomic_write(tmp_path, monkeypatch) -> None:
+    storage = ParquetStorage(tmp_path)
+    storage.upsert_trading_calendar([_cal("SSE", date(2026, 1, 5))])
+
+    def _fail(self, *args, **kwargs):
+        raise OSError("simulated write failure")
+
+    monkeypatch.setattr("pandas.DataFrame.to_parquet", _fail)
+    with pytest.raises(OSError):
+        storage.upsert_trading_calendar([_cal("SSE", date(2026, 1, 6))])
+    loaded = storage.load_trading_calendar()
+    assert [(c.exchange, c.trade_date) for c in loaded] == [("SSE", date(2026, 1, 5))]
