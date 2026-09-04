@@ -120,3 +120,7 @@ class TushareProvider(DataProvider):
             end_date=format_yyyymmdd(end_date),
         )
         return [daily_bar_from_row(row) for row in frame.to_dict("records")]
+
+    def get_daily_bars_by_date(self, trade_date: date) -> list[DailyBar]:
+        frame = self._pro.daily(trade_date=format_yyyymmdd(trade_date))
+        return [daily_bar_from_row(row) for row in frame.to_dict("records")]

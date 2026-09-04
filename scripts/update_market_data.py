@@ -2,9 +2,11 @@
 """Download and store A-share market data from Tushare.
 
 Usage:
-    uv run python scripts/update_market_data.py --start 2026-01-01 --end 2026-09-04
     uv run python scripts/update_market_data.py --start 2026-01-01 --end 2026-09-04 \
-        --symbols 600519.SH 000001.SZ
+        --securities --calendar
+    uv run python scripts/update_market_data.py --start 2026-08-01 --end 2026-09-04 --daily-all
+    uv run python scripts/update_market_data.py --start 2026-08-01 --end 2026-09-04 \
+        --daily-all --force
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ from __future__ import annotations
 import argparse
 from datetime import date
 
-from quantlab.data import ParquetStorage, TushareProvider
+from quantlab.data import ParquetStorage, TushareProvider, sync_daily_history
 
 
 def _parse_date(value: str) -> date:
@@ -34,6 +36,26 @@ def main() -> None:
         help="End date (YYYY-MM-DD).",
     )
     parser.add_argument(
+        "--securities",
+        action="store_true",
+        help="Download the security master list.",
+    )
+    parser.add_argument(
+        "--calendar",
+        action="store_true",
+        help="Download the trading calendar.",
+    )
+    parser.add_argument(
+        "--daily-all",
+        action="store_true",
+        help="Download full-market daily bars for every open trading day.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-download daily bars even if the local file already exists.",
+    )
+    parser.add_argument(
         "--symbols",
         nargs="*",
         default=[],
@@ -44,24 +66,34 @@ def main() -> None:
     if args.start > args.end:
         parser.error(f"--start ({args.start}) must be <= --end ({args.end})")
 
+    if not (args.securities or args.calendar or args.daily_all or args.symbols):
+        parser.error(
+            "at least one of --securities/--calendar/--daily-all/--symbols is required"
+        )
+
     provider = TushareProvider()
     storage = ParquetStorage()
 
-    securities = provider.get_securities()
-    storage.save_securities(securities)
-    print(f"securities: saved {len(securities)} rows -> {storage.securities_path}")
+    if args.securities:
+        securities = provider.get_securities()
+        storage.save_securities(securities)
+        print(f"securities: saved {len(securities)} rows -> {storage.securities_path}")
 
-    calendar = provider.get_trading_calendar(args.start, args.end)
-    storage.save_trading_calendar(calendar)
-    print(f"calendar: saved {len(calendar)} rows -> {storage.calendar_path}")
+    if args.calendar:
+        calendar = provider.get_trading_calendar(args.start, args.end)
+        storage.save_trading_calendar(calendar)
+        print(f"calendar: saved {len(calendar)} rows -> {storage.calendar_path}")
 
-    if args.symbols:
+    if args.daily_all:
+        result = sync_daily_history(provider, storage, args.start, args.end, force=args.force)
+        print(
+            f"daily: {result.total} open days, "
+            f"{result.synced} downloaded, {result.skipped} skipped"
+        )
+    elif args.symbols:
         bars = provider.get_daily_bars(args.symbols, args.start, args.end)
         paths = storage.save_daily_bars(bars)
-        joined = ", ".join(str(path) for path in paths)
-        print(f"daily: saved {len(bars)} rows -> {joined}")
-    else:
-        print("daily: skipped (use --symbols 600519.SH 000001.SZ to download daily bars)")
+        print(f"daily: saved {len(bars)} rows -> {', '.join(str(p) for p in paths)}")
 
 
 if __name__ == "__main__":

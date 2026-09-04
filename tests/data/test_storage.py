@@ -55,25 +55,37 @@ def test_calendar_round_trip(tmp_path) -> None:
 
 def test_daily_bars_round_trip(tmp_path) -> None:
     storage = ParquetStorage(tmp_path)
+    trade_date = date(2026, 1, 2)
     expected = [_make_bar()]
-    storage.save_daily_bars(expected)
-    loaded = storage.load_daily_bars()
+    storage.save_daily_bars_by_date(expected, trade_date)
+    loaded = storage.load_daily_bars_by_date(trade_date)
     assert loaded == expected
     assert isinstance(loaded[0].trade_date, date)
 
 
-def test_daily_bars_merge_drops_exact_duplicates(tmp_path) -> None:
+def test_daily_bars_path(tmp_path) -> None:
     storage = ParquetStorage(tmp_path)
-    storage.save_daily_bars([_make_bar()])
-    storage.save_daily_bars([_make_bar()])
-    assert len(storage.load_daily_bars()) == 1
+    path = storage.daily_bars_path(date(2026, 9, 1))
+    assert str(path).endswith("daily/year=2026/month=09/2026-09-01.parquet")
 
 
-def test_daily_bars_conflicting_duplicate_raises(tmp_path) -> None:
+def test_daily_bars_sorted_by_instrument_id(tmp_path) -> None:
     storage = ParquetStorage(tmp_path)
-    storage.save_daily_bars([_make_bar()])
+    trade_date = date(2026, 1, 2)
+    bars = [
+        _make_bar(instrument_id="600519.SH"),
+        _make_bar(instrument_id="000001.SZ"),
+    ]
+    storage.save_daily_bars_by_date(bars, trade_date)
+    loaded = storage.load_daily_bars_by_date(trade_date)
+    assert [item.instrument_id for item in loaded] == ["000001.SZ", "600519.SH"]
+
+
+def test_daily_bars_duplicate_instrument_raises(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    trade_date = date(2026, 1, 2)
     with pytest.raises(DuplicateDataError):
-        storage.save_daily_bars([_make_bar(close=999.0)])
+        storage.save_daily_bars_by_date([_make_bar(), _make_bar()], trade_date)
 
 
 def test_find_duplicates() -> None:

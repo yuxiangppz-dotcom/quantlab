@@ -161,3 +161,11 @@ def test_get_daily_bars(monkeypatch) -> None:
     result = provider.get_daily_bars(["600519.SH"], date(2026, 1, 1), date(2026, 1, 5))
     assert len(result) == 1
     assert result[0].instrument_id == "600519.SH"
+
+
+def test_get_daily_bars_by_date(monkeypatch) -> None:
+    monkeypatch.setattr(tushare_provider.ts, "pro_api", lambda token: _FakePro())
+    provider = TushareProvider(token="dummy")
+    result = provider.get_daily_bars_by_date(date(2026, 1, 2))
+    assert len(result) == 1
+    assert result[0].trade_date == date(2026, 1, 2)

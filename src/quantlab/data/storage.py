@@ -130,19 +130,27 @@ def _frame_to_bars(frame: pd.DataFrame) -> list[DailyBar]:
     ]
 
 
+def _group_bars_by_date(bars: list[DailyBar]) -> list[tuple[date, list[DailyBar]]]:
+    grouped: dict[date, list[DailyBar]] = {}
+    for bar in bars:
+        grouped.setdefault(bar.trade_date, []).append(bar)
+    return sorted(grouped.items())
+
+
 class ParquetStorage:
     """Store canonical market data as local Parquet files.
 
     Layout::
 
-        data/raw/tushare/securities/securities.parquet
-        data/raw/tushare/calendar/calendar.parquet
-        data/raw/tushare/daily/{instrument_id}.parquet
+        data/canonical/securities/securities.parquet
+        data/canonical/calendar/calendar.parquet
+        data/canonical/daily/year={year}/month={month}/{trade_date}.parquet
 
+    Daily bars are stored one file per trading date, sorted by instrument_id.
     Dates are stored as ``datetime64[ns]`` and returned as ``datetime.date``.
     """
 
-    def __init__(self, base_dir: str | Path = "data/raw/tushare") -> None:
+    def __init__(self, base_dir: str | Path = "data/canonical") -> None:
         self.base_dir = Path(base_dir)
 
     @property
@@ -153,9 +161,16 @@ class ParquetStorage:
     def calendar_path(self) -> Path:
         return self.base_dir / "calendar" / "calendar.parquet"
 
-    @property
-    def daily_dir(self) -> Path:
-        return self.base_dir / "daily"
+    def daily_bars_path(self, trade_date: date) -> Path:
+        return (
+            self.base_dir / "daily"
+            / f"year={trade_date.year}"
+            / f"month={trade_date.month:02d}"
+            / f"{trade_date.isoformat()}.parquet"
+        )
+
+    def daily_bars_exists(self, trade_date: date) -> bool:
+        return self.daily_bars_path(trade_date).exists()
 
     def save_securities(self, securities: list[Security]) -> Path:
         frame = _securities_to_frame(securities)
@@ -178,31 +193,23 @@ class ParquetStorage:
         return _frame_to_calendar(pd.read_parquet(self.calendar_path))
 
     def save_daily_bars(self, bars: list[DailyBar]) -> list[Path]:
-        frame = _bars_to_frame(bars)
-        _ensure_unique(frame, ["instrument_id", "trade_date"])
+        """Group bars by trade_date and write one file per date."""
         paths: list[Path] = []
-        for instrument_id, group in frame.groupby("instrument_id", sort=False):
-            path = self.daily_dir / f"{instrument_id}.parquet"
-            if path.exists():
-                existing = pd.read_parquet(path)
-                merged = pd.concat([existing, group], ignore_index=True)
-                merged = merged.drop_duplicates()
-                _ensure_unique(merged, ["instrument_id", "trade_date"])
-            else:
-                merged = group
-            self._write(merged, path)
-            paths.append(path)
+        for trade_date, group in _group_bars_by_date(bars):
+            paths.append(self.save_daily_bars_by_date(group, trade_date))
         return paths
 
-    def load_daily_bars(self, instrument_ids: list[str] | None = None) -> list[DailyBar]:
-        files = sorted(self.daily_dir.glob("*.parquet"))
-        frames = [pd.read_parquet(path) for path in files]
-        if not frames:
+    def save_daily_bars_by_date(self, bars: list[DailyBar], trade_date: date) -> Path:
+        frame = _bars_to_frame(bars)
+        _ensure_unique(frame, ["instrument_id", "trade_date"])
+        frame = frame.sort_values("instrument_id")
+        return self._write(frame, self.daily_bars_path(trade_date))
+
+    def load_daily_bars_by_date(self, trade_date: date) -> list[DailyBar]:
+        path = self.daily_bars_path(trade_date)
+        if not path.exists():
             return []
-        frame = pd.concat(frames, ignore_index=True)
-        if instrument_ids:
-            frame = frame[frame["instrument_id"].isin(instrument_ids)]
-        return _frame_to_bars(frame)
+        return _frame_to_bars(pd.read_parquet(path))
 
     @staticmethod
     def _write(frame: pd.DataFrame, path: Path) -> Path:

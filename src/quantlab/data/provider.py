@@ -27,3 +27,7 @@ class DataProvider(ABC):
         end_date: date,
     ) -> list[DailyBar]:
         """Return daily bars for the given instruments and date range."""
+
+    @abstractmethod
+    def get_daily_bars_by_date(self, trade_date: date) -> list[DailyBar]:
+        """Return the full-market daily bars for a single trading date."""
