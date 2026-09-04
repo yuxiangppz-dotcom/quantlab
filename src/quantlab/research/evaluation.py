@@ -48,6 +48,21 @@ def summarize_ic(ic: pd.Series) -> dict[str, float]:
     }
 
 
+def _assign_quantiles(frame: pd.DataFrame, n_quantiles: int) -> pd.Series:
+    """Assign deterministic equal-count quantiles (0 = lowest alpha).
+
+    Sorts stably by ``(alpha_score, instrument_id)`` so ties are broken by
+    ``instrument_id``, never by input row order. This is an equal-count
+    portfolio diagnostic: names with identical alpha may land in adjacent
+    quantiles, which does not imply an economic ranking difference.
+    """
+    ordered = frame.sort_values(["alpha_score", "instrument_id"], kind="stable")
+    n = len(ordered)
+    ranks = pd.Series(range(n), index=ordered.index)
+    quantile = (ranks * n_quantiles // n).clip(0, n_quantiles - 1)
+    return quantile.sort_index()
+
+
 def quantile_returns(
     frame: pd.DataFrame,
     future_column: str,
@@ -59,13 +74,18 @@ def quantile_returns(
     Q1 is the lowest alpha quantile and Q5 the highest. A spread column
     ``Q{5}_minus_Q1`` is appended.
     """
+    if n_quantiles <= 1:
+        raise ValueError(f"n_quantiles must be > 1, got {n_quantiles}")
+    if min_count <= 0:
+        raise ValueError(f"min_count must be > 0, got {min_count}")
+
     rows = []
     for trade_date, group in frame.groupby("trade_date", sort=True):
-        valid = group[["alpha_score", future_column]].dropna()
+        valid = group[["instrument_id", "alpha_score", future_column]].dropna()
         if len(valid) < min_count:
             continue
         valid = valid.copy()
-        valid["q"] = pd.qcut(valid["alpha_score"], n_quantiles, labels=False)
+        valid["q"] = _assign_quantiles(valid, n_quantiles)
         means = valid.groupby("q")[future_column].mean()
         row: dict = {"trade_date": trade_date}
         for q in range(n_quantiles):

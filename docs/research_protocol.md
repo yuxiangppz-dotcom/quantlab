@@ -1,0 +1,23 @@
+# Research Protocol
+
+1. **Feature / Information**: any alpha feature may only use information available
+   at (and before) time `t`. No future data in features.
+
+2. **Label**: `future_return_*` columns are labels only. They are used to evaluate
+   a signal at time `t` and must never feed into a feature.
+
+3. **Discovery first**: hypotheses and parameters (e.g. lookback) are formed on the
+   Discovery period only.
+
+4. **Validation confirms**: the Validation period confirms a hypothesis before the
+   Test period is inspected.
+
+5. **Test is observed**: once the Test period has been inspected, any new hypothesis
+   derived from those results can no longer claim Test as an untouched holdout.
+   (`test_observed = true` is recorded in experiment metadata.)
+
+6. **New out-of-sample**: data accumulating after 2026-09-05 is genuine future
+   out-of-sample evidence.
+
+7. **No hindsight lookback search**: do not scan the full history, pick the best
+   lookback, and report a single best result as if it were pre-registered.

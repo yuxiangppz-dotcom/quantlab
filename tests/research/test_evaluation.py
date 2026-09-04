@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from quantlab.research import daily_rank_ic, quantile_returns
 
@@ -66,3 +67,37 @@ def test_cross_sectional_independent() -> None:
     ic = daily_rank_ic(frame, "future_return_5d", min_count=3)
     assert ic.loc[1] == 1.0
     assert ic.loc[2] == -1.0
+
+
+def test_quantile_all_equal_no_crash() -> None:
+    frame = _frame([1.0] * 10, [5.0] * 10)
+    q = quantile_returns(frame, "future_return_5d", n_quantiles=5, min_count=5)
+    assert len(q) == 1
+    assert "Q5_minus_Q1" in q.columns
+    assert q["Q5_minus_Q1"].iloc[0] == 0.0
+
+
+def test_quantile_many_ties_no_crash() -> None:
+    frame = _frame([1.0] * 5 + [2.0] * 5, list(range(10)))
+    q = quantile_returns(frame, "future_return_5d", n_quantiles=5, min_count=5)
+    assert len(q) == 1
+
+
+def test_quantile_row_order_independent() -> None:
+    frame = _frame([1.0, 1.0, 1.0, 2.0, 3.0], [10.0, 20.0, 30.0, 40.0, 50.0])
+    shuffled = frame.sample(frac=1, random_state=0).reset_index(drop=True)
+    q1 = quantile_returns(frame, "future_return_5d", n_quantiles=5, min_count=5)
+    q2 = quantile_returns(shuffled, "future_return_5d", n_quantiles=5, min_count=5)
+    pd.testing.assert_frame_equal(q1, q2)
+
+
+def test_quantile_n_quantiles_invalid() -> None:
+    frame = _frame([1.0, 2.0, 3.0, 4.0, 5.0], [1.0, 2.0, 3.0, 4.0, 5.0])
+    with pytest.raises(ValueError):
+        quantile_returns(frame, "future_return_5d", n_quantiles=1, min_count=5)
+
+
+def test_quantile_min_count_invalid() -> None:
+    frame = _frame([1.0, 2.0], [1.0, 2.0])
+    with pytest.raises(ValueError):
+        quantile_returns(frame, "future_return_5d", n_quantiles=5, min_count=0)
