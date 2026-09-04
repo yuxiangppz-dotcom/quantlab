@@ -17,7 +17,8 @@ from quantlab.research.returns import (
     calculate_returns,
 )
 
-_CODE_CHANGES_PATH = Path("config/security_code_changes.csv")
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_CODE_CHANGES_PATH = _PROJECT_ROOT / "config" / "security_code_changes.csv"
 
 
 def _empty_frame(

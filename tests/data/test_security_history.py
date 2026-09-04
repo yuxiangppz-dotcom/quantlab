@@ -1,6 +1,8 @@
 from datetime import date
 
-from quantlab.data.models import Security, SecurityCodeChange
+import pytest
+
+from quantlab.data.models import DataValidationError, Security, SecurityCodeChange
 from quantlab.data.security_history import load_security_code_changes
 from quantlab.research.dataset import _build_delist_dates, _build_list_dates
 
@@ -89,3 +91,65 @@ def test_old_and_new_not_merged() -> None:
     assert "000022.SZ" in list_dates
     assert "001872.SZ" in list_dates
     assert list_dates["000022.SZ"] != list_dates["001872.SZ"]
+
+
+_HEADER = (
+    "old_instrument_id,new_instrument_id,effective_date,old_name,"
+    "original_list_date,source,note\n"
+)
+
+
+def _write(tmp_path, *lines):
+    csv = tmp_path / "changes.csv"
+    csv.write_text(_HEADER + "\n".join(lines) + "\n")
+    return csv
+
+
+def test_duplicate_old_id_raises(tmp_path) -> None:
+    csv = _write(
+        tmp_path,
+        "000022.SZ,001872.SZ,2018-12-26,深赤湾Ａ,1993-05-05,s,n",
+        "000022.SZ,001999.SZ,2019-01-01,dup,1993-05-05,s,n",
+    )
+    with pytest.raises(DataValidationError):
+        load_security_code_changes(csv)
+
+
+def test_old_equals_new_raises(tmp_path) -> None:
+    csv = _write(tmp_path, "000022.SZ,000022.SZ,2018-12-26,深赤湾Ａ,1993-05-05,s,n")
+    with pytest.raises(DataValidationError):
+        load_security_code_changes(csv)
+
+
+def test_effective_before_original_raises(tmp_path) -> None:
+    csv = _write(tmp_path, "000022.SZ,001872.SZ,1990-01-01,深赤湾Ａ,1993-05-05,s,n")
+    with pytest.raises(DataValidationError):
+        load_security_code_changes(csv)
+
+
+def test_invalid_date_raises(tmp_path) -> None:
+    csv = _write(tmp_path, "000022.SZ,001872.SZ,not-a-date,深赤湾Ａ,1993-05-05,s,n")
+    with pytest.raises(DataValidationError):
+        load_security_code_changes(csv)
+
+
+def test_empty_instrument_raises(tmp_path) -> None:
+    csv = _write(tmp_path, ",001872.SZ,2018-12-26,深赤湾Ａ,1993-05-05,s,n")
+    with pytest.raises(DataValidationError):
+        load_security_code_changes(csv)
+
+
+def test_missing_column_raises(tmp_path) -> None:
+    csv = tmp_path / "changes.csv"
+    csv.write_text("old_instrument_id,new_instrument_id\n000022.SZ,001872.SZ\n")
+    with pytest.raises(DataValidationError):
+        load_security_code_changes(csv)
+
+
+def test_code_changes_path_cwd_independent(tmp_path, monkeypatch) -> None:
+    from quantlab.research.dataset import _CODE_CHANGES_PATH
+
+    assert _CODE_CHANGES_PATH.is_absolute()
+    monkeypatch.chdir(tmp_path)
+    assert _CODE_CHANGES_PATH.exists()
+    assert len(load_security_code_changes(_CODE_CHANGES_PATH)) == 3
