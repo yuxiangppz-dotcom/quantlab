@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Run the v0.2.1 research backtest (strict + diagnostic, full provenance).
+"""Run the lifecycle date-semantics comparison experiment.
+
+Runs baseline and admission paths under both the legacy delist_date boundary
+(``legacy_delist_date_inclusive``) and the candidate ``delist_date_is_first_invalid_v1``
+interpretation, each in strict and diagnostic mode, with full provenance.
 
 Fixed engineering configuration: momentum_20d (lower_is_better), weekly
 rebalance, V1 universe, 20% selection, 10 bps transaction cost.
@@ -25,6 +29,7 @@ from quantlab.backtest import (
     BacktestConfig,
     LifecycleMonitor,
     build_report,
+    first_invalid_open_session,
     run_backtest,
     weekly_signal_dates,
 )
@@ -52,6 +57,7 @@ from quantlab.research import build_research_dataset, filter_v1_universe
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ENGINE_SCHEMA_VERSION = "v0.2.4"
+EXPERIMENT_SCHEMA = "lifecycle_date_semantics_v0_1_1"
 
 PERIOD_START = date(2020, 1, 1)
 PERIOD_END = date(2024, 12, 31)
@@ -133,7 +139,7 @@ def _build_targets(storage: ParquetStorage, signal_dates: list[date]):
         if cross.empty:
             continue
         targets[signal_date] = construct_rank_portfolio(cross, signal_date, portfolio_config)
-    return price_frame, targets
+    return price_frame, targets, df, universe
 
 
 def _statistics(result) -> dict:
@@ -315,15 +321,39 @@ def _next_open_session(open_dates: list, signal_date) -> object:
 
 
 def _date_semantics_table(open_dates: list, delist_map: dict) -> list[dict]:
+    """Theoretical first-invalid open session within the requested period.
+
+    This is a boundary table, not an observed-blocking table; it uses the same
+    ``first_invalid_open_session`` policy as ``LifecycleMonitor``.
+    """
     rows = []
     for instr, delist_date in sorted(delist_map.items()):
-        legacy = next((d for d in open_dates if d > delist_date), None)
-        new = next((d for d in open_dates if d >= delist_date), None)
+        if delist_date < PERIOD_START:
+            relation = "before"
+        elif delist_date > PERIOD_END:
+            relation = "after"
+        else:
+            relation = "within"
+        if relation == "within":
+            legacy = first_invalid_open_session(
+                delist_date, open_dates, LEGACY_DELIST_DATE_INCLUSIVE
+            )
+            v1 = first_invalid_open_session(
+                delist_date, open_dates, DELIST_DATE_IS_FIRST_INVALID_V1
+            )
+        else:
+            legacy = None
+            v1 = None
         rows.append({
             "instrument_id": instr,
             "raw_delist_date": delist_date.isoformat(),
-            "legacy_blocking_session": legacy.isoformat() if legacy else None,
-            "new_blocking_session": new.isoformat() if new else None,
+            "raw_date_relation_to_requested_period": relation,
+            "legacy_first_invalid_open_session_in_period": (
+                legacy.isoformat() if legacy else None
+            ),
+            "v1_first_invalid_open_session_in_period": (
+                v1.isoformat() if v1 else None
+            ),
         })
     return rows
 
@@ -414,6 +444,77 @@ def _compare_paths(base_strict, adm_strict, base_diag, adm_diag,
     }
 
 
+def _consumer_matrix() -> list[dict]:
+    return [
+        {
+            "file": "src/quantlab/backtest/lifecycle.py",
+            "function": "LifecycleMonitor._delist_fired",
+            "comparison": "> (legacy) / >= (v1)",
+            "semantics": "held-position lifecycle validity boundary",
+            "first_invalid_impact": "blocks one session earlier under v1",
+            "modified_this_round": True,
+        },
+        {
+            "file": "src/quantlab/research/price.py",
+            "function": "filter_point_in_time",
+            "comparison": "price.trade_date > delist_date -> drop",
+            "semantics": "inclusive: keeps price rows on delist_date",
+            "first_invalid_impact": "would drop delist_date price rows",
+            "modified_this_round": False,
+        },
+        {
+            "file": "src/quantlab/research/dataset.py",
+            "function": "_build_delist_dates",
+            "comparison": "none (map construction)",
+            "semantics": "builds delist_dates incl. code-change offsets",
+            "first_invalid_impact": "none directly",
+            "modified_this_round": False,
+        },
+        {
+            "file": "scripts/run_research_backtest.py",
+            "function": "_delisting_audit / _date_semantics_table",
+            "comparison": "reads monitor events + first_invalid_open_session",
+            "semantics": "audit / theoretical boundary table",
+            "first_invalid_impact": "reporting only",
+            "modified_this_round": True,
+        },
+    ]
+
+
+def _consumer_impact_audit(df, universe, targets, delist_map) -> dict:
+    delist_df = pd.DataFrame(
+        [{"instrument_id": i, "delist_date": d} for i, d in delist_map.items()]
+    )
+    merged = df[["instrument_id", "trade_date"]].merge(
+        delist_df, on="instrument_id", how="inner"
+    )
+    on_delist = merged[merged["trade_date"] == merged["delist_date"]]
+    stocks = set(on_delist["instrument_id"])
+    universe_stocks = stocks & set(universe["instrument_id"])
+    target_pairs = set()
+    for sig, t in targets.items():
+        for p in t.positions:
+            if p.instrument_id in stocks:
+                target_pairs.add((p.instrument_id, sig))
+    first_date = min(delist_map[i] for i in stocks) if stocks else None
+    first_stock = (
+        min(stocks, key=lambda i: delist_map[i]) if stocks else None
+    )
+    return {
+        "price_rows_on_raw_delist_date": len(on_delist),
+        "unique_stocks_on_raw_delist_date": len(stocks),
+        "alpha_universe_count": len(universe_stocks),
+        "target_signal_instrument_count": len(target_pairs),
+        "first_affected_date": first_date.isoformat() if first_date else None,
+        "first_affected_stock": first_stock,
+        "note": (
+            "inclusive research filter keeps delist_date price rows; under "
+            "first-invalid these rows would be dropped. Having a price is not "
+            "evidence of tradability."
+        ),
+    }
+
+
 def _main() -> None:
     storage = ParquetStorage(PROJECT_ROOT / "data" / "canonical")
     calendar, securities, code_changes, open_dates = _load_inputs(storage)
@@ -439,7 +540,7 @@ def _main() -> None:
     env = environment_info()
     t0 = time.perf_counter()
 
-    price_frame, targets = _build_targets(storage, signal_dates)
+    price_frame, targets, research_df, universe = _build_targets(storage, signal_dates)
     bt_open_dates = [d for d in open_dates if PERIOD_START <= d <= PERIOD_END]
     bt_config = BacktestConfig(initial_nav=1.0, transaction_cost_bps=10.0, annualization=252)
     monitor = LifecycleMonitor(
@@ -507,9 +608,20 @@ def _main() -> None:
         execution_lag_sessions=1, mode=RUN_MODE_STRICT, lifecycle=monitor_new,
         requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
     )
+    baseline_new_diagnostic = run_backtest(
+        price_frame, bt_open_dates, targets, bt_config,
+        execution_lag_sessions=1, mode=RUN_MODE_DIAGNOSTIC, lifecycle=monitor_new,
+        requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
+    )
     admission_v2_new_strict = run_backtest(
         price_frame, bt_open_dates, targets, bt_config,
         execution_lag_sessions=1, mode=RUN_MODE_STRICT, lifecycle=monitor_new,
+        requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
+        restricted_by_signal=restricted_by_signal_v2,
+    )
+    admission_v2_new_diagnostic = run_backtest(
+        price_frame, bt_open_dates, targets, bt_config,
+        execution_lag_sessions=1, mode=RUN_MODE_DIAGNOSTIC, lifecycle=monitor_new,
         requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
         restricted_by_signal=restricted_by_signal_v2,
     )
@@ -552,24 +664,62 @@ def _main() -> None:
         restricted_by_signal_v2, bt_open_dates,
     )
     date_semantics = _date_semantics_table(bt_open_dates, monitor_new.delist_map)
-    group_a = build_group_report(
-        strict_result, diagnostic_result, bt_config, bt_open_dates, reproducible
+
+    # symmetric date-semantics groups (each strict + diagnostic)
+    group_a_legacy = build_group_report(
+        strict_result, diagnostic_result, bt_config, bt_open_dates, reproducible,
+        lifecycle_mode=LEGACY_DELIST_DATE_INCLUSIVE,
     )
-    group_b = build_group_report(
-        admission_strict, admission_diagnostic, bt_config, bt_open_dates, reproducible
-    )
-    group_c = build_group_report(
+    group_c_legacy = build_group_report(
         admission_v2_strict, admission_v2_diagnostic, bt_config, bt_open_dates,
-        reproducible,
+        reproducible, lifecycle_mode=LEGACY_DELIST_DATE_INCLUSIVE,
+    )
+    group_a_v1 = build_group_report(
+        baseline_new_strict, baseline_new_diagnostic, bt_config, bt_open_dates,
+        reproducible, lifecycle_mode=DELIST_DATE_IS_FIRST_INVALID_V1,
+    )
+    group_c_v1 = build_group_report(
+        admission_v2_new_strict, admission_v2_new_diagnostic, bt_config,
+        bt_open_dates, reproducible, lifecycle_mode=DELIST_DATE_IS_FIRST_INVALID_V1,
+    )
+
+    # observed blocking (from lifecycle events), separate from the theoretical table
+    observed_blocking = {
+        "legacy_baseline": {
+            "blocking_session": (
+                strict_result.first_blocking_event.blocking_session.isoformat()
+                if strict_result.first_blocking_event else None
+            ),
+            "instrument_id": (
+                strict_result.first_blocking_event.instrument_id
+                if strict_result.first_blocking_event else None
+            ),
+        },
+        "v1_baseline": {
+            "blocking_session": (
+                baseline_new_strict.first_blocking_event.blocking_session.isoformat()
+                if baseline_new_strict.first_blocking_event else None
+            ),
+            "instrument_id": (
+                baseline_new_strict.first_blocking_event.instrument_id
+                if baseline_new_strict.first_blocking_event else None
+            ),
+        },
+    }
+
+    consumer_matrix = _consumer_matrix()
+    consumer_impact = _consumer_impact_audit(
+        research_df, universe, targets, monitor_new.delist_map
     )
 
     run_id = datetime.now().strftime("%Y%m%dT%H%M%S")
-    out_dir = PROJECT_ROOT / "data" / "experiments" / "lifecycle_admission_v0_3" / run_id
+    out_dir = PROJECT_ROOT / "data" / "experiments" / EXPERIMENT_SCHEMA / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
     summary = {
         "engine_schema_version": ENGINE_SCHEMA_VERSION,
-        "analysis_type": "portfolio_engineering_backtest",
+        "experiment_schema": EXPERIMENT_SCHEMA,
+        "analysis_type": "lifecycle_date_semantics_comparison",
         "code_version": git_sha_before,
         "workspace_dirty": git_dirty_before,
         "reproducible": reproducible,
@@ -599,8 +749,17 @@ def _main() -> None:
             "variance_ddof": 0,
         },
         "lifecycle_boundary": {
-            "delist": "valid through delist_date (inclusive); blocked on trade_date > delist_date",
             "code_change": "old instrument invalid from effective_date (inclusive)",
+            "modes": {
+                LEGACY_DELIST_DATE_INCLUSIVE: (
+                    "valid through delist_date; invalid after delist_date "
+                    "(trade_date > delist_date)"
+                ),
+                DELIST_DATE_IS_FIRST_INVALID_V1: (
+                    "delist_date is the delisting effective date; invalid from "
+                    "delist_date (trade_date >= delist_date)"
+                ),
+            },
         },
         "conflict_diagnostics": monitor.conflict_diagnostics(),
         "delisting_facts": delisting_facts,
@@ -722,7 +881,6 @@ def _main() -> None:
             },
         },
         "fact_batch": batch,
-        "groups": {"A": group_a, "B": group_b, "C": group_c},
         "admission_v2": {
             "fact_sha256": fact_sha_v2,
             "retrieval_status": retrieval_status_summary(delisting_facts_v2),
@@ -744,26 +902,25 @@ def _main() -> None:
         },
         "comparison": comparison,
         "comparison_bc": comparison_bc,
+        "groups": {
+            "A_legacy_baseline": group_a_legacy,
+            "C_legacy_admission_v2": group_c_legacy,
+            "A_v1_baseline": group_a_v1,
+            "C_v1_admission_v2": group_c_v1,
+        },
         "date_semantics": {
             "legacy_mode": LEGACY_DELIST_DATE_INCLUSIVE,
             "new_mode": DELIST_DATE_IS_FIRST_INVALID_V1,
-            "baseline_new_first_blocking_event": (
-                baseline_new_strict.first_blocking_event.__dict__
-                if baseline_new_strict.first_blocking_event else None
-            ),
-            "baseline_new_valid_through": (
-                baseline_new_strict.valid_through.isoformat()
-                if baseline_new_strict.valid_through else None
-            ),
-            "admission_v2_new_first_blocking_event": (
-                admission_v2_new_strict.first_blocking_event.__dict__
-                if admission_v2_new_strict.first_blocking_event else None
-            ),
-            "admission_v2_new_valid_through": (
-                admission_v2_new_strict.valid_through.isoformat()
-                if admission_v2_new_strict.valid_through else None
-            ),
-            "events": date_semantics,
+            "theoretical_boundary_table": {
+                "note": (
+                    "theoretical first-invalid open session within the requested "
+                    "period; NOT an observed blocking table"
+                ),
+                "rows": date_semantics,
+            },
+            "observed_blocking": observed_blocking,
+            "consumer_matrix": consumer_matrix,
+            "consumer_impact": consumer_impact,
         },
         "total_runtime_seconds": runtime,
     }
@@ -776,12 +933,14 @@ def _main() -> None:
     if shadow["rows"]:
         pd.DataFrame(shadow["rows"]).to_csv(out_dir / "shadow_admission.csv", index=False)
 
-    export_group(out_dir, "A_baseline", strict_result)
-    export_group(out_dir, "A_diagnostic", diagnostic_result)
-    export_group(out_dir, "B_admission", admission_strict)
-    export_group(out_dir, "B_admission_diagnostic", admission_diagnostic)
-    export_group(out_dir, "C_admission_batch", admission_v2_strict)
-    export_group(out_dir, "C_admission_batch_diagnostic", admission_v2_diagnostic)
+    export_group(out_dir, "A_legacy_baseline", strict_result)
+    export_group(out_dir, "A_legacy_baseline_diagnostic", diagnostic_result)
+    export_group(out_dir, "C_legacy_admission_v2", admission_v2_strict)
+    export_group(out_dir, "C_legacy_admission_v2_diagnostic", admission_v2_diagnostic)
+    export_group(out_dir, "A_v1_baseline", baseline_new_strict)
+    export_group(out_dir, "A_v1_baseline_diagnostic", baseline_new_diagnostic)
+    export_group(out_dir, "C_v1_admission_v2", admission_v2_new_strict)
+    export_group(out_dir, "C_v1_admission_v2_diagnostic", admission_v2_new_diagnostic)
 
     print(f"=== research backtest {ENGINE_SCHEMA_VERSION} ===")
     print(f"strict status: {strict_result.status}")

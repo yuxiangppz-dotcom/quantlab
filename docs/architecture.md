@@ -108,8 +108,8 @@ Unsupported lifecycle events are detected by a separate `LifecycleMonitor` from
 canonical `Security` / `SecurityCodeChange` data, independently for both books
 and decoupled from price availability:
 
-- `delist`: valid through `delist_date` (inclusive); a held position blocks from
-  the first session with `trade_date > delist_date`.
+- `delist`: a held position blocks once the instrument is invalid under the
+  active boundary interpretation (see *Lifecycle Date Semantics* below).
 - `code_change`: the old instrument is invalid from `effective_date`
   (`trade_date >= effective_date`).
 - A static conflict (an instrument having both a delist date and a code-change
@@ -141,10 +141,16 @@ does not immediately stop trading — a delisting-arrangement period may follow)
 mark is only `last_observed_price_date`.
 
 Two delisting boundary interpretations are supported:
-`legacy_delist_date_inclusive` (valid through `delist_date`; invalid on
-`trade_date > delist_date`) and `delist_date_is_first_invalid_v1` (invalid on
-`trade_date >= delist_date`). Code-change events keep their own `effective_date`
-rule in both modes.
+
+- `legacy_delist_date_inclusive` is the **compatibility baseline**:
+  `delist_date` is valid through its date, so the instrument is invalid on
+  `trade_date > delist_date`.
+- `delist_date_is_first_invalid_v1` is the **candidate interpretation**:
+  `delist_date` is the delisting effective date, so the instrument is invalid on
+  `trade_date >= delist_date`.
+
+Code-change events keep their own `effective_date` rule in both modes, and every
+`LifecycleMonitor` is constructed with an explicit mode.
 
 ### Lifecycle Admission (shadow)
 

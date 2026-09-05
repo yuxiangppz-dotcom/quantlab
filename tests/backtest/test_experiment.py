@@ -126,3 +126,28 @@ def test_three_group_structure_consistent() -> None:
     assert set(ra.keys()) == set(rb.keys()) == set(rc.keys())
     for key in ra:
         assert key in rb and key in rc
+
+
+def test_group_report_lifecycle_mode_and_strict_fields() -> None:
+    strict = _result(STATUS_BLOCKED_UNSUPPORTED_EVENT, n=2)
+    sessions = [D0 + timedelta(days=i) for i in range(2)]
+    rep = build_group_report(
+        strict, None, _cfg(), sessions, True,
+        lifecycle_mode="delist_date_is_first_invalid_v1",
+    )
+    assert rep["lifecycle_mode"] == "delist_date_is_first_invalid_v1"
+    assert rep["strict_status"] == STATUS_BLOCKED_UNSUPPORTED_EVENT
+    assert rep["strict_record_count"] == 2
+    assert rep["solver_root_residual"] == 0.0
+    assert rep["reproducible"] is True
+    # blocked strict -> metrics null, invalid reasons present
+    assert rep["performance_valid"] is False
+    assert rep["metrics"] is None
+    assert rep["invalid_reasons"]
+
+
+def test_group_report_default_lifecycle_mode_none() -> None:
+    strict = _result(STATUS_COMPLETED, n=2)
+    sessions = [D0 + timedelta(days=i) for i in range(2)]
+    rep = build_group_report(strict, None, _cfg(), sessions, True)
+    assert rep["lifecycle_mode"] is None

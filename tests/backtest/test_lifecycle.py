@@ -8,6 +8,7 @@ from quantlab.backtest import (
     LEGACY_DELIST_DATE_INCLUSIVE,
     BacktestConfig,
     LifecycleMonitor,
+    first_invalid_open_session,
     run_backtest,
 )
 from quantlab.data.models import Security, SecurityCodeChange
@@ -315,3 +316,75 @@ def test_new_mode_signal_valid_exec_invalid() -> None:
     result = run_backtest(prices, dates, targets, _cfg(), mode="strict", lifecycle=monitor)
     # blocked at execution date D2 (not silently opened)
     assert result.first_blocking_event.blocking_session == D2
+
+
+def test_invalid_mode_rejected() -> None:
+    with pytest.raises(ValueError):
+        LifecycleMonitor([], [], mode="bogus_mode")
+    with pytest.raises(ValueError):
+        first_invalid_open_session(D1, [D0, D1, D2], "bogus_mode")
+
+
+def test_legacy_delist_description() -> None:
+    monitor = LifecycleMonitor([_security("A", delist_date=D1)], [])
+    ev = monitor.event_for("A", D2)
+    assert ev is not None
+    assert ev.description == f"invalid after delist_date {D1}"
+
+
+def test_v1_delist_description() -> None:
+    monitor = LifecycleMonitor(
+        [_security("A", delist_date=D1)], [], mode=DELIST_DATE_IS_FIRST_INVALID_V1
+    )
+    ev = monitor.event_for("A", D1)
+    assert ev is not None
+    assert ev.description == f"invalid from delist_date {D1}"
+
+
+def test_first_invalid_open_session_open_day_gap() -> None:
+    # delist_date D1 is itself an open session: legacy skips it, v1 uses it
+    open_dates = [D0, D1, D2, D3]
+    legacy = first_invalid_open_session(D1, open_dates, LEGACY_DELIST_DATE_INCLUSIVE)
+    v1 = first_invalid_open_session(D1, open_dates, DELIST_DATE_IS_FIRST_INVALID_V1)
+    assert legacy == D2
+    assert v1 == D1
+
+
+def test_first_invalid_open_session_weekend() -> None:
+    # 2026-01-10 is a Saturday (not an open session); Monday 2026-01-12 follows
+    fri = date(2026, 1, 9)
+    sat = date(2026, 1, 10)
+    mon = date(2026, 1, 12)
+    open_dates = [fri, mon]
+    legacy = first_invalid_open_session(sat, open_dates, LEGACY_DELIST_DATE_INCLUSIVE)
+    v1 = first_invalid_open_session(sat, open_dates, DELIST_DATE_IS_FIRST_INVALID_V1)
+    # no open session on the weekend date, so both collapse to the same session
+    assert legacy == mon
+    assert v1 == mon
+
+
+def test_first_invalid_open_session_holiday() -> None:
+    # D1 is a closed session (holiday): absent from open_dates
+    open_dates = [D0, D2, D3]
+    legacy = first_invalid_open_session(D1, open_dates, LEGACY_DELIST_DATE_INCLUSIVE)
+    v1 = first_invalid_open_session(D1, open_dates, DELIST_DATE_IS_FIRST_INVALID_V1)
+    assert legacy == D2
+    assert v1 == D2
+
+
+def test_first_invalid_open_session_before_window() -> None:
+    # delist before all open sessions -> both modes resolve to the first session
+    open_dates = [D1, D2, D3]
+    legacy = first_invalid_open_session(D0, open_dates, LEGACY_DELIST_DATE_INCLUSIVE)
+    v1 = first_invalid_open_session(D0, open_dates, DELIST_DATE_IS_FIRST_INVALID_V1)
+    assert legacy == D1
+    assert v1 == D1
+
+
+def test_first_invalid_open_session_after_window() -> None:
+    # delist after all open sessions -> no invalid session within the window
+    open_dates = [D0, D1, D2]
+    legacy = first_invalid_open_session(D3, open_dates, LEGACY_DELIST_DATE_INCLUSIVE)
+    v1 = first_invalid_open_session(D3, open_dates, DELIST_DATE_IS_FIRST_INVALID_V1)
+    assert legacy is None
+    assert v1 is None

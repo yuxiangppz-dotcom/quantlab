@@ -9,6 +9,7 @@ from quantlab.backtest.lifecycle import (
     DELIST_DATE_IS_FIRST_INVALID_V1,
     LEGACY_DELIST_DATE_INCLUSIVE,
     LifecycleMonitor,
+    first_invalid_open_session,
 )
 from quantlab.backtest.metrics import compute_metrics
 from quantlab.backtest.models import (
@@ -54,6 +55,7 @@ __all__ = [
     "TradeRecord",
     "build_report",
     "compute_metrics",
+    "first_invalid_open_session",
     "run_backtest",
     "weekly_signal_dates",
 ]

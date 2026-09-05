@@ -18,6 +18,7 @@ def build_group_report(
     config: BacktestConfig,
     expected_sessions: list[date],
     reproducible: bool,
+    lifecycle_mode: str | None = None,
 ) -> dict:
     """Build a uniform per-path report dict using the shared validity check."""
     report = build_report(
@@ -28,9 +29,13 @@ def build_group_report(
         return d.isoformat() if d else None
 
     return {
+        "lifecycle_mode": lifecycle_mode,
+        "strict_status": strict.status,
+        "strict_record_count": len(strict.records),
         "performance_valid": report["performance_valid"],
         "metrics": report["metrics"],
         "invalid_reasons": report["invalid_reasons"],
+        "reproducible": reproducible,
         "requested_period": {
             "start": _iso(strict.requested_period_start),
             "end": _iso(strict.requested_period_end),
@@ -48,6 +53,7 @@ def build_group_report(
         "accounting_error": strict.accounting_error,
         "accounting_error_date": _iso(strict.accounting_error_date),
         "accounting_error_book": strict.accounting_error_book,
+        "solver_root_residual": strict.solver_root_residual,
         "diagnostic": (
             {
                 "status": diagnostic.status,

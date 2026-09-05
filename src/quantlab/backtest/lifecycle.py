@@ -113,10 +113,14 @@ class LifecycleMonitor:
             return None
 
         if delist_fired:
+            if self.mode == DELIST_DATE_IS_FIRST_INVALID_V1:
+                description = f"invalid from delist_date {delist}"
+            else:
+                description = f"invalid after delist_date {delist}"
             return EventSpec(
                 event_type="delist",
                 event_date=delist,
-                description=f"invalid at delist_date {delist} (mode={self.mode})",
+                description=description,
             )
         if code_change_fired:
             return EventSpec(
@@ -125,3 +129,21 @@ class LifecycleMonitor:
                 description=f"invalid from code-change effective_date {code_change}",
             )
         return None
+
+
+def first_invalid_open_session(
+    delist_date: date,
+    open_dates: list[date],
+    mode: str,
+) -> date | None:
+    """Return the first open session where the instrument is invalid.
+
+    This is the single boundary rule shared by the monitor and the audit table:
+    ``legacy`` uses ``trade_date > delist_date`` and ``v1`` uses
+    ``trade_date >= delist_date``.
+    """
+    if mode not in _MODES:
+        raise ValueError(f"invalid lifecycle mode {mode!r}")
+    if mode == DELIST_DATE_IS_FIRST_INVALID_V1:
+        return next((d for d in open_dates if d >= delist_date), None)
+    return next((d for d in open_dates if d > delist_date), None)
