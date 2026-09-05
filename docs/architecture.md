@@ -251,9 +251,11 @@ declared 5,000-point tier. Consequently the source is explicitly
 `blocked_by_missing_anns_d_permission`: no scraped or manual announcement data
 is inserted. The existing verified manual facts remain golden regression
 evidence and compare automatically against systematic events once source access
-exists. `suspend_d` reaches its known response limit in the probe and is not
-accepted as complete context coverage. ST/suspension absence is unknown context,
-never evidence of tradability.
+exists. With the corrected `trade_date` parameter, the `suspend_d` probe
+returned a scope-valid, below-limit response, and `lifecycle_context_readiness`
+is `complete_for_2020_2024` (1,212/1,212 open sessions for both `stock_st` and
+`suspend_d`) — tracked separately from the announcement-source block.
+ST/suspension absence is unknown context, never evidence of tradability.
 
 ### Known limitations and deferred work
 

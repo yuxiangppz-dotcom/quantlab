@@ -53,8 +53,8 @@ trading step reproducible and free of look-ahead bias.
 - [x] Lifecycle Date Semantics (done / frozen; v1 remains a candidate)
 - [x] Lifecycle Risk Policy v0 (implemented / engineering validation)
 - [x] Systematic Lifecycle Event Data v0 foundation (raw/canonical/PIT/audit)
-- [ ] Systematic Lifecycle Context Data (v0.1.1 sync/audit in progress)
-- [ ] Systematic announcement coverage (blocked: current Tushare account lacks `anns_d`)
+- [x] Systematic Lifecycle Context Data (v0.1.1: `stock_st` + `suspend_d` complete for 2020-01-01 ~ 2024-12-31)
+- [ ] Systematic termination announcement coverage (BLOCKED: current Tushare account lacks `anns_d`)
 - [ ] A-share execution constraints
 
 **Live**
@@ -239,6 +239,13 @@ below Tushare's 1,000-row limit; `suspend_d` retains raw `S` / `R` daily facts
 (`suspend_timing` included) and never invents a resume interval. The prior
 unversioned suspension context is not a trusted input because it used an
 incorrect request parameter.
+As of the v0.1.1 source-correctness closure, `stock_st` and `suspend_d` are
+complete for 2020-01-01 ~ 2024-12-31: 1,212/1,212 expected open sessions each,
+with per-session date-scope validation and no silent truncation. Therefore
+`lifecycle_context_readiness = complete_for_2020_2024` while
+`termination_announcement_source_readiness` stays
+`blocked_by_missing_anns_d_permission`; the two readiness states are tracked
+independently.
 The runner therefore writes `blocked_by_missing_anns_d_permission`, performs no
 manual announcement discovery, and leaves `config/delisting_facts_v2.json` as
 the regression gold reference. If `anns_d` access is later granted, the same
@@ -376,7 +383,7 @@ settlement.
 | 3. Research Backtest | ✅ |
 | 3a. Lifecycle Date Semantics | ✅ Done / Frozen |
 | 3b. Lifecycle Risk Policy | ✅ Engineering Validation |
-| 3c. Systematic Lifecycle Event Data | Next / Deferred |
+| 3c. Systematic Lifecycle Event Data | Context ✅ (2020–2024); announcement coverage blocked (no `anns_d`) |
 | 4. A-share Execution Engine | — |
 | 5. Risk / Attribution | — |
 | 6. Alpha Research Factory | — |
