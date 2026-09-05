@@ -173,6 +173,16 @@ class SkippedExecution:
 
 
 @dataclass(frozen=True)
+class FailedAttempt:
+    """A session whose accounting validation failed; kept apart from valid logs."""
+
+    trade_date: date
+    reason: str
+    trades: tuple[TradeRecord, ...]
+    rebalance: RebalanceRecord | None
+
+
+@dataclass(frozen=True)
 class LifecycleEvent:
     """An unsupported instrument lifecycle event affecting a held position."""
 
@@ -223,6 +233,7 @@ class BacktestResult:
     trades: list[TradeRecord]
     skipped_executions: list[SkippedExecution]
     lifecycle_events: list[LifecycleEvent]
+    failed_attempts: list[FailedAttempt]
     solver_root_residual: float
     accounting_checks: list[AccountingResidual]
     accounting_error: str | None

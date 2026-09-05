@@ -20,6 +20,7 @@ from quantlab.backtest.models import (
     BacktestResult,
     BookSnapshot,
     DailyBacktestRecord,
+    FailedAttempt,
     LifecycleEvent,
     PositionRecord,
     RebalanceRecord,
@@ -494,6 +495,7 @@ def run_backtest(
     books: list[BookSnapshot] = []
     trades: list[TradeRecord] = []
     lifecycle_events: list[LifecycleEvent] = []
+    failed_attempts: list[FailedAttempt] = []
 
     acc = _ResidualAccumulator()
     solver_residual = 0.0
@@ -609,6 +611,9 @@ def run_backtest(
         gross_summary: dict | None = None
         net_summary: dict | None = None
 
+        day_trades: list[TradeRecord] = []
+        day_rebalance: RebalanceRecord | None = None
+
         if target is not None:
             signal_date, target_portfolio = target
             gross_summary = _rebalance(
@@ -634,7 +639,7 @@ def run_backtest(
                         instr, x_minus, x_plus, signed_value, tw, aw,
                         exec_price, price_date, price_kind, reason,
                     ) = detail
-                    trades.append(
+                    day_trades.append(
                         TradeRecord(
                             signal_date=signal_date,
                             execution_date=trade_date,
@@ -652,35 +657,33 @@ def run_backtest(
                         )
                     )
 
-            rebalances.append(
-                RebalanceRecord(
-                    signal_date=signal_date,
-                    execution_date=trade_date,
-                    target_count=len(target_portfolio.positions),
-                    nonzero_trade_count=net_summary["nonzero_trades"],
-                    unavailable_target_count=net_summary["unavailable_count"],
-                    frozen_count=net_summary["frozen_count"],
-                    buy_notional_ratio=net_summary["buy_ratio"],
-                    sell_notional_ratio=net_summary["sell_ratio"],
-                    traded_notional_ratio=net_summary["traded_ratio"],
-                    turnover=net_summary["turnover"],
-                    transaction_cost=net_cost,
-                    pre_trade_gross_exposure=net_summary["pre_gross_exposure"],
-                    post_trade_gross_exposure=net_summary["post_gross_exposure"],
-                    allocation_deviation=net_summary["deviation"],
-                    gross_book_buy_notional_ratio=gross_summary["buy_ratio"],
-                    gross_book_sell_notional_ratio=gross_summary["sell_ratio"],
-                    gross_book_traded_notional_ratio=gross_summary["traded_ratio"],
-                    gross_book_turnover=gross_summary["turnover"],
-                    gross_book_transaction_cost=gross_cost,
-                    gross_book_pre_trade_gross_exposure=gross_summary[
-                        "pre_gross_exposure"
-                    ],
-                    gross_book_post_trade_gross_exposure=gross_summary[
-                        "post_gross_exposure"
-                    ],
-                    gross_book_allocation_deviation=gross_summary["deviation"],
-                )
+            day_rebalance = RebalanceRecord(
+                signal_date=signal_date,
+                execution_date=trade_date,
+                target_count=len(target_portfolio.positions),
+                nonzero_trade_count=net_summary["nonzero_trades"],
+                unavailable_target_count=net_summary["unavailable_count"],
+                frozen_count=net_summary["frozen_count"],
+                buy_notional_ratio=net_summary["buy_ratio"],
+                sell_notional_ratio=net_summary["sell_ratio"],
+                traded_notional_ratio=net_summary["traded_ratio"],
+                turnover=net_summary["turnover"],
+                transaction_cost=net_cost,
+                pre_trade_gross_exposure=net_summary["pre_gross_exposure"],
+                post_trade_gross_exposure=net_summary["post_gross_exposure"],
+                allocation_deviation=net_summary["deviation"],
+                gross_book_buy_notional_ratio=gross_summary["buy_ratio"],
+                gross_book_sell_notional_ratio=gross_summary["sell_ratio"],
+                gross_book_traded_notional_ratio=gross_summary["traded_ratio"],
+                gross_book_turnover=gross_summary["turnover"],
+                gross_book_transaction_cost=gross_cost,
+                gross_book_pre_trade_gross_exposure=gross_summary[
+                    "pre_gross_exposure"
+                ],
+                gross_book_post_trade_gross_exposure=gross_summary[
+                    "post_gross_exposure"
+                ],
+                gross_book_allocation_deviation=gross_summary["deviation"],
             )
 
         gross_nav = gross_book.nav()
@@ -705,7 +708,20 @@ def run_backtest(
             accounting_error_date = trade_date
             accounting_error_book = "gross" if gross_violations else "net"
             status = STATUS_ACCOUNTING_ERROR
+            failed_attempts.append(
+                FailedAttempt(
+                    trade_date=trade_date,
+                    reason=accounting_error,
+                    trades=tuple(day_trades),
+                    rebalance=day_rebalance,
+                )
+            )
             break
+
+        # commit this day's trades/rebalance only after both books validate
+        trades.extend(day_trades)
+        if day_rebalance is not None:
+            rebalances.append(day_rebalance)
 
         # ---- snapshots ----
         gross_snapshot, net_snapshot = _snapshots(
@@ -773,6 +789,7 @@ def run_backtest(
         trades=trades,
         skipped_executions=skipped,
         lifecycle_events=lifecycle_events,
+        failed_attempts=failed_attempts,
         solver_root_residual=solver_residual,
         accounting_checks=accounting_checks,
         accounting_error=accounting_error,
@@ -790,13 +807,59 @@ def _record_residual(
     trade_date: date,
     book_name: str,
 ) -> None:
-    rel = abs_r / scale if scale > 0 else None
+    if not math.isfinite(abs_r):
+        violations.append(
+            f"{check} residual not finite on {trade_date} {book_name}: {abs_r}"
+        )
+        return
+    if not math.isfinite(scale) or scale <= 0:
+        violations.append(
+            f"{check} invalid scale on {trade_date} {book_name}: {scale}"
+        )
+        return
+    rel = abs_r / scale
     acc.add(check, abs_r, rel, trade_date, book_name)
-    if rel is not None and rel > _REL_TOL:
+    if rel > _REL_TOL:
         violations.append(
             f"{check} residual {abs_r:.6e} exceeds tolerance "
             f"(rel {rel:.6e}, scale {scale:.6e}) on {trade_date} {book_name}"
         )
+
+
+def _check_participants_finite(
+    violations: list[str],
+    book_name: str,
+    trade_date: date,
+    prev_nav: float,
+    market_pnl: float,
+    fee: float,
+) -> None:
+    for name, value in (("prev_nav", prev_nav), ("market_pnl", market_pnl), ("fee", fee)):
+        if not math.isfinite(value):
+            violations.append(
+                f"{book_name} {name} not finite on {trade_date}: {value}"
+            )
+
+
+def _check_summary_finite(
+    violations: list[str], book_name: str, trade_date: date, summary: dict
+) -> None:
+    for name in ("cash_before", "v_minus"):
+        value = summary.get(name)
+        if not math.isfinite(value):
+            violations.append(
+                f"{book_name} summary {name} not finite on {trade_date}: {value}"
+            )
+    for instr, value in summary.get("signed", {}).items():
+        if not math.isfinite(value):
+            violations.append(
+                f"{book_name} summary signed {instr} not finite on {trade_date}: {value}"
+            )
+    for instr, value in summary.get("pre_values", {}).items():
+        if not math.isfinite(value):
+            violations.append(
+                f"{book_name} summary pre_value {instr} not finite on {trade_date}: {value}"
+            )
 
 
 def _accumulate_checks(
@@ -812,6 +875,10 @@ def _accumulate_checks(
 ) -> list[str]:
     violations: list[str] = []
     nav = book.nav()
+
+    _check_participants_finite(
+        violations, book_name, trade_date, prev_nav, market_pnl, fee
+    )
 
     if not math.isfinite(nav) or nav <= 0:
         violations.append(f"{book_name} nav not finite/positive on {trade_date}: {nav}")
@@ -843,11 +910,12 @@ def _accumulate_checks(
     if summary is None:
         return violations
 
+    _check_summary_finite(violations, book_name, trade_date, summary)
+
     cash_before = summary["cash_before"]
     v_minus = summary["v_minus"]
     signed = summary["signed"]
     pre_values = summary["pre_values"]
-    post_values = summary["post_values"]
     frozen_pre = summary["frozen_pre"]
 
     scale_v = v_minus if v_minus > 0 else (nav if nav > 0 else 0.0)
@@ -868,19 +936,23 @@ def _accumulate_checks(
         acc, violations, "rebalance_nav", abs(r), scale_v, trade_date, book_name
     )
 
-    for instr, s in signed.items():
+    # position reconciliation against the ACTUAL book, not the summary.
+    all_instrs = set(pre_values) | set(signed) | set(book.positions)
+    for instr in sorted(all_instrs):
         pre = pre_values.get(instr, 0.0)
-        post = post_values.get(instr, 0.0)
-        r = (post - pre) - s
+        post_actual = book.positions[instr].value if instr in book.positions else 0.0
+        s = signed.get(instr, 0.0)
+        r = (post_actual - pre) - s
         pscale = abs(pre) if pre != 0 else scale_v
         _record_residual(
             acc, violations, "position_reconciliation",
             abs(r), pscale, trade_date, book_name,
         )
 
+    # frozen invariance against the ACTUAL book.
     for instr, pre in frozen_pre.items():
-        post = post_values.get(instr, 0.0)
-        r = post - pre
+        post_actual = book.positions[instr].value if instr in book.positions else 0.0
+        r = post_actual - pre
         pscale = abs(pre) if pre != 0 else scale_v
         _record_residual(
             acc, violations, "frozen_invariance",

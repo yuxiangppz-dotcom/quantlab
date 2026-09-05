@@ -235,7 +235,7 @@ weekly rebalance, 20% selection, 10 bps cost):
 uv run python scripts/run_research_backtest.py
 ```
 
-Results are written under `data/experiments/research_backtest_v0_2_3/`, including
+Results are written under `data/experiments/research_backtest_v0_2_4/`, including
 `summary.json` (metadata + status + provenance + metrics), `manifest.json`
 (input data content fingerprint), `strict_daily_records.csv`,
 `strict_daily_books.csv`, `strict_daily_positions.csv`,

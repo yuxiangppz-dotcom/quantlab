@@ -95,10 +95,14 @@ counts**.
 After every session, a **final-ledger reconciliation** reports, per book and per
 day, the max absolute and relative residual of: fee consistency
 (`fee = c * Σ|signed trades|`), cash flow, rebalance NAV, daily NAV bridge,
-position reconciliation, asset identity, and frozen-position invariance. The
-solver residual is kept separate; a residual exceeding a normalized positive-NAV
+position reconciliation, asset identity, and frozen-position invariance. These
+checks reconcile against the **actual book state** (not intermediate summary
+values), and reject non-finite participants, residuals or scales. The solver
+residual is kept separate; a residual exceeding a normalized positive-NAV
 tolerance (or a non-finite / over-tolerance negative cash or position) raises a
-structured `accounting_error` and excludes that session from the valid prefix.
+structured `accounting_error`. Each session's records are committed atomically
+only after both books validate; a failing session is kept in a separate
+`failed_attempts` structure and never enters the valid prefix.
 
 Unsupported lifecycle events are detected by a separate `LifecycleMonitor` from
 canonical `Security` / `SecurityCodeChange` data, independently for both books

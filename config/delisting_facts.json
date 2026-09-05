@@ -2,25 +2,67 @@
   "000018.SZ": {
     "instrument_id": "000018.SZ",
     "name": "神城A退 (神州长城股份有限公司)",
-    "termination_decision_date": "2019-11-15",
-    "termination_decision_publication_date": "2019-11-15",
-    "delisting_arrangement_start": "2019-11-25",
-    "delisting_arrangement_trading_days": 30,
-    "expected_last_trading_day": "2020-01-06",
-    "confirmed_last_trading_day": "2020-01-06",
-    "delisting_date": "2020-01-07",
-    "delisting_publication_date": "2020-01-06",
-    "first_invalid_date": "2020-01-07",
-    "current_canonical_delist_date": "2020-01-07",
-    "current_semantic": "valid through delist_date (inclusive); blocked on trade_date > delist_date",
-    "semantic_note": "Announcement 2020-007 confirms delisting on 2020-01-07, which is the first day the instrument is no longer valid. The current inclusive convention instead treats delist_date as still valid and only blocks from 2020-01-08. Date semantics are pending migration in a later phase; the current engine is retained as a reference baseline and no per-stock exception is hardcoded.",
-    "fact_at_signal_2020_01_03": "The termination decision (2019-11-15) and the delisting-arrangement schedule (start 2019-11-25, expected last trading day 2020-01-06) were already public before the 2020-01-03 weekly signal.",
-    "buy_2020_01_06_stage": "The 2020-01-03 signal executes at the 2020-01-06 close, which is the confirmed last trading day of the delisting arrangement period.",
-    "sources": [
-      "https://disc.static.szse.cn/download/disc/disk02/finalpage/2019-11-16/1c0ea612-763d-4c5f-bea4-99634ca2c976.PDF",
-      "https://disc.static.szse.cn/disc/disk02/finalpage/2020-01-07/57aaba44-118c-493b-b182-31739e177943.PDF"
-    ],
-    "verification_status": "verified",
-    "publication_precision": "Both announcements carry a dated signature (2019-11-15 and 2020-01-06); no intraday disclosure timestamp is available."
+    "facts": [
+      {
+        "fact_type": "termination_decision",
+        "document_date": "2019-11-15",
+        "effective_date": "2019-11-15",
+        "publication_date": null,
+        "publication_precision": "document_date_only",
+        "publication_evidence": "公告 2019-158 落款 2019-11-15；URL 路径含 2019-11-16，未作为精确披露时刻",
+        "available_from": "2019-11-18",
+        "available_from_basis": "最晚可证明公开证据日期 2019-11-16 之后的首个交易日开盘（保守）",
+        "source": "https://disc.static.szse.cn/download/disc/disk02/finalpage/2019-11-16/1c0ea612-763d-4c5f-bea4-99634ca2c976.PDF",
+        "verification_status": "verified"
+      },
+      {
+        "fact_type": "delisting_arrangement_start",
+        "document_date": "2019-11-15",
+        "effective_date": "2019-11-25",
+        "publication_date": null,
+        "publication_precision": "document_date_only",
+        "publication_evidence": "公告 2019-158：2019-11-25 起进入退市整理期（30 个交易日）",
+        "available_from": "2019-11-18",
+        "available_from_basis": "最晚可证明公开证据日期 2019-11-16 之后的首个交易日开盘（保守）",
+        "source": "https://disc.static.szse.cn/download/disc/disk02/finalpage/2019-11-16/1c0ea612-763d-4c5f-bea4-99634ca2c976.PDF",
+        "verification_status": "verified"
+      },
+      {
+        "fact_type": "expected_last_trading_day",
+        "document_date": "2019-11-15",
+        "effective_date": "2020-01-06",
+        "publication_date": null,
+        "publication_precision": "document_date_only",
+        "publication_evidence": "公告 2019-158：预计最后交易日期 2020-01-06（预计，后续可调整）",
+        "available_from": "2019-11-18",
+        "available_from_basis": "最晚可证明公开证据日期 2019-11-16 之后的首个交易日开盘（保守）",
+        "source": "https://disc.static.szse.cn/download/disc/disk02/finalpage/2019-11-16/1c0ea612-763d-4c5f-bea4-99634ca2c976.PDF",
+        "verification_status": "verified"
+      },
+      {
+        "fact_type": "confirmed_last_trading_day",
+        "document_date": "2020-01-06",
+        "effective_date": "2020-01-06",
+        "publication_date": null,
+        "publication_precision": "document_date_only",
+        "publication_evidence": "公告 2020-007 落款 2020-01-06：退市整理期截止 2020-01-06 已满三十个交易日",
+        "available_from": "2020-01-08",
+        "available_from_basis": "URL 证据日期 2020-01-07 之后的首个交易日开盘（保守）",
+        "source": "https://disc.static.szse.cn/disc/disk02/finalpage/2020-01-07/57aaba44-118c-493b-b182-31739e177943.PDF",
+        "verification_status": "verified"
+      },
+      {
+        "fact_type": "delisting",
+        "document_date": "2020-01-06",
+        "effective_date": "2020-01-07",
+        "publication_date": null,
+        "publication_precision": "document_date_only",
+        "publication_evidence": "公告 2020-007：终止上市及摘牌日期 2020-01-07",
+        "available_from": "2020-01-08",
+        "available_from_basis": "URL 证据日期 2020-01-07 之后的首个交易日开盘（保守）",
+        "source": "https://disc.static.szse.cn/disc/disk02/finalpage/2020-01-07/57aaba44-118c-493b-b182-31739e177943.PDF",
+        "verification_status": "verified"
+      }
+    ]
   }
 }

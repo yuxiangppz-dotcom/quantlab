@@ -26,6 +26,7 @@ from quantlab.backtest import (
     run_backtest,
     weekly_signal_dates,
 )
+from quantlab.backtest.delisting_facts import source_coverage
 from quantlab.backtest.provenance import content_manifest, environment_info
 from quantlab.data import ParquetStorage
 from quantlab.data.security_history import load_security_code_changes
@@ -33,7 +34,7 @@ from quantlab.portfolio import RankPortfolioConfig, construct_rank_portfolio
 from quantlab.research import build_research_dataset, filter_v1_universe
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-ENGINE_SCHEMA_VERSION = "v0.2.3"
+ENGINE_SCHEMA_VERSION = "v0.2.4"
 
 PERIOD_START = date(2020, 1, 1)
 PERIOD_END = date(2024, 12, 31)
@@ -65,6 +66,7 @@ def _code_paths() -> list[Path]:
     paths.append(PROJECT_ROOT / "pyproject.toml")
     paths.append(PROJECT_ROOT / "uv.lock")
     paths.append(PROJECT_ROOT / "config" / "security_code_changes.csv")
+    paths.append(PROJECT_ROOT / "config" / "delisting_facts.json")
     return paths
 
 
@@ -225,7 +227,6 @@ def _delisting_audit(result, facts: dict) -> list[dict]:
             first_entry[t.instrument_id] = t.execution_date
     rows = []
     for e in seen.values():
-        fact = facts.get(e.instrument_id)
         entry = first_entry.get(e.instrument_id)
         rows.append({
             "instrument_id": e.instrument_id,
@@ -233,8 +234,8 @@ def _delisting_audit(result, facts: dict) -> list[dict]:
             "event_date": e.event_date.isoformat(),
             "blocking_session": e.blocking_session.isoformat(),
             "first_entry": entry.isoformat() if entry else None,
-            "source_coverage": "verified" if fact else "unknown",
-            "verification_status": fact["verification_status"] if fact else "unknown",
+            "source_coverage": source_coverage(facts, e.instrument_id),
+            "verification_status": source_coverage(facts, e.instrument_id),
         })
     return rows
 
@@ -312,7 +313,7 @@ def _main() -> None:
     audit_rows = _delisting_audit(diagnostic_result, delisting_facts)
 
     run_id = datetime.now().strftime("%Y%m%dT%H%M%S")
-    out_dir = PROJECT_ROOT / "data" / "experiments" / "research_backtest_v0_2_3" / run_id
+    out_dir = PROJECT_ROOT / "data" / "experiments" / "research_backtest_v0_2_4" / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
     summary = {

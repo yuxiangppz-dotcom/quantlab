@@ -9,6 +9,7 @@ from quantlab.backtest.engine import (
     _accumulate_checks,
     _Book,
     _Position,
+    _record_residual,
     _ResidualAccumulator,
 )
 from quantlab.portfolio import TargetPortfolio, TargetWeight
@@ -155,3 +156,144 @@ def test_no_false_positive_across_scales() -> None:
         result = run_backtest(prices, dates, {D0: target}, cfg)
         assert result.status == "completed"
         assert result.accounting_error is None
+
+
+def _price_frame(prices_by_date) -> pd.DataFrame:
+    rows = []
+    for d, prices in prices_by_date.items():
+        for instr, p in prices.items():
+            rows.append({"instrument_id": instr, "trade_date": d, "adj_close": p})
+    return pd.DataFrame(rows)
+
+
+def _target(as_of, weights, cash=0.0) -> TargetPortfolio:
+    return TargetPortfolio(
+        as_of=as_of,
+        positions=tuple(TargetWeight(i, w) for i, w in weights.items()),
+        cash_weight=cash,
+    )
+
+
+def _cfg(bps=0.0) -> BacktestConfig:
+    return BacktestConfig(initial_nav=1.0, transaction_cost_bps=bps, annualization=252)
+
+
+def test_position_tamper_detected(monkeypatch) -> None:
+    dates = [D0, date(2026, 1, 6), date(2026, 1, 7)]
+    prices = _price_frame({d: {"A": 100.0, "B": 100.0} for d in dates})
+    targets = {D0: _target(D0, {"A": 0.5, "B": 0.5})}
+    cfg = _cfg()
+
+    original = eng._rebalance
+
+    def tamper(book, target, current_prices, cost_rate, signal_date,
+               execution_date, blocked=frozenset()):
+        summary = original(book, target, current_prices, cost_rate,
+                           signal_date, execution_date, blocked=blocked)
+        if "A" in book.positions and "B" in book.positions:
+            book.positions["A"].value += 0.1 * cfg.initial_nav
+            book.positions["B"].value -= 0.1 * cfg.initial_nav
+        return summary
+
+    monkeypatch.setattr(eng, "_rebalance", tamper)
+    result = run_backtest(prices, dates, targets, cfg)
+    assert result.status == "accounting_error"
+    assert "position_reconciliation" in result.accounting_error
+
+
+def test_frozen_invariance_uses_actual_book() -> None:
+    acc = _ResidualAccumulator()
+    book = _book(cash=0.0, positions={"A": _Position(1.0, 100.0, D0)})
+    summary = {
+        "cash_before": 0.0,
+        "v_minus": 1.0,
+        "signed": {},
+        "pre_values": {"A": 1.0},
+        "frozen_pre": {"A": 1.0},
+    }
+    book.positions["A"].value = 1.1  # tamper frozen value
+    violations = _accumulate_checks(
+        acc, "net", D0, book, 1.0, 0.0, 0.0, 0.0, summary
+    )
+    assert any("frozen_invariance" in v for v in violations)
+
+
+def test_unexpected_position_detected() -> None:
+    acc = _ResidualAccumulator()
+    book = _book(cash=0.5, positions={
+        "A": _Position(0.3, 100.0, D0),
+        "X": _Position(0.2, 100.0, D0),
+    })
+    summary = {
+        "cash_before": 1.0,
+        "v_minus": 1.0,
+        "signed": {"A": 0.3},
+        "pre_values": {"A": 0.0},
+        "frozen_pre": {},
+    }
+    violations = _accumulate_checks(
+        acc, "net", D0, book, 1.0, 0.0, 0.0, 0.0, summary
+    )
+    assert any("position_reconciliation" in v for v in violations)
+
+
+def test_market_pnl_nan_triggers_accounting_error(monkeypatch) -> None:
+    dates = [D0, date(2026, 1, 6), date(2026, 1, 7)]
+    prices = _price_frame({d: {"A": 100.0} for d in dates})
+    targets = {D0: _target(D0, {"A": 1.0})}
+    cfg = _cfg()
+
+    original = eng._Book.mark_to_market
+
+    def fake_mtm(self, current_prices, trade_date, skip=frozenset()):
+        original(self, current_prices, trade_date, skip=skip)
+        return float("nan")
+
+    monkeypatch.setattr(eng._Book, "mark_to_market", fake_mtm)
+    result = run_backtest(prices, dates, targets, cfg)
+    assert result.status == "accounting_error"
+    assert "market_pnl not finite" in result.accounting_error
+
+
+def test_nonfinite_residual_and_scale_rejected() -> None:
+    acc = _ResidualAccumulator()
+    violations: list[str] = []
+    _record_residual(acc, violations, "x", float("inf"), 1.0, D0, "net")
+    assert any("residual not finite" in v for v in violations)
+    violations.clear()
+    _record_residual(acc, violations, "y", 1.0, 0.0, D0, "net")
+    assert any("invalid scale" in v for v in violations)
+    violations.clear()
+    _record_residual(acc, violations, "z", 1.0, float("nan"), D0, "net")
+    assert any("invalid scale" in v for v in violations)
+
+
+def test_atomic_commit_on_failure(monkeypatch) -> None:
+    dates = [D0, date(2026, 1, 6), date(2026, 1, 7), date(2026, 1, 8)]
+    prices = _price_frame({d: {"A": 100.0} for d in dates})
+    targets = {
+        D0: _target(D0, {"A": 1.0}),
+        date(2026, 1, 6): _target(date(2026, 1, 6), {"A": 1.0}),
+    }
+    cfg = _cfg()
+
+    original = eng._rebalance
+
+    def tamper(book, target, current_prices, cost_rate, signal_date,
+               execution_date, blocked=frozenset()):
+        summary = original(book, target, current_prices, cost_rate,
+                           signal_date, execution_date, blocked=blocked)
+        if execution_date == date(2026, 1, 7):
+            book.cash += 0.1  # inject cash error on second rebalance session
+        return summary
+
+    monkeypatch.setattr(eng, "_rebalance", tamper)
+    result = run_backtest(prices, dates, targets, cfg)
+    assert result.status == "accounting_error"
+    # failed day (exec of second signal = 2026-01-07) excluded from valid records
+    assert all(r.trade_date != date(2026, 1, 7) for r in result.records)
+    assert all(t.execution_date != date(2026, 1, 7) for t in result.trades)
+    assert all(rb.execution_date != date(2026, 1, 7) for rb in result.rebalances)
+    assert len(result.failed_attempts) == 1
+    assert result.failed_attempts[0].trade_date == date(2026, 1, 7)
+    assert result.records[-1].trade_date == date(2026, 1, 6)
