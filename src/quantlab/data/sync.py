@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 from quantlab.data.models import AdjFactor, DailyBar, DailyBasic, DataValidationError
 from quantlab.data.provider import DataProvider
@@ -287,3 +287,58 @@ def sync_daily_basic_history(
         storage.save_daily_basic_by_date(items, trade_date)
         synced += 1
     return SyncResult(total=len(open_dates), synced=synced, skipped=skipped, filtered=0)
+
+
+def sync_lifecycle_announcement_index(
+    provider: DataProvider,
+    storage: ParquetStorage,
+    start_date: date,
+    end_date: date,
+    force: bool = False,
+    page_limit: int = 10_000,
+) -> SyncResult:
+    """Synchronize the raw daily ``anns_d`` index safely and resumably.
+
+    Empty successful days are persisted, so a later run does not repeatedly
+    query them.  A full page is rejected rather than silently accepting a
+    potentially truncated provider response.
+    """
+    total = synced = skipped = 0
+    current = start_date
+    while current <= end_date:
+        total += 1
+        if not force and storage.lifecycle_announcements_exists(current):
+            skipped += 1
+            current += timedelta(days=1)
+            continue
+        try:
+            items = provider.get_lifecycle_announcements_by_date(current)
+        except Exception as exc:
+            raise RuntimeError("Failed to download lifecycle announcement index") from exc
+        if len(items) >= page_limit:
+            raise DataValidationError(
+                f"lifecycle announcement response reaches page limit on {current}"
+            )
+        if any(item.announcement_date != current for item in items):
+            raise DataValidationError(f"announcement date mismatch for {current}")
+        storage.save_lifecycle_announcements_by_date(items, current)
+        synced += 1
+        current += timedelta(days=1)
+    return SyncResult(total=total, synced=synced, skipped=skipped, filtered=0)
+
+
+def sync_lifecycle_context(
+    provider: DataProvider,
+    storage: ParquetStorage,
+    start_date: date,
+    end_date: date,
+) -> dict[str, int]:
+    """Sync non-triggering ST and suspension context in one explicit operation."""
+    stock_st = provider.get_stock_st(start_date, end_date)
+    storage.save_stock_st(stock_st)
+    # Persist the independently complete ST context before querying suspensions;
+    # a detected suspension page-limit error remains visible to the caller and
+    # never creates a silent partial suspension dataset.
+    suspensions = provider.get_suspensions(start_date, end_date)
+    storage.save_suspensions(suspensions)
+    return {"stock_st": len(stock_st), "suspensions": len(suspensions)}

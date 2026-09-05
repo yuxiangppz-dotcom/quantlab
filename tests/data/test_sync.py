@@ -102,6 +102,15 @@ class FakeProvider(DataProvider):
         self.basic_downloaded_dates.append(trade_date)
         return self._basic_by_date.get(trade_date, [])
 
+    def get_lifecycle_announcements_by_date(self, announcement_date):
+        return []
+
+    def get_stock_st(self, start_date, end_date):
+        return []
+
+    def get_suspensions(self, start_date, end_date):
+        return []
+
 
 def test_validate_ok() -> None:
     validate_daily_bars([_bar()], date(2026, 1, 2))

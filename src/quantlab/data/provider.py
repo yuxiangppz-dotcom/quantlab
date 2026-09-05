@@ -5,7 +5,16 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from datetime import date
 
-from quantlab.data.models import AdjFactor, DailyBar, DailyBasic, Security, TradingCalendar
+from quantlab.data.models import (
+    AdjFactor,
+    DailyBar,
+    DailyBasic,
+    RawLifecycleAnnouncement,
+    Security,
+    StockSTStatus,
+    SuspensionRecord,
+    TradingCalendar,
+)
 
 
 class DataProvider(ABC):
@@ -39,3 +48,17 @@ class DataProvider(ABC):
     @abstractmethod
     def get_daily_basic_by_date(self, trade_date: date) -> list[DailyBasic]:
         """Return the full-market daily basic metrics for a single trading date."""
+
+    @abstractmethod
+    def get_lifecycle_announcements_by_date(
+        self, announcement_date: date
+    ) -> list[RawLifecycleAnnouncement]:
+        """Return raw announcement-index records published on one calendar day."""
+
+    @abstractmethod
+    def get_stock_st(self, start_date: date, end_date: date) -> list[StockSTStatus]:
+        """Return ST-status context for the requested range."""
+
+    @abstractmethod
+    def get_suspensions(self, start_date: date, end_date: date) -> list[SuspensionRecord]:
+        """Return suspension context for the requested range."""

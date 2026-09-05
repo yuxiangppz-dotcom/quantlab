@@ -220,6 +220,32 @@ Engine. The real comparison uses the frozen
 `delist_date_is_first_invalid_v1` candidate boundary; that choice remains a
 candidate interpretation and is not promoted to universal Canonical truth.
 
+### Systematic Lifecycle Event Data v0
+
+The Canonical layer now includes a raw `anns_d` announcement index (one atomic,
+resumable Parquet file per calendar date), `SecurityLifecycleEvent`, and ST /
+suspension context records. Raw provider records are retained separately from
+normalized events. `event_id` and content fingerprints are deterministic;
+events retain source identifiers/URLs, title, classifier reason, verification
+status, optional event time/effective date, and PIT `available_from`.
+
+The only v0 risk event is `termination_decision`. The title classifier is
+versioned (`termination_decision_title_v1`): clear formal decision wording is
+trusted, ambiguous termination wording is `review_required`, and risk warnings,
+procedures, hearings, arrangement periods and effective notices are context,
+not automatic exits. Daily availability is conservatively the first market
+session after `ann_date`; `rec_time` is retained but never makes same-day use
+legal.
+
+The account capability audit on 2026-09-05 found `anns_d` unavailable at the
+declared 5,000-point tier. Consequently the source is explicitly
+`blocked_by_missing_anns_d_permission`: no scraped or manual announcement data
+is inserted. The existing verified manual facts remain golden regression
+evidence and compare automatically against systematic events once source access
+exists. `suspend_d` reaches its known response limit in the probe and is not
+accepted as complete context coverage. ST/suspension absence is unknown context,
+never evidence of tradability.
+
 ### Known limitations and deferred work
 
 - **Lifecycle fact coverage is incomplete.** Trusted termination-decision facts
@@ -227,11 +253,11 @@ candidate interpretation and is not promoted to universal Canonical truth.
   `searched_unresolved` / insufficient trusted fact coverage in the current
   snapshot. `unknown` must never be interpreted as safe, and the risk policy
   cannot exit an instrument for an event it did not know about.
-- **Systematic lifecycle event data is deferred / next.** A future PIT source
-  should model a `SecurityLifecycleEvent` with at least `instrument_id`,
-  `event_type`, `event_time`, `available_from`, `effective_time`, `source`,
-  `source_id`, and `verification_status`. This Canonical layer is deliberately
-  not implemented in Risk Policy v0.
+- **Systematic announcement coverage is source-blocked.** The data model and
+  audit pipeline are implemented, but current `anns_d` permission prevents
+  systematic historical announcement ingestion and risk-policy source-mode
+  comparison. This is a capability limitation, not evidence that missing events
+  are safe.
 - **Terminal settlement and corporate actions are unsupported.** If an exit is
   required but no valid execution price appears before lifecycle invalidation,
   strict mode remains `blocked_by_unsupported_event`. The engine does not cash

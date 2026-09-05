@@ -16,7 +16,11 @@ from quantlab.data.models import (
     DailyBar,
     DailyBasic,
     DataValidationError,
+    RawLifecycleAnnouncement,
     Security,
+    SecurityLifecycleEvent,
+    StockSTStatus,
+    SuspensionRecord,
     TradingCalendar,
 )
 
@@ -48,6 +52,12 @@ def _to_required_date(value: Any) -> date:
     if result is None:
         raise DataValidationError(f"Required date is missing: {value!r}")
     return result
+
+
+def _none_if_na(value: Any) -> str | None:
+    if value is None or pd.isna(value):
+        return None
+    return str(value)
 
 
 _SECURITY_COLUMNS = [
@@ -357,6 +367,126 @@ class ParquetStorage:
 
     def daily_basic_exists(self, trade_date: date) -> bool:
         return self.daily_basic_path(trade_date).exists()
+
+    def lifecycle_announcements_path(self, announcement_date: date) -> Path:
+        return (
+            self.base_dir / "lifecycle_raw" / "announcements"
+            / f"year={announcement_date.year}" / f"month={announcement_date.month:02d}"
+            / f"{announcement_date.isoformat()}.parquet"
+        )
+
+    def lifecycle_announcements_exists(self, announcement_date: date) -> bool:
+        return self.lifecycle_announcements_path(announcement_date).exists()
+
+    def save_lifecycle_announcements_by_date(
+        self, items: list[RawLifecycleAnnouncement], announcement_date: date
+    ) -> Path:
+        columns = list(RawLifecycleAnnouncement.__dataclass_fields__)
+        frame = pd.DataFrame([asdict(item) for item in items], columns=columns)
+        if not frame.empty:
+            frame["announcement_date"] = pd.to_datetime(frame["announcement_date"])
+            _ensure_unique(frame, ["source", "source_record_id"])
+            frame = frame.sort_values(["source", "source_record_id"])
+        return self._write(frame, self.lifecycle_announcements_path(announcement_date))
+
+    def load_lifecycle_announcements_by_date(
+        self, announcement_date: date
+    ) -> list[RawLifecycleAnnouncement]:
+        path = self.lifecycle_announcements_path(announcement_date)
+        if not path.exists():
+            return []
+        return [
+            RawLifecycleAnnouncement(
+                source=row["source"], source_record_id=row["source_record_id"],
+                instrument_id=_none_if_na(row["instrument_id"]),
+                announcement_date=_to_required_date(row["announcement_date"]),
+                announcement_time=_none_if_na(row["announcement_time"]), title=row["title"],
+                source_url=_none_if_na(row["source_url"]), raw_payload=row["raw_payload"],
+                content_fingerprint=row["content_fingerprint"],
+            ) for row in pd.read_parquet(path).to_dict("records")
+        ]
+
+    @property
+    def lifecycle_events_path(self) -> Path:
+        return self.base_dir / "lifecycle_events" / "events.parquet"
+
+    def save_lifecycle_events(self, events: list[SecurityLifecycleEvent]) -> Path:
+        columns = list(SecurityLifecycleEvent.__dataclass_fields__)
+        frame = pd.DataFrame([asdict(item) for item in events], columns=columns)
+        if not frame.empty:
+            for column in ("event_date", "available_from", "effective_date"):
+                frame[column] = pd.to_datetime(frame[column])
+            _ensure_unique(frame, ["event_id"])
+            frame = frame.sort_values(["available_from", "event_id"])
+        return self._write(frame, self.lifecycle_events_path)
+
+    def load_lifecycle_events(self) -> list[SecurityLifecycleEvent]:
+        if not self.lifecycle_events_path.exists():
+            return []
+        return [
+            SecurityLifecycleEvent(
+                event_id=row["event_id"], instrument_id=row["instrument_id"],
+                event_type=row["event_type"], event_date=_to_required_date(row["event_date"]),
+                event_time=_none_if_na(row["event_time"]),
+                available_from=_to_required_date(row["available_from"]),
+                effective_date=_to_date(row["effective_date"]), source=row["source"],
+                source_record_id=row["source_record_id"], source_url=_none_if_na(row["source_url"]),
+                raw_title=row["raw_title"], verification_status=row["verification_status"],
+                classification_reason=row["classification_reason"],
+                content_fingerprint=row["content_fingerprint"],
+            ) for row in pd.read_parquet(self.lifecycle_events_path).to_dict("records")
+        ]
+
+    @property
+    def stock_st_path(self) -> Path:
+        return self.base_dir / "lifecycle_context" / "stock_st.parquet"
+
+    @property
+    def suspensions_path(self) -> Path:
+        return self.base_dir / "lifecycle_context" / "suspensions.parquet"
+
+    def save_stock_st(self, items: list[StockSTStatus]) -> Path:
+        columns = list(StockSTStatus.__dataclass_fields__)
+        frame = pd.DataFrame([asdict(item) for item in items], columns=columns)
+        if not frame.empty:
+            frame["trade_date"] = pd.to_datetime(frame["trade_date"])
+            _ensure_unique(frame, ["instrument_id", "trade_date", "source_record_id"])
+            frame = frame.sort_values(["instrument_id", "trade_date", "source_record_id"])
+        return self._write(frame, self.stock_st_path)
+
+    def load_stock_st(self) -> list[StockSTStatus]:
+        if not self.stock_st_path.exists():
+            return []
+        return [
+            StockSTStatus(
+                instrument_id=row["instrument_id"], trade_date=_to_required_date(row["trade_date"]),
+                name=_none_if_na(row["name"]), status=_none_if_na(row["status"]),
+                source_record_id=row["source_record_id"],
+            ) for row in pd.read_parquet(self.stock_st_path).to_dict("records")
+        ]
+
+    def save_suspensions(self, items: list[SuspensionRecord]) -> Path:
+        columns = list(SuspensionRecord.__dataclass_fields__)
+        frame = pd.DataFrame([asdict(item) for item in items], columns=columns)
+        if not frame.empty:
+            frame["suspend_date"] = pd.to_datetime(frame["suspend_date"])
+            frame["resume_date"] = pd.to_datetime(frame["resume_date"])
+            _ensure_unique(frame, ["instrument_id", "suspend_date", "source_record_id"])
+            frame = frame.sort_values(["instrument_id", "suspend_date", "source_record_id"])
+        return self._write(frame, self.suspensions_path)
+
+    def load_suspensions(self) -> list[SuspensionRecord]:
+        if not self.suspensions_path.exists():
+            return []
+        return [
+            SuspensionRecord(
+                instrument_id=row["instrument_id"],
+                suspend_date=_to_required_date(row["suspend_date"]),
+                resume_date=_to_date(row["resume_date"]),
+                suspend_reason=_none_if_na(row["suspend_reason"]),
+                source_record_id=row["source_record_id"],
+            ) for row in pd.read_parquet(self.suspensions_path).to_dict("records")
+        ]
 
     def save_daily_basic_by_date(self, items: list[DailyBasic], trade_date: date) -> Path:
         frame = _daily_basic_to_frame(items)

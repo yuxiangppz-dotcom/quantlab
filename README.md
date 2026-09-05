@@ -52,7 +52,8 @@ trading step reproducible and free of look-ahead bias.
 - [x] Freeze held positions missing a price (`freeze_held_no_price`)
 - [x] Lifecycle Date Semantics (done / frozen; v1 remains a candidate)
 - [x] Lifecycle Risk Policy v0 (implemented / engineering validation)
-- [ ] Systematic Lifecycle Event Data (deferred / next)
+- [x] Systematic Lifecycle Event Data v0 foundation (raw/canonical/PIT/audit)
+- [ ] Systematic announcement coverage (blocked: current Tushare account lacks `anns_d`)
 - [ ] A-share execution constraints
 
 **Live**
@@ -204,6 +205,9 @@ uv run python scripts/update_market_data.py \
 
 uv run python scripts/update_market_data.py \
     --start 2010-01-01 --end 2026-09-04 --daily-basic
+
+uv run python scripts/update_market_data.py \
+    --start 2020-01-01 --end 2020-12-31 --lifecycle-context
 ```
 
 `--daily-all` / `--adj-factor` / `--daily-basic` are resumable: existing files
@@ -211,6 +215,32 @@ are skipped unless `--force` is passed. `--securities` and `--calendar` upsert
 (merge) rather than replace.
 
 The `data/` directory is git-ignored; canonical data is never committed.
+
+## Systematic Lifecycle Event Data v0
+
+`SecurityLifecycleEvent` is a separate canonical layer: a raw, date-partitioned
+announcement index is classified with a versioned Chinese-title rule, then only
+an unambiguous formal **termination decision** becomes a trusted event. Its
+daily `available_from` is always the first open session *after* its announcement
+date—even when a source retains an intraday timestamp. ST status, suspensions,
+and name changes are stored only as context; none can trigger an exit.
+
+Run the source capability/coverage audit independently from the risk-policy
+experiment:
+
+```bash
+uv run python scripts/run_lifecycle_event_coverage.py
+```
+
+The current live probe (declared account tier: 5,000 points) found `stock_basic`,
+`stock_st`, `suspend_d`, and `namechange` callable, but `anns_d` unavailable;
+the `suspend_d` probe also reaches its known page limit and is therefore not
+treated as complete coverage.
+The runner therefore writes `blocked_by_missing_anns_d_permission`, performs no
+manual announcement discovery, and leaves `config/delisting_facts_v2.json` as
+the regression gold reference. If `anns_d` access is later granted, the same
+runner resumes daily raw-index synchronization, normalization, golden matching,
+coverage, and the `002509.SZ` diagnostic automatically.
 
 ## Research Commands
 

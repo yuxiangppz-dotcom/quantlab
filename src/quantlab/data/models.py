@@ -6,6 +6,8 @@ Field names here are the project's own vocabulary; provider-specific fields
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -116,6 +118,79 @@ class DailyBasic:
     turnover_rate: float
     total_mv: float
     circ_mv: float
+
+
+@dataclass(frozen=True)
+class RawLifecycleAnnouncement:
+    """Provider-neutral, date-partitioned announcement-index record.
+
+    The index is deliberately raw: classification is performed by the
+    lifecycle service, never at the provider boundary.  ``raw_payload`` is a
+    stable JSON string retained for audit and replay rather than a provider
+    object that could change shape between client versions.
+    """
+
+    source: str
+    source_record_id: str
+    instrument_id: str | None
+    announcement_date: date
+    announcement_time: str | None
+    title: str
+    source_url: str | None
+    raw_payload: str
+    content_fingerprint: str
+
+
+@dataclass(frozen=True)
+class SecurityLifecycleEvent:
+    """Immutable canonical lifecycle event usable by PIT consumers.
+
+    v0 only emits ``termination_decision``.  Other lifecycle categories remain
+    classification context and never drive the risk overlay.
+    """
+
+    event_id: str
+    instrument_id: str
+    event_type: str
+    event_date: date
+    event_time: str | None
+    available_from: date
+    effective_date: date | None
+    source: str
+    source_record_id: str
+    source_url: str | None
+    raw_title: str
+    verification_status: str
+    classification_reason: str
+    content_fingerprint: str
+
+
+@dataclass(frozen=True)
+class StockSTStatus:
+    """Raw ST status context; it is never itself a liquidation trigger."""
+
+    instrument_id: str
+    trade_date: date
+    name: str | None
+    status: str | None
+    source_record_id: str
+
+
+@dataclass(frozen=True)
+class SuspensionRecord:
+    """Raw suspension context; an absent row is explicitly not tradability."""
+
+    instrument_id: str
+    suspend_date: date
+    resume_date: date | None
+    suspend_reason: str | None
+    source_record_id: str
+
+
+def canonical_payload_fingerprint(payload: dict[str, Any]) -> str:
+    """Return a deterministic SHA-256 fingerprint for a provider payload."""
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def market_from_symbol(symbol: str) -> str:

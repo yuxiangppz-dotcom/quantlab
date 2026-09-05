@@ -16,8 +16,12 @@ from quantlab.data.models import (
     AdjFactor,
     DailyBar,
     DailyBasic,
+    RawLifecycleAnnouncement,
     Security,
+    StockSTStatus,
+    SuspensionRecord,
     TradingCalendar,
+    canonical_payload_fingerprint,
     format_yyyymmdd,
     parse_instrument_id,
     parse_required_yyyymmdd,
@@ -104,6 +108,65 @@ def daily_basic_from_row(row: Mapping[str, Any]) -> DailyBasic:
     )
 
 
+def _optional_text(row: Mapping[str, Any], *names: str) -> str | None:
+    for name in names:
+        value = row.get(name)
+        if value is not None and not pd.isna(value):
+            text = str(value).strip()
+            if text:
+                return text
+    return None
+
+
+def lifecycle_announcement_from_row(row: Mapping[str, Any]) -> RawLifecycleAnnouncement:
+    """Convert a Tushare ``anns_d`` index row without classifying its title."""
+    payload = dict(row)
+    announcement_date = parse_required_yyyymmdd(
+        payload.get("ann_date") or payload.get("trade_date")
+    )
+    record_id = _optional_text(payload, "ann_id", "id", "source_record_id")
+    fingerprint = canonical_payload_fingerprint(payload)
+    return RawLifecycleAnnouncement(
+        source="tushare.anns_d",
+        source_record_id=record_id or fingerprint,
+        instrument_id=_optional_text(payload, "ts_code"),
+        announcement_date=announcement_date,
+        announcement_time=_optional_text(payload, "ann_time", "rec_time"),
+        title=_optional_text(payload, "title", "name") or "",
+        source_url=_optional_text(payload, "url", "source_url"),
+        raw_payload=pd.Series(payload).to_json(force_ascii=False, date_format="iso"),
+        content_fingerprint=fingerprint,
+    )
+
+
+def stock_st_from_row(row: Mapping[str, Any]) -> StockSTStatus:
+    payload = dict(row)
+    record_id = _optional_text(payload, "id", "source_record_id")
+    record_id = record_id or canonical_payload_fingerprint(payload)
+    return StockSTStatus(
+        instrument_id=str(payload["ts_code"]),
+        trade_date=parse_required_yyyymmdd(payload.get("trade_date") or payload.get("ann_date")),
+        name=_optional_text(payload, "name"),
+        status=_optional_text(payload, "status", "type"),
+        source_record_id=record_id,
+    )
+
+
+def suspension_from_row(row: Mapping[str, Any]) -> SuspensionRecord:
+    payload = dict(row)
+    record_id = _optional_text(payload, "id", "source_record_id")
+    record_id = record_id or canonical_payload_fingerprint(payload)
+    return SuspensionRecord(
+        instrument_id=str(payload["ts_code"]),
+        suspend_date=parse_required_yyyymmdd(
+            payload.get("suspend_date") or payload.get("trade_date")
+        ),
+        resume_date=parse_yyyymmdd(payload.get("resume_date")),
+        suspend_reason=_optional_text(payload, "suspend_reason", "reason"),
+        source_record_id=record_id,
+    )
+
+
 class TushareProvider(DataProvider):
     """Data provider backed by the Tushare HTTP API."""
 
@@ -167,3 +230,70 @@ class TushareProvider(DataProvider):
             fields="ts_code,trade_date,turnover_rate,total_mv,circ_mv",
         )
         return [daily_basic_from_row(row) for row in frame.to_dict("records")]
+
+    def get_lifecycle_announcements_by_date(
+        self, announcement_date: date
+    ) -> list[RawLifecycleAnnouncement]:
+        frame = self._pro.anns_d(ann_date=format_yyyymmdd(announcement_date))
+        return [lifecycle_announcement_from_row(row) for row in frame.to_dict("records")]
+
+    def get_stock_st(self, start_date: date, end_date: date) -> list[StockSTStatus]:
+        frame = self._pro.stock_st(
+            start_date=format_yyyymmdd(start_date), end_date=format_yyyymmdd(end_date)
+        )
+        return [stock_st_from_row(row) for row in frame.to_dict("records")]
+
+    def get_suspensions(self, start_date: date, end_date: date) -> list[SuspensionRecord]:
+        rows: list[dict[str, Any]] = []
+        current = start_date
+        while current <= end_date:
+            frame = self._pro.suspend_d(suspend_date=format_yyyymmdd(current))
+            if len(frame) >= 5000:
+                raise RuntimeError("suspend_d response reached provider page limit")
+            rows.extend(frame.to_dict("records"))
+            current = date.fromordinal(current.toordinal() + 1)
+        return [suspension_from_row(row) for row in rows]
+
+    def probe_lifecycle_capabilities(self, probe_date: date) -> dict[str, dict[str, object]]:
+        """Perform minimal API calls and return only safe capability metadata.
+
+        Provider error text can include operational details, so it is never
+        retained or surfaced.  The result intentionally contains only endpoint,
+        outcome, row count and exception class.
+        """
+        def probe(endpoint: str, call) -> dict[str, object]:
+            try:
+                frame = call()
+                result: dict[str, object] = {
+                    "endpoint": endpoint,
+                    "status": "available",
+                    "row_count": int(len(frame)),
+                }
+                if len(frame) >= 5000:
+                    result["limit_warning"] = "response_reaches_known_page_limit"
+                return result
+            except Exception as exc:  # API-specific exception types are unstable.
+                return {
+                    "endpoint": endpoint,
+                    "status": "unavailable",
+                    "error_class": type(exc).__name__,
+                }
+
+        day = format_yyyymmdd(probe_date)
+        return {
+            "stock_basic": probe(
+                "stock_basic",
+                lambda: self._pro.stock_basic(
+                    exchange="", list_status="L", fields="ts_code"
+                ),
+            ),
+            "stock_st": probe("stock_st", lambda: self._pro.stock_st(start_date=day, end_date=day)),
+            "suspend_d": probe("suspend_d", lambda: self._pro.suspend_d(suspend_date=day)),
+            "anns_d": probe("anns_d", lambda: self._pro.anns_d(ann_date=day)),
+            "namechange": probe(
+                "namechange",
+                lambda: self._pro.namechange(
+                    ts_code="000001.SZ", start_date=day, end_date=day
+                ),
+            ),
+        }

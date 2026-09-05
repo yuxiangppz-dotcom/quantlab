@@ -20,6 +20,8 @@ from quantlab.data import (
     sync_adj_factor_history,
     sync_daily_basic_history,
     sync_daily_history,
+    sync_lifecycle_announcement_index,
+    sync_lifecycle_context,
 )
 
 
@@ -67,6 +69,16 @@ def main() -> None:
         help="Download full-market daily basic metrics for every open trading day.",
     )
     parser.add_argument(
+        "--lifecycle-announcements",
+        action="store_true",
+        help="Download raw daily lifecycle announcement-index records (requires anns_d access).",
+    )
+    parser.add_argument(
+        "--lifecycle-context",
+        action="store_true",
+        help="Download ST and suspension context (never an exit trigger).",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Re-download data even if the local file already exists.",
@@ -88,11 +100,13 @@ def main() -> None:
         or args.daily_all
         or args.adj_factor
         or args.daily_basic
+        or args.lifecycle_announcements
+        or args.lifecycle_context
         or args.symbols
     ):
         parser.error(
             "at least one of --securities/--calendar/--daily-all/--adj-factor/"
-            "--daily-basic/--symbols is required"
+            "--daily-basic/--lifecycle-announcements/--lifecycle-context/--symbols is required"
         )
 
     provider = TushareProvider()
@@ -135,6 +149,22 @@ def main() -> None:
         print(
             f"daily_basic: {result.total} open days, {result.synced} downloaded, "
             f"{result.skipped} skipped"
+        )
+
+    if args.lifecycle_announcements:
+        result = sync_lifecycle_announcement_index(
+            provider, storage, args.start, args.end, force=args.force
+        )
+        print(
+            f"lifecycle announcements: {result.total} days, {result.synced} downloaded, "
+            f"{result.skipped} skipped"
+        )
+
+    if args.lifecycle_context:
+        result = sync_lifecycle_context(provider, storage, args.start, args.end)
+        print(
+            f"lifecycle context: stock_st {result['stock_st']} rows, "
+            f"suspensions {result['suspensions']} rows"
         )
 
 
