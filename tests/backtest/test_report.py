@@ -1,9 +1,11 @@
+from dataclasses import replace
 from datetime import date, timedelta
 
 import pytest
 
 from quantlab.backtest import BacktestConfig, DailyBacktestRecord, compute_metrics
-from quantlab.backtest.report import build_report
+from quantlab.backtest.models import DelistingSettlementConfig, SettlementRecord
+from quantlab.backtest.report import _settlement_disclosure, build_report
 
 START = date(2026, 1, 5)
 
@@ -170,3 +172,91 @@ def test_metrics_computed_consistently() -> None:
     expected = compute_metrics(recs, [], _cfg())
     assert rep["metrics"]["total_return_net"] == pytest.approx(expected["total_return_net"])
     assert rep["metrics"]["n_records"] == expected["n_records"]
+
+
+def _settlement(instrument_id, days_since_mark, blocking_session) -> SettlementRecord:
+    event_date = blocking_session - timedelta(days=(days_since_mark or 0) + 7)
+    last_mark = (
+        blocking_session - timedelta(days=days_since_mark)
+        if days_since_mark is not None
+        else None
+    )
+    return SettlementRecord(
+        instrument_id=instrument_id,
+        book="net",
+        event_type="delist",
+        event_date=event_date,
+        blocking_session=blocking_session,
+        last_mark_value=1000.0,
+        last_mark_date=last_mark,
+        recovery_rate=1.0,
+        settlement_fee=0.0,
+        settled_value=1000.0,
+        recovery_shortfall=0.0,
+        description="synthetic settlement for disclosure stats",
+    )
+
+
+def test_settlement_disclosure_days_since_last_mark_stats() -> None:
+    sessions = _sessions(5)
+    cfg = BacktestConfig(
+        initial_nav=1.0,
+        transaction_cost_bps=0.0,
+        annualization=252,
+        delisting_settlement=DelistingSettlementConfig(
+            recovery_rate=1.0, settlement_fee_bps=0.0
+        ),
+    )
+    strict = _result(
+        "completed_with_settlement_assumptions",
+        records=_records(5),
+    )
+    # 4 settled instruments; each settlement applies at a later session
+    events = [
+        _settlement("000001.SZ", 3, sessions[1]),
+        _settlement("000002.SZ", 7, sessions[2]),
+        _settlement("000004.SZ", 11, sessions[3]),
+        _settlement("000005.SZ", 21, sessions[4]),
+    ]
+    strict = replace(strict, settlement_events=events)
+    disclosure = _settlement_disclosure(strict, cfg)
+    stats = disclosure["days_since_last_mark_stats"]
+    # ages sorted: [3, 7, 11, 21]
+    assert stats["p25"] == pytest.approx(6.0)
+    assert stats["median"] == pytest.approx(9.0)
+    assert stats["p75"] == pytest.approx(13.5)
+    assert stats["max"] == 21
+
+
+def test_settlement_disclosure_stats_single_and_missing_marks() -> None:
+    sessions = _sessions(2)
+    cfg = BacktestConfig(
+        initial_nav=1.0,
+        transaction_cost_bps=0.0,
+        annualization=252,
+        delisting_settlement=DelistingSettlementConfig(
+            recovery_rate=0.0, settlement_fee_bps=0.0
+        ),
+    )
+    strict = _result("completed_with_settlement_assumptions", records=_records(2))
+    events = [
+        _settlement("000001.SZ", 5, sessions[1]),
+        _settlement("000002.SZ", None, sessions[1]),  # unknown last mark
+    ]
+    strict = replace(strict, settlement_events=events)
+    disclosure = _settlement_disclosure(strict, cfg)
+    stats = disclosure["days_since_last_mark_stats"]
+    # only one instrument has a computable mark age
+    assert stats["p25"] == stats["median"] == stats["p75"] == stats["max"] == 5
+
+    empty = _result(
+        "completed_with_settlement_assumptions", records=_records(2)
+    )
+    empty = replace(
+        empty,
+        settlement_events=[_settlement("000003.SZ", None, sessions[1])],
+    )
+    disclosure_empty = _settlement_disclosure(empty, cfg)
+    assert disclosure_empty["days_since_last_mark_stats"] == {
+        "p25": None, "median": None, "p75": None, "max": None,
+    }

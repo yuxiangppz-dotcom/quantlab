@@ -16,6 +16,7 @@ from quantlab.data.models import (
     AdjFactor,
     DailyBar,
     DailyBasic,
+    IndexDailyBar,
     NameChangeRecord,
     RawLifecycleAnnouncement,
     Security,
@@ -83,6 +84,25 @@ def daily_bar_from_row(row: Mapping[str, Any]) -> DailyBar:
         pre_close=_to_float(row["pre_close"]),
         volume=_to_float(row["vol"]) * 100,
         amount=_to_float(row["amount"]) * 1000,
+    )
+
+
+def index_daily_from_row(row: Mapping[str, Any]) -> IndexDailyBar:
+    """Map a Tushare ``index_daily`` row to an :class:`IndexDailyBar`.
+
+    Units follow the daily-bar convention: ``vol`` hands -> shares (x100) and
+    ``amount`` thousands of yuan -> CNY (x1000).
+    """
+    return IndexDailyBar(
+        instrument_id=str(row["ts_code"]),
+        trade_date=parse_required_yyyymmdd(row["trade_date"]),
+        open=_to_float(row.get("open")),
+        high=_to_float(row.get("high")),
+        low=_to_float(row.get("low")),
+        close=_to_float(row["close"]),
+        pre_close=_to_float(row["pre_close"]),
+        volume=_to_float(row.get("vol")) * 100,
+        amount=_to_float(row.get("amount")) * 1000,
     )
 
 
@@ -268,6 +288,16 @@ class TushareProvider(DataProvider):
             end_date=format_yyyymmdd(end_date),
         )
         return [name_change_from_row(row) for row in frame.to_dict("records")]
+
+    def get_index_daily(
+        self, instrument_id: str, start_date: date, end_date: date
+    ) -> list[IndexDailyBar]:
+        frame = self._pro.index_daily(
+            ts_code=instrument_id,
+            start_date=format_yyyymmdd(start_date),
+            end_date=format_yyyymmdd(end_date),
+        )
+        return [index_daily_from_row(row) for row in frame.to_dict("records")]
 
     def probe_lifecycle_capabilities(self, probe_date: date) -> dict[str, dict[str, object]]:
         """Perform minimal API calls and return only safe capability metadata.

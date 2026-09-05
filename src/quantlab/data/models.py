@@ -80,6 +80,26 @@ class DailyBar:
 
 
 @dataclass(frozen=True)
+class IndexDailyBar:
+    """A single index daily bar (e.g. 000300.SH).
+
+    ``instrument_id`` reuses the stock-id format ("code.market"); index codes
+    never collide with A-share stock codes. ``volume`` is in shares and
+    ``amount`` is in Chinese yuan (CNY), converted at the provider boundary.
+    """
+
+    instrument_id: str
+    trade_date: date
+    open: float
+    high: float
+    low: float
+    close: float
+    pre_close: float
+    volume: float
+    amount: float
+
+
+@dataclass(frozen=True)
 class AdjFactor:
     """A single cumulative adjustment factor (Tushare's raw cumulative factor)."""
 

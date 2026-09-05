@@ -1,5 +1,13 @@
 """Research backtest."""
 
+from quantlab.backtest.benchmark import (
+    BenchmarkComparison,
+    align_returns,
+    compare_benchmark,
+    equal_weight_returns_from_frame,
+    returns_from_closes,
+    strategy_daily_returns,
+)
 from quantlab.backtest.engine import (
     MISSING_PRICE_POLICY,
     run_backtest,
@@ -48,6 +56,7 @@ __all__ = [
     "AccountingResidual",
     "BacktestConfig",
     "BacktestResult",
+    "BenchmarkComparison",
     "BookSnapshot",
     "DELIST_DATE_IS_FIRST_INVALID_V1",
     "DailyBacktestRecord",
@@ -72,12 +81,17 @@ __all__ = [
     "EXIT_POLICY_ID",
     "EXIT_POLICY_NAME",
     "EXIT_POLICY_VERSION",
+    "align_returns",
     "build_report",
+    "compare_benchmark",
     "compute_metrics",
+    "equal_weight_returns_from_frame",
     "first_invalid_open_session",
     "is_instrument_invalid_on_delist_boundary",
+    "returns_from_closes",
     "run_backtest",
     "risk_policy_statistics",
+    "strategy_daily_returns",
     "termination_decisions_available_as_of",
     "weekly_signal_dates",
 ]

@@ -8,10 +8,29 @@ from quantlab.data.models import (
     AdjFactor,
     DailyBar,
     DataValidationError,
+    IndexDailyBar,
     Security,
     TradingCalendar,
 )
-from quantlab.data.tushare_provider import TushareProvider
+from quantlab.data.tushare_provider import TushareProvider, index_daily_from_row
+
+
+def _index_row(**overrides):
+    row = {
+        "ts_code": "000300.SH",
+        "trade_date": "20260102",
+        "open": 3980.0,
+        "high": 4010.0,
+        "low": 3975.0,
+        "close": 4000.0,
+        "pre_close": 3990.0,
+        "change": 10.0,
+        "pct_chg": 0.2506,
+        "vol": 12_345_678.0,
+        "amount": 123_456_789.0,
+    }
+    row.update(overrides)
+    return row
 
 
 def _daily_row(**overrides):
@@ -61,6 +80,31 @@ def test_calendar_from_row() -> None:
         trade_date=date(2026, 1, 1),
         is_open=True,
     )
+
+
+def test_index_daily_from_row_unit_conversion() -> None:
+    assert index_daily_from_row(_index_row()) == IndexDailyBar(
+        instrument_id="000300.SH",
+        trade_date=date(2026, 1, 2),
+        open=3980.0,
+        high=4010.0,
+        low=3975.0,
+        close=4000.0,
+        pre_close=3990.0,
+        # Tushare index_daily vol is in hands -> shares (x100)
+        volume=1_234_567_800.0,
+        # Tushare index_daily amount is in thousands of yuan -> CNY (x1000)
+        amount=123_456_789_000.0,
+    )
+
+
+def test_index_daily_from_row_accepts_none_vol_amount() -> None:
+    import math
+
+    bar = index_daily_from_row(_index_row(vol=None, amount=None))
+    # early index history may omit turnover; the mapping must not raise
+    assert math.isnan(bar.volume) and math.isnan(bar.amount)
+    assert bar.close == 4000.0
 
 
 def test_daily_bar_from_row() -> None:

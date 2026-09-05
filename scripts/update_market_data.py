@@ -7,6 +7,8 @@ Usage:
     uv run python scripts/update_market_data.py --start 2026-08-01 --end 2026-09-04 --daily-all
     uv run python scripts/update_market_data.py --start 2026-08-01 --end 2026-09-04 \
         --daily-all --force
+    uv run python scripts/update_market_data.py --start 2010-01-04 --end 2026-09-04 \
+        --index-daily
 """
 
 from __future__ import annotations
@@ -20,9 +22,12 @@ from quantlab.data import (
     sync_adj_factor_history,
     sync_daily_basic_history,
     sync_daily_history,
+    sync_index_daily_history,
     sync_lifecycle_announcement_index,
     sync_lifecycle_context,
 )
+
+INDEX_INSTRUMENTS = ("000300.SH", "000905.SH", "000852.SH")
 
 
 def _parse_date(value: str) -> date:
@@ -69,6 +74,14 @@ def main() -> None:
         help="Download full-market daily basic metrics for every open trading day.",
     )
     parser.add_argument(
+        "--index-daily",
+        action="store_true",
+        help=(
+            "Download index daily bars for the benchmark indices "
+            f"({', '.join(INDEX_INSTRUMENTS)})."
+        ),
+    )
+    parser.add_argument(
         "--lifecycle-announcements",
         action="store_true",
         help="Download raw daily lifecycle announcement-index records (requires anns_d access).",
@@ -100,13 +113,15 @@ def main() -> None:
         or args.daily_all
         or args.adj_factor
         or args.daily_basic
+        or args.index_daily
         or args.lifecycle_announcements
         or args.lifecycle_context
         or args.symbols
     ):
         parser.error(
             "at least one of --securities/--calendar/--daily-all/--adj-factor/"
-            "--daily-basic/--lifecycle-announcements/--lifecycle-context/--symbols is required"
+            "--daily-basic/--index-daily/--lifecycle-announcements/"
+            "--lifecycle-context/--symbols is required"
         )
 
     provider = TushareProvider()
@@ -148,6 +163,16 @@ def main() -> None:
         )
         print(
             f"daily_basic: {result.total} open days, {result.synced} downloaded, "
+            f"{result.skipped} skipped"
+        )
+
+    if args.index_daily:
+        result = sync_index_daily_history(
+            provider, storage, args.start, args.end,
+            instrument_ids=list(INDEX_INSTRUMENTS), force=args.force,
+        )
+        print(
+            f"index_daily: {result.total} open days, {result.synced} downloaded, "
             f"{result.skipped} skipped"
         )
 

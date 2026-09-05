@@ -9,6 +9,7 @@ from quantlab.data.models import (
     AdjFactor,
     DailyBar,
     DailyBasic,
+    IndexDailyBar,
     NameChangeRecord,
     RawLifecycleAnnouncement,
     Security,
@@ -69,3 +70,9 @@ class DataProvider(ABC):
         self, instrument_id: str, start_date: date, end_date: date
     ) -> list[NameChangeRecord]:
         """Return source-provided name history for one explicitly scoped instrument."""
+
+    @abstractmethod
+    def get_index_daily(
+        self, instrument_id: str, start_date: date, end_date: date
+    ) -> list[IndexDailyBar]:
+        """Return index daily bars for one index instrument and date range."""

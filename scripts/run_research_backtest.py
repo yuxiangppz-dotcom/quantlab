@@ -12,6 +12,12 @@ first performance-valid strict full-period baseline; the recovery-0.0 path
 brackets the assumption from below. Settlement is an explicit accounting
 assumption, not a verified delisting fact.
 
+The two settlement bounds are attributed against four benchmarks (000300.SH,
+000905.SH, 000852.SH index daily closes and a V1-universe equal-weight
+benchmark computed from canonical data) via a strict date inner join. The
+legacy blocked strict path carries a footnote only (no benchmark attribution
+for a blocked path). Risk-free rate stays at 0.0.
+
 Fixed engineering configuration: momentum_20d (lower_is_better), weekly
 rebalance, V1 universe, 20% selection, 10 bps transaction cost.
 """
@@ -59,6 +65,11 @@ from quantlab.backtest.audit import (
     fingerprint_targets,
     symmetry_audit,
 )
+from quantlab.backtest.benchmark import (
+    compare_benchmark,
+    equal_weight_returns_from_frame,
+    returns_from_closes,
+)
 from quantlab.backtest.delisting_facts import (
     load_validated_facts,
     retrieval_status_summary,
@@ -79,6 +90,9 @@ EXPERIMENT_SCHEMA = "lifecycle_date_semantics_v0_1_1"
 PERIOD_START = date(2020, 1, 1)
 PERIOD_END = date(2024, 12, 31)
 LOOKBACK = 20
+INDEX_BENCHMARKS = ("000300.SH", "000905.SH", "000852.SH")
+EQUAL_WEIGHT_BENCHMARK = "equal_weight_v1"
+BENCHMARK_ORDER = (*INDEX_BENCHMARKS, EQUAL_WEIGHT_BENCHMARK)
 
 
 def _git_sha() -> str | None:
@@ -380,6 +394,153 @@ def _date_semantics_table(open_dates: list, delist_map: dict) -> list[dict]:
     return rows
 
 
+def _index_benchmark_returns(
+    storage: ParquetStorage, coverage_dates: list[date], instrument_id: str
+) -> dict[date, float]:
+    """Load one index's per-session returns from canonical index_daily.
+
+    Every open session in ``coverage_dates`` must have a stored file (synced
+    by ``sync_index_daily_history``); a missing file is an error, never a
+    silent gap, because a gap would corrupt the return denominator.
+    """
+    missing = [d for d in coverage_dates if not storage.index_daily_exists(d)]
+    if missing:
+        first, last = missing[0], missing[-1]
+        raise RuntimeError(
+            f"index_daily data missing for {instrument_id} on {len(missing)} "
+            f"sessions ({first} .. {last}); run sync_index_daily_history first"
+        )
+    closes: list[tuple[date, float]] = []
+    for d in sorted(coverage_dates):
+        for bar in storage.load_index_daily_by_date(d):
+            if bar.instrument_id == instrument_id:
+                closes.append((bar.trade_date, bar.close))
+    if not closes:
+        raise RuntimeError(
+            f"no index_daily rows found for {instrument_id} "
+            f"({coverage_dates[0]} .. {coverage_dates[-1]})"
+        )
+    return returns_from_closes(closes)
+
+
+def _build_benchmark_returns(
+    storage: ParquetStorage, coverage_dates: list[date], universe: pd.DataFrame
+) -> dict[str, dict[date, float]]:
+    """All benchmark return series keyed by benchmark name (strict PIT)."""
+    benchmarks: dict[str, dict[date, float]] = {}
+    for instrument_id in INDEX_BENCHMARKS:
+        benchmarks[instrument_id] = _index_benchmark_returns(
+            storage, coverage_dates, instrument_id
+        )
+    benchmarks[EQUAL_WEIGHT_BENCHMARK] = equal_weight_returns_from_frame(
+        universe[["instrument_id", "trade_date", "adj_close"]]
+    )
+    return benchmarks
+
+
+def _benchmark_comparison_section(
+    settlement_strict,
+    settlement_zero_strict,
+    legacy_strict,
+    benchmark_returns: dict[str, dict[date, float]],
+    annualization: int,
+) -> dict:
+    """2 bounds x 4 benchmarks attribution for the primary valid result.
+
+    The settlement bounds are the primary performance-valid strict baselines;
+    the legacy strict path is blocked and only carries a footnote (benchmark
+    attribution for a blocked path would be meaningless beyond its
+    ``valid_through`` prefix).
+    """
+    comparisons: dict[str, dict] = {}
+    for bound_key, result in (
+        ("recovery_1", settlement_strict),
+        ("recovery_0", settlement_zero_strict),
+    ):
+        rows = {}
+        for name in BENCHMARK_ORDER:
+            stats = compare_benchmark(
+                result.records, name, benchmark_returns[name],
+                annualization=annualization, book="net",
+            )
+            rows[name] = stats.to_dict()
+        comparisons[bound_key] = rows
+
+    equal_weight_v1_note = (
+        "cross-sectional equal-weight daily returns of the V1 universe from "
+        "canonical adjusted closes; rows are restricted to each instrument's "
+        "[list_date, delist_date] window so delisted names stop contributing "
+        "after their last available bar (no fill); a suspended name "
+        "accumulates its return into the next available session"
+    )
+
+    def _beta_vs_equal_weight(rows: dict) -> float:
+        return rows[EQUAL_WEIGHT_BENCHMARK]["beta"]
+
+    return {
+        "note": (
+            "attribution of the primary valid strict result (delisting "
+            "settlement bounds) against 4 benchmarks; strict inner join on "
+            "actual record dates (missing benchmark dates are dropped, never "
+            "filled); risk-free rate = 0.0; alpha is daily OLS, "
+            "alpha_annualized = alpha_daily * annualization (arithmetic)"
+        ),
+        "risk_free_rate": 0.0,
+        "annualization": annualization,
+        "book": "net",
+        "benchmark_definitions": {
+            "000300.SH": "tushare index_daily, canonical index_daily partition",
+            "000905.SH": "tushare index_daily, canonical index_daily partition",
+            "000852.SH": "tushare index_daily, canonical index_daily partition",
+            EQUAL_WEIGHT_BENCHMARK: equal_weight_v1_note,
+        },
+        "primary_valid_result": {
+            "policy": "delisting_settlement_v0 (recovery bounds 1.0 / 0.0)",
+            **comparisons,
+            "beta_vs_equal_weight_v1": {
+                "recovery_1": _beta_vs_equal_weight(comparisons["recovery_1"]),
+                "recovery_0": _beta_vs_equal_weight(comparisons["recovery_0"]),
+                "interpretation_note": (
+                    "the strategy is a ~20% cross-sectional slice of the same "
+                    "V1 universe in which equal_weight_v1 invests fully, so "
+                    "beta against equal_weight_v1 is expected to be close to 1"
+                ),
+            },
+        },
+        "legacy_blocked_path_footnote": {
+            "path": "strict (legacy delist-date blocking, no settlement)",
+            "status": legacy_strict.status,
+            "note": (
+                "the legacy strict path is blocked_by_unsupported_event; no "
+                "benchmark attribution is computed for it because its return "
+                "series ends at the first blocking session and any "
+                "full-period comparison would be meaningless"
+            ),
+        },
+    }
+
+
+def _print_benchmark_table(section: dict) -> None:
+    """Human-readable 2x4 comparison table."""
+    print("benchmark comparison (net book):")
+    primary = section["primary_valid_result"]
+    header = (
+        f"  {'benchmark':<16}{'n_obs':>7}{'beta':>8}{'alpha_ann':>11}"
+        f"{'TE':>8}{'IR':>8}{'act_CAGR':>10}{'cum_act':>10}"
+    )
+    for bound_key in ("recovery_1", "recovery_0"):
+        print(f"  [{bound_key}]")
+        print(header)
+        for name in BENCHMARK_ORDER:
+            row = primary[bound_key][name]
+            print(
+                f"  {name:<16}{row['n_obs']:>7}{row['beta']:>8.3f}"
+                f"{row['alpha_annualized']:>11.4f}{row['tracking_error']:>8.4f}"
+                f"{row['information_ratio']:>8.3f}{row['active_cagr']:>10.4f}"
+                f"{row['cumulative_active_return']:>10.4f}"
+            )
+
+
 def _settlement_bound(result, config) -> dict:
     """Bound-level metrics, affected instruments and average settled weight."""
     metrics = compute_metrics(result.records, result.rebalances, config)
@@ -627,6 +788,14 @@ def _main() -> None:
         price_frame, bt_open_dates, targets, settlement_zero_config,
         execution_lag_sessions=1, mode=RUN_MODE_STRICT, lifecycle=monitor,
         requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
+    )
+
+    # benchmark attribution for the primary valid strict result (the two
+    # settlement bounds); padded_dates covers the first record's prior close
+    benchmark_returns = _build_benchmark_returns(storage, padded_dates, universe)
+    benchmark_section = _benchmark_comparison_section(
+        settlement_strict, settlement_zero_strict, strict_result, benchmark_returns,
+        bt_config.annualization,
     )
     runtime = time.perf_counter() - t0
 
@@ -924,6 +1093,7 @@ def _main() -> None:
             "statistics": _statistics(settlement_strict),
         },
         "settlement_sensitivity": settlement_sensitivity,
+        "benchmark_comparison": benchmark_section,
         "diagnostic": {
             "run_mode": diagnostic_result.run_mode,
             "status": diagnostic_result.status,
@@ -1095,6 +1265,7 @@ def _main() -> None:
     print(f"settlement bounds cagr_net: recovery_1={bound_full['cagr_net']:.4f} "
           f"recovery_0={bound_zero['cagr_net']:.4f} "
           f"delta={settlement_sensitivity['cagr_net_delta']:.4f}")
+    _print_benchmark_table(benchmark_section)
     print(f"output dir: {out_dir}")
     print(f"runtime: {runtime:.1f}s")
 

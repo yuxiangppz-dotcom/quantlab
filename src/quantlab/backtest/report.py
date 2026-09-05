@@ -80,6 +80,12 @@ def _settlement_disclosure(
     total_shortfall_net = math.fsum(row.recovery_shortfall for row in net_rows)
     total_fee_net = math.fsum(row.settlement_fee for row in net_rows)
 
+    mark_ages = sorted(
+        entry["days_since_last_mark"]
+        for entry in instruments
+        if entry["days_since_last_mark"] is not None
+    )
+
     return {
         "nature": (
             "explicit settlement assumption; not a market transaction and "
@@ -104,12 +110,35 @@ def _settlement_disclosure(
             if average_nav and math.isfinite(average_nav) and average_nav > 0
             else None
         ),
+        "days_since_last_mark_stats": {
+            "p25": _percentile(mark_ages, 0.25),
+            "median": _percentile(mark_ages, 0.5),
+            "p75": _percentile(mark_ages, 0.75),
+            "max": mark_ages[-1] if mark_ages else None,
+        },
         "stale_mark_risk": (
             "days_since_last_mark exposes how stale the settlement mark is; "
             "a large value means the last available price predates the "
             "settlement session by a long window"
         ),
     }
+
+
+def _percentile(sorted_values: list, quantile: float):
+    """Linear-interpolated percentile (numpy 'linear' default) of sorted input."""
+    if not sorted_values:
+        return None
+    if not 0.0 <= quantile <= 1.0:
+        raise ValueError(f"quantile out of range: {quantile}")
+    if len(sorted_values) == 1:
+        return sorted_values[0]
+    position = (len(sorted_values) - 1) * quantile
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return sorted_values[lower]
+    weight = position - lower
+    return sorted_values[lower] * (1.0 - weight) + sorted_values[upper] * weight
 
 
 def build_report(

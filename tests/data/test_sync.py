@@ -7,6 +7,7 @@ from quantlab.data.models import (
     DailyBar,
     DailyBasic,
     DataValidationError,
+    IndexDailyBar,
     RawLifecycleAnnouncement,
     StockSTStatus,
     SuspensionRecord,
@@ -20,11 +21,13 @@ from quantlab.data.sync import (
     sync_adj_factor_history,
     sync_daily_basic_history,
     sync_daily_history,
+    sync_index_daily_history,
     sync_lifecycle_announcement_index,
     sync_lifecycle_context,
     validate_adj_factors,
     validate_daily_bars,
     validate_daily_basic,
+    validate_index_daily_bars,
 )
 
 
@@ -78,7 +81,8 @@ def _daily_basic(**overrides) -> DailyBasic:
 
 class FakeProvider(DataProvider):
     def __init__(
-        self, calendar, daily_by_date, adj_by_date=None, basic_by_date=None, st=None, susp=None
+        self, calendar, daily_by_date, adj_by_date=None, basic_by_date=None, st=None, susp=None,
+        index_daily=None,
     ):
         self._calendar = calendar
         self._daily_by_date = daily_by_date
@@ -91,6 +95,8 @@ class FakeProvider(DataProvider):
         self._susp = susp or {}
         self.st_dates = []
         self.susp_dates = []
+        self._index_daily = index_daily or {}
+        self.index_downloaded = []
 
     def get_securities(self):
         return []
@@ -126,6 +132,16 @@ class FakeProvider(DataProvider):
 
     def get_name_changes(self, instrument_id, start_date, end_date):
         return []
+
+    def get_index_daily(self, instrument_id, start_date, end_date):
+        self.index_downloaded.append(instrument_id)
+        return [
+            bar
+            for day, bars in self._index_daily.items()
+            for bar in bars
+            if bar.instrument_id == instrument_id
+            and start_date <= day <= end_date
+        ]
 
 
 def _st(day, **overrides):
@@ -526,3 +542,133 @@ def test_sync_daily_basic_force_overwrites(tmp_path) -> None:
     )
     assert result.synced == 1
     assert storage.load_daily_basic_by_date(day)[0].total_mv == 999.0
+
+
+def _index_bar(instrument_id="000300.SH", day=date(2026, 1, 5), close=4000.0, **overrides):
+    values = dict(
+        instrument_id=instrument_id,
+        trade_date=day,
+        open=close * 0.999,
+        high=close * 1.001,
+        low=close * 0.998,
+        close=close,
+        pre_close=close * 0.997,
+        volume=1_000_000.0,
+        amount=4_000_000_000.0,
+    )
+    values.update(overrides)
+    return IndexDailyBar(**values)
+
+
+def test_validate_index_daily_ok() -> None:
+    validate_index_daily_bars([_index_bar()], date(2026, 1, 5))
+
+
+def test_validate_index_daily_empty_is_accepted() -> None:
+    # an index launched after the requested window legitimately has no row
+    validate_index_daily_bars([], date(2026, 1, 5))
+
+
+def test_validate_index_daily_duplicate_raises() -> None:
+    with pytest.raises(DataValidationError):
+        validate_index_daily_bars([_index_bar(), _index_bar()], date(2026, 1, 5))
+
+
+def test_validate_index_daily_wrong_date_raises() -> None:
+    with pytest.raises(DataValidationError):
+        validate_index_daily_bars(
+            [_index_bar(day=date(2026, 1, 6))], date(2026, 1, 5)
+        )
+
+
+def test_validate_index_daily_nonpositive_close_raises() -> None:
+    with pytest.raises(DataValidationError):
+        validate_index_daily_bars([_index_bar(close=0.0)], date(2026, 1, 5))
+
+
+def test_validate_index_daily_invalid_high_raises() -> None:
+    with pytest.raises(DataValidationError):
+        validate_index_daily_bars([_index_bar(high=1.0)], date(2026, 1, 5))
+
+
+def test_validate_index_daily_tolerates_missing_turnover() -> None:
+    # early index history may omit volume/amount (NaN); returns use close only
+    validate_index_daily_bars(
+        [_index_bar(volume=float("nan"), amount=float("nan"))], date(2026, 1, 5)
+    )
+    with pytest.raises(DataValidationError):
+        validate_index_daily_bars([_index_bar(volume=-1.0)], date(2026, 1, 5))
+
+
+def test_sync_index_daily_writes_partitions_per_open_day(tmp_path) -> None:
+    day1, day2 = date(2026, 1, 5), date(2026, 1, 6)
+    provider = FakeProvider(
+        calendar=_calendar(day1, day2),
+        daily_by_date={},
+        index_daily={
+            day1: [_index_bar(day=day1), _index_bar("000905.SH", day1, close=5000.0)],
+            day2: [_index_bar(day=day2), _index_bar("000905.SH", day2, close=5010.0)],
+        },
+    )
+    storage = ParquetStorage(tmp_path)
+    result = sync_index_daily_history(
+        provider, storage, day1, day2,
+        instrument_ids=["000300.SH", "000905.SH"],
+    )
+    assert result.total == 2 and result.synced == 2 and result.skipped == 0
+    assert provider.index_downloaded == ["000300.SH", "000905.SH"]
+    day1_rows = {b.instrument_id: b for b in storage.load_index_daily_by_date(day1)}
+    assert set(day1_rows) == {"000300.SH", "000905.SH"}
+    assert day1_rows["000905.SH"].close == 5000.0
+    assert storage.index_daily_exists(day2)
+
+
+def test_sync_index_daily_skips_existing_and_resumes(tmp_path) -> None:
+    day1, day2 = date(2026, 1, 5), date(2026, 1, 6)
+    storage = ParquetStorage(tmp_path)
+    storage.save_index_daily_by_date([_index_bar(day=day1)], day1)
+    provider = FakeProvider(
+        calendar=_calendar(day1, day2),
+        daily_by_date={},
+        index_daily={day2: [_index_bar(day=day2)]},
+    )
+    result = sync_index_daily_history(
+        provider, storage, day1, day2, instrument_ids=["000300.SH"]
+    )
+    assert provider.index_downloaded == ["000300.SH"]
+    assert result.synced == 1 and result.skipped == 1
+    # resume again: everything covered, no fetch
+    provider2 = FakeProvider(_calendar(day1, day2), daily_by_date={})
+    result2 = sync_index_daily_history(
+        provider2, storage, day1, day2, instrument_ids=["000300.SH"]
+    )
+    assert provider2.index_downloaded == []
+    assert result2.synced == 0 and result2.skipped == 2
+
+
+def test_sync_index_daily_persists_empty_day(tmp_path) -> None:
+    day = date(2026, 1, 5)
+    provider = FakeProvider(_calendar(day), daily_by_date={}, index_daily={})
+    storage = ParquetStorage(tmp_path)
+    result = sync_index_daily_history(
+        provider, storage, day, day, instrument_ids=["000300.SH"]
+    )
+    assert result.synced == 1
+    assert storage.index_daily_exists(day)
+    assert storage.load_index_daily_by_date(day) == []
+    # a rerun skips the persisted empty day instead of re-querying
+    provider2 = FakeProvider(_calendar(day), daily_by_date={}, index_daily={})
+    result2 = sync_index_daily_history(
+        provider2, storage, day, day, instrument_ids=["000300.SH"]
+    )
+    assert provider2.index_downloaded == []
+    assert result2.skipped == 1
+
+
+def test_sync_index_daily_requires_instruments(tmp_path) -> None:
+    provider = FakeProvider(_calendar(date(2026, 1, 5)), daily_by_date={})
+    with pytest.raises(DataValidationError):
+        sync_index_daily_history(
+            provider, ParquetStorage(tmp_path), date(2026, 1, 5), date(2026, 1, 5),
+            instrument_ids=[],
+        )

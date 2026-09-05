@@ -6,7 +6,13 @@ import math
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from quantlab.data.models import AdjFactor, DailyBar, DailyBasic, DataValidationError
+from quantlab.data.models import (
+    AdjFactor,
+    DailyBar,
+    DailyBasic,
+    DataValidationError,
+    IndexDailyBar,
+)
 from quantlab.data.provider import DataProvider
 from quantlab.data.storage import ParquetStorage
 
@@ -207,6 +213,107 @@ def sync_daily_history(
         storage.save_daily_bars_by_date(bars, trade_date)
         synced += 1
     return SyncResult(total=len(open_dates), synced=synced, skipped=skipped, filtered=filtered)
+
+
+def validate_index_daily_bars(bars: list[IndexDailyBar], expected_date: date) -> None:
+    """Validate one trading day's index bars; raise on failure.
+
+    Unlike stocks, an index may legitimately have no row for a date (e.g. an
+    index launched later than the requested window), so an empty list is
+    accepted; consistency of the rows that do exist is still enforced.
+    """
+    seen: set[tuple[str, date]] = set()
+    for bar in bars:
+        if bar.trade_date != expected_date:
+            raise DataValidationError(
+                f"Unexpected trade_date {bar.trade_date} (expected {expected_date}) "
+                f"for {bar.instrument_id}"
+            )
+        key = (bar.instrument_id, bar.trade_date)
+        if key in seen:
+            raise DataValidationError(
+                f"Duplicate index bar for {bar.instrument_id} on {bar.trade_date}"
+            )
+        seen.add(key)
+
+        for field_name, value in (
+            ("open", bar.open),
+            ("high", bar.high),
+            ("low", bar.low),
+            ("close", bar.close),
+            ("pre_close", bar.pre_close),
+        ):
+            if value is None or not math.isfinite(value) or value <= 0:
+                raise DataValidationError(
+                    f"Invalid {field_name} for {bar.instrument_id} "
+                    f"on {bar.trade_date}"
+                )
+
+        for field_name, value in (("volume", bar.volume), ("amount", bar.amount)):
+            # NaN volume/amount is tolerated (early index history may omit
+            # turnover; benchmark returns use close only), but a negative
+            # finite value is a data error.
+            if math.isfinite(value) and value < 0:
+                raise DataValidationError(
+                    f"Invalid {field_name} for {bar.instrument_id} "
+                    f"on {bar.trade_date}"
+                )
+
+        if bar.high < bar.open or bar.high < bar.close or bar.high < bar.low:
+            raise DataValidationError(
+                f"Invalid high for {bar.instrument_id} on {bar.trade_date}"
+            )
+        if bar.low > bar.open or bar.low > bar.close:
+            raise DataValidationError(
+                f"Invalid low for {bar.instrument_id} on {bar.trade_date}"
+            )
+
+
+def sync_index_daily_history(
+    provider: DataProvider,
+    storage: ParquetStorage,
+    start_date: date,
+    end_date: date,
+    instrument_ids: list[str],
+    force: bool = False,
+) -> SyncResult:
+    """Download and store index daily bars for the given index instruments.
+
+    Each open trading day is stored in its own partition file, matching the
+    daily-bar layout. Bars are fetched once per instrument over the full
+    window and re-grouped by date, so missing dates resume without re-fetching
+    covered instruments. A date with no rows is persisted as an empty file so
+    a later run skips it instead of re-querying (same resumability convention
+    as the lifecycle announcement index).
+    """
+    if not instrument_ids:
+        raise DataValidationError("sync_index_daily_history requires instrument_ids")
+    open_dates = _open_trade_dates(provider, start_date, end_date)
+    missing_dates = [
+        trade_date
+        for trade_date in open_dates
+        if force or not storage.index_daily_exists(trade_date)
+    ]
+    synced = 0
+    skipped = len(open_dates) - len(missing_dates)
+    if missing_dates:
+        by_date: dict[date, list[IndexDailyBar]] = {d: [] for d in missing_dates}
+        for instrument_id in instrument_ids:
+            try:
+                bars = provider.get_index_daily(instrument_id, start_date, end_date)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Failed to download index daily bars for {instrument_id}"
+                ) from exc
+            for bar in bars:
+                if bar.trade_date in by_date:
+                    by_date[bar.trade_date].append(bar)
+        for trade_date in missing_dates:
+            day_bars = sorted(by_date[trade_date], key=lambda b: b.instrument_id)
+            validate_index_daily_bars(day_bars, trade_date)
+            storage.save_index_daily_by_date(day_bars, trade_date)
+            synced += 1
+    return SyncResult(total=len(open_dates), synced=synced, skipped=skipped, filtered=0)
 
 
 def sync_adj_factor_history(

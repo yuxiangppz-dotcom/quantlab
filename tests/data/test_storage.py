@@ -3,7 +3,14 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from quantlab.data.models import AdjFactor, DailyBar, DailyBasic, Security, TradingCalendar
+from quantlab.data.models import (
+    AdjFactor,
+    DailyBar,
+    DailyBasic,
+    IndexDailyBar,
+    Security,
+    TradingCalendar,
+)
 from quantlab.data.storage import DuplicateDataError, ParquetStorage, find_duplicates
 
 
@@ -318,6 +325,64 @@ def test_daily_basic_duplicate_raises(tmp_path) -> None:
     trade_date = date(2026, 1, 2)
     with pytest.raises(DuplicateDataError):
         storage.save_daily_basic_by_date([_make_daily_basic(), _make_daily_basic()], trade_date)
+
+
+def _make_index_bar(**overrides) -> IndexDailyBar:
+    values = dict(
+        instrument_id="000300.SH",
+        trade_date=date(2026, 1, 2),
+        open=3980.0,
+        high=4010.0,
+        low=3975.0,
+        close=4000.0,
+        pre_close=3990.0,
+        volume=1_234_567_800.0,
+        amount=123_456_789_000.0,
+    )
+    values.update(overrides)
+    return IndexDailyBar(**values)
+
+
+def test_index_daily_round_trip(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    trade_date = date(2026, 1, 2)
+    expected = [_make_index_bar()]
+    storage.save_index_daily_by_date(expected, trade_date)
+    loaded = storage.load_index_daily_by_date(trade_date)
+    assert loaded == expected
+    assert isinstance(loaded[0].trade_date, date)
+    assert storage.index_daily_exists(trade_date)
+    assert not storage.index_daily_exists(date(2026, 1, 3))
+
+
+def test_index_daily_path(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    path = storage.index_daily_path(date(2026, 9, 1))
+    assert str(path).endswith("index_daily/year=2026/month=09/2026-09-01.parquet")
+
+
+def test_index_daily_missing_day_loads_empty(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    assert storage.load_index_daily_by_date(date(2026, 1, 2)) == []
+
+
+def test_index_daily_duplicate_raises(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    trade_date = date(2026, 1, 2)
+    with pytest.raises(DuplicateDataError):
+        storage.save_index_daily_by_date([_make_index_bar(), _make_index_bar()], trade_date)
+
+
+def test_index_daily_sorted_by_instrument_id(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    trade_date = date(2026, 1, 2)
+    bars = [
+        _make_index_bar(instrument_id="000905.SH"),
+        _make_index_bar(instrument_id="000300.SH"),
+    ]
+    storage.save_index_daily_by_date(bars, trade_date)
+    loaded = storage.load_index_daily_by_date(trade_date)
+    assert [item.instrument_id for item in loaded] == ["000300.SH", "000905.SH"]
 
 
 def test_daily_basic_atomic_write(tmp_path, monkeypatch) -> None:

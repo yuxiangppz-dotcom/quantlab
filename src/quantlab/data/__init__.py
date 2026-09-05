@@ -5,6 +5,7 @@ from quantlab.data.models import (
     DailyBar,
     DailyBasic,
     DataValidationError,
+    IndexDailyBar,
     NameChangeRecord,
     RawLifecycleAnnouncement,
     Security,
@@ -25,11 +26,13 @@ from quantlab.data.sync import (
     sync_adj_factor_history,
     sync_daily_basic_history,
     sync_daily_history,
+    sync_index_daily_history,
     sync_lifecycle_announcement_index,
     sync_lifecycle_context,
     validate_adj_factors,
     validate_daily_bars,
     validate_daily_basic,
+    validate_index_daily_bars,
 )
 from quantlab.data.tushare_provider import TushareProvider
 
@@ -42,6 +45,7 @@ __all__ = [
     "DataProvider",
     "DataValidationError",
     "DuplicateDataError",
+    "IndexDailyBar",
     "NameChangeRecord",
     "ParquetStorage",
     "RawLifecycleAnnouncement",
@@ -58,9 +62,11 @@ __all__ = [
     "sync_adj_factor_history",
     "sync_daily_basic_history",
     "sync_daily_history",
+    "sync_index_daily_history",
     "sync_lifecycle_announcement_index",
     "sync_lifecycle_context",
     "validate_adj_factors",
     "validate_daily_bars",
     "validate_daily_basic",
+    "validate_index_daily_bars",
 ]

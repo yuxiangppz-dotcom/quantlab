@@ -16,6 +16,7 @@ from quantlab.data.models import (
     DailyBar,
     DailyBasic,
     DataValidationError,
+    IndexDailyBar,
     NameChangeRecord,
     RawLifecycleAnnouncement,
     Security,
@@ -85,6 +86,17 @@ _BAR_COLUMNS = [
     "amount",
 ]
 _ADJ_COLUMNS = ["instrument_id", "trade_date", "adj_factor"]
+_INDEX_DAILY_COLUMNS = [
+    "instrument_id",
+    "trade_date",
+    "open",
+    "high",
+    "low",
+    "close",
+    "pre_close",
+    "volume",
+    "amount",
+]
 _DAILY_BASIC_COLUMNS = [
     "instrument_id",
     "trade_date",
@@ -208,6 +220,29 @@ def _daily_basic_to_frame(items: list[DailyBasic]) -> pd.DataFrame:
     return frame
 
 
+def _index_daily_to_frame(bars: list[IndexDailyBar]) -> pd.DataFrame:
+    frame = pd.DataFrame([asdict(item) for item in bars], columns=_INDEX_DAILY_COLUMNS)
+    frame["trade_date"] = pd.to_datetime(frame["trade_date"], errors="coerce")
+    return frame
+
+
+def _frame_to_index_daily(frame: pd.DataFrame) -> list[IndexDailyBar]:
+    return [
+        IndexDailyBar(
+            instrument_id=row["instrument_id"],
+            trade_date=_to_required_date(row["trade_date"]),
+            open=float(row["open"]),
+            high=float(row["high"]),
+            low=float(row["low"]),
+            close=float(row["close"]),
+            pre_close=float(row["pre_close"]),
+            volume=float(row["volume"]),
+            amount=float(row["amount"]),
+        )
+        for row in frame.to_dict("records")
+    ]
+
+
 def _frame_to_daily_basic(frame: pd.DataFrame) -> list[DailyBasic]:
     return [
         DailyBasic(
@@ -230,6 +265,7 @@ class ParquetStorage:
         data/canonical/calendar/calendar.parquet
         data/canonical/daily/year={year}/month={month}/{trade_date}.parquet
         data/canonical/adj_factor/year={year}/month={month}/{trade_date}.parquet
+        data/canonical/index_daily/year={year}/month={month}/{trade_date}.parquet
 
     Daily bars and adj factors are stored one file per trading date, sorted
     by instrument_id. Dates are stored as ``datetime64[ns]`` and returned as
@@ -596,6 +632,29 @@ class ParquetStorage:
         if not path.exists():
             return []
         return _frame_to_daily_basic(pd.read_parquet(path))
+
+    def index_daily_path(self, trade_date: date) -> Path:
+        return (
+            self.base_dir / "index_daily"
+            / f"year={trade_date.year}"
+            / f"month={trade_date.month:02d}"
+            / f"{trade_date.isoformat()}.parquet"
+        )
+
+    def index_daily_exists(self, trade_date: date) -> bool:
+        return self.index_daily_path(trade_date).exists()
+
+    def save_index_daily_by_date(self, bars: list[IndexDailyBar], trade_date: date) -> Path:
+        frame = _index_daily_to_frame(bars)
+        _ensure_unique(frame, ["instrument_id", "trade_date"])
+        frame = frame.sort_values("instrument_id")
+        return self._write(frame, self.index_daily_path(trade_date))
+
+    def load_index_daily_by_date(self, trade_date: date) -> list[IndexDailyBar]:
+        path = self.index_daily_path(trade_date)
+        if not path.exists():
+            return []
+        return _frame_to_index_daily(pd.read_parquet(path))
 
     @staticmethod
     def _write(frame: pd.DataFrame, path: Path) -> Path:
