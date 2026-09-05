@@ -42,8 +42,8 @@ trading step reproducible and free of look-ahead bias.
 
 **Portfolio**
 
-- [ ] Portfolio construction
-- [ ] Target portfolio representation
+- [x] Target portfolio representation
+- [x] Portfolio construction (long-only rank-based, equal-weight v0)
 
 **Backtest**
 

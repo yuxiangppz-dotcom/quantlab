@@ -50,6 +50,20 @@ sessions before `start_date` and `max(forward_horizons)` sessions after
 `end_date`, then trims back to the requested window — so boundary rows have
 valid features and labels.
 
+## Implemented (v0)
+
+### TargetPortfolio
+
+Implemented in `src/quantlab/portfolio/`. A `TargetPortfolio` represents desired
+holdings on one `as_of` date — `(instrument_id → target_weight)` plus a residual
+`cash_weight` — produced by a rank-based constructor from a single alpha
+cross-section. It separates "what to hold" from "how to trade", and it is an
+intention, not an order, fill, or return forecast.
+
+The v0 constructor is long-only and equal-weight, with a selection fraction and
+an optional per-name weight cap. It is direction-agnostic
+(`higher_is_better` / `lower_is_better`) so any alpha can reuse it.
+
 ## Future Concepts
 
 These are intended directions, not implemented yet.
@@ -61,12 +75,6 @@ horizons, and discovery protocol. The experiment runner currently encodes one
 such source (`momentum_20d`); a future Alpha Research Factory would generate and
 screen `AlphaSource` candidates, with promotion governed by the research
 protocol, not by ad-hoc parameter search.
-
-### TargetPortfolio
-
-A representation of desired holdings (`instrument_id → weight`) produced by a
-portfolio constructor from alpha scores, constraints, and risk model inputs.
-It separates "what to hold" from "how to trade".
 
 ### Trading Ledger
 
