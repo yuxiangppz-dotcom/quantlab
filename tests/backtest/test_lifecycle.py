@@ -3,7 +3,13 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from quantlab.backtest import BacktestConfig, LifecycleMonitor, run_backtest
+from quantlab.backtest import (
+    DELIST_DATE_IS_FIRST_INVALID_V1,
+    LEGACY_DELIST_DATE_INCLUSIVE,
+    BacktestConfig,
+    LifecycleMonitor,
+    run_backtest,
+)
 from quantlab.data.models import Security, SecurityCodeChange
 from quantlab.portfolio import TargetPortfolio, TargetWeight
 
@@ -257,3 +263,55 @@ def test_future_event_does_not_affect_history() -> None:
     monitor = LifecycleMonitor([_security("A", delist_date=date(2027, 1, 1))], [])
     result = run_backtest(prices, dates, targets, _cfg(), mode="strict", lifecycle=monitor)
     assert result.status == "completed"
+
+
+def test_new_mode_blocks_on_delist_date() -> None:
+    dates = [D0, D1, D2]
+    prices = _price_frame({D0: {"A": 100.0}, D1: {"A": 100.0}, D2: {}})
+    targets = {D0: _target(D0, {"A": 1.0})}
+    monitor = LifecycleMonitor(
+        [_security("A", delist_date=D1)], [], mode=DELIST_DATE_IS_FIRST_INVALID_V1
+    )
+    result = run_backtest(prices, dates, targets, _cfg(), mode="strict", lifecycle=monitor)
+    # delist_date D1 is the first invalid day in the new mode
+    assert result.status == "blocked_by_unsupported_event"
+    assert result.first_blocking_event.blocking_session == D1
+    assert result.valid_through == D0
+
+
+def test_legacy_mode_inclusive_on_delist_date() -> None:
+    dates = [D0, D1, D2]
+    prices = _price_frame({D0: {"A": 100.0}, D1: {"A": 100.0}, D2: {}})
+    targets = {D0: _target(D0, {"A": 1.0})}
+    monitor = LifecycleMonitor(
+        [_security("A", delist_date=D1)], [], mode=LEGACY_DELIST_DATE_INCLUSIVE
+    )
+    result = run_backtest(prices, dates, targets, _cfg(), mode="strict", lifecycle=monitor)
+    # legacy: trade_date > delist_date -> blocked at D2, not D1
+    assert result.first_blocking_event.blocking_session == D2
+    assert result.valid_through == D1
+
+
+def test_new_mode_price_on_effective_day_still_blocks() -> None:
+    dates = [D0, D1, D2]
+    prices = _price_frame({D0: {"A": 100.0}, D1: {"A": 100.0}, D2: {"A": 100.0}})
+    targets = {D0: _target(D0, {"A": 1.0})}
+    monitor = LifecycleMonitor(
+        [_security("A", delist_date=D1)], [], mode=DELIST_DATE_IS_FIRST_INVALID_V1
+    )
+    result = run_backtest(prices, dates, targets, _cfg(), mode="strict", lifecycle=monitor)
+    # price present on D1 but the instrument is already invalid -> still blocks
+    assert result.first_blocking_event.blocking_session == D1
+
+
+def test_new_mode_signal_valid_exec_invalid() -> None:
+    dates = [D0, D1, D2]
+    prices = _price_frame({D0: {"A": 100.0}, D1: {"A": 100.0}, D2: {}})
+    # signal on D1 (valid), exec on D2 (invalid under new mode with delist D2)
+    targets = {D1: _target(D1, {"A": 1.0})}
+    monitor = LifecycleMonitor(
+        [_security("A", delist_date=D2)], [], mode=DELIST_DATE_IS_FIRST_INVALID_V1
+    )
+    result = run_backtest(prices, dates, targets, _cfg(), mode="strict", lifecycle=monitor)
+    # blocked at execution date D2 (not silently opened)
+    assert result.first_blocking_event.blocking_session == D2

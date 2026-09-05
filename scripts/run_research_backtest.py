@@ -17,6 +17,8 @@ import pandas as pd
 
 from quantlab.alpha import calculate_momentum_alpha
 from quantlab.backtest import (
+    DELIST_DATE_IS_FIRST_INVALID_V1,
+    LEGACY_DELIST_DATE_INCLUSIVE,
     MISSING_PRICE_POLICY,
     RUN_MODE_DIAGNOSTIC,
     RUN_MODE_STRICT,
@@ -312,6 +314,20 @@ def _next_open_session(open_dates: list, signal_date) -> object:
     return open_dates[idx + 1]
 
 
+def _date_semantics_table(open_dates: list, delist_map: dict) -> list[dict]:
+    rows = []
+    for instr, delist_date in sorted(delist_map.items()):
+        legacy = next((d for d in open_dates if d > delist_date), None)
+        new = next((d for d in open_dates if d >= delist_date), None)
+        rows.append({
+            "instrument_id": instr,
+            "raw_delist_date": delist_date.isoformat(),
+            "legacy_blocking_session": legacy.isoformat() if legacy else None,
+            "new_blocking_session": new.isoformat() if new else None,
+        })
+    return rows
+
+
 def _compare_paths(base_strict, adm_strict, base_diag, adm_diag,
                    restricted_by_signal, bt_open_dates) -> dict:
     base_dates = {r.trade_date for r in base_strict.records}
@@ -426,7 +442,12 @@ def _main() -> None:
     price_frame, targets = _build_targets(storage, signal_dates)
     bt_open_dates = [d for d in open_dates if PERIOD_START <= d <= PERIOD_END]
     bt_config = BacktestConfig(initial_nav=1.0, transaction_cost_bps=10.0, annualization=252)
-    monitor = LifecycleMonitor(securities, code_changes)
+    monitor = LifecycleMonitor(
+        securities, code_changes, mode=LEGACY_DELIST_DATE_INCLUSIVE
+    )
+    monitor_new = LifecycleMonitor(
+        securities, code_changes, mode=DELIST_DATE_IS_FIRST_INVALID_V1
+    )
 
     facts_path = PROJECT_ROOT / "config" / "delisting_facts.json"
     facts_v2_path = PROJECT_ROOT / "config" / "delisting_facts_v2.json"
@@ -481,6 +502,17 @@ def _main() -> None:
         requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
         restricted_by_signal=restricted_by_signal_v2,
     )
+    baseline_new_strict = run_backtest(
+        price_frame, bt_open_dates, targets, bt_config,
+        execution_lag_sessions=1, mode=RUN_MODE_STRICT, lifecycle=monitor_new,
+        requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
+    )
+    admission_v2_new_strict = run_backtest(
+        price_frame, bt_open_dates, targets, bt_config,
+        execution_lag_sessions=1, mode=RUN_MODE_STRICT, lifecycle=monitor_new,
+        requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
+        restricted_by_signal=restricted_by_signal_v2,
+    )
     runtime = time.perf_counter() - t0
 
     # re-discover code files so added/removed files are detected
@@ -519,6 +551,7 @@ def _main() -> None:
         admission_strict, admission_v2_strict, admission_diagnostic, None,
         restricted_by_signal_v2, bt_open_dates,
     )
+    date_semantics = _date_semantics_table(bt_open_dates, monitor_new.delist_map)
     group_a = build_group_report(
         strict_result, diagnostic_result, bt_config, bt_open_dates, reproducible
     )
@@ -711,6 +744,27 @@ def _main() -> None:
         },
         "comparison": comparison,
         "comparison_bc": comparison_bc,
+        "date_semantics": {
+            "legacy_mode": LEGACY_DELIST_DATE_INCLUSIVE,
+            "new_mode": DELIST_DATE_IS_FIRST_INVALID_V1,
+            "baseline_new_first_blocking_event": (
+                baseline_new_strict.first_blocking_event.__dict__
+                if baseline_new_strict.first_blocking_event else None
+            ),
+            "baseline_new_valid_through": (
+                baseline_new_strict.valid_through.isoformat()
+                if baseline_new_strict.valid_through else None
+            ),
+            "admission_v2_new_first_blocking_event": (
+                admission_v2_new_strict.first_blocking_event.__dict__
+                if admission_v2_new_strict.first_blocking_event else None
+            ),
+            "admission_v2_new_valid_through": (
+                admission_v2_new_strict.valid_through.isoformat()
+                if admission_v2_new_strict.valid_through else None
+            ),
+            "events": date_semantics,
+        },
         "total_runtime_seconds": runtime,
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str))

@@ -5,7 +5,11 @@ from quantlab.backtest.engine import (
     run_backtest,
     weekly_signal_dates,
 )
-from quantlab.backtest.lifecycle import LifecycleMonitor
+from quantlab.backtest.lifecycle import (
+    DELIST_DATE_IS_FIRST_INVALID_V1,
+    LEGACY_DELIST_DATE_INCLUSIVE,
+    LifecycleMonitor,
+)
 from quantlab.backtest.metrics import compute_metrics
 from quantlab.backtest.models import (
     RUN_MODE_DIAGNOSTIC,
@@ -32,8 +36,10 @@ __all__ = [
     "BacktestConfig",
     "BacktestResult",
     "BookSnapshot",
+    "DELIST_DATE_IS_FIRST_INVALID_V1",
     "DailyBacktestRecord",
     "FailedAttempt",
+    "LEGACY_DELIST_DATE_INCLUSIVE",
     "LifecycleEvent",
     "LifecycleMonitor",
     "MISSING_PRICE_POLICY",

@@ -131,6 +131,21 @@ reports `valid_through`, `first_blocking_event`, and `metrics = null`;
 completed result. It is a research simulator, not an execution simulator — a
 blocked run never claims a completed full-period performance.
 
+### Lifecycle Date Semantics
+
+Four time concepts are kept distinct: `termination_decision_date` (the decision
+does not immediately stop trading — a delisting-arrangement period may follow),
+`last_trading_date` (only when evidence exists, never `delist_date - 1`),
+`delisting_effective_date` (when the instrument actually becomes invalid), and
+`available_from` (when the strategy may use the announcement). A position's last
+mark is only `last_observed_price_date`.
+
+Two delisting boundary interpretations are supported:
+`legacy_delist_date_inclusive` (valid through `delist_date`; invalid on
+`trade_date > delist_date`) and `delist_date_is_first_invalid_v1` (invalid on
+`trade_date >= delist_date`). Code-change events keep their own `effective_date`
+rule in both modes.
+
 ### Lifecycle Admission (shadow)
 
 Delisting facts distinguish two time semantics: `effective_date` (when the
