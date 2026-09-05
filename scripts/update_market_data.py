@@ -161,11 +161,14 @@ def main() -> None:
         )
 
     if args.lifecycle_context:
-        result = sync_lifecycle_context(provider, storage, args.start, args.end)
-        print(
-            f"lifecycle context: stock_st {result['stock_st']} rows, "
-            f"suspensions {result['suspensions']} rows"
+        result = sync_lifecycle_context(
+            provider, storage, args.start, args.end, force=args.force
         )
+        for dataset, summary in result.items():
+            print(
+                f"{dataset}: {summary.completed_sessions}/{summary.expected_open_sessions} "
+                f"sessions, {summary.row_count} rows, complete={summary.complete}"
+            )
 
 
 if __name__ == "__main__":

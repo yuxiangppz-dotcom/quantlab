@@ -181,6 +181,24 @@ class _FakePro:
     def daily(self, **kwargs):
         return pd.DataFrame([_daily_row()])
 
+    def stock_st(self, **kwargs):
+        return pd.DataFrame([{
+            "ts_code": "002509.SZ", "trade_date": kwargs["trade_date"],
+            "name": "*ST天广", "type": "ST", "type_name": "风险警示板",
+        }])
+
+    def suspend_d(self, **kwargs):
+        return pd.DataFrame([{
+            "ts_code": "002509.SZ", "trade_date": kwargs["trade_date"],
+            "suspend_timing": "09:30-10:00", "suspend_type": "S",
+        }])
+
+    def anns_d(self, **kwargs):
+        return pd.DataFrame(columns=["ann_date"])
+
+    def namechange(self, **kwargs):
+        return pd.DataFrame(columns=["ts_code", "start_date"])
+
 
 def test_get_securities(monkeypatch) -> None:
     monkeypatch.setattr(tushare_provider.ts, "pro_api", lambda token: _FakePro())
@@ -212,3 +230,26 @@ def test_get_daily_bars_by_date(monkeypatch) -> None:
     result = provider.get_daily_bars_by_date(date(2026, 1, 2))
     assert len(result) == 1
     assert result[0].trade_date == date(2026, 1, 2)
+
+
+def test_suspend_d_uses_trade_date_and_preserves_raw_s_r_fields(monkeypatch) -> None:
+    fake = _FakePro()
+    monkeypatch.setattr(tushare_provider.ts, "pro_api", lambda token: fake)
+    result = TushareProvider(token="dummy").get_suspensions_by_date(date(2020, 5, 15))
+    assert result[0].trade_date == date(2020, 5, 15)
+    assert result[0].suspend_type == "S"
+    assert result[0].suspend_timing == "09:30-10:00"
+    assert not hasattr(result[0], "resume_date")
+
+
+def test_capability_rejects_successful_wrong_date_scope(monkeypatch) -> None:
+    class WrongDatePro(_FakePro):
+        def suspend_d(self, **kwargs):
+            return pd.DataFrame([{
+                "ts_code": "002509.SZ", "trade_date": "20200514",
+                "suspend_timing": None, "suspend_type": "S",
+            }])
+
+    monkeypatch.setattr(tushare_provider.ts, "pro_api", lambda token: WrongDatePro())
+    capability = TushareProvider(token="dummy").probe_lifecycle_capabilities(date(2020, 5, 15))
+    assert capability["suspend_d"]["status"] == "parameter_filter_mismatch"

@@ -35,6 +35,20 @@ class CoverageResult:
     extra_sample: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class ContextSyncResult:
+    dataset: str
+    requested_start: date
+    requested_end: date
+    expected_open_sessions: int
+    completed_sessions: int
+    missing_sessions: tuple[str, ...]
+    truncated_sessions: tuple[str, ...]
+    row_count: int
+    unique_instruments: int
+    complete: bool
+
+
 def validate_daily_bars(bars: list[DailyBar], expected_date: date) -> None:
     """Validate one trading day's bars; raise :class:`DataValidationError` on failure."""
     if not bars:
@@ -295,7 +309,7 @@ def sync_lifecycle_announcement_index(
     start_date: date,
     end_date: date,
     force: bool = False,
-    page_limit: int = 10_000,
+    page_limit: int = 2000,
 ) -> SyncResult:
     """Synchronize the raw daily ``anns_d`` index safely and resumably.
 
@@ -327,18 +341,71 @@ def sync_lifecycle_announcement_index(
     return SyncResult(total=total, synced=synced, skipped=skipped, filtered=0)
 
 
+def _validate_context_rows(items, expected_date: date, dataset: str, limit: int) -> None:
+    if len(items) >= limit:
+        raise DataValidationError(f"{dataset} response reaches provider limit on {expected_date}")
+    wrong = [item.instrument_id for item in items if item.trade_date != expected_date]
+    if wrong:
+        raise DataValidationError(
+            f"{dataset} response scope mismatch on {expected_date}: {wrong[:5]}"
+        )
+
+
+def _context_result(
+    dataset: str, start_date: date, end_date: date, expected: list[date],
+    completed: list[date], truncated: list[date], rows,
+) -> ContextSyncResult:
+    completed_set = set(completed)
+    missing = tuple(d.isoformat() for d in expected if d not in completed_set)
+    return ContextSyncResult(
+        dataset=dataset, requested_start=start_date, requested_end=end_date,
+        expected_open_sessions=len(expected), completed_sessions=len(completed_set),
+        missing_sessions=missing, truncated_sessions=tuple(d.isoformat() for d in truncated),
+        row_count=len(rows), unique_instruments=len({row.instrument_id for row in rows}),
+        complete=not missing and not truncated,
+    )
+
+
 def sync_lifecycle_context(
     provider: DataProvider,
     storage: ParquetStorage,
     start_date: date,
     end_date: date,
-) -> dict[str, int]:
-    """Sync non-triggering ST and suspension context in one explicit operation."""
-    stock_st = provider.get_stock_st(start_date, end_date)
-    storage.save_stock_st(stock_st)
-    # Persist the independently complete ST context before querying suspensions;
-    # a detected suspension page-limit error remains visible to the caller and
-    # never creates a silent partial suspension dataset.
-    suspensions = provider.get_suspensions(start_date, end_date)
-    storage.save_suspensions(suspensions)
-    return {"stock_st": len(stock_st), "suspensions": len(suspensions)}
+    force: bool = False,
+) -> dict[str, ContextSyncResult]:
+    """Sync date-scoped ST/S-R context with explicit completeness accounting."""
+    expected = _open_trade_dates(provider, start_date, end_date)
+    configs = (
+        ("stock_st", 1000, storage.stock_st_v1_exists,
+         provider.get_stock_st_by_date, storage.save_stock_st_v1_by_date,
+         storage.load_stock_st_v1_by_date),
+        ("suspend_d", 5000, storage.suspensions_v1_exists,
+         provider.get_suspensions_by_date, storage.save_suspensions_v1_by_date,
+         storage.load_suspensions_v1_by_date),
+    )
+    results: dict[str, ContextSyncResult] = {}
+    for dataset, limit, exists, fetch, save, load in configs:
+        completed: list[date] = []
+        truncated: list[date] = []
+        rows = []
+        for trade_date in expected:
+            if not force and exists(trade_date):
+                items = load(trade_date)
+                completed.append(trade_date)
+                rows.extend(items)
+                continue
+            items = fetch(trade_date)
+            try:
+                _validate_context_rows(items, trade_date, dataset, limit)
+            except DataValidationError:
+                if len(items) >= limit:
+                    truncated.append(trade_date)
+                    continue
+                raise
+            save(items, trade_date)
+            completed.append(trade_date)
+            rows.extend(items)
+        results[dataset] = _context_result(
+            dataset, start_date, end_date, expected, completed, truncated, rows
+        )
+    return results

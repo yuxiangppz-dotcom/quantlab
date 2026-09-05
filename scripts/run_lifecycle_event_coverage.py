@@ -12,12 +12,14 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
 
 from quantlab.backtest.delisting_facts import load_delisting_facts
+from quantlab.backtest.provenance import content_manifest
 from quantlab.data import (
     ParquetStorage,
     TushareProvider,
@@ -34,8 +36,8 @@ from quantlab.data.lifecycle_events import (
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 EXPERIMENT_SCHEMA = "systematic_lifecycle_event_data_v0_1"
 DECLARED_TUSHARE_POINTS = 5000
-DEFAULT_START = date(2019, 1, 1)
-DEFAULT_END = date(2020, 12, 31)
+DEFAULT_START = date(2020, 1, 1)
+DEFAULT_END = date(2024, 12, 31)
 
 
 def _parse_date(value: str) -> date:
@@ -49,6 +51,15 @@ def _git_sha() -> str | None:
         ).strip()
     except Exception:
         return None
+
+
+def _git_dirty() -> bool:
+    try:
+        return bool(subprocess.check_output(
+            ["git", "status", "--porcelain"], cwd=PROJECT_ROOT, text=True
+        ).strip())
+    except Exception:
+        return True
 
 
 def _load_raw(storage: ParquetStorage, start: date, end: date):
@@ -74,6 +85,24 @@ def _bars_for(
     return result
 
 
+def _context_rows(storage: ParquetStorage, dates: list[date]):
+    stock_st = []
+    suspensions = []
+    for trade_date in dates:
+        stock_st.extend(storage.load_stock_st_v1_by_date(trade_date))
+        suspensions.extend(storage.load_suspensions_v1_by_date(trade_date))
+    return stock_st, suspensions
+
+
+def _context_paths(storage: ParquetStorage, dates: list[date]) -> list[Path]:
+    paths = [storage.securities_path, storage.calendar_path]
+    for trade_date in dates:
+        for path in (storage.stock_st_v1_path(trade_date), storage.suspensions_v1_path(trade_date)):
+            if path.exists():
+                paths.append(path)
+    return paths
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Audit systematic lifecycle event coverage.")
     parser.add_argument("--start", type=_parse_date, default=DEFAULT_START)
@@ -84,6 +113,13 @@ def main() -> None:
         parser.error("--start must be <= --end")
 
     storage = ParquetStorage(PROJECT_ROOT / "data" / "canonical")
+    calendar_rows = storage.load_trading_calendar()
+    expected_dates = sorted({
+        row.trade_date for row in calendar_rows
+        if row.is_open and args.start <= row.trade_date <= args.end
+    })
+    if not expected_dates:
+        raise RuntimeError("canonical calendar has no open sessions for requested context range")
     try:
         provider = TushareProvider()
     except RuntimeError:
@@ -115,18 +151,20 @@ def main() -> None:
     ):
         try:
             context_sync = {
-                "status": "completed",
-                **sync_lifecycle_context(provider, storage, args.start, args.end),
+                key: asdict(value)
+                for key, value in sync_lifecycle_context(
+                    provider, storage, args.start, args.end, force=args.force
+                ).items()
             }
         except Exception as exc:
-            context_sync = {"status": "incomplete", "error_class": type(exc).__name__}
+            context_sync = {"status": "error", "error_class": type(exc).__name__}
     if anns_available:
         assert provider is not None
         sync_result = sync_lifecycle_announcement_index(
             provider, storage, args.start, args.end, force=args.force
         ).__dict__
         raw = _load_raw(storage, args.start, args.end)
-        calendar = [(row.trade_date, row.is_open) for row in storage.load_trading_calendar()]
+        calendar = [(row.trade_date, row.is_open) for row in calendar_rows]
         events = normalize_lifecycle_events(raw, calendar)
         storage.save_lifecycle_events(events)
     else:
@@ -134,6 +172,17 @@ def main() -> None:
         events = []
 
     manual_facts = load_delisting_facts(PROJECT_ROOT / "config" / "delisting_facts_v2.json")
+    name_changes = []
+    namechange_status = "not_run"
+    if provider is not None and capability["namechange"]["status"] == "available":
+        try:
+            for instrument_id in sorted(set(manual_facts) | {"002509.SZ"}):
+                name_changes.extend(provider.get_name_changes(instrument_id, args.start, args.end))
+            storage.save_name_changes_v1(name_changes)
+            namechange_status = "completed"
+        except Exception as exc:
+            namechange_status = f"error:{type(exc).__name__}"
+    stock_st, suspensions = _context_rows(storage, expected_dates)
     golden = golden_event_audit(manual_facts, events)
     event_facts = events_to_facts(events)
     instrument_ids = set(manual_facts) | {"002509.SZ"}
@@ -142,8 +191,8 @@ def main() -> None:
         sorted(instrument_ids),
         {key: value.delist_date for key, value in securities.items() if value.delist_date},
         events,
-        storage.load_stock_st(),
-        storage.load_suspensions(),
+        stock_st,
+        suspensions,
         _bars_for(storage, instrument_ids),
     )
     diagnostic_002509 = next(row for row in coverage if row["instrument_id"] == "002509.SZ")
@@ -154,6 +203,27 @@ def main() -> None:
     diagnostic_002509["canonical_event_count"] = sum(
         1 for item in events if item.instrument_id == "002509.SZ"
     )
+    st_002509 = [row for row in stock_st if row.instrument_id == "002509.SZ"]
+    suspension_002509 = [row for row in suspensions if row.instrument_id == "002509.SZ"]
+    diagnostic_002509["st_summary"] = {
+        "first_observed": min((row.trade_date for row in st_002509), default=None),
+        "last_observed": max((row.trade_date for row in st_002509), default=None),
+        "types": sorted({row.status for row in st_002509 if row.status}),
+        "type_names": sorted({row.type_name for row in st_002509 if row.type_name}),
+        "names": sorted({row.name for row in st_002509 if row.name}),
+    }
+    diagnostic_002509["suspension_summary"] = {
+        "confirmed_s_dates": [
+            row.trade_date for row in suspension_002509 if row.suspend_type == "S"
+        ],
+        "resume_event_dates": [
+            row.trade_date for row in suspension_002509 if row.suspend_type == "R"
+        ],
+    }
+    diagnostic_002509["relevant_name_changes"] = [
+        asdict(row) for row in storage.load_name_changes_v1()
+        if row.instrument_id == "002509.SZ"
+    ]
 
     out_dir = (
         PROJECT_ROOT / "data" / "experiments" / "lifecycle_event_data_v0_1"
@@ -165,12 +235,37 @@ def main() -> None:
     metadata = {
         "experiment_schema": EXPERIMENT_SCHEMA,
         "git_sha": _git_sha(),
+        "workspace_dirty": _git_dirty(),
+        "code_manifest": content_manifest(
+            sorted((PROJECT_ROOT / "src" / "quantlab").rglob("*.py"))
+            + [Path(__file__)],
+            PROJECT_ROOT,
+        ),
         "declared_tushare_points": DECLARED_TUSHARE_POINTS,
         "capability": capability,
         "status": status,
         "period": {"start": args.start.isoformat(), "end": args.end.isoformat()},
         "sync": sync_result,
         "context_sync": context_sync,
+        "termination_announcement_source_readiness": status,
+        "lifecycle_context_readiness": (
+            "complete_for_2020_2024"
+            if context_sync
+            and all(
+                isinstance(context_sync.get(dataset), dict)
+                and context_sync[dataset].get("complete")
+                for dataset in ("stock_st", "suspend_d")
+            )
+            else "incomplete"
+        ),
+        "namechange_audit": {"status": namechange_status, "row_count": len(name_changes)},
+        "dataset_schema_versions": {
+            "stock_st": "stock_st_daily_v1",
+            "suspensions": "suspensions_daily_v1",
+        },
+        "data_input_manifest": content_manifest(
+            _context_paths(storage, expected_dates), PROJECT_ROOT
+        ),
         "raw_announcement_count": len(raw),
         "canonical_event_count": len(events),
         "trusted_termination_decision_count": sum(

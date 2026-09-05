@@ -5,6 +5,7 @@ from quantlab.data.models import (
     DailyBar,
     DailyBasic,
     DataValidationError,
+    NameChangeRecord,
     RawLifecycleAnnouncement,
     Security,
     SecurityCodeChange,
@@ -17,6 +18,7 @@ from quantlab.data.provider import DataProvider
 from quantlab.data.security_history import load_security_code_changes
 from quantlab.data.storage import DuplicateDataError, ParquetStorage
 from quantlab.data.sync import (
+    ContextSyncResult,
     CoverageResult,
     SyncResult,
     audit_daily_adj_coverage,
@@ -34,11 +36,13 @@ from quantlab.data.tushare_provider import TushareProvider
 __all__ = [
     "AdjFactor",
     "CoverageResult",
+    "ContextSyncResult",
     "DailyBar",
     "DailyBasic",
     "DataProvider",
     "DataValidationError",
     "DuplicateDataError",
+    "NameChangeRecord",
     "ParquetStorage",
     "RawLifecycleAnnouncement",
     "Security",

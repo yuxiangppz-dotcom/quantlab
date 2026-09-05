@@ -173,17 +173,30 @@ class StockSTStatus:
     trade_date: date
     name: str | None
     status: str | None
+    type_name: str | None
     source_record_id: str
 
 
 @dataclass(frozen=True)
 class SuspensionRecord:
-    """Raw suspension context; an absent row is explicitly not tradability."""
+    """A raw daily Tushare ``suspend_d`` fact, never an inferred interval."""
 
     instrument_id: str
-    suspend_date: date
-    resume_date: date | None
-    suspend_reason: str | None
+    trade_date: date
+    suspend_type: str
+    suspend_timing: str | None
+    source_record_id: str
+
+
+@dataclass(frozen=True)
+class NameChangeRecord:
+    """Provider-supplied name history retained solely as lifecycle context."""
+
+    instrument_id: str
+    start_date: date
+    end_date: date | None
+    name: str | None
+    change_reason: str | None
     source_record_id: str
 
 

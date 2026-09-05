@@ -16,6 +16,7 @@ from quantlab.data.models import (
     AdjFactor,
     DailyBar,
     DailyBasic,
+    NameChangeRecord,
     RawLifecycleAnnouncement,
     Security,
     StockSTStatus,
@@ -145,9 +146,10 @@ def stock_st_from_row(row: Mapping[str, Any]) -> StockSTStatus:
     record_id = record_id or canonical_payload_fingerprint(payload)
     return StockSTStatus(
         instrument_id=str(payload["ts_code"]),
-        trade_date=parse_required_yyyymmdd(payload.get("trade_date") or payload.get("ann_date")),
+        trade_date=parse_required_yyyymmdd(payload["trade_date"]),
         name=_optional_text(payload, "name"),
-        status=_optional_text(payload, "status", "type"),
+        status=_optional_text(payload, "type"),
+        type_name=_optional_text(payload, "type_name"),
         source_record_id=record_id,
     )
 
@@ -158,11 +160,23 @@ def suspension_from_row(row: Mapping[str, Any]) -> SuspensionRecord:
     record_id = record_id or canonical_payload_fingerprint(payload)
     return SuspensionRecord(
         instrument_id=str(payload["ts_code"]),
-        suspend_date=parse_required_yyyymmdd(
-            payload.get("suspend_date") or payload.get("trade_date")
-        ),
-        resume_date=parse_yyyymmdd(payload.get("resume_date")),
-        suspend_reason=_optional_text(payload, "suspend_reason", "reason"),
+        trade_date=parse_required_yyyymmdd(payload["trade_date"]),
+        suspend_type=str(payload["suspend_type"]),
+        suspend_timing=_optional_text(payload, "suspend_timing"),
+        source_record_id=record_id,
+    )
+
+
+def name_change_from_row(row: Mapping[str, Any]) -> NameChangeRecord:
+    payload = dict(row)
+    record_id = _optional_text(payload, "id", "source_record_id")
+    record_id = record_id or canonical_payload_fingerprint(payload)
+    return NameChangeRecord(
+        instrument_id=str(payload["ts_code"]),
+        start_date=parse_required_yyyymmdd(payload["start_date"]),
+        end_date=parse_yyyymmdd(payload.get("end_date")),
+        name=_optional_text(payload, "name"),
+        change_reason=_optional_text(payload, "change_reason"),
         source_record_id=record_id,
     )
 
@@ -237,22 +251,23 @@ class TushareProvider(DataProvider):
         frame = self._pro.anns_d(ann_date=format_yyyymmdd(announcement_date))
         return [lifecycle_announcement_from_row(row) for row in frame.to_dict("records")]
 
-    def get_stock_st(self, start_date: date, end_date: date) -> list[StockSTStatus]:
-        frame = self._pro.stock_st(
-            start_date=format_yyyymmdd(start_date), end_date=format_yyyymmdd(end_date)
-        )
+    def get_stock_st_by_date(self, trade_date: date) -> list[StockSTStatus]:
+        frame = self._pro.stock_st(trade_date=format_yyyymmdd(trade_date))
         return [stock_st_from_row(row) for row in frame.to_dict("records")]
 
-    def get_suspensions(self, start_date: date, end_date: date) -> list[SuspensionRecord]:
-        rows: list[dict[str, Any]] = []
-        current = start_date
-        while current <= end_date:
-            frame = self._pro.suspend_d(suspend_date=format_yyyymmdd(current))
-            if len(frame) >= 5000:
-                raise RuntimeError("suspend_d response reached provider page limit")
-            rows.extend(frame.to_dict("records"))
-            current = date.fromordinal(current.toordinal() + 1)
-        return [suspension_from_row(row) for row in rows]
+    def get_suspensions_by_date(self, trade_date: date) -> list[SuspensionRecord]:
+        frame = self._pro.suspend_d(trade_date=format_yyyymmdd(trade_date))
+        return [suspension_from_row(row) for row in frame.to_dict("records")]
+
+    def get_name_changes(
+        self, instrument_id: str, start_date: date, end_date: date
+    ) -> list[NameChangeRecord]:
+        frame = self._pro.namechange(
+            ts_code=instrument_id,
+            start_date=format_yyyymmdd(start_date),
+            end_date=format_yyyymmdd(end_date),
+        )
+        return [name_change_from_row(row) for row in frame.to_dict("records")]
 
     def probe_lifecycle_capabilities(self, probe_date: date) -> dict[str, dict[str, object]]:
         """Perform minimal API calls and return only safe capability metadata.
@@ -261,7 +276,9 @@ class TushareProvider(DataProvider):
         retained or surfaced.  The result intentionally contains only endpoint,
         outcome, row count and exception class.
         """
-        def probe(endpoint: str, call) -> dict[str, object]:
+        def probe(
+            endpoint: str, call, date_column: str | None, limit: int | None
+        ) -> dict[str, object]:
             try:
                 frame = call()
                 result: dict[str, object] = {
@@ -269,13 +286,35 @@ class TushareProvider(DataProvider):
                     "status": "available",
                     "row_count": int(len(frame)),
                 }
-                if len(frame) >= 5000:
-                    result["limit_warning"] = "response_reaches_known_page_limit"
+                if date_column is not None:
+                    if date_column not in frame.columns:
+                        result["status"] = "unexpected_schema"
+                        return result
+                    values = [str(value) for value in frame[date_column].dropna()]
+                    result["requested_date"] = format_yyyymmdd(probe_date)
+                    result["response_min_date"] = min(values) if values else None
+                    result["response_max_date"] = max(values) if values else None
+                    result["scope_valid"] = all(
+                        value == result["requested_date"] for value in values
+                    )
+                    if not result["scope_valid"]:
+                        result["status"] = "parameter_filter_mismatch"
+                if limit is not None:
+                    result["limit_status"] = (
+                        "potentially_truncated" if len(frame) >= limit else "below_limit"
+                    )
+                    if len(frame) >= limit and result["status"] == "available":
+                        result["status"] = "potentially_truncated"
                 return result
             except Exception as exc:  # API-specific exception types are unstable.
+                message = str(exc).lower()
+                if "permission" in message or "积分" in message or "权限" in message:
+                    status = "permission_denied"
+                else:
+                    status = "error"
                 return {
                     "endpoint": endpoint,
-                    "status": "unavailable",
+                    "status": status,
                     "error_class": type(exc).__name__,
                 }
 
@@ -286,14 +325,24 @@ class TushareProvider(DataProvider):
                 lambda: self._pro.stock_basic(
                     exchange="", list_status="L", fields="ts_code"
                 ),
+                None,
+                None,
             ),
-            "stock_st": probe("stock_st", lambda: self._pro.stock_st(start_date=day, end_date=day)),
-            "suspend_d": probe("suspend_d", lambda: self._pro.suspend_d(suspend_date=day)),
-            "anns_d": probe("anns_d", lambda: self._pro.anns_d(ann_date=day)),
+            "stock_st": probe(
+                "stock_st", lambda: self._pro.stock_st(trade_date=day), "trade_date", 1000
+            ),
+            "suspend_d": probe(
+                "suspend_d", lambda: self._pro.suspend_d(trade_date=day), "trade_date", 5000
+            ),
+            "anns_d": probe(
+                "anns_d", lambda: self._pro.anns_d(ann_date=day), "ann_date", 2000
+            ),
             "namechange": probe(
                 "namechange",
                 lambda: self._pro.namechange(
                     ts_code="000001.SZ", start_date=day, end_date=day
                 ),
+                None,
+                None,
             ),
         }

@@ -237,6 +237,15 @@ not automatic exits. Daily availability is conservatively the first market
 session after `ann_date`; `rec_time` is retained but never makes same-day use
 legal.
 
+Lifecycle context v0.1.1 has a separate readiness from announcements: `stock_st`
+is synchronized by open `trade_date` below its 1,000-row limit, and `suspend_d`
+by open `trade_date` below its 5,000-row limit. Every response must contain only
+the requested date. Suspension context stores raw `S` / `R` records and optional
+intraday timing; it never derives resume dates or lifecycle intervals. The
+previous unversioned suspension dataset was generated with an invalid parameter
+and is retained only as untrusted historical output; v0.1.1 reads only the
+versioned date partitions.
+
 The account capability audit on 2026-09-05 found `anns_d` unavailable at the
 declared 5,000-point tier. Consequently the source is explicitly
 `blocked_by_missing_anns_d_permission`: no scraped or manual announcement data

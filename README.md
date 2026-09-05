@@ -53,6 +53,7 @@ trading step reproducible and free of look-ahead bias.
 - [x] Lifecycle Date Semantics (done / frozen; v1 remains a candidate)
 - [x] Lifecycle Risk Policy v0 (implemented / engineering validation)
 - [x] Systematic Lifecycle Event Data v0 foundation (raw/canonical/PIT/audit)
+- [ ] Systematic Lifecycle Context Data (v0.1.1 sync/audit in progress)
 - [ ] Systematic announcement coverage (blocked: current Tushare account lacks `anns_d`)
 - [ ] A-share execution constraints
 
@@ -232,10 +233,12 @@ experiment:
 uv run python scripts/run_lifecycle_event_coverage.py
 ```
 
-The current live probe (declared account tier: 5,000 points) found `stock_basic`,
-`stock_st`, `suspend_d`, and `namechange` callable, but `anns_d` unavailable;
-the `suspend_d` probe also reaches its known page limit and is therefore not
-treated as complete coverage.
+Lifecycle context uses a versioned `*_v1` date partition for each market open
+session. `stock_st` is complete only when every requested session is validated
+below Tushare's 1,000-row limit; `suspend_d` retains raw `S` / `R` daily facts
+(`suspend_timing` included) and never invents a resume interval. The prior
+unversioned suspension context is not a trusted input because it used an
+incorrect request parameter.
 The runner therefore writes `blocked_by_missing_anns_d_permission`, performs no
 manual announcement discovery, and leaves `config/delisting_facts_v2.json` as
 the regression gold reference. If `anns_d` access is later granted, the same

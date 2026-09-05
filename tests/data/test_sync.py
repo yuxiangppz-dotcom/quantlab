@@ -7,6 +7,9 @@ from quantlab.data.models import (
     DailyBar,
     DailyBasic,
     DataValidationError,
+    RawLifecycleAnnouncement,
+    StockSTStatus,
+    SuspensionRecord,
     TradingCalendar,
 )
 from quantlab.data.provider import DataProvider
@@ -17,6 +20,8 @@ from quantlab.data.sync import (
     sync_adj_factor_history,
     sync_daily_basic_history,
     sync_daily_history,
+    sync_lifecycle_announcement_index,
+    sync_lifecycle_context,
     validate_adj_factors,
     validate_daily_bars,
     validate_daily_basic,
@@ -72,7 +77,9 @@ def _daily_basic(**overrides) -> DailyBasic:
 
 
 class FakeProvider(DataProvider):
-    def __init__(self, calendar, daily_by_date, adj_by_date=None, basic_by_date=None):
+    def __init__(
+        self, calendar, daily_by_date, adj_by_date=None, basic_by_date=None, st=None, susp=None
+    ):
         self._calendar = calendar
         self._daily_by_date = daily_by_date
         self._adj_by_date = adj_by_date or {}
@@ -80,6 +87,10 @@ class FakeProvider(DataProvider):
         self.downloaded_dates = []
         self.adj_downloaded_dates = []
         self.basic_downloaded_dates = []
+        self._st = st or {}
+        self._susp = susp or {}
+        self.st_dates = []
+        self.susp_dates = []
 
     def get_securities(self):
         return []
@@ -103,13 +114,76 @@ class FakeProvider(DataProvider):
         return self._basic_by_date.get(trade_date, [])
 
     def get_lifecycle_announcements_by_date(self, announcement_date):
+        return getattr(self, "_announcements", {}).get(announcement_date, [])
+
+    def get_stock_st_by_date(self, trade_date):
+        self.st_dates.append(trade_date)
+        return self._st.get(trade_date, [])
+
+    def get_suspensions_by_date(self, trade_date):
+        self.susp_dates.append(trade_date)
+        return self._susp.get(trade_date, [])
+
+    def get_name_changes(self, instrument_id, start_date, end_date):
         return []
 
-    def get_stock_st(self, start_date, end_date):
-        return []
 
-    def get_suspensions(self, start_date, end_date):
-        return []
+def _st(day, **overrides):
+    values = {"instrument_id": "002509.SZ", "trade_date": day, "name": "*ST天广",
+              "status": "ST", "type_name": "风险警示板", "source_record_id": "st"}
+    values.update(overrides)
+    return StockSTStatus(**values)
+
+
+def _susp(day, **overrides):
+    values = {"instrument_id": "002509.SZ", "trade_date": day, "suspend_type": "S",
+              "suspend_timing": None, "source_record_id": "susp"}
+    values.update(overrides)
+    return SuspensionRecord(**values)
+
+
+def _announcement(day, row_id="a"):
+    return RawLifecycleAnnouncement(
+        source="tushare.anns_d", source_record_id=row_id, instrument_id="002509.SZ",
+        announcement_date=day, announcement_time=None, title="公告", source_url=None,
+        raw_payload="{}", content_fingerprint=row_id,
+    )
+
+
+def test_context_sync_is_per_open_session_resumable_and_complete(tmp_path) -> None:
+    day1, day2 = date(2020, 1, 2), date(2020, 1, 3)
+    provider = FakeProvider(_calendar(day1, day2), {}, st={day1: [_st(day1)], day2: []},
+                            susp={day1: [_susp(day1)], day2: []})
+    storage = ParquetStorage(tmp_path)
+    first = sync_lifecycle_context(provider, storage, day1, day2)
+    assert first["stock_st"].complete and first["suspend_d"].complete
+    assert provider.st_dates == [day1, day2]
+    assert provider.susp_dates == [day1, day2]
+    second = sync_lifecycle_context(provider, storage, day1, day2)
+    assert second["stock_st"].completed_sessions == 2
+    assert provider.st_dates == [day1, day2]
+
+
+def test_context_sync_rejects_wrong_date_and_marks_limit_incomplete(tmp_path) -> None:
+    day = date(2020, 1, 2)
+    provider = FakeProvider(_calendar(day), {}, st={day: [_st(date(2020, 1, 3))]}, susp={day: []})
+    with pytest.raises(DataValidationError, match="scope mismatch"):
+        sync_lifecycle_context(provider, ParquetStorage(tmp_path), day, day)
+
+    provider = FakeProvider(_calendar(day), {}, st={day: [_st(day)] * 1000}, susp={day: []})
+    result = sync_lifecycle_context(provider, ParquetStorage(tmp_path), day, day)
+    assert not result["stock_st"].complete
+    assert result["stock_st"].truncated_sessions == ("2020-01-02",)
+
+
+def test_announcement_limit_2000_is_never_saved_as_complete(tmp_path) -> None:
+    day = date(2020, 1, 2)
+    provider = FakeProvider(_calendar(day), {})
+    provider._announcements = {day: [_announcement(day, str(index)) for index in range(2000)]}
+    storage = ParquetStorage(tmp_path)
+    with pytest.raises(DataValidationError, match="page limit"):
+        sync_lifecycle_announcement_index(provider, storage, day, day)
+    assert not storage.lifecycle_announcements_exists(day)
 
 
 def test_validate_ok() -> None:

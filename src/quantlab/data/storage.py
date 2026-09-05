@@ -16,6 +16,7 @@ from quantlab.data.models import (
     DailyBar,
     DailyBasic,
     DataValidationError,
+    NameChangeRecord,
     RawLifecycleAnnouncement,
     Security,
     SecurityLifecycleEvent,
@@ -439,11 +440,107 @@ class ParquetStorage:
 
     @property
     def stock_st_path(self) -> Path:
+        """Deprecated v0 path; never used as trusted v0.1.1 context input."""
         return self.base_dir / "lifecycle_context" / "stock_st.parquet"
 
     @property
     def suspensions_path(self) -> Path:
+        """Deprecated v0 path; never used as trusted v0.1.1 context input."""
         return self.base_dir / "lifecycle_context" / "suspensions.parquet"
+
+    def stock_st_v1_path(self, trade_date: date) -> Path:
+        return (
+            self.base_dir / "lifecycle_context_v1" / "stock_st"
+            / f"year={trade_date.year}" / f"month={trade_date.month:02d}"
+            / f"{trade_date.isoformat()}.parquet"
+        )
+
+    def suspensions_v1_path(self, trade_date: date) -> Path:
+        return (
+            self.base_dir / "lifecycle_context_v1" / "suspensions"
+            / f"year={trade_date.year}" / f"month={trade_date.month:02d}"
+            / f"{trade_date.isoformat()}.parquet"
+        )
+
+    def stock_st_v1_exists(self, trade_date: date) -> bool:
+        return self.stock_st_v1_path(trade_date).exists()
+
+    def suspensions_v1_exists(self, trade_date: date) -> bool:
+        return self.suspensions_v1_path(trade_date).exists()
+
+    def save_stock_st_v1_by_date(self, items: list[StockSTStatus], trade_date: date) -> Path:
+        columns = list(StockSTStatus.__dataclass_fields__)
+        frame = pd.DataFrame([asdict(item) for item in items], columns=columns)
+        if not frame.empty:
+            frame["trade_date"] = pd.to_datetime(frame["trade_date"])
+            _ensure_unique(frame, ["instrument_id", "trade_date", "source_record_id"])
+            frame = frame.sort_values(["instrument_id", "source_record_id"])
+        return self._write(frame, self.stock_st_v1_path(trade_date))
+
+    def load_stock_st_v1_by_date(self, trade_date: date) -> list[StockSTStatus]:
+        path = self.stock_st_v1_path(trade_date)
+        if not path.exists():
+            return []
+        return [
+            StockSTStatus(
+                instrument_id=row["instrument_id"],
+                trade_date=_to_required_date(row["trade_date"]),
+                name=_none_if_na(row["name"]), status=_none_if_na(row["status"]),
+                type_name=_none_if_na(row["type_name"]),
+                source_record_id=row["source_record_id"],
+            ) for row in pd.read_parquet(path).to_dict("records")
+        ]
+
+    def save_suspensions_v1_by_date(
+        self, items: list[SuspensionRecord], trade_date: date
+    ) -> Path:
+        columns = list(SuspensionRecord.__dataclass_fields__)
+        frame = pd.DataFrame([asdict(item) for item in items], columns=columns)
+        if not frame.empty:
+            frame["trade_date"] = pd.to_datetime(frame["trade_date"])
+            _ensure_unique(frame, ["instrument_id", "trade_date", "source_record_id"])
+            frame = frame.sort_values(["instrument_id", "source_record_id"])
+        return self._write(frame, self.suspensions_v1_path(trade_date))
+
+    def load_suspensions_v1_by_date(self, trade_date: date) -> list[SuspensionRecord]:
+        path = self.suspensions_v1_path(trade_date)
+        if not path.exists():
+            return []
+        return [
+            SuspensionRecord(
+                instrument_id=row["instrument_id"],
+                trade_date=_to_required_date(row["trade_date"]),
+                suspend_type=row["suspend_type"],
+                suspend_timing=_none_if_na(row["suspend_timing"]),
+                source_record_id=row["source_record_id"],
+            ) for row in pd.read_parquet(path).to_dict("records")
+        ]
+
+    @property
+    def name_changes_v1_path(self) -> Path:
+        return self.base_dir / "lifecycle_context_v1" / "name_changes.parquet"
+
+    def save_name_changes_v1(self, items: list[NameChangeRecord]) -> Path:
+        columns = list(NameChangeRecord.__dataclass_fields__)
+        frame = pd.DataFrame([asdict(item) for item in items], columns=columns)
+        if not frame.empty:
+            frame["start_date"] = pd.to_datetime(frame["start_date"])
+            frame["end_date"] = pd.to_datetime(frame["end_date"])
+            _ensure_unique(frame, ["instrument_id", "start_date", "source_record_id"])
+            frame = frame.sort_values(["instrument_id", "start_date", "source_record_id"])
+        return self._write(frame, self.name_changes_v1_path)
+
+    def load_name_changes_v1(self) -> list[NameChangeRecord]:
+        if not self.name_changes_v1_path.exists():
+            return []
+        return [
+            NameChangeRecord(
+                instrument_id=row["instrument_id"], start_date=_to_required_date(row["start_date"]),
+                end_date=_to_date(row["end_date"]), name=_none_if_na(row["name"]),
+                change_reason=_none_if_na(row["change_reason"]),
+                source_record_id=row["source_record_id"],
+            ) for row in pd.read_parquet(self.name_changes_v1_path).to_dict("records")
+        ]
 
     def save_stock_st(self, items: list[StockSTStatus]) -> Path:
         columns = list(StockSTStatus.__dataclass_fields__)
@@ -461,6 +558,7 @@ class ParquetStorage:
             StockSTStatus(
                 instrument_id=row["instrument_id"], trade_date=_to_required_date(row["trade_date"]),
                 name=_none_if_na(row["name"]), status=_none_if_na(row["status"]),
+                type_name=None,
                 source_record_id=row["source_record_id"],
             ) for row in pd.read_parquet(self.stock_st_path).to_dict("records")
         ]
@@ -469,10 +567,9 @@ class ParquetStorage:
         columns = list(SuspensionRecord.__dataclass_fields__)
         frame = pd.DataFrame([asdict(item) for item in items], columns=columns)
         if not frame.empty:
-            frame["suspend_date"] = pd.to_datetime(frame["suspend_date"])
-            frame["resume_date"] = pd.to_datetime(frame["resume_date"])
-            _ensure_unique(frame, ["instrument_id", "suspend_date", "source_record_id"])
-            frame = frame.sort_values(["instrument_id", "suspend_date", "source_record_id"])
+            frame["trade_date"] = pd.to_datetime(frame["trade_date"])
+            _ensure_unique(frame, ["instrument_id", "trade_date", "source_record_id"])
+            frame = frame.sort_values(["instrument_id", "trade_date", "source_record_id"])
         return self._write(frame, self.suspensions_path)
 
     def load_suspensions(self) -> list[SuspensionRecord]:
@@ -481,9 +578,9 @@ class ParquetStorage:
         return [
             SuspensionRecord(
                 instrument_id=row["instrument_id"],
-                suspend_date=_to_required_date(row["suspend_date"]),
-                resume_date=_to_date(row["resume_date"]),
-                suspend_reason=_none_if_na(row["suspend_reason"]),
+                trade_date=_to_required_date(row["trade_date"]),
+                suspend_type=row["suspend_type"],
+                suspend_timing=_none_if_na(row["suspend_timing"]),
                 source_record_id=row["source_record_id"],
             ) for row in pd.read_parquet(self.suspensions_path).to_dict("records")
         ]

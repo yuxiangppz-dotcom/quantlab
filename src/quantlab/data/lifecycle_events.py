@@ -218,11 +218,8 @@ def lifecycle_coverage_rows(
         suspension_state = None
         if event and instrument_id in suspensions_by_id:
             suspension_state = any(
-                suspension.suspend_date <= event.available_from
-                and (
-                    suspension.resume_date is None
-                    or suspension.resume_date >= event.available_from
-                )
+                suspension.trade_date == event.available_from
+                and suspension.suspend_type == "S"
                 for suspension in suspensions_by_id[instrument_id]
             )
         rows.append({

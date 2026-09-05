@@ -9,6 +9,7 @@ from quantlab.data.models import (
     AdjFactor,
     DailyBar,
     DailyBasic,
+    NameChangeRecord,
     RawLifecycleAnnouncement,
     Security,
     StockSTStatus,
@@ -56,9 +57,15 @@ class DataProvider(ABC):
         """Return raw announcement-index records published on one calendar day."""
 
     @abstractmethod
-    def get_stock_st(self, start_date: date, end_date: date) -> list[StockSTStatus]:
-        """Return ST-status context for the requested range."""
+    def get_stock_st_by_date(self, trade_date: date) -> list[StockSTStatus]:
+        """Return the full ST-status snapshot for one trading session."""
 
     @abstractmethod
-    def get_suspensions(self, start_date: date, end_date: date) -> list[SuspensionRecord]:
-        """Return suspension context for the requested range."""
+    def get_suspensions_by_date(self, trade_date: date) -> list[SuspensionRecord]:
+        """Return raw S/R suspension facts for one trading session."""
+
+    @abstractmethod
+    def get_name_changes(
+        self, instrument_id: str, start_date: date, end_date: date
+    ) -> list[NameChangeRecord]:
+        """Return source-provided name history for one explicitly scoped instrument."""
