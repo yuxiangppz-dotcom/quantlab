@@ -9,6 +9,7 @@ from quantlab.backtest import (
     BacktestConfig,
     LifecycleMonitor,
     first_invalid_open_session,
+    is_instrument_invalid_on_delist_boundary,
     run_backtest,
 )
 from quantlab.data.models import Security, SecurityCodeChange
@@ -386,5 +387,68 @@ def test_first_invalid_open_session_after_window() -> None:
     open_dates = [D0, D1, D2]
     legacy = first_invalid_open_session(D3, open_dates, LEGACY_DELIST_DATE_INCLUSIVE)
     v1 = first_invalid_open_session(D3, open_dates, DELIST_DATE_IS_FIRST_INVALID_V1)
+    assert legacy is None
+    assert v1 is None
+
+
+def test_predicate_legacy_before_on_after() -> None:
+    pred = is_instrument_invalid_on_delist_boundary
+    assert pred(D0, D1, LEGACY_DELIST_DATE_INCLUSIVE) is False  # before
+    assert pred(D1, D1, LEGACY_DELIST_DATE_INCLUSIVE) is False  # on (inclusive)
+    assert pred(D2, D1, LEGACY_DELIST_DATE_INCLUSIVE) is True   # after
+
+
+def test_predicate_v1_before_on_after() -> None:
+    pred = is_instrument_invalid_on_delist_boundary
+    assert pred(D0, D1, DELIST_DATE_IS_FIRST_INVALID_V1) is False  # before
+    assert pred(D1, D1, DELIST_DATE_IS_FIRST_INVALID_V1) is True   # on (first invalid)
+    assert pred(D2, D1, DELIST_DATE_IS_FIRST_INVALID_V1) is True   # after
+
+
+def test_predicate_invalid_mode() -> None:
+    with pytest.raises(ValueError):
+        is_instrument_invalid_on_delist_boundary(D1, D1, "bogus_mode")
+
+
+def test_first_invalid_open_session_matches_predicate() -> None:
+    # first_invalid_open_session is exactly "first open date where predicate is True"
+    open_dates = [D0, D1, D2, D3]
+    for mode in (LEGACY_DELIST_DATE_INCLUSIVE, DELIST_DATE_IS_FIRST_INVALID_V1):
+        for delist in (D0, D1, D2, D3):
+            got = first_invalid_open_session(delist, open_dates, mode)
+            expected = next(
+                (
+                    d
+                    for d in open_dates
+                    if is_instrument_invalid_on_delist_boundary(d, delist, mode)
+                ),
+                None,
+            )
+            assert got == expected
+
+
+def test_delist_before_period_first_open_session_invalid() -> None:
+    # requested period = [D1, D2, D3]; delist D0 is before the period, so the
+    # first open session of the period is already invalid under both modes.
+    period_open_dates = [D1, D2, D3]
+    legacy = first_invalid_open_session(D0, period_open_dates, LEGACY_DELIST_DATE_INCLUSIVE)
+    v1 = first_invalid_open_session(D0, period_open_dates, DELIST_DATE_IS_FIRST_INVALID_V1)
+    assert legacy == D1
+    assert v1 == D1
+
+
+def test_delist_within_period_boundary() -> None:
+    period_open_dates = [D0, D1, D2, D3]
+    # delist D1 (open day) within period -> legacy first invalid is D2, v1 is D1
+    legacy = first_invalid_open_session(D1, period_open_dates, LEGACY_DELIST_DATE_INCLUSIVE)
+    v1 = first_invalid_open_session(D1, period_open_dates, DELIST_DATE_IS_FIRST_INVALID_V1)
+    assert legacy == D2
+    assert v1 == D1
+
+
+def test_delist_after_period_none() -> None:
+    period_open_dates = [D0, D1, D2]
+    legacy = first_invalid_open_session(D3, period_open_dates, LEGACY_DELIST_DATE_INCLUSIVE)
+    v1 = first_invalid_open_session(D3, period_open_dates, DELIST_DATE_IS_FIRST_INVALID_V1)
     assert legacy is None
     assert v1 is None

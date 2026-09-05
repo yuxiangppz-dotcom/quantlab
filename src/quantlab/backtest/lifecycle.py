@@ -38,6 +38,27 @@ DELIST_DATE_IS_FIRST_INVALID_V1 = "delist_date_is_first_invalid_v1"
 _MODES = (LEGACY_DELIST_DATE_INCLUSIVE, DELIST_DATE_IS_FIRST_INVALID_V1)
 
 
+def is_instrument_invalid_on_delist_boundary(
+    trade_date: date,
+    delist_date: date,
+    mode: str,
+) -> bool:
+    """Return whether ``trade_date`` is past the delist validity boundary.
+
+    This is the single source of truth for the legacy/v1 delist date
+    comparison. Both ``LifecycleMonitor`` and ``first_invalid_open_session``
+    delegate to it, and the audit table never re-handwrites ``>`` / ``>=``.
+
+    - ``legacy_delist_date_inclusive``: invalid when ``trade_date > delist_date``.
+    - ``delist_date_is_first_invalid_v1``: invalid when ``trade_date >= delist_date``.
+    """
+    if mode not in _MODES:
+        raise ValueError(f"invalid lifecycle mode {mode!r}")
+    if mode == DELIST_DATE_IS_FIRST_INVALID_V1:
+        return trade_date >= delist_date
+    return trade_date > delist_date
+
+
 @dataclass(frozen=True)
 class EventSpec:
     """A lifecycle event detected for one instrument on one session."""
@@ -83,9 +104,7 @@ class LifecycleMonitor:
     def _delist_fired(self, delist: date | None, trade_date: date) -> bool:
         if delist is None:
             return False
-        if self.mode == DELIST_DATE_IS_FIRST_INVALID_V1:
-            return trade_date >= delist
-        return trade_date > delist
+        return is_instrument_invalid_on_delist_boundary(trade_date, delist, self.mode)
 
     def event_for(self, instrument_id: str, trade_date: date) -> EventSpec | None:
         """Return an event if ``instrument_id`` is invalid at ``trade_date``."""
@@ -138,12 +157,18 @@ def first_invalid_open_session(
 ) -> date | None:
     """Return the first open session where the instrument is invalid.
 
-    This is the single boundary rule shared by the monitor and the audit table:
-    ``legacy`` uses ``trade_date > delist_date`` and ``v1`` uses
-    ``trade_date >= delist_date``.
+    Delegates to :func:`is_instrument_invalid_on_delist_boundary` so the
+    ``>`` / ``>=`` comparison lives in exactly one place. If ``delist_date``
+    precedes every ``open_dates`` entry (instrument already invalid before the
+    window), the first open session is returned.
     """
     if mode not in _MODES:
         raise ValueError(f"invalid lifecycle mode {mode!r}")
-    if mode == DELIST_DATE_IS_FIRST_INVALID_V1:
-        return next((d for d in open_dates if d >= delist_date), None)
-    return next((d for d in open_dates if d > delist_date), None)
+    return next(
+        (
+            d
+            for d in open_dates
+            if is_instrument_invalid_on_delist_boundary(d, delist_date, mode)
+        ),
+        None,
+    )

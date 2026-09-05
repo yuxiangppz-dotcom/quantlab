@@ -150,7 +150,26 @@ Two delisting boundary interpretations are supported:
   `trade_date >= delist_date`.
 
 Code-change events keep their own `effective_date` rule in both modes, and every
-`LifecycleMonitor` is constructed with an explicit mode.
+`LifecycleMonitor` is constructed with an explicit mode. The legacy/v1 date
+comparison lives in exactly one place —
+`is_instrument_invalid_on_delist_boundary(trade_date, delist_date, mode)` —
+which both `LifecycleMonitor` and the theoretical boundary table delegate to.
+
+### Lifecycle Date Semantics — frozen
+
+The lifecycle date-semantics experiment is **frozen after closure**. The
+legacy/v1 × baseline/admission_v2 × strict/diagnostic comparison is sufficient
+to compare the two boundary interpretations, so no further paths, fact-batch
+expansion, or date-interpretation modes are added:
+
+- `legacy_delist_date_inclusive` remains the compatibility baseline;
+  `delist_date_is_first_invalid_v1` remains the candidate interpretation and is
+  **not** promoted to canonical truth in this round.
+- The research backtest can clearly report a `blocked_by_unsupported_event`
+  lifecycle event; full delisting settlement and corporate-action handling are
+  left to a future Execution / Corporate Action layer.
+- Unverified facts stay `unknown` and do not block engineering progress; fact
+  coverage is expanded only when a later real feature needs it.
 
 ### Lifecycle Admission (shadow)
 

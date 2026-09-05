@@ -10,6 +10,7 @@ from quantlab.backtest.lifecycle import (
     LEGACY_DELIST_DATE_INCLUSIVE,
     LifecycleMonitor,
     first_invalid_open_session,
+    is_instrument_invalid_on_delist_boundary,
 )
 from quantlab.backtest.metrics import compute_metrics
 from quantlab.backtest.models import (
@@ -56,6 +57,7 @@ __all__ = [
     "build_report",
     "compute_metrics",
     "first_invalid_open_session",
+    "is_instrument_invalid_on_delist_boundary",
     "run_backtest",
     "weekly_signal_dates",
 ]

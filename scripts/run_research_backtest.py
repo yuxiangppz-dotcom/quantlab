@@ -42,6 +42,13 @@ from quantlab.backtest.admission import (
     evaluate_buy_rejection,
     shadow_admission,
 )
+from quantlab.backtest.audit import (
+    consumer_impact_audit,
+    consumer_matrix,
+    fingerprint_frame,
+    fingerprint_targets,
+    symmetry_audit,
+)
 from quantlab.backtest.delisting_facts import (
     load_validated_facts,
     retrieval_status_summary,
@@ -139,7 +146,7 @@ def _build_targets(storage: ParquetStorage, signal_dates: list[date]):
         if cross.empty:
             continue
         targets[signal_date] = construct_rank_portfolio(cross, signal_date, portfolio_config)
-    return price_frame, targets, df, universe
+    return price_frame, targets, df, universe, alpha_df
 
 
 def _statistics(result) -> dict:
@@ -323,8 +330,17 @@ def _next_open_session(open_dates: list, signal_date) -> object:
 def _date_semantics_table(open_dates: list, delist_map: dict) -> list[dict]:
     """Theoretical first-invalid open session within the requested period.
 
-    This is a boundary table, not an observed-blocking table; it uses the same
-    ``first_invalid_open_session`` policy as ``LifecycleMonitor``.
+    This is a boundary table, not an observed-blocking table. ``open_dates`` is
+    already restricted to the requested period, so ``first_invalid_open_session``
+    resolves every relation uniformly:
+
+    - ``before``: the instrument is already invalid at period start, so the
+      first invalid open session is the period's first open session.
+    - ``within``: the legacy/v1 boundary applies.
+    - ``after``: no invalid open session within the period (null).
+
+    ``raw_date_relation_to_requested_period`` is reported for clarity but the
+    first-invalid session is always derived through the shared policy.
     """
     rows = []
     for instr, delist_date in sorted(delist_map.items()):
@@ -334,16 +350,12 @@ def _date_semantics_table(open_dates: list, delist_map: dict) -> list[dict]:
             relation = "after"
         else:
             relation = "within"
-        if relation == "within":
-            legacy = first_invalid_open_session(
-                delist_date, open_dates, LEGACY_DELIST_DATE_INCLUSIVE
-            )
-            v1 = first_invalid_open_session(
-                delist_date, open_dates, DELIST_DATE_IS_FIRST_INVALID_V1
-            )
-        else:
-            legacy = None
-            v1 = None
+        legacy = first_invalid_open_session(
+            delist_date, open_dates, LEGACY_DELIST_DATE_INCLUSIVE
+        )
+        v1 = first_invalid_open_session(
+            delist_date, open_dates, DELIST_DATE_IS_FIRST_INVALID_V1
+        )
         rows.append({
             "instrument_id": instr,
             "raw_delist_date": delist_date.isoformat(),
@@ -444,77 +456,6 @@ def _compare_paths(base_strict, adm_strict, base_diag, adm_diag,
     }
 
 
-def _consumer_matrix() -> list[dict]:
-    return [
-        {
-            "file": "src/quantlab/backtest/lifecycle.py",
-            "function": "LifecycleMonitor._delist_fired",
-            "comparison": "> (legacy) / >= (v1)",
-            "semantics": "held-position lifecycle validity boundary",
-            "first_invalid_impact": "blocks one session earlier under v1",
-            "modified_this_round": True,
-        },
-        {
-            "file": "src/quantlab/research/price.py",
-            "function": "filter_point_in_time",
-            "comparison": "price.trade_date > delist_date -> drop",
-            "semantics": "inclusive: keeps price rows on delist_date",
-            "first_invalid_impact": "would drop delist_date price rows",
-            "modified_this_round": False,
-        },
-        {
-            "file": "src/quantlab/research/dataset.py",
-            "function": "_build_delist_dates",
-            "comparison": "none (map construction)",
-            "semantics": "builds delist_dates incl. code-change offsets",
-            "first_invalid_impact": "none directly",
-            "modified_this_round": False,
-        },
-        {
-            "file": "scripts/run_research_backtest.py",
-            "function": "_delisting_audit / _date_semantics_table",
-            "comparison": "reads monitor events + first_invalid_open_session",
-            "semantics": "audit / theoretical boundary table",
-            "first_invalid_impact": "reporting only",
-            "modified_this_round": True,
-        },
-    ]
-
-
-def _consumer_impact_audit(df, universe, targets, delist_map) -> dict:
-    delist_df = pd.DataFrame(
-        [{"instrument_id": i, "delist_date": d} for i, d in delist_map.items()]
-    )
-    merged = df[["instrument_id", "trade_date"]].merge(
-        delist_df, on="instrument_id", how="inner"
-    )
-    on_delist = merged[merged["trade_date"] == merged["delist_date"]]
-    stocks = set(on_delist["instrument_id"])
-    universe_stocks = stocks & set(universe["instrument_id"])
-    target_pairs = set()
-    for sig, t in targets.items():
-        for p in t.positions:
-            if p.instrument_id in stocks:
-                target_pairs.add((p.instrument_id, sig))
-    first_date = min(delist_map[i] for i in stocks) if stocks else None
-    first_stock = (
-        min(stocks, key=lambda i: delist_map[i]) if stocks else None
-    )
-    return {
-        "price_rows_on_raw_delist_date": len(on_delist),
-        "unique_stocks_on_raw_delist_date": len(stocks),
-        "alpha_universe_count": len(universe_stocks),
-        "target_signal_instrument_count": len(target_pairs),
-        "first_affected_date": first_date.isoformat() if first_date else None,
-        "first_affected_stock": first_stock,
-        "note": (
-            "inclusive research filter keeps delist_date price rows; under "
-            "first-invalid these rows would be dropped. Having a price is not "
-            "evidence of tradability."
-        ),
-    }
-
-
 def _main() -> None:
     storage = ParquetStorage(PROJECT_ROOT / "data" / "canonical")
     calendar, securities, code_changes, open_dates = _load_inputs(storage)
@@ -540,7 +481,9 @@ def _main() -> None:
     env = environment_info()
     t0 = time.perf_counter()
 
-    price_frame, targets, research_df, universe = _build_targets(storage, signal_dates)
+    price_frame, targets, research_df, universe, alpha_df = _build_targets(
+        storage, signal_dates
+    )
     bt_open_dates = [d for d in open_dates if PERIOD_START <= d <= PERIOD_END]
     bt_config = BacktestConfig(initial_nav=1.0, transaction_cost_bps=10.0, annualization=252)
     monitor = LifecycleMonitor(
@@ -707,9 +650,35 @@ def _main() -> None:
         },
     }
 
-    consumer_matrix = _consumer_matrix()
-    consumer_impact = _consumer_impact_audit(
-        research_df, universe, targets, monitor_new.delist_map
+    consumer_matrix_rows = consumer_matrix()
+    consumer_impact = consumer_impact_audit(
+        research_df, universe, alpha_df, targets, monitor_new.delist_map
+    )
+
+    # configuration symmetry audit: legacy vs v1 share data/targets/config
+    strategy_config_snapshot = {
+        "transaction_cost_bps": bt_config.transaction_cost_bps,
+        "initial_nav": bt_config.initial_nav,
+        "annualization": bt_config.annualization,
+        "execution_lag_sessions": 1,
+        "requested_period": [PERIOD_START.isoformat(), PERIOD_END.isoformat()],
+        "missing_price_policy": MISSING_PRICE_POLICY,
+    }
+    data_fingerprint = fingerprint_frame(price_frame)
+    target_fingerprint = fingerprint_targets(targets)
+    symmetry = symmetry_audit(
+        {
+            "data_fingerprint": data_fingerprint,
+            "target_fingerprint": target_fingerprint,
+            "config": strategy_config_snapshot,
+            "lifecycle_mode": LEGACY_DELIST_DATE_INCLUSIVE,
+        },
+        {
+            "data_fingerprint": data_fingerprint,
+            "target_fingerprint": target_fingerprint,
+            "config": strategy_config_snapshot,
+            "lifecycle_mode": DELIST_DATE_IS_FIRST_INVALID_V1,
+        },
     )
 
     run_id = datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -919,8 +888,9 @@ def _main() -> None:
                 "rows": date_semantics,
             },
             "observed_blocking": observed_blocking,
-            "consumer_matrix": consumer_matrix,
+            "consumer_matrix": consumer_matrix_rows,
             "consumer_impact": consumer_impact,
+            "symmetry_audit": symmetry,
         },
         "total_runtime_seconds": runtime,
     }
