@@ -109,6 +109,7 @@ def export_group(
         DailyBacktestRecord,
         LifecycleEvent,
         RebalanceRecord,
+        RiskPolicyAuditRecord,
         TradeRecord,
     )
 
@@ -126,6 +127,26 @@ def export_group(
     )
     _frame_of(strict.lifecycle_events, LifecycleEvent).to_csv(
         out_dir / f"{prefix}_lifecycle_events.csv", index=False
+    )
+    risk_audit = _frame_of(strict.risk_policy_audit, RiskPolicyAuditRecord)
+    risk_audit.to_csv(out_dir / f"{prefix}_risk_policy_audit.csv", index=False)
+    risk_audit.loc[risk_audit["held"].astype(bool)].to_csv(
+        out_dir / f"{prefix}_forced_exit_attempts.csv", index=False
+    )
+    risk_audit[risk_audit["forced_sell_value"] > 0].to_csv(
+        out_dir / f"{prefix}_successful_forced_exits.csv", index=False
+    )
+    risk_audit[risk_audit["risk_state"] == "pending_no_price"].to_csv(
+        out_dir / f"{prefix}_pending_no_price.csv", index=False
+    )
+    prevented = risk_audit["prevented_new_entry"].astype(bool) | risk_audit[
+        "prevented_refill"
+    ].astype(bool)
+    risk_audit.loc[prevented].to_csv(
+        out_dir / f"{prefix}_prevented_entry_refill.csv", index=False
+    )
+    risk_audit[risk_audit["risk_state"] == "blocked_before_exit"].to_csv(
+        out_dir / f"{prefix}_blocked_before_exit.csv", index=False
     )
     (out_dir / f"{prefix}_failed_attempts.json").write_text(
         json.dumps(_failed_attempts_to_json(strict.failed_attempts), indent=2, default=str)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 _MAX_COST_BPS = 10_000.0  # cost_rate = bps / 10_000 must be strictly < 1
@@ -217,6 +217,30 @@ class AccountingResidual:
 
 
 @dataclass(frozen=True)
+class RiskPolicyAuditRecord:
+    """One book's lifecycle-risk decision on one market session."""
+
+    instrument_id: str
+    book: str
+    fact_id: str
+    policy_version: str
+    available_from: date
+    decision_date: date
+    risk_state: str
+    held: bool
+    pre_position_value: float
+    current_price_available: bool
+    execution_price: float | None
+    forced_sell_value: float
+    fee: float
+    resulting_position_value: float
+    target_weight: float
+    prevented_new_entry: bool
+    prevented_refill: bool
+    reason: str
+
+
+@dataclass(frozen=True)
 class BacktestResult:
     """Full output of a backtest run."""
 
@@ -241,3 +265,4 @@ class BacktestResult:
     accounting_error: str | None
     accounting_error_date: date | None
     accounting_error_book: str | None
+    risk_policy_audit: list[RiskPolicyAuditRecord] = field(default_factory=list)

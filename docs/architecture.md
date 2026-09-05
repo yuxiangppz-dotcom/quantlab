@@ -199,6 +199,52 @@ range or a calendar with missing middle records are rejected), reports a fixed
 (baseline, admission+original facts, admission+batch facts) with a generic
 buy-rejection evaluation (`true` / `false` / `not_evaluated`).
 
+### Lifecycle Risk Policy v0 — engineering validation
+
+`exit_after_termination_decision_v1` is a persistent point-in-time risk
+overlay. Once a trusted termination-decision fact is available, the affected
+instrument has an exposure upper bound of zero. A held position is marked to
+the current session price and sold at that close when a valid price exists; if
+the price is missing, the position remains frozen and the exit instruction is
+retried on every later session. The overlay runs before a scheduled Alpha
+rebalance, prevents entry/refill/re-entry, and leaves removed target weight as
+cash rather than renormalizing other names.
+
+Gross and net books execute the same risk decision independently from their
+own position values. Gross pays no fee; net pays the configured proportional
+fee on its actual forced-sell notional. Forced exits and normal rebalance legs
+are combined in the session-level final-ledger reconciliation.
+
+This policy is an engineering risk control, not a complete Corporate Action
+Engine. The real comparison uses the frozen
+`delist_date_is_first_invalid_v1` candidate boundary; that choice remains a
+candidate interpretation and is not promoted to universal Canonical truth.
+
+### Known limitations and deferred work
+
+- **Lifecycle fact coverage is incomplete.** Trusted termination-decision facts
+  cover only part of history. For example, `002509.SZ` remains
+  `searched_unresolved` / insufficient trusted fact coverage in the current
+  snapshot. `unknown` must never be interpreted as safe, and the risk policy
+  cannot exit an instrument for an event it did not know about.
+- **Systematic lifecycle event data is deferred / next.** A future PIT source
+  should model a `SecurityLifecycleEvent` with at least `instrument_id`,
+  `event_type`, `event_time`, `available_from`, `effective_time`, `source`,
+  `source_id`, and `verification_status`. This Canonical layer is deliberately
+  not implemented in Risk Policy v0.
+- **Terminal settlement and corporate actions are unsupported.** If an exit is
+  required but no valid execution price appears before lifecycle invalidation,
+  strict mode remains `blocked_by_unsupported_event`. The engine does not cash
+  out at the last mark, set value to zero, assume a recovery rate, join a
+  successor, or fabricate delisting settlement.
+- **The v1 delist boundary remains a candidate.** The date-semantics experiment
+  is frozen; `delist_date_is_first_invalid_v1` is not a Canonical universal
+  truth and this phase does not reopen `>` / `>=` interpretation work.
+- **Benchmark and attribution have not started.** Accounting correctness is not
+  the blocker. Lifecycle risk and event coverage must first make the long-run
+  strict path explainable; readiness for Benchmark + Attribution is reviewed
+  after Risk Policy validation.
+
 ## Future Concepts
 
 These are intended directions, not implemented yet.

@@ -24,8 +24,13 @@ from quantlab.backtest.models import (
     LifecycleEvent,
     PositionRecord,
     RebalanceRecord,
+    RiskPolicyAuditRecord,
     SkippedExecution,
     TradeRecord,
+)
+from quantlab.backtest.risk_policy import (
+    EXIT_POLICY_ID,
+    termination_decisions_available_as_of,
 )
 from quantlab.portfolio.models import TargetPortfolio
 
@@ -459,6 +464,78 @@ def _rebalance(
     }
 
 
+def _capture_session_start(book: _Book) -> dict:
+    """Capture the post-mark, pre-trade ledger used by session reconciliation."""
+    return {
+        "cash_before": book.cash,
+        "v_minus": book.nav(),
+        "pre_values": {i: p.value for i, p in book.positions.items()},
+    }
+
+
+def _force_exit(
+    book: _Book,
+    instrument_id: str,
+    cost_rate: float,
+) -> tuple[float, float]:
+    """Sell one currently marked position completely at current-session close."""
+    position = book.positions.pop(instrument_id)
+    sell_value = position.value
+    fee = cost_rate * sell_value
+    book.cash += sell_value - fee
+    return sell_value, fee
+
+
+def _session_accounting_summary(
+    book: _Book,
+    start: dict,
+    segment_summaries: list[dict],
+    frozen_instruments: set[str],
+) -> dict | None:
+    """Combine forced-exit and rebalance legs for final-ledger validation."""
+    if not segment_summaries and not frozen_instruments:
+        return None
+    signed: dict[str, float] = {}
+    for summary in segment_summaries:
+        for instrument_id, value in summary["signed"].items():
+            signed[instrument_id] = signed.get(instrument_id, 0.0) + value
+    return {
+        "cash_before": start["cash_before"],
+        "v_minus": start["v_minus"],
+        "pre_values": start["pre_values"],
+        "signed": signed,
+        "frozen_pre": {
+            instrument_id: start["pre_values"][instrument_id]
+            for instrument_id in sorted(frozen_instruments)
+            if instrument_id in start["pre_values"]
+        },
+    }
+
+
+def _forced_exit_summary(
+    start: dict,
+    instrument_id: str,
+    sell_value: float,
+) -> dict:
+    """Return the trade leg shape consumed by session reconciliation."""
+    return {
+        "signed": {instrument_id: -sell_value},
+        "pre_values": start["pre_values"],
+        "frozen_pre": {},
+    }
+
+
+def _session_trade_ratios(summary: dict | None) -> tuple[float, float, float, float]:
+    """Return buy, sell, traded and turnover ratios from all session legs."""
+    if summary is None:
+        return 0.0, 0.0, 0.0, 0.0
+    scale = summary["v_minus"]
+    buy = math.fsum(max(value, 0.0) for value in summary["signed"].values()) / scale
+    sell = math.fsum(max(-value, 0.0) for value in summary["signed"].values()) / scale
+    traded = buy + sell
+    return buy, sell, traded, 0.5 * traded
+
+
 def run_backtest(
     price_frame: pd.DataFrame,
     open_dates: list[date],
@@ -470,6 +547,8 @@ def run_backtest(
     requested_period_start: date | None = None,
     requested_period_end: date | None = None,
     restricted_by_signal: dict[date, frozenset[str]] | None = None,
+    risk_facts: dict | None = None,
+    risk_policy: str | None = None,
 ) -> BacktestResult:
     """Simulate dual gross/net ledgers with self-financing cost.
 
@@ -487,6 +566,12 @@ def run_backtest(
             f"execution_lag_sessions must be a positive integer, "
             f"got {execution_lag_sessions!r}"
         )
+    if risk_policy not in (None, EXIT_POLICY_ID):
+        raise ValueError(f"invalid risk_policy {risk_policy!r}")
+    if risk_policy is not None and risk_facts is None:
+        raise ValueError("risk_facts are required when risk_policy is enabled")
+    if risk_policy is None and risk_facts is not None:
+        raise ValueError("risk_policy is required when risk_facts are supplied")
 
     frame = _validate_price_frame(price_frame)
     _validate_targets(targets)
@@ -522,10 +607,12 @@ def run_backtest(
     trades: list[TradeRecord] = []
     lifecycle_events: list[LifecycleEvent] = []
     failed_attempts: list[FailedAttempt] = []
+    risk_policy_audit: list[RiskPolicyAuditRecord] = []
 
     acc = _ResidualAccumulator()
     solver_residual = 0.0
     seen_event_keys: set[tuple[str, str]] = set()
+    exited_by_book = {"gross": set(), "net": set()}
 
     status = STATUS_COMPLETED
     first_blocking_event: LifecycleEvent | None = None
@@ -541,6 +628,11 @@ def run_backtest(
             current_prices = price.loc[trade_date].dropna().to_dict()
 
         target = execution_map.get(trade_date)
+        risk_decisions = (
+            termination_decisions_available_as_of(risk_facts, trade_date)
+            if risk_policy is not None
+            else {}
+        )
 
         # ---- lifecycle check before valuation / trading ----
         session_blocked: set[str] = set()
@@ -576,6 +668,9 @@ def run_backtest(
                 for pos in target_portfolio.positions:
                     if pos.target_weight <= 0 or pos.instrument_id in held:
                         continue
+                    if pos.instrument_id in risk_decisions:
+                        # The zero-exposure risk overlay rejects this target.
+                        continue
                     spec = lifecycle.event_for(pos.instrument_id, trade_date)
                     if spec is None:
                         continue
@@ -606,6 +701,43 @@ def run_backtest(
                     )
 
         blocked_instruments = frozenset(session_blocked)
+        target_weights_today = (
+            {p.instrument_id: p.target_weight for p in target[1].positions}
+            if target is not None
+            else {}
+        )
+
+        # A lifecycle-invalid held position blocks before valuation or trading.
+        # Record whether an already-available risk instruction failed to exit it.
+        for book_name, book in (("gross", gross_book), ("net", net_book)):
+            for instr in sorted(blocked_instruments & set(book.positions)):
+                fact = risk_decisions.get(instr)
+                if fact is None:
+                    continue
+                pos = book.positions[instr]
+                available_from = date.fromisoformat(fact["available_from"])
+                risk_policy_audit.append(
+                    RiskPolicyAuditRecord(
+                        instrument_id=instr,
+                        book=book_name,
+                        fact_id=fact.get("fact_id") or "unknown_fact_id",
+                        policy_version=risk_policy,
+                        available_from=available_from,
+                        decision_date=trade_date,
+                        risk_state="blocked_before_exit",
+                        held=True,
+                        pre_position_value=pos.value,
+                        current_price_available=instr in current_prices,
+                        execution_price=None,
+                        forced_sell_value=0.0,
+                        fee=0.0,
+                        resulting_position_value=pos.value,
+                        target_weight=target_weights_today.get(instr, 0.0),
+                        prevented_new_entry=False,
+                        prevented_refill=target_weights_today.get(instr, 0.0) > 0,
+                        reason="instrument lifecycle-invalid before risk exit completed",
+                    )
+                )
 
         if new_events:
             new_events.sort(
@@ -628,41 +760,134 @@ def run_backtest(
             current_prices, trade_date, skip=blocked_instruments
         )
 
+        gross_start = _capture_session_start(gross_book)
+        net_start = _capture_session_start(net_book)
         gross_cost = 0.0
         net_cost = 0.0
-        gross_turnover = 0.0
-        net_turnover = 0.0
-        gross_traded_ratio = 0.0
-        net_traded_ratio = 0.0
-        gross_summary: dict | None = None
-        net_summary: dict | None = None
+        gross_segments: list[dict] = []
+        net_segments: list[dict] = []
+        gross_frozen: set[str] = set()
+        net_frozen: set[str] = set()
+        gross_rebalance_summary: dict | None = None
+        net_rebalance_summary: dict | None = None
 
         day_trades: list[TradeRecord] = []
+        day_risk_audit: list[RiskPolicyAuditRecord] = []
         day_rebalance: RebalanceRecord | None = None
+
+        # ---- persistent PIT risk overlay and forced exits ----
+        for book_name, book, cost_rate, start, segments, frozen in (
+            ("gross", gross_book, 0.0, gross_start, gross_segments, gross_frozen),
+            ("net", net_book, config.cost_rate, net_start, net_segments, net_frozen),
+        ):
+            for instr, fact in sorted(risk_decisions.items()):
+                if instr in blocked_instruments and instr in book.positions:
+                    continue
+                held = instr in book.positions
+                pre_value = book.positions[instr].value if held else 0.0
+                target_weight = target_weights_today.get(instr, 0.0)
+                prevented_new_entry = target_weight > 0 and not held
+                prevented_refill = target_weight > 0 and held
+                execution_price = None
+                sell_value = 0.0
+                fee = 0.0
+
+                if held and instr in current_prices:
+                    execution_price = current_prices[instr]
+                    sell_value, fee = _force_exit(book, instr, cost_rate)
+                    segments.append(_forced_exit_summary(start, instr, sell_value))
+                    exited_by_book[book_name].add(instr)
+                    state = "exited"
+                    reason = "forced exit at current-session close"
+                    day_trades.append(
+                        TradeRecord(
+                            signal_date=trade_date,
+                            execution_date=trade_date,
+                            book=book_name,
+                            instrument_id=instr,
+                            pre_value=pre_value,
+                            post_value=0.0,
+                            signed_trade_value=-sell_value,
+                            target_weight=0.0,
+                            actual_weight=0.0,
+                            execution_price=execution_price,
+                            price_date=trade_date,
+                            price_kind="current_session_close",
+                            reason="risk_forced_exit",
+                        )
+                    )
+                elif held:
+                    frozen.add(instr)
+                    state = "pending_no_price"
+                    reason = "exit pending; no current-session execution price"
+                elif instr in exited_by_book[book_name]:
+                    state = "exited"
+                    reason = "position already exited; re-entry remains forbidden"
+                else:
+                    state = "exit_required"
+                    reason = "trusted termination decision available; no position held"
+
+                if prevented_new_entry:
+                    reason += "; prevented new entry"
+                if prevented_refill:
+                    reason += "; prevented refill"
+                day_risk_audit.append(
+                    RiskPolicyAuditRecord(
+                        instrument_id=instr,
+                        book=book_name,
+                        fact_id=fact.get("fact_id") or "unknown_fact_id",
+                        policy_version=risk_policy,
+                        available_from=date.fromisoformat(fact["available_from"]),
+                        decision_date=trade_date,
+                        risk_state=state,
+                        held=held,
+                        pre_position_value=pre_value,
+                        current_price_available=instr in current_prices,
+                        execution_price=execution_price,
+                        forced_sell_value=sell_value,
+                        fee=fee,
+                        resulting_position_value=(
+                            book.positions[instr].value if instr in book.positions else 0.0
+                        ),
+                        target_weight=target_weight,
+                        prevented_new_entry=prevented_new_entry,
+                        prevented_refill=prevented_refill,
+                        reason=reason,
+                    )
+                )
+                if book_name == "gross":
+                    gross_cost += fee
+                else:
+                    net_cost += fee
 
         if target is not None:
             signal_date, target_portfolio = target
-            signal_restricted = (
-                (restricted_by_signal or {}).get(signal_date, frozenset())
+            signal_restricted = frozenset(
+                set((restricted_by_signal or {}).get(signal_date, frozenset()))
+                | set(risk_decisions)
             )
-            gross_summary = _rebalance(
+            gross_rebalance_summary = _rebalance(
                 gross_book, target_portfolio, current_prices, 0.0,
                 signal_date, trade_date, blocked_instruments, signal_restricted,
             )
-            net_summary = _rebalance(
+            net_rebalance_summary = _rebalance(
                 net_book, target_portfolio, current_prices, config.cost_rate,
                 signal_date, trade_date, blocked_instruments, signal_restricted,
             )
-            solver_residual = max(solver_residual, net_summary["solver_residual"])
+            gross_segments.append(gross_rebalance_summary)
+            net_segments.append(net_rebalance_summary)
+            gross_frozen.update(gross_rebalance_summary["frozen_pre"])
+            net_frozen.update(net_rebalance_summary["frozen_pre"])
+            solver_residual = max(
+                solver_residual, net_rebalance_summary["solver_residual"]
+            )
+            gross_cost += gross_rebalance_summary["fee"]
+            net_cost += net_rebalance_summary["fee"]
 
-            gross_cost = gross_summary["fee"]
-            net_cost = net_summary["fee"]
-            gross_turnover = gross_summary["turnover"]
-            gross_traded_ratio = gross_summary["traded_ratio"]
-            net_turnover = net_summary["turnover"]
-            net_traded_ratio = net_summary["traded_ratio"]
-
-            for book_name, summary in (("net", net_summary), ("gross", gross_summary)):
+            for book_name, summary in (
+                ("net", net_rebalance_summary),
+                ("gross", gross_rebalance_summary),
+            ):
                 for detail in summary["trade_details"]:
                     (
                         instr, x_minus, x_plus, signed_value, tw, aw,
@@ -686,37 +911,66 @@ def run_backtest(
                         )
                     )
 
+        gross_summary = _session_accounting_summary(
+            gross_book, gross_start, gross_segments, gross_frozen
+        )
+        net_summary = _session_accounting_summary(
+            net_book, net_start, net_segments, net_frozen
+        )
+        gross_buy_ratio, gross_sell_ratio, gross_traded_ratio, gross_turnover = (
+            _session_trade_ratios(gross_summary)
+        )
+        net_buy_ratio, net_sell_ratio, net_traded_ratio, net_turnover = (
+            _session_trade_ratios(net_summary)
+        )
+
+        if target is not None:
+            signal_date, target_portfolio = target
+            assert gross_rebalance_summary is not None
+            assert net_rebalance_summary is not None
+            gross_pre_exposure = (
+                math.fsum(abs(v) for v in gross_start["pre_values"].values())
+                / gross_start["v_minus"]
+            )
+            net_pre_exposure = (
+                math.fsum(abs(v) for v in net_start["pre_values"].values())
+                / net_start["v_minus"]
+            )
             day_rebalance = RebalanceRecord(
                 signal_date=signal_date,
                 execution_date=trade_date,
                 target_count=len(target_portfolio.positions),
-                nonzero_trade_count=net_summary["nonzero_trades"],
-                unavailable_target_count=net_summary["unavailable_count"],
-                frozen_count=net_summary["frozen_count"],
-                restricted_binding_count=net_summary["buy_cap_binding_count"],
-                gross_book_restricted_binding_count=gross_summary[
+                nonzero_trade_count=sum(
+                    value != 0.0 for value in net_summary["signed"].values()
+                ),
+                unavailable_target_count=net_rebalance_summary["unavailable_count"],
+                frozen_count=len(net_frozen),
+                restricted_binding_count=net_rebalance_summary["buy_cap_binding_count"],
+                gross_book_restricted_binding_count=gross_rebalance_summary[
                     "buy_cap_binding_count"
                 ],
-                buy_notional_ratio=net_summary["buy_ratio"],
-                sell_notional_ratio=net_summary["sell_ratio"],
-                traded_notional_ratio=net_summary["traded_ratio"],
-                turnover=net_summary["turnover"],
+                buy_notional_ratio=net_buy_ratio,
+                sell_notional_ratio=net_sell_ratio,
+                traded_notional_ratio=net_traded_ratio,
+                turnover=net_turnover,
                 transaction_cost=net_cost,
-                pre_trade_gross_exposure=net_summary["pre_gross_exposure"],
-                post_trade_gross_exposure=net_summary["post_gross_exposure"],
-                allocation_deviation=net_summary["deviation"],
-                gross_book_buy_notional_ratio=gross_summary["buy_ratio"],
-                gross_book_sell_notional_ratio=gross_summary["sell_ratio"],
-                gross_book_traded_notional_ratio=gross_summary["traded_ratio"],
-                gross_book_turnover=gross_summary["turnover"],
+                pre_trade_gross_exposure=net_pre_exposure,
+                post_trade_gross_exposure=(
+                    math.fsum(abs(p.value) for p in net_book.positions.values())
+                    / net_book.nav()
+                ),
+                allocation_deviation=net_rebalance_summary["deviation"],
+                gross_book_buy_notional_ratio=gross_buy_ratio,
+                gross_book_sell_notional_ratio=gross_sell_ratio,
+                gross_book_traded_notional_ratio=gross_traded_ratio,
+                gross_book_turnover=gross_turnover,
                 gross_book_transaction_cost=gross_cost,
-                gross_book_pre_trade_gross_exposure=gross_summary[
-                    "pre_gross_exposure"
-                ],
-                gross_book_post_trade_gross_exposure=gross_summary[
-                    "post_gross_exposure"
-                ],
-                gross_book_allocation_deviation=gross_summary["deviation"],
+                gross_book_pre_trade_gross_exposure=gross_pre_exposure,
+                gross_book_post_trade_gross_exposure=(
+                    math.fsum(abs(p.value) for p in gross_book.positions.values())
+                    / gross_book.nav()
+                ),
+                gross_book_allocation_deviation=gross_rebalance_summary["deviation"],
             )
 
         gross_nav = gross_book.nav()
@@ -753,6 +1007,7 @@ def run_backtest(
 
         # commit this day's trades/rebalance only after both books validate
         trades.extend(day_trades)
+        risk_policy_audit.extend(day_risk_audit)
         if day_rebalance is not None:
             rebalances.append(day_rebalance)
 
@@ -828,6 +1083,7 @@ def run_backtest(
         accounting_error=accounting_error,
         accounting_error_date=accounting_error_date,
         accounting_error_book=accounting_error_book,
+        risk_policy_audit=risk_policy_audit,
     )
 
 

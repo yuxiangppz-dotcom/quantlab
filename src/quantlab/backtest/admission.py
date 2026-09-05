@@ -1,7 +1,8 @@
-"""Shadow lifecycle admission policy (no_new_exposure_after_termination_decision_v1).
+"""Lifecycle admission baseline (no_new_exposure_after_termination_decision_v1).
 
-This is a **shadow** decision only: it never filters targets, reallocates
-weights, or changes the actual execution path.
+The decision helper supports both shadow audit and optional engine enforcement.
+Enforcement caps exposure at the post-mark pre-rebalance amount: it forbids new
+entries and refills but deliberately does not force liquidation.
 """
 
 from __future__ import annotations

@@ -50,6 +50,9 @@ trading step reproducible and free of look-ahead bias.
 
 - [x] Research backtest (dual gross/net ledgers, self-financing cost, T+1-close)
 - [x] Freeze held positions missing a price (`freeze_held_no_price`)
+- [x] Lifecycle Date Semantics (done / frozen; v1 remains a candidate)
+- [x] Lifecycle Risk Policy v0 (implemented / engineering validation)
+- [ ] Systematic Lifecycle Event Data (deferred / next)
 - [ ] A-share execution constraints
 
 **Live**
@@ -295,6 +298,33 @@ this round 6 of 10 batch instruments are verified (000018.SZ, 600240.SH,
 600074.SH, 601558.SH, 002604.SZ, 300104.SZ) and 4 remain `searched_unresolved`
 (002509.SZ, 300028.SZ, 600175.SH, 300090.SZ).
 
+## Lifecycle Risk Policy v0
+
+Run the fixed control-vs-exit-policy experiment without reopening the frozen
+date-semantics matrix:
+
+```bash
+uv run python scripts/run_lifecycle_risk_policy.py
+```
+
+The comparison uses the same 2020–2024 market data, target sequence, 10 bps
+cost, fact snapshot, and candidate `delist_date_is_first_invalid_v1` boundary
+for both paths:
+
+- control: `no_new_exposure_after_termination_decision_v1`;
+- new: `exit_after_termination_decision_v1`.
+
+The new policy immediately requires zero exposure once a trusted termination
+fact is available, retries across missing-price sessions, exits at the first
+valid current-session close, and prevents later re-entry. Released weight stays
+in cash. Results and detailed risk audits are written under
+`data/experiments/lifecycle_risk_policy_v0_1/` and are never committed.
+
+Fact coverage remains incomplete—`unknown` is not safe—and an unpriced position
+that reaches lifecycle invalidation still blocks strict mode. Risk Policy is
+therefore not a complete Corporate Action Engine and does not invent terminal
+settlement.
+
 ## Research Philosophy
 
 - Hypothesis before optimization.
@@ -311,6 +341,9 @@ this round 6 of 10 batch instruments are verified (000018.SZ, 600240.SH,
 | 1. Data + Alpha Research | ✅ |
 | 2. Portfolio Engine | ✅ |
 | 3. Research Backtest | ✅ |
+| 3a. Lifecycle Date Semantics | ✅ Done / Frozen |
+| 3b. Lifecycle Risk Policy | ✅ Engineering Validation |
+| 3c. Systematic Lifecycle Event Data | Next / Deferred |
 | 4. A-share Execution Engine | — |
 | 5. Risk / Attribution | — |
 | 6. Alpha Research Factory | — |

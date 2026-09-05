@@ -28,10 +28,18 @@ from quantlab.backtest.models import (
     LifecycleEvent,
     PositionRecord,
     RebalanceRecord,
+    RiskPolicyAuditRecord,
     SkippedExecution,
     TradeRecord,
 )
 from quantlab.backtest.report import build_report
+from quantlab.backtest.risk_policy import (
+    EXIT_POLICY_ID,
+    EXIT_POLICY_NAME,
+    EXIT_POLICY_VERSION,
+    risk_policy_statistics,
+    termination_decisions_available_as_of,
+)
 
 __all__ = [
     "AccountingResidual",
@@ -47,6 +55,7 @@ __all__ = [
     "MISSING_PRICE_POLICY",
     "PositionRecord",
     "RebalanceRecord",
+    "RiskPolicyAuditRecord",
     "RUN_MODE_DIAGNOSTIC",
     "RUN_MODE_STRICT",
     "SkippedExecution",
@@ -54,10 +63,15 @@ __all__ = [
     "STATUS_BLOCKED_UNSUPPORTED_EVENT",
     "STATUS_COMPLETED",
     "TradeRecord",
+    "EXIT_POLICY_ID",
+    "EXIT_POLICY_NAME",
+    "EXIT_POLICY_VERSION",
     "build_report",
     "compute_metrics",
     "first_invalid_open_session",
     "is_instrument_invalid_on_delist_boundary",
     "run_backtest",
+    "risk_policy_statistics",
+    "termination_decisions_available_as_of",
     "weekly_signal_dates",
 ]
