@@ -15,6 +15,7 @@ from quantlab.backtest.models import (
     STATUS_ACCOUNTING_ERROR,
     STATUS_BLOCKED_UNSUPPORTED_EVENT,
     STATUS_COMPLETED,
+    STATUS_COMPLETED_WITH_SETTLEMENT,
     AccountingResidual,
     BacktestConfig,
     BacktestResult,
@@ -25,6 +26,7 @@ from quantlab.backtest.models import (
     PositionRecord,
     RebalanceRecord,
     RiskPolicyAuditRecord,
+    SettlementRecord,
     SkippedExecution,
     TradeRecord,
 )
@@ -40,6 +42,7 @@ _SOLVER_TOL = 1e-15
 _ROOT_MAX_ITER = 100
 _NEG_TOL = 1e-9
 _REL_TOL = 1e-9
+_ZERO_SCALE_ABS_TOL = 1e-9
 
 
 @dataclass
@@ -491,9 +494,11 @@ def _session_accounting_summary(
     start: dict,
     segment_summaries: list[dict],
     frozen_instruments: set[str],
+    settlements: dict[str, dict] | None = None,
 ) -> dict | None:
-    """Combine forced-exit and rebalance legs for final-ledger validation."""
-    if not segment_summaries and not frozen_instruments:
+    """Combine forced-exit, settlement and rebalance legs for validation."""
+    settlements = settlements or {}
+    if not segment_summaries and not frozen_instruments and not settlements:
         return None
     signed: dict[str, float] = {}
     for summary in segment_summaries:
@@ -504,6 +509,7 @@ def _session_accounting_summary(
         "v_minus": start["v_minus"],
         "pre_values": start["pre_values"],
         "signed": signed,
+        "settlements": settlements,
         "frozen_pre": {
             instrument_id: start["pre_values"][instrument_id]
             for instrument_id in sorted(frozen_instruments)
@@ -526,12 +532,19 @@ def _forced_exit_summary(
 
 
 def _session_trade_ratios(summary: dict | None) -> tuple[float, float, float, float]:
-    """Return buy, sell, traded and turnover ratios from all session legs."""
+    """Return buy, sell, traded and turnover ratios from all session legs.
+
+    Settlement disposals are not market trades and are excluded from turnover.
+    """
     if summary is None:
         return 0.0, 0.0, 0.0, 0.0
     scale = summary["v_minus"]
+    settlements = summary.get("settlements", {})
+    recovered = math.fsum(v["recovered"] for v in settlements.values())
     buy = math.fsum(max(value, 0.0) for value in summary["signed"].values()) / scale
-    sell = math.fsum(max(-value, 0.0) for value in summary["signed"].values()) / scale
+    sell = (
+        math.fsum(max(-value, 0.0) for value in summary["signed"].values()) - recovered
+    ) / scale
     traded = buy + sell
     return buy, sell, traded, 0.5 * traded
 
@@ -554,6 +567,13 @@ def run_backtest(
 
     ``mode`` is ``"strict"`` (stop before the first unsupported lifecycle event)
     or ``"diagnostic"`` (continue past events with ``diagnostic_only`` marking).
+
+    When ``config.delisting_settlement`` is set, lifecycle-invalid held
+    positions without a valid exit price are settled as cash at
+    ``last_mark_value * recovery_rate`` (net book minus ``settlement_fee_bps``;
+    gross book never pays the fee) and the run completes as
+    ``completed_with_settlement_assumptions`` instead of blocking. This is an
+    explicit accounting assumption, not a verified delisting fact.
     """
     if mode not in (RUN_MODE_STRICT, RUN_MODE_DIAGNOSTIC):
         raise ValueError(f"invalid mode {mode!r}")
@@ -613,6 +633,9 @@ def run_backtest(
     solver_residual = 0.0
     seen_event_keys: set[tuple[str, str]] = set()
     exited_by_book = {"gross": set(), "net": set()}
+    settlement_cfg = config.delisting_settlement
+    settlement_events: list[SettlementRecord] = []
+    settled_by_book = {"gross": set(), "net": set()}
 
     status = STATUS_COMPLETED
     first_blocking_event: LifecycleEvent | None = None
@@ -744,13 +767,21 @@ def run_backtest(
                 key=lambda e: (e.blocking_session, e.book, e.instrument_id)
             )
             lifecycle_events.extend(new_events)
-            status = STATUS_BLOCKED_UNSUPPORTED_EVENT
-            if first_blocking_event is None:
-                first_blocking_event = new_events[0]
-            if mode == RUN_MODE_STRICT:
-                break
-            if diagnostic_from is None:
-                diagnostic_from = trade_date
+            if settlement_cfg is None:
+                status = STATUS_BLOCKED_UNSUPPORTED_EVENT
+                if first_blocking_event is None:
+                    first_blocking_event = new_events[0]
+                if mode == RUN_MODE_STRICT:
+                    break
+                if diagnostic_from is None:
+                    diagnostic_from = trade_date
+            else:
+                # Settlement policy: held positions are resolved by the
+                # explicit settlement assumption below; target-only events
+                # (prevented new entries) stay audit-only and non-blocking.
+                held_events = [e for e in new_events if e.book in ("gross", "net")]
+                if held_events and first_blocking_event is None:
+                    first_blocking_event = held_events[0]
 
         # ---- valuation ----
         gross_market_pnl = gross_book.mark_to_market(
@@ -766,6 +797,8 @@ def run_backtest(
         net_cost = 0.0
         gross_segments: list[dict] = []
         net_segments: list[dict] = []
+        gross_settlements: dict[str, dict] = {}
+        net_settlements: dict[str, dict] = {}
         gross_frozen: set[str] = set()
         net_frozen: set[str] = set()
         gross_rebalance_summary: dict | None = None
@@ -823,6 +856,12 @@ def run_backtest(
                 elif instr in exited_by_book[book_name]:
                     state = "exited"
                     reason = "position already exited; re-entry remains forbidden"
+                elif instr in settled_by_book[book_name]:
+                    state = "exited"
+                    reason = (
+                        "position settled under delisting settlement assumption; "
+                        "re-entry remains forbidden"
+                    )
                 else:
                     state = "exit_required"
                     reason = "trusted termination decision available; no position held"
@@ -860,6 +899,76 @@ def run_backtest(
                 else:
                     net_cost += fee
 
+        # ---- residual lifecycle settlement (explicit assumption) ----
+        # Trusted-fact forced exits above retain priority; settlement only
+        # resolves lifecycle-invalid positions they could not exit.
+        if settlement_cfg is not None:
+            session_event_index = {
+                (e.instrument_id, e.book): e
+                for e in new_events
+                if e.book in ("gross", "net")
+            }
+            for book_name, book, start, segments, settlements_for_book in (
+                ("gross", gross_book, gross_start, gross_segments, gross_settlements),
+                ("net", net_book, net_start, net_segments, net_settlements),
+            ):
+                fee_rate = (
+                    0.0
+                    if book_name == "gross"
+                    else settlement_cfg.settlement_fee_rate
+                )
+                for instr in sorted(blocked_instruments & set(book.positions)):
+                    event = session_event_index.get((instr, book_name))
+                    pos = book.positions.pop(instr)
+                    recovered = pos.value * settlement_cfg.recovery_rate
+                    settle_fee = recovered * fee_rate
+                    cash_credit = recovered - settle_fee
+                    shortfall = pos.value - recovered
+                    book.cash += cash_credit
+                    settled_by_book[book_name].add(instr)
+                    settlements_for_book[instr] = {
+                        "pre": pos.value,
+                        "recovered": recovered,
+                        "fee": settle_fee,
+                        "shortfall": shortfall,
+                    }
+                    # disposal leg: proceeds before the settlement fee, so the
+                    # fee reconciles as an explicit cost term, not market cost
+                    segments.append(
+                        {
+                            "signed": {instr: -recovered},
+                            "pre_values": start["pre_values"],
+                            "frozen_pre": {},
+                        }
+                    )
+                    status = STATUS_COMPLETED_WITH_SETTLEMENT
+                    settlement_events.append(
+                        SettlementRecord(
+                            instrument_id=instr,
+                            book=book_name,
+                            event_type=event.event_type if event else "unknown",
+                            event_date=event.event_date if event else trade_date,
+                            blocking_session=trade_date,
+                            last_mark_value=pos.value,
+                            last_mark_date=pos.last_mark_date,
+                            recovery_rate=settlement_cfg.recovery_rate,
+                            settlement_fee=settle_fee,
+                            settled_value=cash_credit,
+                            recovery_shortfall=shortfall,
+                            description=(
+                                event.description if event
+                                else "residual lifecycle settlement"
+                            ),
+                        )
+                    )
+
+        # settled instruments can never be re-entered by a later target
+        rebalance_blocked = frozenset(
+            set(blocked_instruments)
+            | settled_by_book["gross"]
+            | settled_by_book["net"]
+        )
+
         if target is not None:
             signal_date, target_portfolio = target
             signal_restricted = frozenset(
@@ -868,11 +977,11 @@ def run_backtest(
             )
             gross_rebalance_summary = _rebalance(
                 gross_book, target_portfolio, current_prices, 0.0,
-                signal_date, trade_date, blocked_instruments, signal_restricted,
+                signal_date, trade_date, rebalance_blocked, signal_restricted,
             )
             net_rebalance_summary = _rebalance(
                 net_book, target_portfolio, current_prices, config.cost_rate,
-                signal_date, trade_date, blocked_instruments, signal_restricted,
+                signal_date, trade_date, rebalance_blocked, signal_restricted,
             )
             gross_segments.append(gross_rebalance_summary)
             net_segments.append(net_rebalance_summary)
@@ -912,10 +1021,10 @@ def run_backtest(
                     )
 
         gross_summary = _session_accounting_summary(
-            gross_book, gross_start, gross_segments, gross_frozen
+            gross_book, gross_start, gross_segments, gross_frozen, gross_settlements
         )
         net_summary = _session_accounting_summary(
-            net_book, net_start, net_segments, net_frozen
+            net_book, net_start, net_segments, net_frozen, net_settlements
         )
         gross_buy_ratio, gross_sell_ratio, gross_traded_ratio, gross_turnover = (
             _session_trade_ratios(gross_summary)
@@ -984,10 +1093,12 @@ def run_backtest(
         gross_violations = _accumulate_checks(
             acc, "gross", trade_date, gross_book, gross_book.prev_nav,
             gross_market_pnl, gross_cost, 0.0, gross_summary,
+            allow_zero_nav=settlement_cfg is not None,
         )
         net_violations = _accumulate_checks(
             acc, "net", trade_date, net_book, net_book.prev_nav,
             net_market_pnl, net_cost, config.cost_rate, net_summary,
+            allow_zero_nav=settlement_cfg is not None,
         )
         all_violations = gross_violations + net_violations
         if all_violations:
@@ -1084,6 +1195,7 @@ def run_backtest(
         accounting_error_date=accounting_error_date,
         accounting_error_book=accounting_error_book,
         risk_policy_audit=risk_policy_audit,
+        settlement_events=settlement_events,
     )
 
 
@@ -1101,10 +1213,22 @@ def _record_residual(
             f"{check} residual not finite on {trade_date} {book_name}: {abs_r}"
         )
         return
-    if not math.isfinite(scale) or scale <= 0:
+    if not math.isfinite(scale) or scale < 0:
         violations.append(
             f"{check} invalid scale on {trade_date} {book_name}: {scale}"
         )
+        return
+    if scale == 0:
+        # zero-NAV corner (portfolio settled to zero at the recovery=0 bound):
+        # only a near-zero absolute residual is acceptable; anything larger
+        # means real corruption and still fails
+        if abs_r > _ZERO_SCALE_ABS_TOL:
+            violations.append(
+                f"{check} invalid scale on {trade_date} {book_name}: {scale} "
+                f"(residual {abs_r:.6e} at zero scale)"
+            )
+            return
+        acc.add(check, abs_r, 0.0, trade_date, book_name)
         return
     rel = abs_r / scale
     acc.add(check, abs_r, rel, trade_date, book_name)
@@ -1149,6 +1273,13 @@ def _check_summary_finite(
             violations.append(
                 f"{book_name} summary pre_value {instr} not finite on {trade_date}: {value}"
             )
+    for instr, values in summary.get("settlements", {}).items():
+        for name, value in values.items():
+            if not math.isfinite(value):
+                violations.append(
+                    f"{book_name} summary settlement {instr}.{name} not finite "
+                    f"on {trade_date}: {value}"
+                )
 
 
 def _accumulate_checks(
@@ -1161,6 +1292,7 @@ def _accumulate_checks(
     fee: float,
     cost_rate: float,
     summary: dict | None,
+    allow_zero_nav: bool = False,
 ) -> list[str]:
     violations: list[str] = []
     nav = book.nav()
@@ -1169,7 +1301,10 @@ def _accumulate_checks(
         violations, book_name, trade_date, prev_nav, market_pnl, fee
     )
 
-    if not math.isfinite(nav) or nav <= 0:
+    # settlement runs may legitimately drive NAV to (float-dust around) zero
+    # at the zero-recovery bound; corruption still fails beyond tolerance
+    nav_floor = -_NEG_TOL * max(prev_nav, 1.0) if allow_zero_nav else 0.0
+    if not math.isfinite(nav) or nav < nav_floor:
         violations.append(f"{book_name} nav not finite/positive on {trade_date}: {nav}")
     if not math.isfinite(book.cash):
         violations.append(f"{book_name} cash not finite on {trade_date}: {book.cash}")
@@ -1192,7 +1327,15 @@ def _accumulate_checks(
     scale = nav if nav > 0 else (prev_nav if prev_nav > 0 else 0.0)
     _record_residual(acc, violations, "asset_identity", abs(r), scale, trade_date, book_name)
 
-    r = nav - (prev_nav + market_pnl - fee)
+    settlements = (
+        summary.get("settlements", {}) if summary is not None else {}
+    )
+    settlement_fee_total = math.fsum(v["fee"] for v in settlements.values())
+    shortfall_total = math.fsum(v["shortfall"] for v in settlements.values())
+
+    r = nav - (
+        prev_nav + market_pnl - fee - settlement_fee_total - shortfall_total
+    )
     scale = prev_nav if prev_nav > 0 else (nav if nav > 0 else 0.0)
     _record_residual(acc, violations, "daily_nav_bridge", abs(r), scale, trade_date, book_name)
 
@@ -1210,17 +1353,24 @@ def _accumulate_checks(
     scale_v = v_minus if v_minus > 0 else (nav if nav > 0 else 0.0)
 
     actual_traded = math.fsum(abs(s) for s in signed.values())
-    r = fee - cost_rate * actual_traded
+    recovered_total = math.fsum(v["recovered"] for v in settlements.values())
+    # market-cost consistency only; the settlement fee is a separate term
+    r = fee - cost_rate * (actual_traded - recovered_total)
     _record_residual(
         acc, violations, "fee_consistency", abs(r), scale_v, trade_date, book_name
     )
 
-    r = book.cash - (cash_before - math.fsum(signed.values()) - fee)
+    r = book.cash - (
+        cash_before
+        - math.fsum(signed.values())
+        - fee
+        - settlement_fee_total
+    )
     _record_residual(
         acc, violations, "cash_flow", abs(r), scale_v, trade_date, book_name
     )
 
-    r = nav - (v_minus - fee)
+    r = nav - (v_minus - fee - settlement_fee_total - shortfall_total)
     _record_residual(
         acc, violations, "rebalance_nav", abs(r), scale_v, trade_date, book_name
     )
@@ -1231,7 +1381,8 @@ def _accumulate_checks(
         pre = pre_values.get(instr, 0.0)
         post_actual = book.positions[instr].value if instr in book.positions else 0.0
         s = signed.get(instr, 0.0)
-        r = (post_actual - pre) - s
+        shortfall = settlements.get(instr, {}).get("shortfall", 0.0)
+        r = (post_actual - pre) - s + shortfall
         pscale = abs(pre) if pre != 0 else scale_v
         _record_residual(
             acc, violations, "position_reconciliation",

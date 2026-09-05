@@ -12,8 +12,42 @@ RUN_MODE_STRICT = "strict"
 RUN_MODE_DIAGNOSTIC = "diagnostic"
 
 STATUS_COMPLETED = "completed"
+STATUS_COMPLETED_WITH_SETTLEMENT = "completed_with_settlement_assumptions"
 STATUS_BLOCKED_UNSUPPORTED_EVENT = "blocked_by_unsupported_event"
 STATUS_ACCOUNTING_ERROR = "accounting_error"
+
+
+@dataclass(frozen=True)
+class DelistingSettlementConfig:
+    """Explicit delisting-settlement assumption (opt-in policy).
+
+    When a lifecycle-invalid position has no valid exit price, the engine
+    settles it as cash at ``last_mark_value * recovery_rate`` minus a
+    ``settlement_fee_bps`` charge. This is an explicit accounting assumption,
+    never a verified delisting fact or a market transaction.
+    """
+
+    recovery_rate: float = 1.0
+    settlement_fee_bps: float = 0.0
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.recovery_rate) or not 0.0 <= self.recovery_rate <= 1.0:
+            raise ValueError(
+                f"recovery_rate must be finite and in [0, 1], got {self.recovery_rate}"
+            )
+        if (
+            not math.isfinite(self.settlement_fee_bps)
+            or self.settlement_fee_bps < 0
+            or self.settlement_fee_bps >= _MAX_COST_BPS
+        ):
+            raise ValueError(
+                f"settlement_fee_bps must be finite and in [0, {_MAX_COST_BPS}), "
+                f"got {self.settlement_fee_bps}"
+            )
+
+    @property
+    def settlement_fee_rate(self) -> float:
+        return self.settlement_fee_bps / 10_000.0
 
 
 @dataclass(frozen=True)
@@ -23,6 +57,10 @@ class BacktestConfig:
     initial_nav: float = 1.0
     transaction_cost_bps: float = 0.0
     annualization: int = 252
+    # None keeps the legacy behaviour: the strict run blocks on the first
+    # unsupported lifecycle event. A DelistingSettlementConfig opts in to the
+    # explicit residual-settlement assumption described above.
+    delisting_settlement: DelistingSettlementConfig | None = None
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.initial_nav) or self.initial_nav <= 0:
@@ -200,6 +238,30 @@ class LifecycleEvent:
 
 
 @dataclass(frozen=True)
+class SettlementRecord:
+    """One lifecycle settlement applied to one book.
+
+    Records the explicit assumption outcome: the position was settled as cash
+    at ``last_mark_value * recovery_rate`` minus ``settlement_fee``. The
+    original blocking lifecycle event context is preserved so the settlement
+    stays auditable and clearly distinct from a verified market exit.
+    """
+
+    instrument_id: str
+    book: str  # "gross" | "net"
+    event_type: str  # "delist" | "code_change" | "conflict"
+    event_date: date  # original event date from the source data
+    blocking_session: date  # session at which the settlement was applied
+    last_mark_value: float
+    last_mark_date: date | None
+    recovery_rate: float
+    settlement_fee: float
+    settled_value: float  # cash credited (net of settlement fee)
+    recovery_shortfall: float  # last_mark_value - recovered (pre fee)
+    description: str
+
+
+@dataclass(frozen=True)
 class AccountingResidual:
     """Max absolute and relative residual for one final-accounting check.
 
@@ -266,3 +328,4 @@ class BacktestResult:
     accounting_error_date: date | None
     accounting_error_book: str | None
     risk_policy_audit: list[RiskPolicyAuditRecord] = field(default_factory=list)
+    settlement_events: list[SettlementRecord] = field(default_factory=list)

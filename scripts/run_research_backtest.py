@@ -5,6 +5,13 @@ Runs baseline and admission paths under both the legacy delist_date boundary
 (``legacy_delist_date_inclusive``) and the candidate ``delist_date_is_first_invalid_v1``
 interpretation, each in strict and diagnostic mode, with full provenance.
 
+Additionally runs the delisting settlement policy v0 on the same legacy
+baseline configuration: an explicit settlement assumption at ``recovery_rate``
+1.0 and a zero-recovery sensitivity bound at 0.0. The recovery-1.0 path is the
+first performance-valid strict full-period baseline; the recovery-0.0 path
+brackets the assumption from below. Settlement is an explicit accounting
+assumption, not a verified delisting fact.
+
 Fixed engineering configuration: momentum_20d (lower_is_better), weekly
 rebalance, V1 universe, 20% selection, 10 bps transaction cost.
 """
@@ -14,6 +21,7 @@ from __future__ import annotations
 import json
 import subprocess
 import time
+from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
 
@@ -27,8 +35,10 @@ from quantlab.backtest import (
     RUN_MODE_DIAGNOSTIC,
     RUN_MODE_STRICT,
     BacktestConfig,
+    DelistingSettlementConfig,
     LifecycleMonitor,
     build_report,
+    compute_metrics,
     first_invalid_open_session,
     run_backtest,
     weekly_signal_dates,
@@ -63,7 +73,7 @@ from quantlab.portfolio import RankPortfolioConfig, construct_rank_portfolio
 from quantlab.research import build_research_dataset, filter_v1_universe
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-ENGINE_SCHEMA_VERSION = "v0.2.4"
+ENGINE_SCHEMA_VERSION = "v0.3.0"
 EXPERIMENT_SCHEMA = "lifecycle_date_semantics_v0_1_1"
 
 PERIOD_START = date(2020, 1, 1)
@@ -370,6 +380,29 @@ def _date_semantics_table(open_dates: list, delist_map: dict) -> list[dict]:
     return rows
 
 
+def _settlement_bound(result, config) -> dict:
+    """Bound-level metrics, affected instruments and average settled weight."""
+    metrics = compute_metrics(result.records, result.rebalances, config)
+    net_rows = [e for e in result.settlement_events if e.book == "net"]
+    nav_map = {r.trade_date: r.nav_net for r in result.records}
+    weights = {}
+    for e in net_rows:
+        nav = nav_map.get(e.blocking_session)
+        if nav:
+            weights[e.instrument_id] = e.last_mark_value / nav
+    return {
+        "status": result.status,
+        "total_return_net": metrics["total_return_net"],
+        "cagr_net": metrics["cagr_net"],
+        "sharpe_net": metrics["sharpe_net"],
+        "max_drawdown_net": metrics["max_drawdown_net"],
+        "affected_instrument_count": len({e.instrument_id for e in net_rows}),
+        "settled_instrument_average_weight_at_settlement": (
+            sum(weights.values()) / len(weights) if weights else 0.0
+        ),
+    }
+
+
 def _compare_paths(base_strict, adm_strict, base_diag, adm_diag,
                    restricted_by_signal, bt_open_dates) -> dict:
     base_dates = {r.trade_date for r in base_strict.records}
@@ -568,6 +601,33 @@ def _main() -> None:
         requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
         restricted_by_signal=restricted_by_signal_v2,
     )
+
+    # delisting settlement policy v0: explicit assumption bounds on the same
+    # legacy baseline configuration. Inside the engine, trusted-fact forced
+    # exits keep priority; settlement only resolves residual unknown
+    # lifecycle invalidations without a valid exit price.
+    settlement_config = replace(
+        bt_config,
+        delisting_settlement=DelistingSettlementConfig(
+            recovery_rate=1.0, settlement_fee_bps=0.0
+        ),
+    )
+    settlement_zero_config = replace(
+        bt_config,
+        delisting_settlement=DelistingSettlementConfig(
+            recovery_rate=0.0, settlement_fee_bps=0.0
+        ),
+    )
+    settlement_strict = run_backtest(
+        price_frame, bt_open_dates, targets, settlement_config,
+        execution_lag_sessions=1, mode=RUN_MODE_STRICT, lifecycle=monitor,
+        requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
+    )
+    settlement_zero_strict = run_backtest(
+        price_frame, bt_open_dates, targets, settlement_zero_config,
+        execution_lag_sessions=1, mode=RUN_MODE_STRICT, lifecycle=monitor,
+        requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
+    )
     runtime = time.perf_counter() - t0
 
     # re-discover code files so added/removed files are detected
@@ -593,6 +653,38 @@ def _main() -> None:
     diagnostic_metrics = report["diagnostic_metrics"]
     performance_valid = report["performance_valid"]
     invalid_reasons = report["invalid_reasons"]
+
+    settlement_report = build_report(
+        settlement_strict, None, reproducible, settlement_config,
+        expected_sessions=bt_open_dates,
+    )
+    bound_full = _settlement_bound(settlement_strict, settlement_config)
+    bound_zero = _settlement_bound(settlement_zero_strict, settlement_zero_config)
+    settlement_sensitivity = {
+        "note": (
+            "same strict configuration and targets; only recovery_rate varies "
+            "between the explicit settlement bounds (1.0 = settle at the last "
+            "available mark, 0.0 = settle at zero). The bounds bracket the "
+            "assumption; they are not recovery expectations and the gap "
+            "measures how much conclusions depend on the settlement rate."
+        ),
+        "recovery_1": bound_full,
+        "recovery_0": bound_zero,
+        "deltas": {
+            "total_return_net": abs(
+                bound_zero["total_return_net"] - bound_full["total_return_net"]
+            ),
+            "cagr_net": abs(bound_zero["cagr_net"] - bound_full["cagr_net"]),
+            "sharpe_net": abs(bound_zero["sharpe_net"] - bound_full["sharpe_net"]),
+            "max_drawdown_net": abs(
+                bound_zero["max_drawdown_net"] - bound_full["max_drawdown_net"]
+            ),
+        },
+        "cagr_net_delta": abs(bound_zero["cagr_net"] - bound_full["cagr_net"]),
+        "affected_instruments": sorted(
+            {e.instrument_id for e in settlement_strict.settlement_events}
+        ),
+    }
 
     unique_event_ids = {e.event_id for e in diagnostic_result.lifecycle_events}
 
@@ -706,6 +798,17 @@ def _main() -> None:
             "transaction_cost_bps": 10.0,
             "initial_nav": bt_config.initial_nav,
             "annualization": bt_config.annualization,
+            "delisting_settlement": {
+                "recovery_rate": settlement_config.delisting_settlement.recovery_rate,
+                "settlement_fee_bps": (
+                    settlement_config.delisting_settlement.settlement_fee_bps
+                ),
+                "gross_book_settlement_fee_bps": 0.0,
+                "scope": (
+                    "opt-in; only the strict_settlement paths use it, all "
+                    "comparison paths keep legacy blocking semantics"
+                ),
+            },
         },
         "accounting": {
             "dual_ledger": "gross (cost_rate=0) and net (config.cost_rate)",
@@ -791,6 +894,36 @@ def _main() -> None:
             "statistics": _statistics(strict_result),
             "first_blocked_asset_audit": _audit_case(strict_result),
         },
+        "strict_settlement_baseline": {
+            "policy": "delisting_settlement_v0",
+            "recovery_rate": settlement_config.delisting_settlement.recovery_rate,
+            "settlement_fee_bps": (
+                settlement_config.delisting_settlement.settlement_fee_bps
+            ),
+            "lifecycle_mode": LEGACY_DELIST_DATE_INCLUSIVE,
+            "status": settlement_strict.status,
+            "performance_valid": settlement_report["performance_valid"],
+            "invalid_reasons": settlement_report["invalid_reasons"],
+            "n_records": len(settlement_strict.records),
+            "valid_through": (
+                settlement_strict.valid_through.isoformat()
+                if settlement_strict.valid_through else None
+            ),
+            "solver_root_residual": settlement_strict.solver_root_residual,
+            "accounting_checks": [
+                c.__dict__ for c in settlement_strict.accounting_checks
+            ],
+            "accounting_error": settlement_strict.accounting_error,
+            "first_blocking_event": (
+                settlement_strict.first_blocking_event.__dict__
+                if settlement_strict.first_blocking_event else None
+            ),
+            "settlement_event_count": len(settlement_strict.settlement_events),
+            "metrics": settlement_report["metrics"],
+            "settlement_disclosure": settlement_report["settlement_disclosure"],
+            "statistics": _statistics(settlement_strict),
+        },
+        "settlement_sensitivity": settlement_sensitivity,
         "diagnostic": {
             "run_mode": diagnostic_result.run_mode,
             "status": diagnostic_result.status,
@@ -911,6 +1044,8 @@ def _main() -> None:
     export_group(out_dir, "A_v1_baseline_diagnostic", baseline_new_diagnostic)
     export_group(out_dir, "C_v1_admission_v2", admission_v2_new_strict)
     export_group(out_dir, "C_v1_admission_v2_diagnostic", admission_v2_new_diagnostic)
+    export_group(out_dir, "strict_settlement_recovery_1", settlement_strict)
+    export_group(out_dir, "strict_settlement_recovery_0", settlement_zero_strict)
 
     print(f"=== research backtest {ENGINE_SCHEMA_VERSION} ===")
     print(f"strict status: {strict_result.status}")
@@ -949,6 +1084,17 @@ def _main() -> None:
           f"buy_cap_binding: {comparison['buy_cap_binding']} "
           f"allowed_sell: {comparison['allowed_sell_occurrences']}")
     print(f"rejection evaluations: {comparison['rejection_evaluations']}")
+    print(f"settlement strict status: {settlement_strict.status} "
+          f"performance_valid={settlement_report['performance_valid']} "
+          f"settlements={len(settlement_strict.settlement_events)}")
+    if settlement_report["metrics"] is not None:
+        sm = settlement_report["metrics"]
+        print(f"settlement baseline: total_return_net={sm['total_return_net']:.4f} "
+              f"cagr_net={sm['cagr_net']:.4f} sharpe_net={sm['sharpe_net']:.4f} "
+              f"max_drawdown_net={sm['max_drawdown_net']:.4f}")
+    print(f"settlement bounds cagr_net: recovery_1={bound_full['cagr_net']:.4f} "
+          f"recovery_0={bound_zero['cagr_net']:.4f} "
+          f"delta={settlement_sensitivity['cagr_net_delta']:.4f}")
     print(f"output dir: {out_dir}")
     print(f"runtime: {runtime:.1f}s")
 
