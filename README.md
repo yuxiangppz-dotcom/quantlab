@@ -48,7 +48,8 @@ trading step reproducible and free of look-ahead bias.
 
 **Backtest**
 
-- [x] Research backtest (idealized: T+1-close execution, natural value drift)
+- [x] Research backtest (dual gross/net ledgers, self-financing cost, T+1-close)
+- [x] Freeze held positions missing a price (`freeze_held_no_price`)
 - [ ] A-share execution constraints
 
 **Live**
@@ -234,10 +235,18 @@ weekly rebalance, 20% selection, 10 bps cost):
 uv run python scripts/run_research_backtest.py
 ```
 
-Results are written under `data/experiments/research_backtest_v0/`, including
-`summary.json` (metadata + metrics), `daily_nav.csv`, and `rebalance_log.csv`.
-This is an idealized portfolio simulation (`test_observed = true`,
-`performance_claim = false`), not an execution simulator.
+Results are written under `data/experiments/research_backtest_v0_2/`, including
+`summary.json` (metadata + metrics + provenance), `manifest.json` (input data
+content fingerprint), `daily_records.csv`, `daily_books.csv`,
+`daily_positions.csv`, `rebalance_log.csv`, and `trade_details.csv`.
+
+The engine simulates two independent ledgers (gross = zero-cost counterfactual,
+net = actual cost) with self-financing transaction cost and a
+`freeze_held_no_price` policy for held positions missing a price. This is an
+idealized portfolio simulation (`test_observed = true`,
+`performance_claim = false`), not an execution simulator. A run that encounters
+unsupported delisting / code-change events is reported as
+`blocked_by_unsupported_event` rather than as a completed performance result.
 
 ## Research Philosophy
 

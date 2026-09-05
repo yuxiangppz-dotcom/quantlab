@@ -75,14 +75,26 @@ balances cash as `1.0 - n*weight` (all-NaN input → `cash_weight = 1.0`).
 
 ### Research Backtest
 
-Implemented in `src/quantlab/backtest/`. An idealized value-based engine
-(`cash_value` + per-instrument `positions_value`) that simulates T-signal →
-T+1-close execution and lets the portfolio drift between rebalances. PnL is
-derived only from chronological adjusted closes — `future_return_*` labels are
-never read. Held positions with a missing bar mark return 0; a new target with
-no execution-date bar is not opened and stays in cash. Transaction cost is a
-symmetric proportional charge that reduces net NAV but not gross NAV. It is a
-research simulator, not an execution simulator.
+Implemented in `src/quantlab/backtest/`. It simulates **two independent
+ledgers** (gross and net) that share the same market inputs, target sequence and
+valuation logic but keep separate `cash_value` and per-instrument position
+amounts. Positions are simulated as adjusted-close value amounts, **not share
+counts**.
+
+- The **gross** book runs with `cost_rate = 0` (a zero-cost counterfactual); the
+  **net** book uses `config.cost_rate`.
+- Market returns mark both books to market; transaction cost is charged
+  **self-financing** against actual traded value (`v + c * traded(v) = v_minus`,
+  solved by bounded bisection), so cost permanently reduces only the net book.
+- Held positions with no current price are **frozen** (`freeze_held_no_price`):
+  they are valued at their last available mark but cannot be bought or sold. A
+  new target with no execution-date bar is not opened and stays in cash.
+- PnL comes only from chronological adjusted closes; `future_return_*` labels are
+  never read.
+
+It is a research simulator, not an execution simulator. Held positions that hit
+a delisting or code-change event are reported as unsupported (the run is marked
+`blocked_by_unsupported_event`) rather than being silently cashed out.
 
 ## Future Concepts
 

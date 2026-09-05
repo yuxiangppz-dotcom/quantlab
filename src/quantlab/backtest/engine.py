@@ -1,15 +1,65 @@
-"""Idealized research backtest engine."""
+"""Idealized research backtest engine with dual independent ledgers."""
 
 from __future__ import annotations
 
+import math
+from dataclasses import dataclass
 from datetime import date
 
 import pandas as pd
 
-from quantlab.backtest.models import BacktestConfig, DailyBacktestRecord, RebalanceRecord
+from quantlab.backtest.models import (
+    BacktestConfig,
+    BacktestResult,
+    BookSnapshot,
+    DailyBacktestRecord,
+    PositionRecord,
+    RebalanceRecord,
+    SkippedExecution,
+    TradeRecord,
+)
 from quantlab.portfolio.models import TargetPortfolio
 
-HELD_MISSING_BAR_REBALANCE_POLICY = "stale_mark_idealized"
+MISSING_PRICE_POLICY = "freeze_held_no_price"
+
+_TOL = 1e-12
+_TRADE_TOL = 1e-9
+_ROOT_MAX_ITER = 200
+
+
+@dataclass
+class _Position:
+    value: float
+    last_price: float | None
+    last_mark_date: date | None
+
+
+class _Book:
+    """A single independent ledger (gross or net)."""
+
+    def __init__(self, initial_nav: float) -> None:
+        self.cash = initial_nav
+        self.positions: dict[str, _Position] = {}
+        self.prev_nav = initial_nav
+
+    def nav(self) -> float:
+        return self.cash + sum(p.value for p in self.positions.values())
+
+    def mark_to_market(self, current_prices: dict[str, float], trade_date: date) -> float:
+        """Value held positions at current prices; return market pnl."""
+        nav_before = self.nav()
+        for instr, pos in self.positions.items():
+            price = current_prices.get(instr)
+            if price is None:
+                continue
+            if pos.last_price is None or pos.last_price <= 0:
+                raise ValueError(
+                    f"position {instr} has no trusted initial mark on {trade_date}"
+                )
+            pos.value *= price / pos.last_price
+            pos.last_price = price
+            pos.last_mark_date = trade_date
+        return self.nav() - nav_before
 
 
 def weekly_signal_dates(open_trade_dates: list[date]) -> list[date]:
@@ -39,166 +89,493 @@ def _next_session(open_dates: list[date], signal_date: date, lag: int) -> date |
     return open_dates[idx + lag]
 
 
+def _validate_price_frame(price_frame: pd.DataFrame) -> pd.DataFrame:
+    required = {"instrument_id", "trade_date", "adj_close"}
+    missing = required - set(price_frame.columns)
+    if missing:
+        raise ValueError(f"price_frame missing columns: {sorted(missing)}")
+    frame = price_frame[["instrument_id", "trade_date", "adj_close"]].copy()
+
+    if frame["instrument_id"].isna().any():
+        raise ValueError("price_frame has null instrument_id")
+    if frame["trade_date"].isna().any():
+        raise ValueError("price_frame has null trade_date")
+
+    frame["trade_date"] = pd.to_datetime(frame["trade_date"]).dt.date
+
+    dup = frame.duplicated(subset=["instrument_id", "trade_date"], keep=False)
+    if dup.any():
+        sample = (
+            frame.loc[dup, ["instrument_id", "trade_date"]].drop_duplicates().to_dict("records")
+        )
+        raise ValueError(f"price_frame has duplicate instrument/date rows: {sample}")
+
+    prices = frame["adj_close"]
+    non_null = prices[prices.notna()]
+    if not non_null.map(math.isfinite).all():
+        raise ValueError("price_frame adj_close must be finite when present")
+    if (non_null <= 0).any():
+        raise ValueError("price_frame adj_close must be > 0 when present")
+
+    return frame
+
+
+def _validate_targets(targets: dict[date, TargetPortfolio]) -> None:
+    for signal_date, target in targets.items():
+        if signal_date != target.as_of:
+            raise ValueError(
+                f"targets key {signal_date} does not match target.as_of {target.as_of}"
+            )
+        for pos in target.positions:
+            if pos.target_weight < 0:
+                raise ValueError(
+                    f"backtest is long-only; negative weight for {pos.instrument_id}"
+                )
+        if target.cash_weight < 0:
+            raise ValueError("target cash_weight must be >= 0 in long-only backtest")
+        if target.gross_exposure > 1.0 + 1e-9:
+            raise ValueError(f"target gross exposure {target.gross_exposure} exceeds 1.0")
+
+
+def _solve_self_financing(
+    v_minus: float,
+    cost_rate: float,
+    frozen_value: float,
+    traded_value_fn,
+) -> tuple[float, float]:
+    """Solve ``v + cost_rate * traded_value(v) = v_minus``.
+
+    Returns ``(v, residual)``. In the long-only, ``0 <= cost_rate < 1`` domain
+    the left-hand side is monotonic increasing (derivative ``>= 1 - cost_rate``),
+    so bisection on ``[frozen_value, v_minus]`` has a unique root.
+    """
+    if cost_rate == 0.0:
+        return v_minus, 0.0
+
+    lo = frozen_value
+    hi = v_minus
+    for _ in range(_ROOT_MAX_ITER):
+        mid = 0.5 * (lo + hi)
+        g = mid + cost_rate * traded_value_fn(mid) - v_minus
+        if g > 0:
+            hi = mid
+        else:
+            lo = mid
+        if hi - lo <= _TOL * max(1.0, abs(v_minus)):
+            break
+    v = 0.5 * (lo + hi)
+    residual = v + cost_rate * traded_value_fn(v) - v_minus
+    return v, abs(residual)
+
+
+def _rebalance(
+    book: _Book,
+    target: TargetPortfolio,
+    current_prices: dict[str, float],
+    cost_rate: float,
+    signal_date: date,
+    execution_date: date,
+) -> tuple[dict, float, float]:
+    """Apply a target to one book using the freeze-first allocation rule."""
+    v_minus = book.nav()
+    positions_before = {i: p.value for i, p in book.positions.items()}
+
+    target_weights = {p.instrument_id: p.target_weight for p in target.positions}
+
+    frozen: set[str] = set()
+    unavailable_new: dict[str, float] = {}
+    tradable: dict[str, float] = {}
+    for instr, w in target_weights.items():
+        if w == 0.0:
+            continue
+        if instr in current_prices:
+            tradable[instr] = w
+        elif instr in book.positions:
+            frozen.add(instr)
+        else:
+            unavailable_new[instr] = w
+    for instr in book.positions:
+        if instr not in current_prices:
+            frozen.add(instr)
+
+    frozen_value = sum(positions_before[i] for i in frozen)
+    q = target.cash_weight + sum(unavailable_new.values())
+    s = sum(tradable.values())
+
+    involved = set(positions_before) | set(tradable) | set(unavailable_new)
+
+    def final_value(v: float, instr: str) -> float:
+        if instr in frozen:
+            return positions_before[instr]
+        if instr in tradable:
+            if s > 0 and v > 0:
+                budget = max(0.0, (1.0 - q) * v - frozen_value)
+                lam = min(1.0, budget / (s * v))
+                return lam * tradable[instr] * v
+            return 0.0
+        return 0.0
+
+    def traded_value(v: float) -> float:
+        return sum(
+            abs(final_value(v, i) - positions_before.get(i, 0.0)) for i in involved
+        )
+
+    v, residual = _solve_self_financing(
+        v_minus=v_minus,
+        cost_rate=cost_rate,
+        frozen_value=frozen_value,
+        traded_value_fn=traded_value,
+    )
+    cost = v_minus - v
+    if abs(cost) <= _TRADE_TOL:
+        cost = 0.0
+        v = v_minus
+
+    final_values: dict[str, float] = {}
+    for instr in involved:
+        xp = final_value(v, instr)
+        x_minus = positions_before.get(instr, 0.0)
+        if abs(xp - x_minus) <= _TRADE_TOL:
+            xp = x_minus
+        final_values[instr] = xp
+
+    old_positions = book.positions
+    new_positions: dict[str, _Position] = {}
+    for instr, xp in final_values.items():
+        if xp <= 0.0:
+            continue
+        if instr in old_positions:
+            pos = old_positions[instr]
+            pos.value = xp
+            new_positions[instr] = pos
+        else:
+            new_positions[instr] = _Position(
+                value=xp,
+                last_price=current_prices[instr],
+                last_mark_date=execution_date,
+            )
+    book.positions = new_positions
+    book.cash = v - sum(p.value for p in new_positions.values())
+
+    buy_value = 0.0
+    sell_value = 0.0
+    nonzero_trades = 0
+    trade_details: list[tuple[str, float, float, float, float, float, str]] = []
+    for instr in involved:
+        x_minus = positions_before.get(instr, 0.0)
+        x_plus = final_values[instr]
+        signed = x_plus - x_minus
+        if signed > _TRADE_TOL:
+            buy_value += signed
+        elif signed < -_TRADE_TOL:
+            sell_value += -signed
+        if abs(signed) > _TRADE_TOL:
+            nonzero_trades += 1
+        if instr in frozen:
+            reason = "frozen_held_no_price"
+        elif instr in unavailable_new:
+            reason = "new_target_no_price"
+        elif abs(signed) <= _TOL:
+            reason = "no_change"
+        elif signed < 0:
+            reason = "sold"
+        else:
+            reason = "traded"
+        actual_weight = x_plus / v if v > 0 else 0.0
+        trade_details.append(
+            (
+                instr,
+                x_minus,
+                x_plus,
+                signed,
+                target_weights.get(instr, 0.0),
+                actual_weight,
+                reason,
+            )
+        )
+
+    buy_ratio = buy_value / v_minus if v_minus > 0 else 0.0
+    sell_ratio = sell_value / v_minus if v_minus > 0 else 0.0
+    traded_ratio = buy_ratio + sell_ratio
+    turnover = 0.5 * traded_ratio
+
+    post_gross_exposure = (
+        sum(abs(p.value) for p in new_positions.values()) / v if v > 0 else 0.0
+    )
+    pre_gross_exposure = (
+        sum(abs(pv) for pv in positions_before.values()) / v_minus if v_minus > 0 else 0.0
+    )
+
+    actual_weights = {i: p.value / v for i, p in new_positions.items()} if v > 0 else {}
+    deviation = 0.0
+    for instr in set(target_weights) | set(actual_weights):
+        deviation += abs(actual_weights.get(instr, 0.0) - target_weights.get(instr, 0.0))
+    deviation += abs((book.cash / v if v > 0 else 0.0) - target.cash_weight)
+
+    summary = {
+        "buy_ratio": buy_ratio,
+        "sell_ratio": sell_ratio,
+        "traded_ratio": traded_ratio,
+        "turnover": turnover,
+        "pre_gross_exposure": pre_gross_exposure,
+        "post_gross_exposure": post_gross_exposure,
+        "deviation": deviation,
+        "frozen_count": len(frozen),
+        "unavailable_count": len(unavailable_new),
+        "nonzero_trades": nonzero_trades,
+        "trade_details": trade_details,
+    }
+    return summary, cost, residual
+
+
 def run_backtest(
     price_frame: pd.DataFrame,
     open_dates: list[date],
     targets: dict[date, TargetPortfolio],
     config: BacktestConfig,
     execution_lag_sessions: int = 1,
-) -> tuple[list[DailyBacktestRecord], list[RebalanceRecord]]:
-    """Simulate an idealized portfolio with independent gross and net NAV.
+) -> BacktestResult:
+    """Simulate dual gross/net ledgers with self-financing cost.
 
-    State is weight-based: a single set of portfolio weights (``current_weights``
-    plus ``cash_weight``) drifts naturally with asset returns, while two NAV
-    scalars (``gross_nav`` and ``net_nav``) evolve independently:
-
-    - market returns multiply both NAVs equally;
-    - transaction cost permanently reduces only ``net_nav``.
-
-    Historical cost therefore never re-enters gross NAV.
-
-    Timing: a signal at session T rebalances at the close of the next open
-    session (T+1); the new portfolio starts earning from T+1 close onward. PnL
-    is computed from chronological adjusted closes, never from ``future_return``
-    labels.
-
-    Held positions with a missing bar are marked with return 0 using their last
-    available price, which is preserved across suspension gaps
-    (``held_missing_bar_rebalance_policy = "stale_mark_idealized"``). A new
-    target with no execution-date bar is not opened and its allocation stays in
-    cash without incurring cost.
+    Both books share the same market inputs, target sequence and valuation
+    logic; the gross book runs with ``cost_rate = 0`` and the net book with
+    ``config.cost_rate``. Positions are simulated as adjusted-close value
+    amounts (not share counts). Held positions with no current price are frozen
+    and cannot trade (``freeze_held_no_price``).
     """
+    if (
+        isinstance(execution_lag_sessions, bool)
+        or not isinstance(execution_lag_sessions, int)
+        or execution_lag_sessions <= 0
+    ):
+        raise ValueError(
+            f"execution_lag_sessions must be a positive integer, "
+            f"got {execution_lag_sessions!r}"
+        )
+
+    frame = _validate_price_frame(price_frame)
+    _validate_targets(targets)
+
     dates = sorted(set(open_dates))
+    if not dates:
+        raise ValueError("open_dates must not be empty")
+
+    price = frame.pivot(index="trade_date", columns="instrument_id", values="adj_close")
+
     execution_map: dict[date, tuple[date, TargetPortfolio]] = {}
+    skipped: list[SkippedExecution] = []
     for signal_date, target in targets.items():
+        if signal_date not in dates:
+            raise ValueError(f"signal date {signal_date} is not a simulation session")
         exec_date = _next_session(dates, signal_date, execution_lag_sessions)
-        if exec_date is not None:
+        if exec_date is None:
+            skipped.append(
+                SkippedExecution(
+                    signal_date=signal_date,
+                    reason="execution_beyond_simulation_end",
+                )
+            )
+        else:
             execution_map[exec_date] = (signal_date, target)
 
-    price = price_frame.pivot(index="trade_date", columns="instrument_id", values="adj_close")
-
-    gross_nav = config.initial_nav
-    net_nav = config.initial_nav
-    weights: dict[str, float] = {}
-    cash_weight = 1.0
-    last_price: dict[str, float] = {}
+    gross_book = _Book(config.initial_nav)
+    net_book = _Book(config.initial_nav)
 
     records: list[DailyBacktestRecord] = []
-    rebalance_log: list[RebalanceRecord] = []
-
-    prev_gross_nav = gross_nav
-    prev_net_nav = net_nav
+    rebalances: list[RebalanceRecord] = []
+    books: list[BookSnapshot] = []
+    trades: list[TradeRecord] = []
+    max_residual = 0.0
 
     for trade_date in dates:
         current_prices: dict[str, float] = {}
         if trade_date in price.index:
             current_prices = price.loc[trade_date].dropna().to_dict()
 
-        # 1. mark-to-market drift: held positions earn last_available -> current
-        asset_returns: dict[str, float] = {}
-        for instr in list(weights):
-            if instr in current_prices:
-                lp = last_price.get(instr)
-                r = current_prices[instr] / lp - 1 if lp is not None and lp > 0 else 0.0
-                asset_returns[instr] = r
-                last_price[instr] = current_prices[instr]
-            else:
-                asset_returns[instr] = 0.0
+        gross_market_pnl = gross_book.mark_to_market(current_prices, trade_date)
+        net_market_pnl = net_book.mark_to_market(current_prices, trade_date)
 
-        portfolio_return = sum(w * asset_returns.get(i, 0.0) for i, w in weights.items())
+        gross_cost = 0.0
+        net_cost = 0.0
+        gross_turnover = 0.0
+        net_turnover = 0.0
+        gross_traded_ratio = 0.0
+        net_traded_ratio = 0.0
 
-        gross_nav *= 1 + portfolio_return
-        net_nav *= 1 + portfolio_return
-
-        denom = 1 + portfolio_return
-        if denom != 0.0:
-            weights = {
-                i: w * (1 + asset_returns.get(i, 0.0)) / denom for i, w in weights.items()
-            }
-            cash_weight = cash_weight / denom
-
-        # 2. execution
-        turnover = 0.0
-        traded_ratio = 0.0
-        cost = 0.0
         if trade_date in execution_map:
             signal_date, target = execution_map[trade_date]
-            pre_trade_gross = sum(abs(w) for w in weights.values())
 
-            target_weights = {p.instrument_id: p.target_weight for p in target.positions}
-            effective: dict[str, float] = {}
-            unavailable = 0
-            moved_to_cash = 0.0
-            for instr, w in target_weights.items():
-                if w == 0.0:
-                    continue
-                if instr not in current_prices and instr not in weights:
-                    unavailable += 1
-                    moved_to_cash += w
-                else:
-                    effective[instr] = w
-                    if instr not in weights:
-                        last_price[instr] = current_prices[instr]
-
-            effective_cash = target.cash_weight + moved_to_cash
-
-            all_risky = set(weights) | set(effective)
-            traded_ratio = sum(
-                abs(effective.get(i, 0.0) - weights.get(i, 0.0)) for i in all_risky
+            gross_summary, gross_cost, _ = _rebalance(
+                gross_book, target, current_prices, 0.0, signal_date, trade_date
             )
-            turnover = 0.5 * traded_ratio
-            cost_fraction = traded_ratio * config.cost_rate
-            cost = net_nav * cost_fraction
-            net_nav *= 1 - cost_fraction
+            net_summary, net_cost, residual = _rebalance(
+                net_book, target, current_prices, config.cost_rate, signal_date, trade_date
+            )
+            max_residual = max(max_residual, residual)
 
-            weights = effective
-            cash_weight = effective_cash
+            gross_turnover = gross_summary["turnover"]
+            gross_traded_ratio = gross_summary["traded_ratio"]
+            net_turnover = net_summary["turnover"]
+            net_traded_ratio = net_summary["traded_ratio"]
 
-            for instr in list(last_price):
-                if instr not in weights:
-                    del last_price[instr]
+            for book_name, summary in (("net", net_summary), ("gross", gross_summary)):
+                for instr, x_minus, x_plus, signed, tw, aw, reason in summary[
+                    "trade_details"
+                ]:
+                    trades.append(
+                        TradeRecord(
+                            signal_date=signal_date,
+                            execution_date=trade_date,
+                            book=book_name,
+                            instrument_id=instr,
+                            pre_value=x_minus,
+                            post_value=x_plus,
+                            signed_trade_value=signed,
+                            target_weight=tw,
+                            actual_weight=aw,
+                            reason=reason,
+                        )
+                    )
 
-            post_trade_gross = sum(abs(w) for w in weights.values())
-
-            rebalance_log.append(
+            rebalances.append(
                 RebalanceRecord(
                     signal_date=signal_date,
                     execution_date=trade_date,
                     target_count=len(target.positions),
-                    filled_target_count=len(effective),
-                    unavailable_target_count=unavailable,
-                    pre_trade_gross_exposure=pre_trade_gross,
-                    post_trade_gross_exposure=post_trade_gross,
-                    traded_notional_ratio=traded_ratio,
-                    turnover=turnover,
-                    transaction_cost=cost,
+                    filled_target_count=net_summary["nonzero_trades"],
+                    unavailable_target_count=net_summary["unavailable_count"],
+                    frozen_count=net_summary["frozen_count"],
+                    buy_notional_ratio=net_summary["buy_ratio"],
+                    sell_notional_ratio=net_summary["sell_ratio"],
+                    traded_notional_ratio=net_summary["traded_ratio"],
+                    turnover=net_summary["turnover"],
+                    transaction_cost=net_cost,
+                    pre_trade_gross_exposure=net_summary["pre_gross_exposure"],
+                    post_trade_gross_exposure=net_summary["post_gross_exposure"],
+                    allocation_deviation=net_summary["deviation"],
+                    gross_book_buy_notional_ratio=gross_summary["buy_ratio"],
+                    gross_book_sell_notional_ratio=gross_summary["sell_ratio"],
+                    gross_book_traded_notional_ratio=gross_summary["traded_ratio"],
+                    gross_book_turnover=gross_summary["turnover"],
+                    gross_book_transaction_cost=gross_cost,
+                    gross_book_pre_trade_gross_exposure=gross_summary[
+                        "pre_gross_exposure"
+                    ],
+                    gross_book_post_trade_gross_exposure=gross_summary[
+                        "post_gross_exposure"
+                    ],
+                    gross_book_allocation_deviation=gross_summary["deviation"],
                 )
             )
 
-        gross_exposure = sum(abs(w) for w in weights.values())
-        net_exposure = sum(weights.values())
+        gross_nav = gross_book.nav()
+        net_nav = net_book.nav()
+        gross_return = (
+            gross_nav / gross_book.prev_nav - 1 if gross_book.prev_nav > 0 else 0.0
+        )
+        net_return = net_nav / net_book.prev_nav - 1 if net_book.prev_nav > 0 else 0.0
 
-        daily_return_gross = gross_nav / prev_gross_nav - 1 if prev_gross_nav > 0 else 0.0
-        daily_return_net = net_nav / prev_net_nav - 1 if prev_net_nav > 0 else 0.0
+        gross_snapshot, net_snapshot = _snapshots(
+            trade_date,
+            gross_book,
+            net_book,
+            gross_return,
+            net_return,
+            gross_market_pnl,
+            net_market_pnl,
+            gross_cost,
+            net_cost,
+            current_prices,
+        )
+        books.append(gross_snapshot)
+        books.append(net_snapshot)
 
         records.append(
             DailyBacktestRecord(
                 trade_date=trade_date,
                 nav_gross=gross_nav,
                 nav_net=net_nav,
-                daily_return_gross=daily_return_gross,
-                daily_return_net=daily_return_net,
-                gross_exposure=gross_exposure,
-                net_exposure=net_exposure,
-                cash_weight=cash_weight,
-                turnover=turnover,
-                traded_notional_ratio=traded_ratio,
-                transaction_cost=cost,
-                holdings_count=len(weights),
+                daily_return_gross=gross_return,
+                daily_return_net=net_return,
+                gross_exposure=net_snapshot.gross_exposure,
+                net_exposure=net_snapshot.net_exposure,
+                cash_weight=net_snapshot.cash_weight,
+                turnover=net_turnover,
+                traded_notional_ratio=net_traded_ratio,
+                transaction_cost=net_cost,
+                holdings_count=net_snapshot.holdings_count,
+                gross_book_gross_exposure=gross_snapshot.gross_exposure,
+                gross_book_net_exposure=gross_snapshot.net_exposure,
+                gross_book_cash_weight=gross_snapshot.cash_weight,
+                gross_book_turnover=gross_turnover,
+                gross_book_traded_notional_ratio=gross_traded_ratio,
+                gross_book_holdings_count=gross_snapshot.holdings_count,
             )
         )
 
-        prev_gross_nav = gross_nav
-        prev_net_nav = net_nav
+        gross_book.prev_nav = gross_nav
+        net_book.prev_nav = net_nav
 
-    return records, rebalance_log
+    return BacktestResult(
+        records=records,
+        rebalances=rebalances,
+        books=books,
+        trades=trades,
+        skipped_executions=skipped,
+        max_conservation_residual=max_residual,
+    )
+
+
+def _snapshots(
+    trade_date: date,
+    gross_book: _Book,
+    net_book: _Book,
+    gross_return: float,
+    net_return: float,
+    gross_market_pnl: float,
+    net_market_pnl: float,
+    gross_cost: float,
+    net_cost: float,
+    current_prices: dict[str, float],
+) -> tuple[BookSnapshot, BookSnapshot]:
+    def make(
+        book: _Book, name: str, daily_return: float, market_pnl: float, fee: float
+    ) -> BookSnapshot:
+        nav = book.nav()
+        positions = tuple(
+            PositionRecord(
+                instrument_id=instr,
+                value=pos.value,
+                weight=pos.value / nav if nav > 0 else 0.0,
+                last_price=pos.last_price,
+                last_mark_date=pos.last_mark_date,
+                missing_price=instr not in current_prices,
+            )
+            for instr, pos in sorted(book.positions.items())
+        )
+        gross_exposure = (
+            sum(abs(p.value) for p in book.positions.values()) / nav if nav > 0 else 0.0
+        )
+        net_exposure = (
+            sum(p.value for p in book.positions.values()) / nav if nav > 0 else 0.0
+        )
+        cash_weight = book.cash / nav if nav > 0 else 0.0
+        return BookSnapshot(
+            trade_date=trade_date,
+            book=name,
+            nav=nav,
+            daily_return=daily_return,
+            cash=book.cash,
+            market_pnl=market_pnl,
+            fee=fee,
+            gross_exposure=gross_exposure,
+            net_exposure=net_exposure,
+            cash_weight=cash_weight,
+            holdings_count=len(positions),
+            positions=positions,
+        )
+
+    return (
+        make(gross_book, "gross", gross_return, gross_market_pnl, gross_cost),
+        make(net_book, "net", net_return, net_market_pnl, net_cost),
+    )

@@ -1,18 +1,32 @@
 """Research backtest."""
 
 from quantlab.backtest.engine import (
-    HELD_MISSING_BAR_REBALANCE_POLICY,
+    MISSING_PRICE_POLICY,
     run_backtest,
     weekly_signal_dates,
 )
 from quantlab.backtest.metrics import compute_metrics
-from quantlab.backtest.models import BacktestConfig, DailyBacktestRecord, RebalanceRecord
+from quantlab.backtest.models import (
+    BacktestConfig,
+    BacktestResult,
+    BookSnapshot,
+    DailyBacktestRecord,
+    PositionRecord,
+    RebalanceRecord,
+    SkippedExecution,
+    TradeRecord,
+)
 
 __all__ = [
     "BacktestConfig",
+    "BacktestResult",
+    "BookSnapshot",
     "DailyBacktestRecord",
-    "HELD_MISSING_BAR_REBALANCE_POLICY",
+    "MISSING_PRICE_POLICY",
+    "PositionRecord",
     "RebalanceRecord",
+    "SkippedExecution",
+    "TradeRecord",
     "compute_metrics",
     "run_backtest",
     "weekly_signal_dates",

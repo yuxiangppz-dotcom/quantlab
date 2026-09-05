@@ -23,6 +23,28 @@ def _max_drawdown(navs: list[float]) -> float:
     return max_dd
 
 
+def _mean_var(values: list[float]) -> tuple[float, float, float]:
+    """Return (mean, variance, n). ddof=0 (population)."""
+    n = len(values)
+    if n == 0:
+        return float("nan"), float("nan"), 0
+    mean = sum(values) / n
+    var = sum((v - mean) ** 2 for v in values) / n
+    return mean, var, n
+
+
+def _sharpe(mean: float, var: float, annualization: int) -> float:
+    if var is None or var <= 0 or math.isnan(var):
+        return float("nan")
+    return mean / math.sqrt(var) * math.sqrt(annualization)
+
+
+def _vol(var: float, annualization: int) -> float:
+    if var is None or math.isnan(var):
+        return float("nan")
+    return math.sqrt(var) * math.sqrt(annualization)
+
+
 def compute_metrics(
     records: list[DailyBacktestRecord],
     rebalance_log: list[RebalanceRecord],
@@ -30,9 +52,11 @@ def compute_metrics(
 ) -> dict:
     """Compute performance metrics for a backtest run.
 
-    Return-dependent statistics (mean, volatility, Sharpe) use ``records[1:]``,
-    i.e. ``len(records) - 1`` return intervals, so the initial placeholder
-    return is never treated as an independent investment period.
+    Return-dependent statistics use ``records[1:]`` (``len(records) - 1`` return
+    intervals), so the initial placeholder return is never an independent
+    period. Suffix-less turnover/exposure/holdings fields describe the net book;
+    gross book metrics carry an explicit ``gross_book_`` prefix. Sharpe uses
+    rf=0 and population (ddof=0) variance.
     """
     if not records:
         return {}
@@ -42,31 +66,16 @@ def compute_metrics(
 
     nav_gross = [r.nav_gross for r in records]
     nav_net = [r.nav_net for r in records]
-
     ret_gross = [r.daily_return_gross for r in records[1:]]
     ret_net = [r.daily_return_net for r in records[1:]]
-    n_obs = len(ret_gross)
 
-    if n_obs > 0:
-        mean_gross = sum(ret_gross) / n_obs
-        mean_net = sum(ret_net) / n_obs
-        var_gross = sum((r - mean_gross) ** 2 for r in ret_gross) / n_obs
-        var_net = sum((r - mean_net) ** 2 for r in ret_net) / n_obs
-    else:
-        mean_gross = mean_net = 0.0
-        var_gross = var_net = 0.0
+    mean_gross, var_gross, _ = _mean_var(ret_gross)
+    mean_net, var_net, _ = _mean_var(ret_net)
 
-    vol_gross = math.sqrt(var_gross) * math.sqrt(annualization)
-    vol_net = math.sqrt(var_net) * math.sqrt(annualization)
-
-    if var_gross > 0:
-        sharpe_gross = mean_gross / math.sqrt(var_gross) * math.sqrt(annualization)
-    else:
-        sharpe_gross = float("nan")
-    if var_net > 0:
-        sharpe_net = mean_net / math.sqrt(var_net) * math.sqrt(annualization)
-    else:
-        sharpe_net = float("nan")
+    vol_gross = _vol(var_gross, annualization)
+    vol_net = _vol(var_net, annualization)
+    sharpe_gross = _sharpe(mean_gross, var_gross, annualization)
+    sharpe_net = _sharpe(mean_net, var_net, annualization)
 
     total_return_gross = nav_gross[-1] / nav_gross[0] - 1
     total_return_net = nav_net[-1] / nav_net[0] - 1
@@ -75,26 +84,38 @@ def compute_metrics(
     cagr_net = _cagr(nav_net[0], nav_net[-1], intervals, annualization)
 
     total_turnover = sum(r.turnover for r in records)
+    gross_total_turnover = sum(r.gross_book_turnover for r in records)
     total_cost = sum(r.transaction_cost for r in records)
     rebalance_count = len(rebalance_log)
 
-    average_daily_turnover = total_turnover / intervals if intervals > 0 else float("nan")
-    average_rebalance_turnover = (
-        total_turnover / rebalance_count if rebalance_count > 0 else float("nan")
-    )
+    def _avg_turnover(total: float, denom: float) -> float:
+        return total / denom if denom > 0 else float("nan")
+
+    average_daily_turnover = _avg_turnover(total_turnover, intervals)
+    average_rebalance_turnover = _avg_turnover(total_turnover, rebalance_count)
     annualized_turnover = (
         total_turnover / (intervals / annualization) if intervals > 0 else float("nan")
+    )
+
+    gross_average_daily_turnover = _avg_turnover(gross_total_turnover, intervals)
+    gross_average_rebalance_turnover = _avg_turnover(
+        gross_total_turnover, rebalance_count
+    )
+    gross_annualized_turnover = (
+        gross_total_turnover / (intervals / annualization)
+        if intervals > 0
+        else float("nan")
     )
 
     cumulative_cost_paid_vs_initial_nav = total_cost / config.initial_nav
     terminal_return_cost_drag = total_return_gross - total_return_net
     cagr_cost_drag = cagr_gross - cagr_net
-    annualized_traded_notional = (
-        2 * annualized_turnover if intervals > 0 else float("nan")
-    )
+    annualized_traded_notional = 2 * annualized_turnover if intervals > 0 else float("nan")
     implied_annual_cost_rate = annualized_traded_notional * config.cost_rate
 
     return {
+        "n_records": len(records),
+        "n_return_intervals": intervals,
         "total_return_gross": total_return_gross,
         "total_return_net": total_return_net,
         "cagr_gross": cagr_gross,
@@ -115,9 +136,23 @@ def compute_metrics(
         "cagr_cost_drag": cagr_cost_drag,
         "annualized_traded_notional": annualized_traded_notional,
         "implied_annual_cost_rate": implied_annual_cost_rate,
+        "gross_book_total_turnover": gross_total_turnover,
+        "gross_book_average_daily_turnover": gross_average_daily_turnover,
+        "gross_book_average_rebalance_turnover": gross_average_rebalance_turnover,
+        "gross_book_annualized_turnover": gross_annualized_turnover,
         "average_holdings": sum(r.holdings_count for r in records) / len(records),
         "average_gross_exposure": sum(r.gross_exposure for r in records) / len(records),
         "average_cash_weight": sum(r.cash_weight for r in records) / len(records),
+        "gross_book_average_holdings": sum(r.gross_book_holdings_count for r in records)
+        / len(records),
+        "gross_book_average_gross_exposure": sum(
+            r.gross_book_gross_exposure for r in records
+        )
+        / len(records),
+        "gross_book_average_cash_weight": sum(
+            r.gross_book_cash_weight for r in records
+        )
+        / len(records),
         "rebalance_count": rebalance_count,
         "unavailable_execution_count": sum(
             r.unavailable_target_count for r in rebalance_log

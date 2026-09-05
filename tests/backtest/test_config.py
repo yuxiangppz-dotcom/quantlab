@@ -48,6 +48,13 @@ def test_config_rejects_inf_cost() -> None:
         BacktestConfig(transaction_cost_bps=float("inf"))
 
 
+def test_config_rejects_cost_rate_ge_one() -> None:
+    with pytest.raises(ValueError):
+        BacktestConfig(transaction_cost_bps=10_000.0)
+    with pytest.raises(ValueError):
+        BacktestConfig(transaction_cost_bps=25_000.0)
+
+
 def test_config_rejects_non_positive_annualization() -> None:
     with pytest.raises(ValueError):
         BacktestConfig(annualization=0)
