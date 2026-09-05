@@ -1,0 +1,16 @@
+{
+  "batch_version": "v1",
+  "selection_rule": "baseline 85 unique delisting events, sorted by (first blocking_session, instrument_id), first 10 unique instruments",
+  "instruments": [
+    "000018.SZ",
+    "600240.SH",
+    "600074.SH",
+    "601558.SH",
+    "002604.SZ",
+    "002509.SZ",
+    "300104.SZ",
+    "300028.SZ",
+    "600175.SH",
+    "300090.SZ"
+  ]
+}

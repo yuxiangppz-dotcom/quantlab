@@ -361,6 +361,8 @@ def _rebalance(
             nonzero_trades += 1
         if instr in blocked:
             reason = "lifecycle_blocked"
+        elif instr in restricted and instr in tradable and signed_value < 0:
+            reason = "sold"  # allowed sell per original target
         elif instr in restricted and instr in tradable:
             reason = "restricted_no_new_exposure"
         elif instr in frozen:

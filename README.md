@@ -278,10 +278,18 @@ the admission path are run on identical inputs and compared.
 
 It uses only *trusted* delisting facts — facts whose content is verified **and**
 whose historical public time is independently evidenced (a verified public date
-with no intraday time is available from the next trading day open). `unknown`
-means insufficient trusted fact coverage, is passed through unchanged, and is
+with no intraday time is available from the next trading day open, derived from
+the full canonical calendar with completeness checks). `unknown` means
+insufficient trusted fact coverage, is passed through unchanged, and is
 **not** a claim of safety. The fact input is fingerprinted and the same loaded
 snapshot drives the shadow decision, the admission path, and the baseline.
+
+v0.3 adds a fixed **fact batch** (the first 10 unique delisted instruments from
+the 85-event baseline, selected by blocking session order, not by returns) in a
+separate facts version, and runs three paths — A baseline, B admission with the
+original facts, C admission with the expanded-batch facts — plus a generic
+buy-rejection evaluation (`true` / `false` / `not_evaluated`) that never
+hardcodes a single instrument.
 
 ## Research Philosophy
 

@@ -68,6 +68,51 @@ def shadow_admission(
     )
 
 
+def evaluate_buy_rejection(
+    instrument_id: str,
+    execution_date: date,
+    baseline_trades,
+    admission_trades,
+    admission_rebalances,
+    admission_restriction: frozenset[str],
+) -> str:
+    """Evaluate whether a buy was successfully rejected.
+
+    Returns ``"true"`` only when all four conditions hold; ``"false"`` when
+    admission still bought; ``"not_evaluated"`` otherwise (baseline did not buy,
+    admission did not process that day, or no restriction evidence).
+    """
+    base_buy = any(
+        t.instrument_id == instrument_id
+        and t.execution_date == execution_date
+        and t.book == "net"
+        and t.signed_trade_value > 0
+        for t in baseline_trades
+    )
+    if not base_buy:
+        return "not_evaluated"
+
+    adm_processed = any(
+        t.execution_date == execution_date for t in admission_trades
+    ) or any(rb.execution_date == execution_date for rb in admission_rebalances)
+    if not adm_processed:
+        return "not_evaluated"
+
+    if instrument_id not in admission_restriction:
+        return "not_evaluated"
+
+    adm_buy = any(
+        t.instrument_id == instrument_id
+        and t.execution_date == execution_date
+        and t.book == "net"
+        and t.signed_trade_value > 0
+        for t in admission_trades
+    )
+    if adm_buy:
+        return "false"
+    return "true"
+
+
 def compute_restricted_by_signal(
     targets: dict,
     facts: dict,

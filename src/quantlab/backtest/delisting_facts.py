@@ -28,24 +28,48 @@ def load_delisting_facts(path: str | Path) -> dict:
         return json.load(fh)
 
 
+def _calendar_coverage(
+    calendar: list[tuple[date, bool]],
+) -> tuple[date | None, date | None, bool, list[date]]:
+    """Return ``(cal_min, cal_max, complete, open_dates)`` for a calendar.
+
+    ``complete`` means the calendar has an entry for every calendar day between
+    its min and max (open or closed), i.e. no missing middle records.
+    """
+    cal = sorted(set(calendar))
+    dates = [d for d, _ in cal]
+    if not dates:
+        return None, None, False, []
+    cal_min = min(dates)
+    cal_max = max(dates)
+    complete = len(dates) == (cal_max - cal_min).days + 1
+    open_dates = sorted(d for d, is_open in cal if is_open)
+    return cal_min, cal_max, complete, open_dates
+
+
 def _first_open_session_after(open_dates: list[date], d: date) -> date | None:
-    """Return the first open session strictly after ``d``, or None if uncovered."""
     for session in open_dates:
         if session > d:
             return session
     return None
 
 
-def validate_facts(facts: dict, open_dates: list[date]) -> list[str]:
-    """Validate fact flags and resolve ``available_from`` from the calendar.
+def validate_facts(facts: dict, calendar: list[tuple[date, bool]]) -> list[str]:
+    """Validate fact flags and resolve ``available_from`` from a full calendar.
 
-    Mutates ``facts`` in place: for a fact with ``public_time_verified`` true,
-    ``available_from`` is set to the first open session after
-    ``publication_date``. A stored ``available_from`` must match the computed
-    value. Returns a list of error messages (empty if valid).
+    ``calendar`` is a list of ``(date, is_open)`` tuples covering both open and
+    closed sessions. ``available_from`` is derived only when the calendar
+    coverage is complete and the publication date falls inside it; otherwise
+    the derivation is rejected. Returns a list of error messages.
     """
+    cal_min, cal_max, complete, open_dates = _calendar_coverage(calendar)
+    if cal_min is None:
+        return ["empty calendar"]
+
     errors: list[str] = []
-    sessions = sorted(set(open_dates))
+    if not complete:
+        errors.append("calendar coverage incomplete")
+
     for instrument, entry in facts.items():
         for fact in entry.get("facts", []):
             key = f"{instrument}:{fact.get('fact_type')}"
@@ -66,9 +90,7 @@ def validate_facts(facts: dict, open_dates: list[date]) -> list[str]:
 
             publication = fact.get("publication_date")
             if not publication:
-                errors.append(
-                    f"{key}: public_time_verified but no publication_date"
-                )
+                errors.append(f"{key}: public_time_verified but no publication_date")
                 continue
             try:
                 publication_date = date.fromisoformat(publication)
@@ -76,7 +98,21 @@ def validate_facts(facts: dict, open_dates: list[date]) -> list[str]:
                 errors.append(f"{key}: invalid publication_date {publication!r}")
                 continue
 
-            computed = _first_open_session_after(sessions, publication_date)
+            if publication_date < cal_min:
+                errors.append(f"{key}: announcement before calendar left boundary")
+                continue
+            if publication_date > cal_max:
+                errors.append(f"{key}: announcement after calendar right boundary")
+                continue
+            if not complete:
+                errors.append(
+                    f"{key}: calendar coverage incomplete; cannot derive available_from"
+                )
+                fact["available_from"] = None
+                fact["available_from_kind"] = None
+                continue
+
+            computed = _first_open_session_after(open_dates, publication_date)
             if computed is None:
                 errors.append(
                     f"{key}: insufficient calendar coverage after {publication}"
@@ -101,7 +137,7 @@ def validate_facts(facts: dict, open_dates: list[date]) -> list[str]:
 
 
 def load_validated_facts(
-    path: str | Path, open_dates: list[date]
+    path: str | Path, calendar: list[tuple[date, bool]]
 ) -> tuple[dict, str, list[str]]:
     """Read fact bytes once, hash, parse and validate from the same bytes.
 
@@ -110,7 +146,7 @@ def load_validated_facts(
     data = Path(path).read_bytes()
     sha = sha256_bytes(data)
     facts = json.loads(data)
-    errors = validate_facts(facts, open_dates)
+    errors = validate_facts(facts, calendar)
     return facts, sha, errors
 
 

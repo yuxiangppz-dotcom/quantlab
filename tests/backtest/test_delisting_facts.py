@@ -79,56 +79,88 @@ def test_late_published_fact_not_available_early() -> None:
     assert facts_available_as_of(facts, "X", date(2020, 1, 8)) != []
 
 
-def test_bool_types_validated() -> None:
-    facts = {
-        "X": {"facts": [{
-            "fact_type": "t", "content_verified": "true",
-            "public_time_verified": True, "available_from": None,
-        }]}
+def _fact(content_verified=True, public_time_verified=True,
+          publication_date="2026-01-09", available_from=None) -> dict:
+    return {
+        "fact_type": "t",
+        "content_verified": content_verified,
+        "public_time_verified": public_time_verified,
+        "publication_date": publication_date,
+        "available_from": available_from,
     }
-    errors = validate_facts(facts, [date(2020, 1, 2)])
+
+
+def _calendar(*days) -> list:
+    return [(d, True) for d in days]
+
+
+def test_bool_types_validated() -> None:
+    facts = {"X": {"facts": [{"fact_type": "t", "content_verified": "true",
+                              "public_time_verified": True}]}}
+    errors = validate_facts(facts, _calendar(date(2020, 1, 2), date(2020, 1, 3)))
     assert any("must be bool" in e for e in errors)
+
+
+def _complete_calendar(start: date, end: date) -> list:
+    from datetime import timedelta
+
+    out = []
+    d = start
+    while d <= end:
+        out.append((d, d.weekday() < 5))  # weekdays open, weekends closed
+        d += timedelta(days=1)
+    return out
 
 
 def test_contradictory_available_from_rejected() -> None:
     facts = {
-        "X": {"facts": [{
-            "fact_type": "t", "content_verified": True,
-            "public_time_verified": True,
-            "publication_date": "2020-02-01",
-            "available_from": "2020-01-01",  # before publication -> contradiction
-        }]}
+        "X": {"facts": [_fact(publication_date="2020-02-01",
+                              available_from="2020-01-01")]}
     }
-    open_dates = [date(2020, 1, 2), date(2020, 2, 3)]
-    errors = validate_facts(facts, open_dates)
-    assert any("not after publication_date" in e or "!=" in e for e in errors)
+    cal = _complete_calendar(date(2020, 1, 1), date(2020, 2, 3))
+    errors = validate_facts(facts, cal)
+    assert any("!=" in e or "not after" in e for e in errors)
 
 
 def test_weekend_available_from_calendar() -> None:
-    # publication Friday 2026-01-09 -> first open session after is Monday 01-12
-    facts = {
-        "X": {"facts": [{
-            "fact_type": "t", "content_verified": True,
-            "public_time_verified": True,
-            "publication_date": "2026-01-09",
-            "available_from": None,
-        }]}
-    }
-    open_dates = [date(2026, 1, 9), date(2026, 1, 12), date(2026, 1, 13)]
-    errors = validate_facts(facts, open_dates)
+    # Friday 2026-01-09 open, Sat/Sun closed, Monday 01-12 open
+    cal = [
+        (date(2026, 1, 9), True),
+        (date(2026, 1, 10), False),
+        (date(2026, 1, 11), False),
+        (date(2026, 1, 12), True),
+        (date(2026, 1, 13), True),
+    ]
+    facts = {"X": {"facts": [_fact(publication_date="2026-01-09")]}}
+    errors = validate_facts(facts, cal)
     assert errors == []
     assert facts["X"]["facts"][0]["available_from"] == "2026-01-12"
 
 
-def test_insufficient_calendar_coverage() -> None:
-    facts = {
-        "X": {"facts": [{
-            "fact_type": "t", "content_verified": True,
-            "public_time_verified": True,
-            "publication_date": "2026-01-09",
-            "available_from": None,
-        }]}
-    }
-    open_dates = [date(2026, 1, 8)]  # no session after publication
-    errors = validate_facts(facts, open_dates)
-    assert any("insufficient calendar" in e for e in errors)
+def test_announcement_before_left_boundary() -> None:
+    facts = {"X": {"facts": [_fact(publication_date="2019-11-15")]}}
+    cal = _calendar(date(2020, 1, 2), date(2020, 1, 3))
+    errors = validate_facts(facts, cal)
+    assert any("before calendar left boundary" in e for e in errors)
+
+
+def test_announcement_after_right_boundary() -> None:
+    facts = {"X": {"facts": [_fact(publication_date="2026-02-01")]}}
+    cal = _calendar(date(2026, 1, 2), date(2026, 1, 3))
+    errors = validate_facts(facts, cal)
+    assert any("after calendar right boundary" in e for e in errors)
+
+
+def test_missing_middle_calendar_record() -> None:
+    # 01-02 and 01-04 present but 01-03 missing -> incomplete coverage
+    cal = [(date(2026, 1, 2), True), (date(2026, 1, 4), True)]
+    facts = {"X": {"facts": [_fact(publication_date="2026-01-02")]}}
+    errors = validate_facts(facts, cal)
+    assert any("coverage incomplete" in e for e in errors)
+
+
+def test_insufficient_calendar_after_publication() -> None:
+    cal = _calendar(date(2026, 1, 8), date(2026, 1, 9))
+    facts = {"X": {"facts": [_fact(publication_date="2026-01-09")]}}
+    errors = validate_facts(facts, cal)
+    assert any("insufficient calendar coverage after" in e for e in errors)

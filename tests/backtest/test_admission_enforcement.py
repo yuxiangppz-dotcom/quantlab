@@ -1,10 +1,14 @@
 from datetime import date
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
 from quantlab.backtest import BacktestConfig, run_backtest
-from quantlab.backtest.admission import compute_restricted_by_signal
+from quantlab.backtest.admission import (
+    compute_restricted_by_signal,
+    evaluate_buy_rejection,
+)
 from quantlab.backtest.delisting_facts import load_validated_facts
 from quantlab.portfolio import TargetPortfolio, TargetWeight
 
@@ -232,12 +236,15 @@ def test_validated_facts_disk_change_detected(tmp_path) -> None:
     }
     path = tmp_path / "facts.json"
     path.write_text(json.dumps(facts))
-    open_dates = [date(2026, 1, 2), date(2026, 1, 5)]
-    _, sha1, errors1 = load_validated_facts(path, open_dates)
+    calendar = [
+        (date(2026, 1, 2), True), (date(2026, 1, 3), True),
+        (date(2026, 1, 4), True), (date(2026, 1, 5), True),
+    ]
+    _, sha1, errors1 = load_validated_facts(path, calendar)
     assert errors1 == []
     facts["X"]["facts"][0]["content_verified"] = False
     path.write_text(json.dumps(facts))
-    _, sha2, _ = load_validated_facts(path, open_dates)
+    _, sha2, _ = load_validated_facts(path, calendar)
     assert sha1 != sha2
 
 
@@ -261,3 +268,70 @@ def test_future_fact_does_not_change_past() -> None:
     restricted = compute_restricted_by_signal(targets, facts)
     # available_from 2026-02-02 > signal 2026-01-05 -> not restricted
     assert restricted == {}
+
+
+def _trade(instr, exec_date, signed, book="net"):
+    return SimpleNamespace(
+        instrument_id=instr, execution_date=exec_date, book=book,
+        signed_trade_value=signed,
+    )
+
+
+def _rebalance(exec_date):
+    return SimpleNamespace(execution_date=exec_date)
+
+
+def test_rejection_true() -> None:
+    exec_date = date(2026, 1, 6)
+    baseline = [_trade("A", exec_date, 0.5)]
+    admission = []
+    rebalances = [_rebalance(exec_date)]
+    result = evaluate_buy_rejection(
+        "A", exec_date, baseline, admission, rebalances, frozenset({"A"})
+    )
+    assert result == "true"
+
+
+def test_rejection_false_when_admission_bought() -> None:
+    exec_date = date(2026, 1, 6)
+    baseline = [_trade("A", exec_date, 0.5)]
+    admission = [_trade("A", exec_date, 0.5)]
+    rebalances = [_rebalance(exec_date)]
+    result = evaluate_buy_rejection(
+        "A", exec_date, baseline, admission, rebalances, frozenset({"A"})
+    )
+    assert result == "false"
+
+
+def test_rejection_not_evaluated_no_baseline_buy() -> None:
+    exec_date = date(2026, 1, 6)
+    baseline = []  # baseline did not buy
+    admission = []
+    rebalances = [_rebalance(exec_date)]
+    result = evaluate_buy_rejection(
+        "A", exec_date, baseline, admission, rebalances, frozenset({"A"})
+    )
+    assert result == "not_evaluated"
+
+
+def test_rejection_not_evaluated_no_restriction() -> None:
+    exec_date = date(2026, 1, 6)
+    baseline = [_trade("A", exec_date, 0.5)]
+    admission = []
+    rebalances = [_rebalance(exec_date)]
+    result = evaluate_buy_rejection(
+        "A", exec_date, baseline, admission, rebalances, frozenset()
+    )
+    assert result == "not_evaluated"
+
+
+def test_rejection_not_evaluated_when_both_fail_before_exec() -> None:
+    # counter-example: both paths have no trades on the execution date
+    exec_date = date(2026, 1, 6)
+    baseline = []
+    admission = []
+    rebalances = []
+    result = evaluate_buy_rejection(
+        "A", exec_date, baseline, admission, rebalances, frozenset({"A"})
+    )
+    assert result == "not_evaluated"

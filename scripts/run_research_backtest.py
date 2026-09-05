@@ -32,6 +32,7 @@ from quantlab.backtest.admission import (
     POLICY_NAME,
     POLICY_VERSION,
     compute_restricted_by_signal,
+    evaluate_buy_rejection,
     shadow_admission,
 )
 from quantlab.backtest.delisting_facts import (
@@ -307,19 +308,27 @@ def _next_open_session(open_dates: list, signal_date) -> object:
     return open_dates[idx + 1]
 
 
-def _compare_paths(base_strict, adm_strict, base_diag, adm_diag) -> dict:
-    base_trades = {
+def _compare_paths(base_strict, adm_strict, base_diag, adm_diag,
+                   restricted_by_signal, bt_open_dates) -> dict:
+    base_dates = {r.trade_date for r in base_strict.records}
+    adm_dates = {r.trade_date for r in adm_strict.records}
+    common_dates = base_dates & adm_dates
+
+    base_trades = [t for t in base_strict.trades if t.execution_date in common_dates]
+    adm_trades = [t for t in adm_strict.trades if t.execution_date in common_dates]
+
+    base_map = {
         (t.execution_date, t.book, t.instrument_id): t.signed_trade_value
-        for t in base_strict.trades
+        for t in base_trades
     }
-    adm_trades = {
+    adm_map = {
         (t.execution_date, t.book, t.instrument_id): t.signed_trade_value
-        for t in adm_strict.trades
+        for t in adm_trades
     }
     first_diff = None
-    for key in sorted(set(base_trades) | set(adm_trades)):
-        b = base_trades.get(key, 0.0)
-        a = adm_trades.get(key, 0.0)
+    for key in sorted(set(base_map) | set(adm_map)):
+        b = base_map.get(key, 0.0)
+        a = adm_map.get(key, 0.0)
         if abs(b - a) > 1e-12:
             first_diff = {
                 "execution_date": key[0].isoformat(),
@@ -329,20 +338,49 @@ def _compare_paths(base_strict, adm_strict, base_diag, adm_diag) -> dict:
                 "admission_signed": a,
             }
             break
-    rejected_000018 = not any(
-        t.instrument_id == "000018.SZ"
-        and t.execution_date == date(2020, 1, 6)
-        and t.book == "net"
-        and t.signed_trade_value > 0
-        for t in adm_strict.trades
+
+    all_restricted: set[str] = set()
+    for s in restricted_by_signal.values():
+        all_restricted |= set(s)
+    restriction_applicable_count = sum(
+        len(s) for s in restricted_by_signal.values()
     )
-    restriction_occurrences = sum(
+    buy_rejection_occurrences = sum(
         1 for t in adm_strict.trades if t.reason == "restricted_no_new_exposure"
     )
+    allowed_sell_occurrences = sum(
+        1 for t in adm_strict.trades
+        if t.reason == "sold" and t.instrument_id in all_restricted
+    )
+
+    rejection_evaluations = []
+    for instr in sorted(all_restricted):
+        sig = next(
+            (d for d in sorted(restricted_by_signal) if instr in restricted_by_signal[d]),
+            None,
+        )
+        if sig is None:
+            continue
+        exec_date = _next_open_session(bt_open_dates, sig)
+        if exec_date is None:
+            continue
+        result = evaluate_buy_rejection(
+            instr, exec_date, base_strict.trades, adm_strict.trades,
+            adm_strict.rebalances, restricted_by_signal[sig],
+        )
+        rejection_evaluations.append({
+            "instrument_id": instr,
+            "signal_date": sig.isoformat(),
+            "execution_date": exec_date.isoformat(),
+            "rejection": result,
+        })
+
     return {
         "first_trade_difference": first_diff,
-        "000018_sz_rejected_buy_2020_01_06": rejected_000018,
-        "restriction_occurrences": restriction_occurrences,
+        "restriction_applicable_count": restriction_applicable_count,
+        "buy_rejection_occurrences": buy_rejection_occurrences,
+        "allowed_sell_occurrences": allowed_sell_occurrences,
+        "rejection_evaluations": rejection_evaluations,
         "admission_next_blocking_event": (
             adm_strict.first_blocking_event.__dict__
             if adm_strict.first_blocking_event else None
@@ -389,10 +427,23 @@ def _main() -> None:
     monitor = LifecycleMonitor(securities, code_changes)
 
     facts_path = PROJECT_ROOT / "config" / "delisting_facts.json"
-    delisting_facts, fact_sha, fact_errors = load_validated_facts(facts_path, open_dates)
+    facts_v2_path = PROJECT_ROOT / "config" / "delisting_facts_v2.json"
+    batch_path = PROJECT_ROOT / "config" / "delisting_facts_batch.json"
+    calendar_entries = [(c.trade_date, c.is_open) for c in calendar]
+    delisting_facts, fact_sha, fact_errors = load_validated_facts(
+        facts_path, calendar_entries
+    )
     if fact_errors:
         raise ValueError("; ".join(fact_errors))
+    delisting_facts_v2, fact_sha_v2, fact_errors_v2 = load_validated_facts(
+        facts_v2_path, calendar_entries
+    )
+    if fact_errors_v2:
+        raise ValueError("; ".join(fact_errors_v2))
+    batch = json.loads(batch_path.read_text())
+
     restricted_by_signal = compute_restricted_by_signal(targets, delisting_facts)
+    restricted_by_signal_v2 = compute_restricted_by_signal(targets, delisting_facts_v2)
 
     strict_result = run_backtest(
         price_frame, bt_open_dates, targets, bt_config,
@@ -415,6 +466,12 @@ def _main() -> None:
         execution_lag_sessions=1, mode=RUN_MODE_DIAGNOSTIC, lifecycle=monitor,
         requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
         restricted_by_signal=restricted_by_signal,
+    )
+    admission_v2_strict = run_backtest(
+        price_frame, bt_open_dates, targets, bt_config,
+        execution_lag_sessions=1, mode=RUN_MODE_STRICT, lifecycle=monitor,
+        requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
+        restricted_by_signal=restricted_by_signal_v2,
     )
     runtime = time.perf_counter() - t0
 
@@ -447,11 +504,12 @@ def _main() -> None:
     audit_rows = _delisting_audit(diagnostic_result, delisting_facts)
     shadow = _shadow_audit(targets, delisting_facts, bt_open_dates)
     comparison = _compare_paths(
-        strict_result, admission_strict, diagnostic_result, admission_diagnostic
+        strict_result, admission_strict, diagnostic_result, admission_diagnostic,
+        restricted_by_signal, bt_open_dates,
     )
 
     run_id = datetime.now().strftime("%Y%m%dT%H%M%S")
-    out_dir = PROJECT_ROOT / "data" / "experiments" / "lifecycle_admission_v0_2" / run_id
+    out_dir = PROJECT_ROOT / "data" / "experiments" / "lifecycle_admission_v0_3" / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
     summary = {
@@ -608,6 +666,25 @@ def _main() -> None:
                 "diagnostic_event_count": len(admission_diagnostic.lifecycle_events),
             },
         },
+        "fact_batch": batch,
+        "admission_v2": {
+            "fact_sha256": fact_sha_v2,
+            "strict_status": admission_v2_strict.status,
+            "strict_valid_through": (
+                admission_v2_strict.valid_through.isoformat()
+                if admission_v2_strict.valid_through else None
+            ),
+            "first_blocking_event": admission_v2_strict.first_blocking_event.__dict__
+            if admission_v2_strict.first_blocking_event else None,
+            "restricted_instruments": sum(
+                len(s) for s in restricted_by_signal_v2.values()
+            ),
+            "note": (
+                "expanded batch fact file; only instruments with trusted "
+                "termination-decision facts are restricted, so B==C when no new "
+                "verified facts are added"
+            ),
+        },
         "comparison": comparison,
         "total_runtime_seconds": runtime,
     }
@@ -735,9 +812,10 @@ def _main() -> None:
     print(f"admission strict status: {admission_strict.status} "
           f"valid_through={admission_strict.valid_through}")
     print(f"first trade difference: {comparison['first_trade_difference']}")
-    print(f"000018.SZ rejected buy 2020-01-06: "
-          f"{comparison['000018_sz_rejected_buy_2020_01_06']}")
-    print(f"restriction occurrences: {comparison['restriction_occurrences']}")
+    print(f"restriction_applicable: {comparison['restriction_applicable_count']} "
+          f"buy_rejection: {comparison['buy_rejection_occurrences']} "
+          f"allowed_sell: {comparison['allowed_sell_occurrences']}")
+    print(f"rejection evaluations: {comparison['rejection_evaluations']}")
     print(f"output dir: {out_dir}")
     print(f"runtime: {runtime:.1f}s")
 

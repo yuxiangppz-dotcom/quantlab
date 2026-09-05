@@ -152,6 +152,13 @@ target and freeze rules are allowed, and no forced liquidation occurs. The
 baseline (unrestricted) and admission paths run on identical inputs and are
 compared; the same fingerprinted fact snapshot drives both.
 
+v0.3 derives `available_from` only from the full canonical calendar (with
+open/closed status and completeness checks — announcements outside the covered
+range or a calendar with missing middle records are rejected), reports a fixed
+10-instrument fact batch in a separate facts version, and runs three paths
+(baseline, admission+original facts, admission+batch facts) with a generic
+buy-rejection evaluation (`true` / `false` / `not_evaluated`).
+
 ## Future Concepts
 
 These are intended directions, not implemented yet.
