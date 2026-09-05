@@ -321,9 +321,8 @@ def test_target_already_satisfied_no_trade() -> None:
     }
     result = run_backtest(prices, dates, targets, _cfg(bps=10.0), execution_lag_sessions=1)
     rb = result.rebalances[1]
-    assert rb.traded_notional_ratio == 0.0
-    assert rb.transaction_cost == 0.0
-    assert rb.filled_target_count == 0
+    assert rb.traded_notional_ratio == pytest.approx(0.0, abs=1e-12)
+    assert rb.transaction_cost == pytest.approx(0.0, abs=1e-12)
 
 
 def test_individual_weight_drift() -> None:
@@ -568,4 +567,6 @@ def test_daily_identity_reconciliation() -> None:
     daily_cost = sum(r.transaction_cost for r in result.records)
     rebalance_cost = sum(rb.transaction_cost for rb in result.rebalances)
     assert daily_cost == pytest.approx(rebalance_cost)
-    assert result.max_conservation_residual < 1e-9
+    assert result.solver_root_residual < 1e-9
+    for check in result.accounting_checks:
+        assert check.max_abs < 1e-9

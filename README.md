@@ -235,18 +235,34 @@ weekly rebalance, 20% selection, 10 bps cost):
 uv run python scripts/run_research_backtest.py
 ```
 
-Results are written under `data/experiments/research_backtest_v0_2/`, including
-`summary.json` (metadata + metrics + provenance), `manifest.json` (input data
-content fingerprint), `daily_records.csv`, `daily_books.csv`,
-`daily_positions.csv`, `rebalance_log.csv`, and `trade_details.csv`.
+Results are written under `data/experiments/research_backtest_v0_2_1/`, including
+`summary.json` (metadata + status + provenance + metrics), `manifest.json`
+(input data content fingerprint), `strict_daily_records.csv`,
+`strict_rebalance_log.csv`, `strict_trade_details.csv`,
+`diagnostic_daily_books.csv`, `diagnostic_daily_positions.csv`, and
+lifecycle event CSVs.
 
 The engine simulates two independent ledgers (gross = zero-cost counterfactual,
-net = actual cost) with self-financing transaction cost and a
-`freeze_held_no_price` policy for held positions missing a price. This is an
-idealized portfolio simulation (`test_observed = true`,
-`performance_claim = false`), not an execution simulator. A run that encounters
-unsupported delisting / code-change events is reported as
-`blocked_by_unsupported_event` rather than as a completed performance result.
+net = actual cost) with **self-financing** transaction cost solved on the
+normalized interval `[frozen/NAV, 1]`, plus **final-ledger reconciliation
+checks** (fee consistency, cash flow, NAV bridge, position reconciliation,
+asset identity, frozen invariance). Held positions with no current price are
+frozen (`freeze_held_no_price`). Unsupported delisting / code-change events are
+checked per session against canonical boundaries, independently for both books
+and decoupled from price availability.
+
+Two run modes are supported:
+
+- `strict` (default): stops before the first unsupported event, sets
+  `status = blocked_by_unsupported_event`, leaves `metrics = null`, and reports
+  `valid_through` plus the first blocking event.
+- `diagnostic`: continues past events with `diagnostic_only` marking, and never
+  returns a valid completed performance result.
+
+This is an idealized portfolio simulation (`test_observed = true`,
+`performance_claim = false`), not an execution simulator. `performance_valid`
+is a separate boolean from `performance_claim`; a blocked run never claims a
+completed full-period performance.
 
 ## Research Philosophy
 

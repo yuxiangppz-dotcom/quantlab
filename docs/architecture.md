@@ -92,9 +92,28 @@ counts**.
 - PnL comes only from chronological adjusted closes; `future_return_*` labels are
   never read.
 
-It is a research simulator, not an execution simulator. Held positions that hit
-a delisting or code-change event are reported as unsupported (the run is marked
-`blocked_by_unsupported_event`) rather than being silently cashed out.
+After every session, a **final-ledger reconciliation** reports, per book and per
+day, the max absolute and relative residual of: fee consistency
+(`fee = c * Σ|signed trades|`), cash flow, rebalance NAV, daily NAV bridge,
+position reconciliation, asset identity, and frozen-position invariance. The
+solver residual is kept separate; exceeding the accounting tolerance raises
+`accounting_error`.
+
+Unsupported lifecycle events are detected by a separate `LifecycleMonitor` from
+canonical `Security` / `SecurityCodeChange` data, independently for both books
+and decoupled from price availability:
+
+- `delist`: valid through `delist_date` (inclusive); a held position blocks from
+  the first session with `trade_date > delist_date`.
+- `code_change`: the old instrument is invalid from `effective_date`
+  (`trade_date >= effective_date`).
+- contradictory event definitions are reported as `conflict`.
+
+Two run modes exist: `strict` stops before the first unsupported event and
+reports `valid_through`, `first_blocking_event`, and `metrics = null`;
+`diagnostic` continues with `diagnostic_only` marking and never returns a valid
+completed result. It is a research simulator, not an execution simulator — a
+blocked run never claims a completed full-period performance.
 
 ## Future Concepts
 

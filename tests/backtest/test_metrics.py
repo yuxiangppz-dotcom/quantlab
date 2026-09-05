@@ -49,7 +49,7 @@ def _rebalance(d, cost=0.0, unavailable=0, turnover=0.5):
         signal_date=d,
         execution_date=d,
         target_count=1,
-        filled_target_count=1,
+        nonzero_trade_count=1,
         unavailable_target_count=unavailable,
         frozen_count=0,
         buy_notional_ratio=turnover,

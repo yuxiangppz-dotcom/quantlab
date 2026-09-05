@@ -6,7 +6,14 @@ import math
 from dataclasses import dataclass
 from datetime import date
 
-_MAX_COST_BPS = 9_999.999  # cost_rate must be strictly < 1
+_MAX_COST_BPS = 10_000.0  # cost_rate = bps / 10_000 must be strictly < 1
+
+RUN_MODE_STRICT = "strict"
+RUN_MODE_DIAGNOSTIC = "diagnostic"
+
+STATUS_COMPLETED = "completed"
+STATUS_BLOCKED_UNSUPPORTED_EVENT = "blocked_by_unsupported_event"
+STATUS_ACCOUNTING_ERROR = "accounting_error"
 
 
 @dataclass(frozen=True)
@@ -117,6 +124,9 @@ class TradeRecord:
     signed_trade_value: float
     target_weight: float
     actual_weight: float
+    execution_price: float | None
+    price_date: date | None
+    price_kind: str  # "current_session_close" | "none"
     reason: str
 
 
@@ -131,7 +141,7 @@ class RebalanceRecord:
     signal_date: date
     execution_date: date
     target_count: int
-    filled_target_count: int
+    nonzero_trade_count: int
     unavailable_target_count: int
     frozen_count: int
     # net book
@@ -163,12 +173,50 @@ class SkippedExecution:
 
 
 @dataclass(frozen=True)
+class LifecycleEvent:
+    """An unsupported instrument lifecycle event affecting a held position."""
+
+    event_id: str
+    instrument_id: str
+    event_type: str  # "delist" | "code_change" | "conflict"
+    event_date: date  # original event date from the source data
+    blocking_session: date  # first session it blocks in this run
+    book: str  # "gross" | "net"
+    position_value: float
+    last_mark_date: date | None
+    description: str
+
+
+@dataclass(frozen=True)
+class AccountingResidual:
+    """Max residual for one final-accounting check."""
+
+    check: str
+    max_abs: float
+    max_rel: float
+    trade_date: date | None
+    book: str | None
+
+
+@dataclass(frozen=True)
 class BacktestResult:
     """Full output of a backtest run."""
 
+    run_mode: str
+    status: str
+    requested_period_start: date | None
+    requested_period_end: date | None
+    simulated_period_start: date | None
+    simulated_period_end: date | None
+    valid_through: date | None
+    diagnostic_from: date | None
+    first_blocking_event: LifecycleEvent | None
     records: list[DailyBacktestRecord]
     rebalances: list[RebalanceRecord]
     books: list[BookSnapshot]
     trades: list[TradeRecord]
     skipped_executions: list[SkippedExecution]
-    max_conservation_residual: float
+    lifecycle_events: list[LifecycleEvent]
+    solver_root_residual: float
+    accounting_checks: list[AccountingResidual]
+    accounting_error: str | None
