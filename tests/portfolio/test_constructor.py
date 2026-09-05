@@ -187,3 +187,65 @@ def test_portfolio_to_frame() -> None:
     assert list(df.columns) == ["as_of", "instrument_id", "target_weight"]
     assert len(df) == 2
     assert "cash" not in df.columns
+
+
+def test_signed_target_weight_allowed() -> None:
+    pf = TargetPortfolio(
+        as_of=date(2026, 1, 5),
+        positions=(TargetWeight("a", 1.3), TargetWeight("b", -0.3)),
+        cash_weight=0.0,
+    )
+    assert pf.net_exposure == pytest.approx(1.0)
+    assert pf.gross_exposure == pytest.approx(1.6)
+
+
+def test_exposure_properties_long_only() -> None:
+    pf = TargetPortfolio(
+        as_of=date(2026, 1, 5),
+        positions=(TargetWeight("a", 0.6), TargetWeight("b", 0.4)),
+        cash_weight=0.0,
+    )
+    assert pf.net_exposure == pytest.approx(1.0)
+    assert pf.gross_exposure == pytest.approx(1.0)
+
+
+def test_nav_balance_is_one() -> None:
+    pf = TargetPortfolio(
+        as_of=date(2026, 1, 5),
+        positions=(TargetWeight("a", 0.6),),
+        cash_weight=0.4,
+    )
+    assert sum(p.target_weight for p in pf.positions) + pf.cash_weight == pytest.approx(1.0)
+
+
+def test_constructor_gross_08_cash_02() -> None:
+    pf = construct_rank_portfolio(
+        _frame(list(range(1, 6))),
+        date(2026, 1, 5),
+        _cfg(selection_fraction=1.0, gross_exposure=0.8),
+    )
+    assert all(abs(p.target_weight - 0.16) < 1e-9 for p in pf.positions)
+    assert pf.cash_weight == pytest.approx(0.2)
+
+
+def test_all_nan_cash_one() -> None:
+    pf = construct_rank_portfolio(_frame([np.nan]), date(2026, 1, 5), _cfg())
+    assert pf.positions == ()
+    assert pf.cash_weight == pytest.approx(1.0)
+
+
+def test_config_nan_inf_rejected() -> None:
+    with pytest.raises(ValueError):
+        RankPortfolioConfig(selection_fraction=float("nan"), score_direction="higher_is_better")
+    with pytest.raises(ValueError):
+        RankPortfolioConfig(
+            selection_fraction=0.5,
+            score_direction="higher_is_better",
+            gross_exposure=float("inf"),
+        )
+    with pytest.raises(ValueError):
+        RankPortfolioConfig(
+            selection_fraction=0.5,
+            score_direction="higher_is_better",
+            max_weight_per_name=float("nan"),
+        )

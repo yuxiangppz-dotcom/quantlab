@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import date
 
@@ -24,20 +25,27 @@ class RankPortfolioConfig:
     max_weight_per_name: float | None = None
 
     def __post_init__(self) -> None:
-        if not (0 < self.selection_fraction <= 1):
+        if not math.isfinite(self.selection_fraction) or not (0 < self.selection_fraction <= 1):
             raise ValueError(
-                f"selection_fraction must be in (0, 1], got {self.selection_fraction}"
+                f"selection_fraction must be a finite value in (0, 1], "
+                f"got {self.selection_fraction}"
             )
         if self.score_direction not in _VALID_DIRECTIONS:
             raise ValueError(
                 f"score_direction must be one of {_VALID_DIRECTIONS}, "
                 f"got {self.score_direction!r}"
             )
-        if self.gross_exposure <= 0:
-            raise ValueError(f"gross_exposure must be > 0, got {self.gross_exposure}")
-        if self.max_weight_per_name is not None and self.max_weight_per_name <= 0:
+        if not math.isfinite(self.gross_exposure) or not (0 < self.gross_exposure <= 1):
             raise ValueError(
-                f"max_weight_per_name must be > 0, got {self.max_weight_per_name}"
+                f"gross_exposure must be a finite value in (0, 1], "
+                f"got {self.gross_exposure}"
+            )
+        if self.max_weight_per_name is not None and (
+            not math.isfinite(self.max_weight_per_name) or self.max_weight_per_name <= 0
+        ):
+            raise ValueError(
+                f"max_weight_per_name must be finite and > 0, "
+                f"got {self.max_weight_per_name}"
             )
 
 
@@ -88,7 +96,7 @@ def construct_rank_portfolio(
 
     valid = frame.dropna(subset=["alpha_score"])
     if valid.empty:
-        return TargetPortfolio(as_of=as_of, positions=(), cash_weight=config.gross_exposure)
+        return TargetPortfolio(as_of=as_of, positions=(), cash_weight=1.0)
 
     selected = _select_top(valid, config.score_direction, config.selection_fraction)
 
@@ -103,13 +111,8 @@ def construct_rank_portfolio(
         TargetWeight(instrument_id=row.instrument_id, target_weight=weight)
         for row in selected.sort_values("instrument_id").itertuples(index=False)
     )
-    cash = config.gross_exposure - n * weight
-    return TargetPortfolio(
-        as_of=as_of,
-        positions=positions,
-        cash_weight=cash,
-        gross_exposure=config.gross_exposure,
-    )
+    cash = 1.0 - n * weight
+    return TargetPortfolio(as_of=as_of, positions=positions, cash_weight=cash)
 
 
 def portfolio_to_frame(portfolio: TargetPortfolio) -> pd.DataFrame:

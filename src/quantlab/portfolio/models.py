@@ -13,7 +13,10 @@ _WEIGHT_TOLERANCE = 1e-6
 
 @dataclass(frozen=True)
 class TargetWeight:
-    """Desired weight for a single instrument (not an order or a fill)."""
+    """Desired weight for a single instrument, relative to portfolio NAV.
+
+    Signed: positive is long, negative is short.
+    """
 
     instrument_id: str
     target_weight: float
@@ -23,19 +26,21 @@ class TargetWeight:
 class TargetPortfolio:
     """Desired holdings on a single ``as_of`` date.
 
-    A TargetPortfolio is an *intention*, not a trade record, actual position, or
-    return forecast. ``cash_weight`` is the residual not allocated to positions.
+    All weights (including ``cash_weight``) are relative to portfolio NAV and
+    sum to 1.0. Exposure is derived, not stored. A TargetPortfolio is an
+    *intention*, not an order, fill, or return forecast.
     """
 
     as_of: date
     positions: tuple[TargetWeight, ...]
     cash_weight: float
-    gross_exposure: float = 1.0
 
     def __post_init__(self) -> None:
         seen: set[str] = set()
         total = 0.0
         for pos in self.positions:
+            if not pos.instrument_id:
+                raise DataValidationError("empty instrument_id in positions")
             if pos.instrument_id in seen:
                 raise DataValidationError(f"duplicate instrument_id: {pos.instrument_id}")
             seen.add(pos.instrument_id)
@@ -43,19 +48,22 @@ class TargetPortfolio:
                 raise DataValidationError(
                     f"non-finite target_weight for {pos.instrument_id}"
                 )
-            if pos.target_weight < 0:
-                raise DataValidationError(
-                    f"negative target_weight for {pos.instrument_id}"
-                )
             total += pos.target_weight
 
         if not math.isfinite(self.cash_weight):
             raise DataValidationError("non-finite cash_weight")
-        if self.cash_weight < 0:
-            raise DataValidationError("negative cash_weight")
 
-        if abs(total + self.cash_weight - self.gross_exposure) > _WEIGHT_TOLERANCE:
+        if abs(total + self.cash_weight - 1.0) > _WEIGHT_TOLERANCE:
             raise DataValidationError(
-                f"weights sum {total} + cash {self.cash_weight} "
-                f"!= gross_exposure {self.gross_exposure}"
+                f"position weights sum {total} + cash {self.cash_weight} != 1.0"
             )
+
+    @property
+    def net_exposure(self) -> float:
+        """Sum of signed position weights."""
+        return sum(pos.target_weight for pos in self.positions)
+
+    @property
+    def gross_exposure(self) -> float:
+        """Sum of absolute position weights."""
+        return sum(abs(pos.target_weight) for pos in self.positions)
