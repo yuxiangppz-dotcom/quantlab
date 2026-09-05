@@ -30,21 +30,31 @@ def load_delisting_facts(path: str | Path) -> dict:
 
 def _calendar_coverage(
     calendar: list[tuple[date, bool]],
-) -> tuple[date | None, date | None, bool, list[date]]:
-    """Return ``(cal_min, cal_max, complete, open_dates)`` for a calendar.
+) -> tuple[date | None, date | None, bool, list[date], str | None]:
+    """Return ``(cal_min, cal_max, complete, open_dates, error)``.
 
-    ``complete`` means the calendar has an entry for every calendar day between
-    its min and max (open or closed), i.e. no missing middle records.
+    Records are grouped by unique date; duplicate identical records are
+    de-duplicated, contradictory open/closed status on the same date is an
+    error, and ``complete`` requires one entry for every calendar day between
+    the min and max (a missing day cannot be offset by duplicates).
     """
-    cal = sorted(set(calendar))
-    dates = [d for d, _ in cal]
+    by_date: dict[date, bool] = {}
+    for d, is_open in calendar:
+        if d in by_date:
+            if by_date[d] != is_open:
+                return None, None, False, [], (
+                    f"contradictory open/closed status for {d}"
+                )
+        else:
+            by_date[d] = is_open
+    dates = sorted(by_date)
     if not dates:
-        return None, None, False, []
+        return None, None, False, [], "empty calendar"
     cal_min = min(dates)
     cal_max = max(dates)
     complete = len(dates) == (cal_max - cal_min).days + 1
-    open_dates = sorted(d for d, is_open in cal if is_open)
-    return cal_min, cal_max, complete, open_dates
+    open_dates = sorted(d for d, is_open in by_date.items() if is_open)
+    return cal_min, cal_max, complete, open_dates, None
 
 
 def _first_open_session_after(open_dates: list[date], d: date) -> date | None:
@@ -62,9 +72,9 @@ def validate_facts(facts: dict, calendar: list[tuple[date, bool]]) -> list[str]:
     coverage is complete and the publication date falls inside it; otherwise
     the derivation is rejected. Returns a list of error messages.
     """
-    cal_min, cal_max, complete, open_dates = _calendar_coverage(calendar)
-    if cal_min is None:
-        return ["empty calendar"]
+    cal_min, cal_max, complete, open_dates, cal_error = _calendar_coverage(calendar)
+    if cal_error is not None:
+        return [cal_error]
 
     errors: list[str] = []
     if not complete:
@@ -219,3 +229,12 @@ def source_coverage(facts: dict, instrument_id: str) -> str:
     if any(f.get("content_verified") for f in entry.get("facts", [])):
         return "verified"
     return "unknown"
+
+
+def retrieval_status_summary(facts: dict) -> dict:
+    """Count instruments by ``retrieval_status``."""
+    counts: dict[str, int] = {}
+    for entry in facts.values():
+        status = entry.get("retrieval_status", "unknown")
+        counts[status] = counts.get(status, 0) + 1
+    return counts

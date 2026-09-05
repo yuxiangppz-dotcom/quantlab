@@ -164,3 +164,25 @@ def test_insufficient_calendar_after_publication() -> None:
     facts = {"X": {"facts": [_fact(publication_date="2026-01-09")]}}
     errors = validate_facts(facts, cal)
     assert any("insufficient calendar coverage after" in e for e in errors)
+
+
+def test_contradictory_open_closed_same_date() -> None:
+    cal = [
+        (date(2026, 1, 1), True),
+        (date(2026, 1, 1), False),
+    ]
+    facts = {"X": {"facts": [_fact(publication_date="2026-01-01")]}}
+    errors = validate_facts(facts, cal)
+    assert any("contradictory" in e for e in errors)
+
+
+def test_missing_day_not_offset_by_duplicate() -> None:
+    # Jan 1 and Jan 3 present (with a duplicate Jan 3), Jan 2 missing
+    cal = [
+        (date(2026, 1, 1), True),
+        (date(2026, 1, 3), True),
+        (date(2026, 1, 3), True),
+    ]
+    facts = {"X": {"facts": [_fact(publication_date="2026-01-01")]}}
+    errors = validate_facts(facts, cal)
+    assert any("coverage incomplete" in e for e in errors)

@@ -52,6 +52,7 @@ def _rebalance(d, cost=0.0, unavailable=0, turnover=0.5):
         nonzero_trade_count=1,
         unavailable_target_count=unavailable,
         frozen_count=0,
+        restricted_binding_count=0,
         buy_notional_ratio=turnover,
         sell_notional_ratio=turnover,
         traded_notional_ratio=turnover * 2,

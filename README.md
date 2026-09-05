@@ -289,7 +289,10 @@ the 85-event baseline, selected by blocking session order, not by returns) in a
 separate facts version, and runs three paths — A baseline, B admission with the
 original facts, C admission with the expanded-batch facts — plus a generic
 buy-rejection evaluation (`true` / `false` / `not_evaluated`) that never
-hardcodes a single instrument.
+hardcodes a single instrument. Retrieval is per-instrument and recorded as
+`verified` / `searched_unresolved` / `access_blocked` / `not_attempted`; as of
+this round 3 of 10 batch instruments are verified (000018.SZ, 600240.SH,
+601558.SH) and 7 remain `not_attempted`.
 
 ## Research Philosophy
 

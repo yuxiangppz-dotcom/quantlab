@@ -37,9 +37,11 @@ from quantlab.backtest.admission import (
 )
 from quantlab.backtest.delisting_facts import (
     load_validated_facts,
+    retrieval_status_summary,
     source_coverage,
     trusted_facts_available_as_of,
 )
+from quantlab.backtest.experiment import build_group_report, export_group
 from quantlab.backtest.provenance import content_manifest, environment_info
 from quantlab.data import ParquetStorage
 from quantlab.data.security_history import load_security_code_changes
@@ -80,6 +82,8 @@ def _code_paths() -> list[Path]:
     paths.append(PROJECT_ROOT / "uv.lock")
     paths.append(PROJECT_ROOT / "config" / "security_code_changes.csv")
     paths.append(PROJECT_ROOT / "config" / "delisting_facts.json")
+    paths.append(PROJECT_ROOT / "config" / "delisting_facts_v2.json")
+    paths.append(PROJECT_ROOT / "config" / "delisting_facts_batch.json")
     return paths
 
 
@@ -345,8 +349,8 @@ def _compare_paths(base_strict, adm_strict, base_diag, adm_diag,
     restriction_applicable_count = sum(
         len(s) for s in restricted_by_signal.values()
     )
-    buy_rejection_occurrences = sum(
-        1 for t in adm_strict.trades if t.reason == "restricted_no_new_exposure"
+    buy_cap_binding_occurrences = sum(
+        rb.restricted_binding_count for rb in adm_strict.rebalances
     )
     allowed_sell_occurrences = sum(
         1 for t in adm_strict.trades
@@ -378,7 +382,7 @@ def _compare_paths(base_strict, adm_strict, base_diag, adm_diag,
     return {
         "first_trade_difference": first_diff,
         "restriction_applicable_count": restriction_applicable_count,
-        "buy_rejection_occurrences": buy_rejection_occurrences,
+        "buy_cap_binding_occurrences": buy_cap_binding_occurrences,
         "allowed_sell_occurrences": allowed_sell_occurrences,
         "rejection_evaluations": rejection_evaluations,
         "admission_next_blocking_event": (
@@ -506,6 +510,19 @@ def _main() -> None:
     comparison = _compare_paths(
         strict_result, admission_strict, diagnostic_result, admission_diagnostic,
         restricted_by_signal, bt_open_dates,
+    )
+    comparison_bc = _compare_paths(
+        admission_strict, admission_v2_strict, admission_diagnostic, None,
+        restricted_by_signal_v2, bt_open_dates,
+    )
+    group_a = build_group_report(
+        strict_result, diagnostic_result, bt_config, bt_open_dates, reproducible
+    )
+    group_b = build_group_report(
+        admission_strict, admission_diagnostic, bt_config, bt_open_dates, reproducible
+    )
+    group_c = build_group_report(
+        admission_v2_strict, None, bt_config, bt_open_dates, reproducible
     )
 
     run_id = datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -667,8 +684,10 @@ def _main() -> None:
             },
         },
         "fact_batch": batch,
+        "groups": {"A": group_a, "B": group_b, "C": group_c},
         "admission_v2": {
             "fact_sha256": fact_sha_v2,
+            "retrieval_status": retrieval_status_summary(delisting_facts_v2),
             "strict_status": admission_v2_strict.status,
             "strict_valid_through": (
                 admission_v2_strict.valid_through.isoformat()
@@ -686,6 +705,7 @@ def _main() -> None:
             ),
         },
         "comparison": comparison,
+        "comparison_bc": comparison_bc,
         "total_runtime_seconds": runtime,
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str))
@@ -697,87 +717,11 @@ def _main() -> None:
     if shadow["rows"]:
         pd.DataFrame(shadow["rows"]).to_csv(out_dir / "shadow_admission.csv", index=False)
 
-    def _failed_attempt_to_dict(fa):
-        return {
-            "trade_date": fa.trade_date.isoformat(),
-            "reason": fa.reason,
-            "trades": [t.__dict__ for t in fa.trades],
-            "rebalance": fa.rebalance.__dict__ if fa.rebalance else None,
-        }
-
-    if strict_result.failed_attempts:
-        (out_dir / "strict_failed_attempts.json").write_text(
-            json.dumps(
-                [_failed_attempt_to_dict(fa) for fa in strict_result.failed_attempts],
-                indent=2, default=str,
-            )
-        )
-    if diagnostic_result.failed_attempts:
-        (out_dir / "diagnostic_failed_attempts.json").write_text(
-            json.dumps(
-                [_failed_attempt_to_dict(fa) for fa in diagnostic_result.failed_attempts],
-                indent=2, default=str,
-            )
-        )
-
-    pd.DataFrame([r.__dict__ for r in strict_result.records]).to_csv(
-        out_dir / "strict_daily_records.csv", index=False
-    )
-    pd.DataFrame([r.__dict__ for r in strict_result.rebalances]).to_csv(
-        out_dir / "strict_rebalance_log.csv", index=False
-    )
-    pd.DataFrame([t.__dict__ for t in strict_result.trades]).to_csv(
-        out_dir / "strict_trade_details.csv", index=False
-    )
-    pd.DataFrame([t.__dict__ for t in diagnostic_result.trades]).to_csv(
-        out_dir / "diagnostic_trade_details.csv", index=False
-    )
-    pd.DataFrame([t.__dict__ for t in admission_strict.trades]).to_csv(
-        out_dir / "admission_strict_trade_details.csv", index=False
-    )
-    pd.DataFrame([r.__dict__ for r in admission_strict.records]).to_csv(
-        out_dir / "admission_strict_daily_records.csv", index=False
-    )
-    pd.DataFrame([rb.__dict__ for rb in admission_strict.rebalances]).to_csv(
-        out_dir / "admission_strict_rebalance_log.csv", index=False
-    )
-    if diagnostic_result.lifecycle_events:
-        pd.DataFrame([e.__dict__ for e in diagnostic_result.lifecycle_events]).to_csv(
-            out_dir / "diagnostic_lifecycle_events.csv", index=False
-        )
-    if strict_result.lifecycle_events:
-        pd.DataFrame([e.__dict__ for e in strict_result.lifecycle_events]).to_csv(
-            out_dir / "strict_lifecycle_events.csv", index=False
-        )
-
-    def _write_books(prefix: str, books) -> None:
-        book_rows = []
-        position_rows = []
-        for b in books:
-            book_rows.append({
-                "trade_date": b.trade_date, "book": b.book, "nav": b.nav,
-                "daily_return": b.daily_return, "cash": b.cash,
-                "market_pnl": b.market_pnl, "fee": b.fee,
-                "gross_exposure": b.gross_exposure, "net_exposure": b.net_exposure,
-                "cash_weight": b.cash_weight, "holdings_count": b.holdings_count,
-            })
-            for p in b.positions:
-                position_rows.append({
-                    "trade_date": b.trade_date, "book": b.book,
-                    "instrument_id": p.instrument_id, "value": p.value,
-                    "weight": p.weight, "last_price": p.last_price,
-                    "last_mark_date": p.last_mark_date,
-                    "missing_price": p.missing_price,
-                })
-        pd.DataFrame(book_rows).to_csv(out_dir / f"{prefix}_daily_books.csv", index=False)
-        pd.DataFrame(position_rows).to_csv(out_dir / f"{prefix}_daily_positions.csv", index=False)
-
-    _write_books("strict", strict_result.books)
-    _write_books("diagnostic", diagnostic_result.books)
-    if strict_result.skipped_executions:
-        pd.DataFrame([s.__dict__ for s in strict_result.skipped_executions]).to_csv(
-            out_dir / "strict_skipped_executions.csv", index=False
-        )
+    export_group(out_dir, "A_baseline", strict_result)
+    export_group(out_dir, "A_diagnostic", diagnostic_result)
+    export_group(out_dir, "B_admission", admission_strict)
+    export_group(out_dir, "B_admission_diagnostic", admission_diagnostic)
+    export_group(out_dir, "C_admission_batch", admission_v2_strict)
 
     print(f"=== research backtest {ENGINE_SCHEMA_VERSION} ===")
     print(f"strict status: {strict_result.status}")
@@ -813,7 +757,7 @@ def _main() -> None:
           f"valid_through={admission_strict.valid_through}")
     print(f"first trade difference: {comparison['first_trade_difference']}")
     print(f"restriction_applicable: {comparison['restriction_applicable_count']} "
-          f"buy_rejection: {comparison['buy_rejection_occurrences']} "
+          f"buy_cap_binding: {comparison['buy_cap_binding_occurrences']} "
           f"allowed_sell: {comparison['allowed_sell_occurrences']}")
     print(f"rejection evaluations: {comparison['rejection_evaluations']}")
     print(f"output dir: {out_dir}")

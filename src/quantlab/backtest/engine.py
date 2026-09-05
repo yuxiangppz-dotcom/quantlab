@@ -318,6 +318,18 @@ def _rebalance(
         else:
             final_values[instr] = final_weight(u, instr) * v_minus
 
+    buy_cap_binding: list[str] = []
+    for instr in sorted(restricted & set(tradable)):
+        if s > 0 and u > 0:
+            budget = max(0.0, (1.0 - q) * u - f)
+            lam = min(1.0, budget / (s * u))
+            candidate = lam * tradable[instr] * u * v_minus
+        else:
+            candidate = 0.0
+        cap = positions_before.get(instr, 0.0)
+        if candidate > cap + 1e-12:
+            buy_cap_binding.append(instr)
+
     signed = {
         instr: final_values[instr] - positions_before.get(instr, 0.0)
         for instr in sorted(involved)
@@ -441,6 +453,8 @@ def _rebalance(
         "nonzero_trades": nonzero_trades,
         "restricted_count": len(restricted & set(tradable)),
         "restricted_instruments": sorted(restricted & set(tradable)),
+        "buy_cap_binding": buy_cap_binding,
+        "buy_cap_binding_count": len(buy_cap_binding),
         "trade_details": trade_details,
     }
 
@@ -679,6 +693,7 @@ def run_backtest(
                 nonzero_trade_count=net_summary["nonzero_trades"],
                 unavailable_target_count=net_summary["unavailable_count"],
                 frozen_count=net_summary["frozen_count"],
+                restricted_binding_count=net_summary["buy_cap_binding_count"],
                 buy_notional_ratio=net_summary["buy_ratio"],
                 sell_notional_ratio=net_summary["sell_ratio"],
                 traded_notional_ratio=net_summary["traded_ratio"],
