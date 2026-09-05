@@ -143,9 +143,14 @@ public time.
 
 The shadow policy `no_new_exposure_after_termination_decision_v1` labels each
 positive target `restricted` (a trusted, available termination decision exists)
-or `unknown` (insufficient trusted coverage — never a claim of safety). It is a
-pure decision over trusted facts and never alters the actual execution path;
-the shadow audit and the backtest share the same fingerprinted fact input.
+or `unknown` (insufficient trusted coverage — never a claim of safety).
+
+As of v0.2 this is also an **enforcement experiment**: a restricted instrument's
+new exposure is capped at its pre-rebalance (post-mark) amount inside the
+self-financing solver — buys and refills are forbidden, sells per the original
+target and freeze rules are allowed, and no forced liquidation occurs. The
+baseline (unrestricted) and admission paths run on identical inputs and are
+compared; the same fingerprinted fact snapshot drives both.
 
 ## Future Concepts
 

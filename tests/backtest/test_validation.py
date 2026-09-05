@@ -187,9 +187,10 @@ def test_position_tamper_detected(monkeypatch) -> None:
     original = eng._rebalance
 
     def tamper(book, target, current_prices, cost_rate, signal_date,
-               execution_date, blocked=frozenset()):
+               execution_date, blocked=frozenset(), restricted=frozenset()):
         summary = original(book, target, current_prices, cost_rate,
-                           signal_date, execution_date, blocked=blocked)
+                           signal_date, execution_date, blocked=blocked,
+                           restricted=restricted)
         if "A" in book.positions and "B" in book.positions:
             book.positions["A"].value += 0.1 * cfg.initial_nav
             book.positions["B"].value -= 0.1 * cfg.initial_nav
@@ -280,9 +281,10 @@ def test_atomic_commit_on_failure(monkeypatch) -> None:
     original = eng._rebalance
 
     def tamper(book, target, current_prices, cost_rate, signal_date,
-               execution_date, blocked=frozenset()):
+               execution_date, blocked=frozenset(), restricted=frozenset()):
         summary = original(book, target, current_prices, cost_rate,
-                           signal_date, execution_date, blocked=blocked)
+                           signal_date, execution_date, blocked=blocked,
+                           restricted=restricted)
         if execution_date == date(2026, 1, 7):
             book.cash += 0.1  # inject cash error on second rebalance session
         return summary

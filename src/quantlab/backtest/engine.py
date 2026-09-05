@@ -246,6 +246,7 @@ def _rebalance(
     signal_date: date,
     execution_date: date,
     blocked: frozenset[str] = frozenset(),
+    restricted: frozenset[str] = frozenset(),
 ) -> dict:
     """Apply a target to one book using the freeze-first allocation rule."""
     v_minus = book.nav()
@@ -293,7 +294,11 @@ def _rebalance(
             if s > 0 and u > 0:
                 budget = max(0.0, (1.0 - q) * u - f)
                 lam = min(1.0, budget / (s * u))
-                return lam * tradable[instr] * u
+                w = lam * tradable[instr] * u
+                if instr in restricted:
+                    # cap new exposure at the pre-rebalance (post-mark) amount
+                    w = min(w, weights_before.get(instr, 0.0))
+                return w
             return 0.0
         return 0.0
 
@@ -356,6 +361,8 @@ def _rebalance(
             nonzero_trades += 1
         if instr in blocked:
             reason = "lifecycle_blocked"
+        elif instr in restricted and instr in tradable:
+            reason = "restricted_no_new_exposure"
         elif instr in frozen:
             reason = "frozen_held_no_price"
         elif instr in unavailable_new:
@@ -430,6 +437,8 @@ def _rebalance(
         "frozen_count": len(frozen),
         "unavailable_count": len(unavailable_new),
         "nonzero_trades": nonzero_trades,
+        "restricted_count": len(restricted & set(tradable)),
+        "restricted_instruments": sorted(restricted & set(tradable)),
         "trade_details": trade_details,
     }
 
@@ -444,6 +453,7 @@ def run_backtest(
     lifecycle: LifecycleMonitor | None = None,
     requested_period_start: date | None = None,
     requested_period_end: date | None = None,
+    restricted_by_signal: dict[date, frozenset[str]] | None = None,
 ) -> BacktestResult:
     """Simulate dual gross/net ledgers with self-financing cost.
 
@@ -616,13 +626,16 @@ def run_backtest(
 
         if target is not None:
             signal_date, target_portfolio = target
+            signal_restricted = (
+                (restricted_by_signal or {}).get(signal_date, frozenset())
+            )
             gross_summary = _rebalance(
                 gross_book, target_portfolio, current_prices, 0.0,
-                signal_date, trade_date, blocked_instruments,
+                signal_date, trade_date, blocked_instruments, signal_restricted,
             )
             net_summary = _rebalance(
                 net_book, target_portfolio, current_prices, config.cost_rate,
-                signal_date, trade_date, blocked_instruments,
+                signal_date, trade_date, blocked_instruments, signal_restricted,
             )
             solver_residual = max(solver_residual, net_summary["solver_residual"])
 

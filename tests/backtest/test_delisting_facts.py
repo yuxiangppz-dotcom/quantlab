@@ -6,6 +6,7 @@ from quantlab.backtest.delisting_facts import (
     load_delisting_facts,
     source_coverage,
     trusted_facts_available_as_of,
+    validate_facts,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -76,3 +77,58 @@ def test_late_published_fact_not_available_early() -> None:
     }
     assert facts_available_as_of(facts, "X", date(2020, 1, 3)) == []
     assert facts_available_as_of(facts, "X", date(2020, 1, 8)) != []
+
+
+def test_bool_types_validated() -> None:
+    facts = {
+        "X": {"facts": [{
+            "fact_type": "t", "content_verified": "true",
+            "public_time_verified": True, "available_from": None,
+        }]}
+    }
+    errors = validate_facts(facts, [date(2020, 1, 2)])
+    assert any("must be bool" in e for e in errors)
+
+
+def test_contradictory_available_from_rejected() -> None:
+    facts = {
+        "X": {"facts": [{
+            "fact_type": "t", "content_verified": True,
+            "public_time_verified": True,
+            "publication_date": "2020-02-01",
+            "available_from": "2020-01-01",  # before publication -> contradiction
+        }]}
+    }
+    open_dates = [date(2020, 1, 2), date(2020, 2, 3)]
+    errors = validate_facts(facts, open_dates)
+    assert any("not after publication_date" in e or "!=" in e for e in errors)
+
+
+def test_weekend_available_from_calendar() -> None:
+    # publication Friday 2026-01-09 -> first open session after is Monday 01-12
+    facts = {
+        "X": {"facts": [{
+            "fact_type": "t", "content_verified": True,
+            "public_time_verified": True,
+            "publication_date": "2026-01-09",
+            "available_from": None,
+        }]}
+    }
+    open_dates = [date(2026, 1, 9), date(2026, 1, 12), date(2026, 1, 13)]
+    errors = validate_facts(facts, open_dates)
+    assert errors == []
+    assert facts["X"]["facts"][0]["available_from"] == "2026-01-12"
+
+
+def test_insufficient_calendar_coverage() -> None:
+    facts = {
+        "X": {"facts": [{
+            "fact_type": "t", "content_verified": True,
+            "public_time_verified": True,
+            "publication_date": "2026-01-09",
+            "available_from": None,
+        }]}
+    }
+    open_dates = [date(2026, 1, 8)]  # no session after publication
+    errors = validate_facts(facts, open_dates)
+    assert any("insufficient calendar" in e for e in errors)

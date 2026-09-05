@@ -9,8 +9,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from quantlab.backtest.delisting_facts import trusted_facts_available_as_of
+
 POLICY_NAME = "no_new_exposure_after_termination_decision"
 POLICY_VERSION = "v1"
+ENFORCEMENT_VERSION = "v1"
+LIMITED_FACT_COVERAGE = True
 
 
 @dataclass(frozen=True)
@@ -62,3 +66,29 @@ def shadow_admission(
         available_from=None,
         source=None,
     )
+
+
+def compute_restricted_by_signal(
+    targets: dict,
+    facts: dict,
+) -> dict[date, frozenset[str]]:
+    """Compute the immutable restricted-instrument set per signal date.
+
+    Only trusted facts available at ``signal_date`` are used; no execution-date
+    re-check of later announcements is performed.
+    """
+    restricted_by_signal: dict[date, frozenset[str]] = {}
+    for signal_date, target in targets.items():
+        restricted: set[str] = set()
+        for pos in target.positions:
+            if pos.target_weight <= 0:
+                continue
+            trusted = trusted_facts_available_as_of(
+                facts, pos.instrument_id, signal_date
+            )
+            decision = shadow_admission(pos.instrument_id, signal_date, trusted)
+            if decision.status == "restricted":
+                restricted.add(pos.instrument_id)
+        if restricted:
+            restricted_by_signal[signal_date] = frozenset(restricted)
+    return restricted_by_signal

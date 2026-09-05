@@ -26,12 +26,20 @@ from quantlab.backtest import (
     run_backtest,
     weekly_signal_dates,
 )
-from quantlab.backtest.admission import POLICY_NAME, POLICY_VERSION, shadow_admission
+from quantlab.backtest.admission import (
+    ENFORCEMENT_VERSION,
+    LIMITED_FACT_COVERAGE,
+    POLICY_NAME,
+    POLICY_VERSION,
+    compute_restricted_by_signal,
+    shadow_admission,
+)
 from quantlab.backtest.delisting_facts import (
+    load_validated_facts,
     source_coverage,
     trusted_facts_available_as_of,
 )
-from quantlab.backtest.provenance import content_manifest, environment_info, sha256_file
+from quantlab.backtest.provenance import content_manifest, environment_info
 from quantlab.data import ParquetStorage
 from quantlab.data.security_history import load_security_code_changes
 from quantlab.portfolio import RankPortfolioConfig, construct_rank_portfolio
@@ -299,6 +307,57 @@ def _next_open_session(open_dates: list, signal_date) -> object:
     return open_dates[idx + 1]
 
 
+def _compare_paths(base_strict, adm_strict, base_diag, adm_diag) -> dict:
+    base_trades = {
+        (t.execution_date, t.book, t.instrument_id): t.signed_trade_value
+        for t in base_strict.trades
+    }
+    adm_trades = {
+        (t.execution_date, t.book, t.instrument_id): t.signed_trade_value
+        for t in adm_strict.trades
+    }
+    first_diff = None
+    for key in sorted(set(base_trades) | set(adm_trades)):
+        b = base_trades.get(key, 0.0)
+        a = adm_trades.get(key, 0.0)
+        if abs(b - a) > 1e-12:
+            first_diff = {
+                "execution_date": key[0].isoformat(),
+                "book": key[1],
+                "instrument_id": key[2],
+                "baseline_signed": b,
+                "admission_signed": a,
+            }
+            break
+    rejected_000018 = not any(
+        t.instrument_id == "000018.SZ"
+        and t.execution_date == date(2020, 1, 6)
+        and t.book == "net"
+        and t.signed_trade_value > 0
+        for t in adm_strict.trades
+    )
+    restriction_occurrences = sum(
+        1 for t in adm_strict.trades if t.reason == "restricted_no_new_exposure"
+    )
+    return {
+        "first_trade_difference": first_diff,
+        "000018_sz_rejected_buy_2020_01_06": rejected_000018,
+        "restriction_occurrences": restriction_occurrences,
+        "admission_next_blocking_event": (
+            adm_strict.first_blocking_event.__dict__
+            if adm_strict.first_blocking_event else None
+        ),
+        "admission_strict_status": adm_strict.status,
+        "admission_valid_through": (
+            adm_strict.valid_through.isoformat() if adm_strict.valid_through else None
+        ),
+        "baseline_strict_status": base_strict.status,
+        "baseline_valid_through": (
+            base_strict.valid_through.isoformat() if base_strict.valid_through else None
+        ),
+    }
+
+
 def _main() -> None:
     storage = ParquetStorage(PROJECT_ROOT / "data" / "canonical")
     calendar, securities, code_changes, open_dates = _load_inputs(storage)
@@ -329,6 +388,12 @@ def _main() -> None:
     bt_config = BacktestConfig(initial_nav=1.0, transaction_cost_bps=10.0, annualization=252)
     monitor = LifecycleMonitor(securities, code_changes)
 
+    facts_path = PROJECT_ROOT / "config" / "delisting_facts.json"
+    delisting_facts, fact_sha, fact_errors = load_validated_facts(facts_path, open_dates)
+    if fact_errors:
+        raise ValueError("; ".join(fact_errors))
+    restricted_by_signal = compute_restricted_by_signal(targets, delisting_facts)
+
     strict_result = run_backtest(
         price_frame, bt_open_dates, targets, bt_config,
         execution_lag_sessions=1, mode=RUN_MODE_STRICT, lifecycle=monitor,
@@ -338,6 +403,18 @@ def _main() -> None:
         price_frame, bt_open_dates, targets, bt_config,
         execution_lag_sessions=1, mode=RUN_MODE_DIAGNOSTIC, lifecycle=monitor,
         requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
+    )
+    admission_strict = run_backtest(
+        price_frame, bt_open_dates, targets, bt_config,
+        execution_lag_sessions=1, mode=RUN_MODE_STRICT, lifecycle=monitor,
+        requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
+        restricted_by_signal=restricted_by_signal,
+    )
+    admission_diagnostic = run_backtest(
+        price_frame, bt_open_dates, targets, bt_config,
+        execution_lag_sessions=1, mode=RUN_MODE_DIAGNOSTIC, lifecycle=monitor,
+        requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
+        restricted_by_signal=restricted_by_signal,
     )
     runtime = time.perf_counter() - t0
 
@@ -367,14 +444,14 @@ def _main() -> None:
 
     unique_event_ids = {e.event_id for e in diagnostic_result.lifecycle_events}
 
-    facts_path = PROJECT_ROOT / "config" / "delisting_facts.json"
-    delisting_facts = json.loads(facts_path.read_text())
     audit_rows = _delisting_audit(diagnostic_result, delisting_facts)
     shadow = _shadow_audit(targets, delisting_facts, bt_open_dates)
-    fact_sha = sha256_file(facts_path)
+    comparison = _compare_paths(
+        strict_result, admission_strict, diagnostic_result, admission_diagnostic
+    )
 
     run_id = datetime.now().strftime("%Y%m%dT%H%M%S")
-    out_dir = PROJECT_ROOT / "data" / "experiments" / "lifecycle_admission_v0_1" / run_id
+    out_dir = PROJECT_ROOT / "data" / "experiments" / "lifecycle_admission_v0_2" / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
     summary = {
@@ -493,6 +570,45 @@ def _main() -> None:
             "diagnostic_metrics_valid": False,
             "statistics": _statistics(diagnostic_result),
         },
+        "admission": {
+            "policy_name": POLICY_NAME,
+            "policy_version": POLICY_VERSION,
+            "enforcement_version": ENFORCEMENT_VERSION,
+            "limited_fact_coverage": LIMITED_FACT_COVERAGE,
+            "unknown_action": "baseline_passthrough",
+            "scope_note": (
+                "restricted set computed from trusted facts at signal_date and "
+                "carried to execution; no execution-date re-check of later "
+                "announcements"
+            ),
+            "restriction_semantics": {
+                "not_held": "forbid buy",
+                "held": "forbid positive signed_trade_value",
+                "reduce": "allow sell per original target",
+                "not_in_target": "allow sell per original logic",
+                "missing_or_blocked": "follow original freeze rules",
+                "no_forced_liquidation": True,
+            },
+            "strict": {
+                "status": admission_strict.status,
+                "valid_through": (
+                    admission_strict.valid_through.isoformat()
+                    if admission_strict.valid_through else None
+                ),
+                "first_blocking_event": admission_strict.first_blocking_event.__dict__
+                if admission_strict.first_blocking_event else None,
+                "accounting_error": admission_strict.accounting_error,
+                "solver_root_residual": admission_strict.solver_root_residual,
+                "n_records": len(admission_strict.records),
+            },
+            "diagnostic": {
+                "status": admission_diagnostic.status,
+                "diagnostic_from": admission_diagnostic.diagnostic_from.isoformat()
+                if admission_diagnostic.diagnostic_from else None,
+                "diagnostic_event_count": len(admission_diagnostic.lifecycle_events),
+            },
+        },
+        "comparison": comparison,
         "total_runtime_seconds": runtime,
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str))
@@ -538,6 +654,15 @@ def _main() -> None:
     )
     pd.DataFrame([t.__dict__ for t in diagnostic_result.trades]).to_csv(
         out_dir / "diagnostic_trade_details.csv", index=False
+    )
+    pd.DataFrame([t.__dict__ for t in admission_strict.trades]).to_csv(
+        out_dir / "admission_strict_trade_details.csv", index=False
+    )
+    pd.DataFrame([r.__dict__ for r in admission_strict.records]).to_csv(
+        out_dir / "admission_strict_daily_records.csv", index=False
+    )
+    pd.DataFrame([rb.__dict__ for rb in admission_strict.rebalances]).to_csv(
+        out_dir / "admission_strict_rebalance_log.csv", index=False
     )
     if diagnostic_result.lifecycle_events:
         pd.DataFrame([e.__dict__ for e in diagnostic_result.lifecycle_events]).to_csv(
@@ -607,6 +732,12 @@ def _main() -> None:
           f"restricted_weight_sum={shadow['restricted_target_weight_sum']:.4f} "
           f"restricted_unique={shadow['restricted_unique_instruments']} "
           f"unknown={shadow['unknown_count']}")
+    print(f"admission strict status: {admission_strict.status} "
+          f"valid_through={admission_strict.valid_through}")
+    print(f"first trade difference: {comparison['first_trade_difference']}")
+    print(f"000018.SZ rejected buy 2020-01-06: "
+          f"{comparison['000018_sz_rejected_buy_2020_01_06']}")
+    print(f"restriction occurrences: {comparison['restriction_occurrences']}")
     print(f"output dir: {out_dir}")
     print(f"runtime: {runtime:.1f}s")
 
