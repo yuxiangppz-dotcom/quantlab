@@ -33,6 +33,7 @@ MISSING_PRICE_POLICY = "freeze_held_no_price"
 _SOLVER_TOL = 1e-15
 _ROOT_MAX_ITER = 100
 _NEG_TOL = 1e-9
+_REL_TOL = 1e-9
 
 
 @dataclass
@@ -780,6 +781,24 @@ def run_backtest(
     )
 
 
+def _record_residual(
+    acc: _ResidualAccumulator,
+    violations: list[str],
+    check: str,
+    abs_r: float,
+    scale: float,
+    trade_date: date,
+    book_name: str,
+) -> None:
+    rel = abs_r / scale if scale > 0 else None
+    acc.add(check, abs_r, rel, trade_date, book_name)
+    if rel is not None and rel > _REL_TOL:
+        violations.append(
+            f"{check} residual {abs_r:.6e} exceeds tolerance "
+            f"(rel {rel:.6e}, scale {scale:.6e}) on {trade_date} {book_name}"
+        )
+
+
 def _accumulate_checks(
     acc: _ResidualAccumulator,
     book_name: str,
@@ -815,17 +834,11 @@ def _accumulate_checks(
     positions_sum = math.fsum(p.value for p in book.positions.values())
     r = nav - (book.cash + positions_sum)
     scale = nav if nav > 0 else (prev_nav if prev_nav > 0 else 0.0)
-    acc.add(
-        "asset_identity", abs(r),
-        abs(r) / scale if scale > 0 else None, trade_date, book_name,
-    )
+    _record_residual(acc, violations, "asset_identity", abs(r), scale, trade_date, book_name)
 
     r = nav - (prev_nav + market_pnl - fee)
     scale = prev_nav if prev_nav > 0 else (nav if nav > 0 else 0.0)
-    acc.add(
-        "daily_nav_bridge", abs(r),
-        abs(r) / scale if scale > 0 else None, trade_date, book_name,
-    )
+    _record_residual(acc, violations, "daily_nav_bridge", abs(r), scale, trade_date, book_name)
 
     if summary is None:
         return violations
@@ -841,21 +854,18 @@ def _accumulate_checks(
 
     actual_traded = math.fsum(abs(s) for s in signed.values())
     r = fee - cost_rate * actual_traded
-    acc.add(
-        "fee_consistency", abs(r),
-        abs(r) / scale_v if scale_v > 0 else None, trade_date, book_name,
+    _record_residual(
+        acc, violations, "fee_consistency", abs(r), scale_v, trade_date, book_name
     )
 
     r = book.cash - (cash_before - math.fsum(signed.values()) - fee)
-    acc.add(
-        "cash_flow", abs(r),
-        abs(r) / scale_v if scale_v > 0 else None, trade_date, book_name,
+    _record_residual(
+        acc, violations, "cash_flow", abs(r), scale_v, trade_date, book_name
     )
 
     r = nav - (v_minus - fee)
-    acc.add(
-        "rebalance_nav", abs(r),
-        abs(r) / scale_v if scale_v > 0 else None, trade_date, book_name,
+    _record_residual(
+        acc, violations, "rebalance_nav", abs(r), scale_v, trade_date, book_name
     )
 
     for instr, s in signed.items():
@@ -863,18 +873,18 @@ def _accumulate_checks(
         post = post_values.get(instr, 0.0)
         r = (post - pre) - s
         pscale = abs(pre) if pre != 0 else scale_v
-        acc.add(
-            "position_reconciliation", abs(r),
-            abs(r) / pscale if pscale > 0 else None, trade_date, book_name,
+        _record_residual(
+            acc, violations, "position_reconciliation",
+            abs(r), pscale, trade_date, book_name,
         )
 
     for instr, pre in frozen_pre.items():
         post = post_values.get(instr, 0.0)
         r = post - pre
         pscale = abs(pre) if pre != 0 else scale_v
-        acc.add(
-            "frozen_invariance", abs(r),
-            abs(r) / pscale if pscale > 0 else None, trade_date, book_name,
+        _record_residual(
+            acc, violations, "frozen_invariance",
+            abs(r), pscale, trade_date, book_name,
         )
 
     return violations

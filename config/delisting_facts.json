@@ -1,0 +1,26 @@
+{
+  "000018.SZ": {
+    "instrument_id": "000018.SZ",
+    "name": "神城A退 (神州长城股份有限公司)",
+    "termination_decision_date": "2019-11-15",
+    "termination_decision_publication_date": "2019-11-15",
+    "delisting_arrangement_start": "2019-11-25",
+    "delisting_arrangement_trading_days": 30,
+    "expected_last_trading_day": "2020-01-06",
+    "confirmed_last_trading_day": "2020-01-06",
+    "delisting_date": "2020-01-07",
+    "delisting_publication_date": "2020-01-06",
+    "first_invalid_date": "2020-01-07",
+    "current_canonical_delist_date": "2020-01-07",
+    "current_semantic": "valid through delist_date (inclusive); blocked on trade_date > delist_date",
+    "semantic_note": "Announcement 2020-007 confirms delisting on 2020-01-07, which is the first day the instrument is no longer valid. The current inclusive convention instead treats delist_date as still valid and only blocks from 2020-01-08. Date semantics are pending migration in a later phase; the current engine is retained as a reference baseline and no per-stock exception is hardcoded.",
+    "fact_at_signal_2020_01_03": "The termination decision (2019-11-15) and the delisting-arrangement schedule (start 2019-11-25, expected last trading day 2020-01-06) were already public before the 2020-01-03 weekly signal.",
+    "buy_2020_01_06_stage": "The 2020-01-03 signal executes at the 2020-01-06 close, which is the confirmed last trading day of the delisting arrangement period.",
+    "sources": [
+      "https://disc.static.szse.cn/download/disc/disk02/finalpage/2019-11-16/1c0ea612-763d-4c5f-bea4-99634ca2c976.PDF",
+      "https://disc.static.szse.cn/disc/disk02/finalpage/2020-01-07/57aaba44-118c-493b-b182-31739e177943.PDF"
+    ],
+    "verification_status": "verified",
+    "publication_precision": "Both announcements carry a dated signature (2019-11-15 and 2020-01-06); no intraday disclosure timestamp is available."
+  }
+}

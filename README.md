@@ -235,13 +235,15 @@ weekly rebalance, 20% selection, 10 bps cost):
 uv run python scripts/run_research_backtest.py
 ```
 
-Results are written under `data/experiments/research_backtest_v0_2_2/`, including
+Results are written under `data/experiments/research_backtest_v0_2_3/`, including
 `summary.json` (metadata + status + provenance + metrics), `manifest.json`
 (input data content fingerprint), `strict_daily_records.csv`,
 `strict_daily_books.csv`, `strict_daily_positions.csv`,
 `strict_rebalance_log.csv`, `strict_trade_details.csv`,
-`diagnostic_daily_books.csv`, `diagnostic_daily_positions.csv`, and
-lifecycle event CSVs.
+`diagnostic_daily_books.csv`, `diagnostic_daily_positions.csv`,
+lifecycle event CSVs, and `delisting_audit.csv` / `delisting_facts.json`
+(a point-in-time delisting fact record keyed by instrument, with source
+coverage marked `verified` or `unknown`).
 
 The engine simulates two independent ledgers (gross = zero-cost counterfactual,
 net = actual cost) with **self-financing** transaction cost solved on the

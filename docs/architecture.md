@@ -96,8 +96,9 @@ After every session, a **final-ledger reconciliation** reports, per book and per
 day, the max absolute and relative residual of: fee consistency
 (`fee = c * Σ|signed trades|`), cash flow, rebalance NAV, daily NAV bridge,
 position reconciliation, asset identity, and frozen-position invariance. The
-solver residual is kept separate; exceeding the accounting tolerance raises
-`accounting_error`.
+solver residual is kept separate; a residual exceeding a normalized positive-NAV
+tolerance (or a non-finite / over-tolerance negative cash or position) raises a
+structured `accounting_error` and excludes that session from the valid prefix.
 
 Unsupported lifecycle events are detected by a separate `LifecycleMonitor` from
 canonical `Security` / `SecurityCodeChange` data, independently for both books

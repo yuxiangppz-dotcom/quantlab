@@ -33,7 +33,7 @@ from quantlab.portfolio import RankPortfolioConfig, construct_rank_portfolio
 from quantlab.research import build_research_dataset, filter_v1_universe
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-ENGINE_SCHEMA_VERSION = "v0.2.2"
+ENGINE_SCHEMA_VERSION = "v0.2.3"
 
 PERIOD_START = date(2020, 1, 1)
 PERIOD_END = date(2024, 12, 31)
@@ -214,6 +214,31 @@ def _audit_case(result) -> dict | None:
     }
 
 
+def _delisting_audit(result, facts: dict) -> list[dict]:
+    seen: dict[str, object] = {}
+    for e in result.lifecycle_events:
+        if e.event_id not in seen:
+            seen[e.event_id] = e
+    first_entry: dict[str, object] = {}
+    for t in result.trades:
+        if t.signed_trade_value > 0 and t.instrument_id not in first_entry:
+            first_entry[t.instrument_id] = t.execution_date
+    rows = []
+    for e in seen.values():
+        fact = facts.get(e.instrument_id)
+        entry = first_entry.get(e.instrument_id)
+        rows.append({
+            "instrument_id": e.instrument_id,
+            "event_type": e.event_type,
+            "event_date": e.event_date.isoformat(),
+            "blocking_session": e.blocking_session.isoformat(),
+            "first_entry": entry.isoformat() if entry else None,
+            "source_coverage": "verified" if fact else "unknown",
+            "verification_status": fact["verification_status"] if fact else "unknown",
+        })
+    return rows
+
+
 def _main() -> None:
     storage = ParquetStorage(PROJECT_ROOT / "data" / "canonical")
     calendar, securities, code_changes, open_dates = _load_inputs(storage)
@@ -271,7 +296,10 @@ def _main() -> None:
     )
     reproducible = code_unchanged and data_unchanged
 
-    report = build_report(strict_result, diagnostic_result, reproducible, bt_config)
+    report = build_report(
+        strict_result, diagnostic_result, reproducible, bt_config,
+        expected_sessions=bt_open_dates,
+    )
     metrics = report["metrics"]
     diagnostic_metrics = report["diagnostic_metrics"]
     performance_valid = report["performance_valid"]
@@ -279,8 +307,12 @@ def _main() -> None:
 
     unique_event_ids = {e.event_id for e in diagnostic_result.lifecycle_events}
 
+    facts_path = PROJECT_ROOT / "config" / "delisting_facts.json"
+    delisting_facts = json.loads(facts_path.read_text())
+    audit_rows = _delisting_audit(diagnostic_result, delisting_facts)
+
     run_id = datetime.now().strftime("%Y%m%dT%H%M%S")
-    out_dir = PROJECT_ROOT / "data" / "experiments" / "research_backtest_v0_2_2" / run_id
+    out_dir = PROJECT_ROOT / "data" / "experiments" / "research_backtest_v0_2_3" / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
     summary = {
@@ -319,6 +351,13 @@ def _main() -> None:
             "code_change": "old instrument invalid from effective_date (inclusive)",
         },
         "conflict_diagnostics": monitor.conflict_diagnostics(),
+        "delisting_facts": delisting_facts,
+        "delisting_audit": {
+            "unique_event_count": len(audit_rows),
+            "verified_count": sum(1 for r in audit_rows if r["verification_status"] == "verified"),
+            "unknown_count": sum(1 for r in audit_rows if r["verification_status"] == "unknown"),
+            "rows": audit_rows,
+        },
         "performance_claim": False,
         "test_observed": True,
         "performance_valid": performance_valid,
@@ -376,6 +415,10 @@ def _main() -> None:
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str))
     (out_dir / "manifest.json").write_text(json.dumps(provenance_before, indent=2, default=str))
+    (out_dir / "delisting_facts.json").write_text(
+        json.dumps(delisting_facts, indent=2, ensure_ascii=False)
+    )
+    pd.DataFrame(audit_rows).to_csv(out_dir / "delisting_audit.csv", index=False)
 
     pd.DataFrame([r.__dict__ for r in strict_result.records]).to_csv(
         out_dir / "strict_daily_records.csv", index=False
