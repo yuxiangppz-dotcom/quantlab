@@ -291,8 +291,9 @@ original facts, C admission with the expanded-batch facts — plus a generic
 buy-rejection evaluation (`true` / `false` / `not_evaluated`) that never
 hardcodes a single instrument. Retrieval is per-instrument and recorded as
 `verified` / `searched_unresolved` / `access_blocked` / `not_attempted`; as of
-this round 3 of 10 batch instruments are verified (000018.SZ, 600240.SH,
-601558.SH) and 7 remain `not_attempted`.
+this round 6 of 10 batch instruments are verified (000018.SZ, 600240.SH,
+600074.SH, 601558.SH, 002604.SZ, 300104.SZ) and 4 remain `searched_unresolved`
+(002509.SZ, 300028.SZ, 600175.SH, 300090.SZ).
 
 ## Research Philosophy
 

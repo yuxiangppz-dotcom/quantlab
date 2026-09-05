@@ -72,6 +72,22 @@ def _failed_attempts_to_json(failed_attempts) -> list:
     ]
 
 
+def _frame_of(items, cls) -> pd.DataFrame:
+    """Build a DataFrame with explicit columns so empty data still writes a header."""
+    fields = list(cls.__dataclass_fields__)
+    return pd.DataFrame([x.__dict__ for x in items], columns=fields)
+
+
+_BOOK_COLUMNS = [
+    "trade_date", "book", "nav", "daily_return", "cash", "market_pnl", "fee",
+    "gross_exposure", "net_exposure", "cash_weight", "holdings_count",
+]
+_POSITION_COLUMNS = [
+    "trade_date", "book", "instrument_id", "value", "weight", "last_price",
+    "last_mark_date", "missing_price",
+]
+
+
 def export_group(
     out_dir: str | Path,
     prefix: str,
@@ -80,24 +96,31 @@ def export_group(
 ) -> None:
     """Export one path's records/books/positions/trades/rebalances/events.
 
-    ``failed_attempts`` is always written, including ``[]`` when empty.
+    Every CSV writes a header even when empty; ``failed_attempts`` is always
+    written, including ``[]`` when empty.
     """
+    from quantlab.backtest.models import (
+        DailyBacktestRecord,
+        LifecycleEvent,
+        RebalanceRecord,
+        TradeRecord,
+    )
+
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    pd.DataFrame([r.__dict__ for r in strict.records]).to_csv(
+    _frame_of(strict.records, DailyBacktestRecord).to_csv(
         out_dir / f"{prefix}_daily_records.csv", index=False
     )
-    pd.DataFrame([rb.__dict__ for rb in strict.rebalances]).to_csv(
+    _frame_of(strict.rebalances, RebalanceRecord).to_csv(
         out_dir / f"{prefix}_rebalance_log.csv", index=False
     )
-    pd.DataFrame([t.__dict__ for t in strict.trades]).to_csv(
+    _frame_of(strict.trades, TradeRecord).to_csv(
         out_dir / f"{prefix}_trade_details.csv", index=False
     )
-    if strict.lifecycle_events:
-        pd.DataFrame([e.__dict__ for e in strict.lifecycle_events]).to_csv(
-            out_dir / f"{prefix}_lifecycle_events.csv", index=False
-        )
+    _frame_of(strict.lifecycle_events, LifecycleEvent).to_csv(
+        out_dir / f"{prefix}_lifecycle_events.csv", index=False
+    )
     (out_dir / f"{prefix}_failed_attempts.json").write_text(
         json.dumps(_failed_attempts_to_json(strict.failed_attempts), indent=2, default=str)
     )
@@ -120,5 +143,9 @@ def export_group(
                 "last_mark_date": p.last_mark_date,
                 "missing_price": p.missing_price,
             })
-    pd.DataFrame(book_rows).to_csv(out_dir / f"{prefix}_daily_books.csv", index=False)
-    pd.DataFrame(position_rows).to_csv(out_dir / f"{prefix}_daily_positions.csv", index=False)
+    pd.DataFrame(book_rows, columns=_BOOK_COLUMNS).to_csv(
+        out_dir / f"{prefix}_daily_books.csv", index=False
+    )
+    pd.DataFrame(position_rows, columns=_POSITION_COLUMNS).to_csv(
+        out_dir / f"{prefix}_daily_positions.csv", index=False
+    )

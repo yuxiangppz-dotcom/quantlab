@@ -694,6 +694,9 @@ def run_backtest(
                 unavailable_target_count=net_summary["unavailable_count"],
                 frozen_count=net_summary["frozen_count"],
                 restricted_binding_count=net_summary["buy_cap_binding_count"],
+                gross_book_restricted_binding_count=gross_summary[
+                    "buy_cap_binding_count"
+                ],
                 buy_notional_ratio=net_summary["buy_ratio"],
                 sell_notional_ratio=net_summary["sell_ratio"],
                 traded_notional_ratio=net_summary["traded_ratio"],

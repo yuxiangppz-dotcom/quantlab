@@ -145,6 +145,7 @@ class RebalanceRecord:
     unavailable_target_count: int
     frozen_count: int
     restricted_binding_count: int
+    gross_book_restricted_binding_count: int
     # net book
     buy_notional_ratio: float
     sell_notional_ratio: float

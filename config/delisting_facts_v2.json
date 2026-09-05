@@ -1,86 +1,102 @@
 {
   "000018.SZ": {
-    "instrument_id": "000018.SZ",
-    "name": "神城A退 (神州长城股份有限公司)",
+    "instrument_id": "000018.SZ", "name": "神城A退 (神州长城股份有限公司)",
     "retrieval_status": "verified",
     "facts": [
-      {
-        "fact_type": "termination_decision",
-        "fact_id": "000018.SZ:termination_decision:2019-11-15",
-        "document_date": "2019-11-15",
-        "effective_date": "2019-11-15",
-        "content_verified": true,
-        "content_source": "公告 2019-158 落款 2019-11-15；深证上[2019]732号",
-        "public_time_verified": true,
-        "publication_date": "2019-11-15",
-        "publication_evidence": "SZSE 公告页 https://www.szse.cn/disclosure/notice/t20191115_571994.html 明确标注 2019-11-15",
-        "available_from": null,
-        "available_from_kind": null,
-        "source": "https://www.szse.cn/disclosure/notice/t20191115_571994.html"
-      },
-      {
-        "fact_type": "delisting_arrangement_start",
-        "fact_id": "000018.SZ:delisting_arrangement_start:2019-11-25",
-        "document_date": "2019-11-15",
-        "effective_date": "2019-11-25",
-        "content_verified": true,
-        "content_source": "公告 2019-158：2019-11-25 起进入退市整理期",
-        "public_time_verified": true,
-        "publication_date": "2019-11-15",
-        "publication_evidence": "SZSE 公告页 https://www.szse.cn/disclosure/notice/t20191115_571994.html",
-        "available_from": null,
-        "available_from_kind": null,
-        "source": "https://www.szse.cn/disclosure/notice/t20191115_571994.html"
-      }
+      {"fact_type": "termination_decision", "fact_id": "000018.SZ:termination_decision:2019-11-15",
+       "document_date": "2019-11-15", "effective_date": "2019-11-15",
+       "content_verified": true, "public_time_verified": true, "publication_date": "2019-11-15",
+       "publication_evidence": "SZSE 公告页 t20191115_571994 标注 2019-11-15",
+       "available_from": null, "available_from_kind": null,
+       "source": "https://www.szse.cn/disclosure/notice/t20191115_571994.html"}
     ]
   },
   "600240.SH": {
-    "instrument_id": "600240.SH",
-    "name": "北京华业资本控股股份有限公司 (*ST华业)",
+    "instrument_id": "600240.SH", "name": "北京华业资本控股股份有限公司 (*ST华业)",
     "retrieval_status": "verified",
     "facts": [
-      {
-        "fact_type": "termination_decision",
-        "fact_id": "600240.SH:termination_decision:2019-12-04",
-        "document_date": "2019-12-04",
-        "effective_date": "2019-12-04",
-        "content_verified": true,
-        "content_source": "SSE 页面正文：2019-12-04 作出华业终止上市决定",
-        "public_time_verified": true,
-        "publication_date": "2019-12-04",
-        "publication_evidence": "SSE 页面 https://www.sse.com.cn/aboutus/mediacenter/hotandd/c/c_20191204_4959546.shtml 标注 2019-12-04",
-        "available_from": null,
-        "available_from_kind": null,
-        "source": "https://www.sse.com.cn/aboutus/mediacenter/hotandd/c/c_20191204_4959546.shtml"
-      }
+      {"fact_type": "termination_decision", "fact_id": "600240.SH:termination_decision:2019-12-04",
+       "document_date": "2019-12-04", "effective_date": "2019-12-04",
+       "content_verified": true, "public_time_verified": true, "publication_date": "2019-12-04",
+       "publication_evidence": "SSE 页面 c_20191204_4959546 标注 2019-12-04",
+       "available_from": null, "available_from_kind": null,
+       "source": "https://www.sse.com.cn/aboutus/mediacenter/hotandd/c/c_20191204_4959546.shtml"}
     ]
   },
   "601558.SH": {
-    "instrument_id": "601558.SH",
-    "name": "华锐风电科技（集团）股份有限公司",
+    "instrument_id": "601558.SH", "name": "华锐风电科技（集团）股份有限公司",
     "retrieval_status": "verified",
     "facts": [
-      {
-        "fact_type": "termination_decision",
-        "fact_id": "601558.SH:termination_decision:2020-04-30",
-        "document_date": "2020-04-30",
-        "effective_date": "2020-04-30",
-        "content_verified": true,
-        "content_source": "SSE 终止上市公告：2020-04-30 终止华锐风电股票上市",
-        "public_time_verified": true,
-        "publication_date": "2020-04-30",
-        "publication_evidence": "SSE 公告页 https://www.sse.com.cn/disclosure/announcement/listing/stock/c/c_20200430_77954284.shtml 标注 2020-04-30",
-        "available_from": null,
-        "available_from_kind": null,
-        "source": "https://www.sse.com.cn/disclosure/announcement/listing/stock/c/c_20200430_77954284.shtml"
-      }
+      {"fact_type": "termination_decision", "fact_id": "601558.SH:termination_decision:2020-04-30",
+       "document_date": "2020-04-30", "effective_date": "2020-04-30",
+       "content_verified": true, "public_time_verified": true, "publication_date": "2020-04-30",
+       "publication_evidence": "SSE 公告页 c_20200430_77954284 标注 2020-04-30",
+       "available_from": null, "available_from_kind": null,
+       "source": "https://www.sse.com.cn/disclosure/announcement/listing/stock/c/c_20200430_77954284.shtml"}
     ]
   },
-  "600074.SH": {"instrument_id": "600074.SH", "name": "", "retrieval_status": "not_attempted", "facts": []},
-  "002604.SZ": {"instrument_id": "002604.SZ", "name": "", "retrieval_status": "not_attempted", "facts": []},
-  "002509.SZ": {"instrument_id": "002509.SZ", "name": "", "retrieval_status": "not_attempted", "facts": []},
-  "300104.SZ": {"instrument_id": "300104.SZ", "name": "", "retrieval_status": "not_attempted", "facts": []},
-  "300028.SZ": {"instrument_id": "300028.SZ", "name": "", "retrieval_status": "not_attempted", "facts": []},
-  "600175.SH": {"instrument_id": "600175.SH", "name": "", "retrieval_status": "not_attempted", "facts": []},
-  "300090.SZ": {"instrument_id": "300090.SZ", "name": "", "retrieval_status": "not_attempted", "facts": []}
+  "600074.SH": {
+    "instrument_id": "600074.SH", "name": "江苏保千里视像科技集团股份有限公司 (*ST保千里)",
+    "retrieval_status": "verified",
+    "facts": [
+      {"fact_type": "termination_decision", "fact_id": "600074.SH:termination_decision:2020-04-01",
+       "document_date": "2020-04-01", "effective_date": "2020-04-01",
+       "content_verified": true, "public_time_verified": true, "publication_date": "2020-04-01",
+       "publication_evidence": "SSE 公告页 c_20200401_77597976 标注 2020-04-01",
+       "available_from": null, "available_from_kind": null,
+       "source": "https://www.sse.com.cn/disclosure/announcement/listing/stock/c/c_20200401_77597976.shtml"}
+    ]
+  },
+  "002604.SZ": {
+    "instrument_id": "002604.SZ", "name": "山东龙力生物科技股份有限公司 (*ST龙力)",
+    "retrieval_status": "verified",
+    "facts": [
+      {"fact_type": "termination_decision", "fact_id": "002604.SZ:termination_decision:2020-05-22",
+       "document_date": "2020-05-22", "effective_date": "2020-05-22",
+       "content_verified": true, "public_time_verified": true, "publication_date": "2020-05-22",
+       "publication_evidence": "SZSE 公告页 t20200522_577530 标注 2020-05-22",
+       "available_from": null, "available_from_kind": null,
+       "source": "https://www.szse.cn/disclosure/notice/t20200522_577530.html"}
+    ]
+  },
+  "300104.SZ": {
+    "instrument_id": "300104.SZ", "name": "乐视网信息技术（北京）股份有限公司 (乐视网)",
+    "retrieval_status": "verified",
+    "facts": [
+      {"fact_type": "termination_decision", "fact_id": "300104.SZ:termination_decision:2020-05-14",
+       "document_date": "2020-05-14", "effective_date": "2020-05-14",
+       "content_verified": true, "public_time_verified": true, "publication_date": "2020-05-14",
+       "publication_evidence": "SZSE 公告页 t20200514_577126 标注 2020-05-14",
+       "available_from": null, "available_from_kind": null,
+       "source": "https://www.szse.cn/disclosure/notice/company/t20200514_577126.html"}
+    ]
+  },
+  "002509.SZ": {
+    "instrument_id": "002509.SZ", "name": "", "retrieval_status": "searched_unresolved",
+    "query_terms": ["002509 终止上市 公告", "002509.SZ 终止上市决定"],
+    "access_result": "no direct announcement URL located via automated fetch this round",
+    "missing_fields": ["termination_decision_date", "publication_date", "content_evidence"],
+    "facts": []
+  },
+  "300028.SZ": {
+    "instrument_id": "300028.SZ", "name": "", "retrieval_status": "searched_unresolved",
+    "query_terms": ["300028 终止上市 公告", "300028.SZ 终止上市决定"],
+    "access_result": "no direct announcement URL located via automated fetch this round",
+    "missing_fields": ["termination_decision_date", "publication_date", "content_evidence"],
+    "facts": []
+  },
+  "600175.SH": {
+    "instrument_id": "600175.SH", "name": "", "retrieval_status": "searched_unresolved",
+    "query_terms": ["600175 终止上市 公告", "600175.SH 终止上市决定"],
+    "access_result": "no direct announcement URL located via automated fetch this round",
+    "missing_fields": ["termination_decision_date", "publication_date", "content_evidence"],
+    "facts": []
+  },
+  "300090.SZ": {
+    "instrument_id": "300090.SZ", "name": "", "retrieval_status": "searched_unresolved",
+    "query_terms": ["300090 终止上市 公告", "300090.SZ 终止上市决定"],
+    "access_result": "no direct announcement URL located via automated fetch this round",
+    "missing_fields": ["termination_decision_date", "publication_date", "content_evidence"],
+    "facts": []
+  }
 }

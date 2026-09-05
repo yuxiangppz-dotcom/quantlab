@@ -343,46 +343,44 @@ def _compare_paths(base_strict, adm_strict, base_diag, adm_diag,
             }
             break
 
-    all_restricted: set[str] = set()
-    for s in restricted_by_signal.values():
-        all_restricted |= set(s)
     restriction_applicable_count = sum(
         len(s) for s in restricted_by_signal.values()
     )
-    buy_cap_binding_occurrences = sum(
+    buy_cap_binding_net = sum(
         rb.restricted_binding_count for rb in adm_strict.rebalances
+    )
+    buy_cap_binding_gross = sum(
+        rb.gross_book_restricted_binding_count for rb in adm_strict.rebalances
     )
     allowed_sell_occurrences = sum(
         1 for t in adm_strict.trades
-        if t.reason == "sold" and t.instrument_id in all_restricted
+        if t.reason == "sold"
+        and t.instrument_id in restricted_by_signal.get(t.signal_date, frozenset())
     )
 
+    # iterate every signal/instrument pair, not just the first signal per stock
     rejection_evaluations = []
-    for instr in sorted(all_restricted):
-        sig = next(
-            (d for d in sorted(restricted_by_signal) if instr in restricted_by_signal[d]),
-            None,
-        )
-        if sig is None:
-            continue
+    for sig in sorted(restricted_by_signal):
+        restricted_set = restricted_by_signal[sig]
         exec_date = _next_open_session(bt_open_dates, sig)
         if exec_date is None:
             continue
-        result = evaluate_buy_rejection(
-            instr, exec_date, base_strict.trades, adm_strict.trades,
-            adm_strict.rebalances, restricted_by_signal[sig],
-        )
-        rejection_evaluations.append({
-            "instrument_id": instr,
-            "signal_date": sig.isoformat(),
-            "execution_date": exec_date.isoformat(),
-            "rejection": result,
-        })
+        for instr in sorted(restricted_set):
+            result = evaluate_buy_rejection(
+                instr, exec_date, base_strict.trades, adm_strict.trades,
+                adm_strict.rebalances, restricted_set,
+            )
+            rejection_evaluations.append({
+                "instrument_id": instr,
+                "signal_date": sig.isoformat(),
+                "execution_date": exec_date.isoformat(),
+                "rejection": result,
+            })
 
     return {
         "first_trade_difference": first_diff,
         "restriction_applicable_count": restriction_applicable_count,
-        "buy_cap_binding_occurrences": buy_cap_binding_occurrences,
+        "buy_cap_binding": {"net": buy_cap_binding_net, "gross": buy_cap_binding_gross},
         "allowed_sell_occurrences": allowed_sell_occurrences,
         "rejection_evaluations": rejection_evaluations,
         "admission_next_blocking_event": (
@@ -477,6 +475,12 @@ def _main() -> None:
         requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
         restricted_by_signal=restricted_by_signal_v2,
     )
+    admission_v2_diagnostic = run_backtest(
+        price_frame, bt_open_dates, targets, bt_config,
+        execution_lag_sessions=1, mode=RUN_MODE_DIAGNOSTIC, lifecycle=monitor,
+        requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
+        restricted_by_signal=restricted_by_signal_v2,
+    )
     runtime = time.perf_counter() - t0
 
     # re-discover code files so added/removed files are detected
@@ -522,7 +526,8 @@ def _main() -> None:
         admission_strict, admission_diagnostic, bt_config, bt_open_dates, reproducible
     )
     group_c = build_group_report(
-        admission_v2_strict, None, bt_config, bt_open_dates, reproducible
+        admission_v2_strict, admission_v2_diagnostic, bt_config, bt_open_dates,
+        reproducible,
     )
 
     run_id = datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -722,6 +727,7 @@ def _main() -> None:
     export_group(out_dir, "B_admission", admission_strict)
     export_group(out_dir, "B_admission_diagnostic", admission_diagnostic)
     export_group(out_dir, "C_admission_batch", admission_v2_strict)
+    export_group(out_dir, "C_admission_batch_diagnostic", admission_v2_diagnostic)
 
     print(f"=== research backtest {ENGINE_SCHEMA_VERSION} ===")
     print(f"strict status: {strict_result.status}")
@@ -757,7 +763,7 @@ def _main() -> None:
           f"valid_through={admission_strict.valid_through}")
     print(f"first trade difference: {comparison['first_trade_difference']}")
     print(f"restriction_applicable: {comparison['restriction_applicable_count']} "
-          f"buy_cap_binding: {comparison['buy_cap_binding_occurrences']} "
+          f"buy_cap_binding: {comparison['buy_cap_binding']} "
           f"allowed_sell: {comparison['allowed_sell_occurrences']}")
     print(f"rejection evaluations: {comparison['rejection_evaluations']}")
     print(f"output dir: {out_dir}")
