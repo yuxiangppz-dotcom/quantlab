@@ -1,6 +1,7 @@
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from quantlab.backtest import BacktestConfig, LifecycleMonitor, run_backtest
 from quantlab.data.models import Security, SecurityCodeChange
@@ -191,3 +192,68 @@ def test_event_dedup_preserves_both_books() -> None:
     books = {e.book for e in result.lifecycle_events}
     assert books == {"gross", "net"}
     assert len(_ids(result.lifecycle_events)) == 1  # one unique event id
+
+
+def test_same_invalid_target_rejected_twice() -> None:
+    # A invalid from D1 (delist D0); target A on two consecutive signals
+    dates = [D0, D1, D2]
+    prices = _price_frame({d: {"A": 100.0} for d in dates})
+    targets = {
+        D0: _target(D0, {"A": 1.0}),
+        D1: _target(D1, {"A": 1.0}),
+    }
+    monitor = LifecycleMonitor([_security("A", delist_date=D0)], [])
+    result = run_backtest(prices, dates, targets, _cfg(), mode="diagnostic", lifecycle=monitor)
+    # A never opened
+    for b in result.books:
+        assert all(p.instrument_id != "A" for p in b.positions)
+    # both rebalances had zero trades
+    assert all(rb.nonzero_trade_count == 0 for rb in result.rebalances)
+    # log dedup: one "target" event (not two)
+    target_events = [e for e in result.lifecycle_events if e.book == "target"]
+    assert len(target_events) == 1
+
+
+def test_held_event_frozen_persistently() -> None:
+    # A delisted at D1; held past D1 with quotes still present (data anomaly)
+    dates = [D0, D1, D2, D3]
+    prices = _price_frame({
+        D0: {"A": 100.0}, D1: {"A": 100.0}, D2: {"A": 110.0}, D3: {"A": 120.0},
+    })
+    targets = {D0: _target(D0, {"A": 1.0})}
+    monitor = LifecycleMonitor([_security("A", delist_date=D1)], [])
+    result = run_backtest(prices, dates, targets, _cfg(), mode="diagnostic", lifecycle=monitor)
+
+    def a_value(d):
+        for b in result.books:
+            if b.trade_date == d and b.book == "net":
+                for p in b.positions:
+                    if p.instrument_id == "A":
+                        return p.value
+        return None
+
+    v1 = a_value(D1)
+    assert v1 is not None
+    # frozen after D1: subsequent quotes must not change the value
+    assert a_value(D2) == pytest.approx(v1)
+    assert a_value(D3) == pytest.approx(v1)
+
+
+def test_future_conflict_does_not_block_history() -> None:
+    monitor = LifecycleMonitor(
+        [_security("A", delist_date=date(2027, 1, 1))],
+        [_code_change("A", "B", effective=date(2027, 2, 1))],
+    )
+    assert len(monitor.conflict_diagnostics()) == 1
+    assert monitor.event_for("A", date(2026, 6, 1)) is None  # future, no block
+    ev = monitor.event_for("A", date(2027, 1, 2))  # delist condition fires
+    assert ev is not None and ev.event_type == "conflict"
+
+
+def test_future_event_does_not_affect_history() -> None:
+    dates = [D0, D1, D2]
+    prices = _price_frame({d: {"A": 100.0} for d in dates})
+    targets = {D0: _target(D0, {"A": 1.0})}
+    monitor = LifecycleMonitor([_security("A", delist_date=date(2027, 1, 1))], [])
+    result = run_backtest(prices, dates, targets, _cfg(), mode="strict", lifecycle=monitor)
+    assert result.status == "completed"

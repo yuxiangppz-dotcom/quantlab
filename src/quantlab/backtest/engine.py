@@ -32,7 +32,7 @@ MISSING_PRICE_POLICY = "freeze_held_no_price"
 
 _SOLVER_TOL = 1e-15
 _ROOT_MAX_ITER = 100
-_ACCOUNTING_TOL = 1e-9
+_NEG_TOL = 1e-9
 
 
 @dataclass
@@ -53,9 +53,16 @@ class _Book:
     def nav(self) -> float:
         return self.cash + math.fsum(p.value for p in self.positions.values())
 
-    def mark_to_market(self, current_prices: dict[str, float], trade_date: date) -> float:
+    def mark_to_market(
+        self,
+        current_prices: dict[str, float],
+        trade_date: date,
+        skip: frozenset[str] = frozenset(),
+    ) -> float:
         nav_before = self.nav()
         for instr, pos in self.positions.items():
+            if instr in skip:
+                continue
             price = current_prices.get(instr)
             if price is None:
                 continue
@@ -71,23 +78,38 @@ class _Book:
 
 @dataclass
 class _ResidualAccumulator:
-    _best: dict[str, list] = field(default_factory=dict)
+    _abs: dict[str, tuple[float, date | None, str | None]] = field(default_factory=dict)
+    _rel: dict[str, tuple[float, date | None, str | None]] = field(default_factory=dict)
 
     def add(
-        self, check: str, abs_r: float, rel_r: float, trade_date: date, book: str
+        self,
+        check: str,
+        abs_r: float | None,
+        rel_r: float | None,
+        trade_date: date,
+        book: str,
     ) -> None:
-        entry = self._best.get(check)
-        if entry is None or abs_r > entry[0]:
-            self._best[check] = [abs_r, rel_r, trade_date, book]
+        if abs_r is not None:
+            if check not in self._abs or abs_r > self._abs[check][0]:
+                self._abs[check] = (abs_r, trade_date, book)
+        if rel_r is not None:
+            if check not in self._rel or rel_r > self._rel[check][0]:
+                self._rel[check] = (rel_r, trade_date, book)
 
     def results(self) -> list[AccountingResidual]:
         out = []
-        for check in sorted(self._best):
-            abs_r, rel_r, trade_date, book = self._best[check]
+        for check in sorted(self._abs):
+            a = self._abs.get(check, (0.0, None, None))
+            r = self._rel.get(check, (0.0, None, None))
             out.append(
                 AccountingResidual(
-                    check=check, max_abs=abs_r, max_rel=rel_r,
-                    trade_date=trade_date, book=book,
+                    check=check,
+                    max_abs=a[0],
+                    max_abs_date=a[1],
+                    max_abs_book=a[2],
+                    max_rel=r[0],
+                    max_rel_date=r[1],
+                    max_rel_book=r[2],
                 )
             )
         return out
@@ -170,11 +192,26 @@ def _validate_targets(targets: dict[date, TargetPortfolio]) -> None:
 
 def _solve_normalized(f: float, cost_rate: float, traded_ratio_fn) -> tuple[float, float]:
     """Solve ``u + cost_rate * traded_ratio(u) = 1`` for ``u`` in ``[f, 1]``."""
+    if not math.isfinite(f) or not (0.0 <= f <= 1.0):
+        raise ValueError(f"invalid normalized frozen value f={f}")
+    if not math.isfinite(cost_rate) or not (0.0 <= cost_rate < 1.0):
+        raise ValueError(f"invalid cost_rate {cost_rate}")
+
     if cost_rate == 0.0:
         return 1.0, 0.0
 
     lo = f
     hi = 1.0
+    g_lo = lo + cost_rate * traded_ratio_fn(lo) - 1.0
+    g_hi = hi + cost_rate * traded_ratio_fn(hi) - 1.0
+    if not (math.isfinite(g_lo) and math.isfinite(g_hi)):
+        raise ValueError("self-financing root endpoints are not finite")
+    if g_lo > 0 or g_hi < 0:
+        raise ValueError(
+            f"self-financing root bracket does not contain a root: "
+            f"g({lo})={g_lo}, g({hi})={g_hi}"
+        )
+
     converged = False
     for _ in range(_ROOT_MAX_ITER):
         mid = 0.5 * (lo + hi)
@@ -189,6 +226,8 @@ def _solve_normalized(f: float, cost_rate: float, traded_ratio_fn) -> tuple[floa
 
     u = 0.5 * (lo + hi)
     residual = u + cost_rate * traded_ratio_fn(u) - 1.0
+    if not math.isfinite(residual):
+        raise ValueError(f"self-financing root residual is not finite: {residual}")
     if not converged and hi - lo > _SOLVER_TOL * 10:
         raise ValueError(
             f"self-financing root did not converge: bracket [{lo}, {hi}], "
@@ -239,7 +278,7 @@ def _rebalance(
             frozen.add(instr)
 
     frozen_value = math.fsum(positions_before[i] for i in frozen)
-    f = frozen_value / v_minus
+    f = max(0.0, min(1.0, frozen_value / v_minus))
     q = target.cash_weight + math.fsum(unavailable_new.values())
     s = math.fsum(tradable.values())
 
@@ -297,6 +336,7 @@ def _rebalance(
             )
     book.positions = new_positions
     book.cash = cash_after
+    nav_after = book.nav()
 
     buy_value = 0.0
     sell_value = 0.0
@@ -332,7 +372,7 @@ def _rebalance(
             execution_price = None
             price_date = None
             price_kind = "none"
-        actual_weight = x_plus / v if v > 0 else 0.0
+        actual_weight = x_plus / nav_after if nav_after > 0 else 0.0
         trade_details.append(
             (
                 instr, x_minus, x_plus, signed_value,
@@ -347,7 +387,9 @@ def _rebalance(
     turnover = 0.5 * traded_ratio
 
     post_gross_exposure = (
-        math.fsum(abs(p.value) for p in new_positions.values()) / v if v > 0 else 0.0
+        math.fsum(abs(p.value) for p in new_positions.values()) / nav_after
+        if nav_after > 0
+        else 0.0
     )
     pre_gross_exposure = (
         math.fsum(abs(pv) for pv in positions_before.values()) / v_minus
@@ -355,11 +397,15 @@ def _rebalance(
         else 0.0
     )
 
-    actual_weights = {i: p.value / v for i, p in new_positions.items()} if v > 0 else {}
+    actual_weights = (
+        {i: p.value / nav_after for i, p in new_positions.items()}
+        if nav_after > 0
+        else {}
+    )
     deviation = 0.0
     for instr in sorted(set(target_weights) | set(actual_weights)):
         deviation += abs(actual_weights.get(instr, 0.0) - target_weights.get(instr, 0.0))
-    deviation += abs((book.cash / v if v > 0 else 0.0) - target.cash_weight)
+    deviation += abs((book.cash / nav_after if nav_after > 0 else 0.0) - target.cash_weight)
 
     return {
         "cash_before": cash_before,
@@ -457,6 +503,8 @@ def run_backtest(
     valid_through: date | None = None
     diagnostic_from: date | None = None
     accounting_error: str | None = None
+    accounting_error_date: date | None = None
+    accounting_error_book: str | None = None
 
     for trade_date in dates:
         current_prices: dict[str, float] = {}
@@ -466,6 +514,7 @@ def run_backtest(
         target = execution_map.get(trade_date)
 
         # ---- lifecycle check before valuation / trading ----
+        session_blocked: set[str] = set()
         new_events: list[LifecycleEvent] = []
         if lifecycle is not None:
             for book_name, book in (("gross", gross_book), ("net", net_book)):
@@ -473,6 +522,7 @@ def run_backtest(
                     spec = lifecycle.event_for(instr, trade_date)
                     if spec is None:
                         continue
+                    session_blocked.add(instr)
                     event_id = f"{instr}:{spec.event_type}:{spec.event_date.isoformat()}"
                     key = (event_id, book_name)
                     if key in seen_event_keys:
@@ -493,10 +543,14 @@ def run_backtest(
                     )
             if target is not None:
                 _, target_portfolio = target
+                held = set(gross_book.positions) | set(net_book.positions)
                 for pos in target_portfolio.positions:
+                    if pos.target_weight <= 0 or pos.instrument_id in held:
+                        continue
                     spec = lifecycle.event_for(pos.instrument_id, trade_date)
                     if spec is None:
                         continue
+                    session_blocked.add(pos.instrument_id)
                     event_id = (
                         f"{pos.instrument_id}:{spec.event_type}:"
                         f"{spec.event_date.isoformat()}"
@@ -522,6 +576,8 @@ def run_backtest(
                         )
                     )
 
+        blocked_instruments = frozenset(session_blocked)
+
         if new_events:
             new_events.sort(
                 key=lambda e: (e.blocking_session, e.book, e.instrument_id)
@@ -531,19 +587,17 @@ def run_backtest(
             if first_blocking_event is None:
                 first_blocking_event = new_events[0]
             if mode == RUN_MODE_STRICT:
-                valid_through = records[-1].trade_date if records else None
                 break
             if diagnostic_from is None:
                 diagnostic_from = trade_date
 
-        blocked_instruments = frozenset(
-            {e.instrument_id for e in new_events if e.book != "target"}
-            | {e.instrument_id for e in new_events if e.book == "target"}
-        )
-
         # ---- valuation ----
-        gross_market_pnl = gross_book.mark_to_market(current_prices, trade_date)
-        net_market_pnl = net_book.mark_to_market(current_prices, trade_date)
+        gross_market_pnl = gross_book.mark_to_market(
+            current_prices, trade_date, skip=blocked_instruments
+        )
+        net_market_pnl = net_book.mark_to_market(
+            current_prices, trade_date, skip=blocked_instruments
+        )
 
         gross_cost = 0.0
         net_cost = 0.0
@@ -635,15 +689,22 @@ def run_backtest(
         )
         net_return = net_nav / net_book.prev_nav - 1 if net_book.prev_nav > 0 else 0.0
 
-        # ---- accounting checks ----
-        _accumulate_checks(
+        # ---- accounting checks (before this session is treated as valid) ----
+        gross_violations = _accumulate_checks(
             acc, "gross", trade_date, gross_book, gross_book.prev_nav,
             gross_market_pnl, gross_cost, 0.0, gross_summary,
         )
-        _accumulate_checks(
+        net_violations = _accumulate_checks(
             acc, "net", trade_date, net_book, net_book.prev_nav,
             net_market_pnl, net_cost, config.cost_rate, net_summary,
         )
+        all_violations = gross_violations + net_violations
+        if all_violations:
+            accounting_error = "; ".join(all_violations)
+            accounting_error_date = trade_date
+            accounting_error_book = "gross" if gross_violations else "net"
+            status = STATUS_ACCOUNTING_ERROR
+            break
 
         # ---- snapshots ----
         gross_snapshot, net_snapshot = _snapshots(
@@ -687,11 +748,9 @@ def run_backtest(
         gross_book.prev_nav = gross_nav
         net_book.prev_nav = net_nav
 
-        # ---- post-hoc accounting error detection ----
-        if _any_check_over_tolerance(acc):
-            accounting_error = "final accounting residual exceeds tolerance"
-            status = STATUS_ACCOUNTING_ERROR
-            break
+        # valid_through advances only for clean, non-diagnostic sessions
+        if diagnostic_from is None:
+            valid_through = trade_date
 
     accounting_checks = acc.results()
     simulated_start = records[0].trade_date if records else None
@@ -716,6 +775,8 @@ def run_backtest(
         solver_root_residual=solver_residual,
         accounting_checks=accounting_checks,
         accounting_error=accounting_error,
+        accounting_error_date=accounting_error_date,
+        accounting_error_book=accounting_error_book,
     )
 
 
@@ -729,21 +790,45 @@ def _accumulate_checks(
     fee: float,
     cost_rate: float,
     summary: dict | None,
-) -> None:
+) -> list[str]:
+    violations: list[str] = []
     nav = book.nav()
-    positions_sum = math.fsum(p.value for p in book.positions.values())
-
-    r = nav - (book.cash + positions_sum)
-    acc.add("asset_identity", abs(r), abs(r) / max(1.0, abs(nav)), trade_date, book_name)
-
-    r = nav - (prev_nav + market_pnl - fee)
-    acc.add("daily_nav_bridge", abs(r), abs(r) / max(1.0, abs(nav)), trade_date, book_name)
 
     if not math.isfinite(nav) or nav <= 0:
-        acc.add("nav_finite_positive", 1.0, 1.0, trade_date, book_name)
+        violations.append(f"{book_name} nav not finite/positive on {trade_date}: {nav}")
+    if not math.isfinite(book.cash):
+        violations.append(f"{book_name} cash not finite on {trade_date}: {book.cash}")
+    elif nav > 0 and book.cash < -_NEG_TOL * nav:
+        violations.append(
+            f"{book_name} negative cash beyond tolerance on {trade_date}: {book.cash}"
+        )
+    for instr, pos in book.positions.items():
+        if not math.isfinite(pos.value):
+            violations.append(
+                f"{book_name} position {instr} value not finite on {trade_date}"
+            )
+        elif nav > 0 and pos.value < -_NEG_TOL * nav:
+            violations.append(
+                f"{book_name} negative position {instr} on {trade_date}: {pos.value}"
+            )
+
+    positions_sum = math.fsum(p.value for p in book.positions.values())
+    r = nav - (book.cash + positions_sum)
+    scale = nav if nav > 0 else (prev_nav if prev_nav > 0 else 0.0)
+    acc.add(
+        "asset_identity", abs(r),
+        abs(r) / scale if scale > 0 else None, trade_date, book_name,
+    )
+
+    r = nav - (prev_nav + market_pnl - fee)
+    scale = prev_nav if prev_nav > 0 else (nav if nav > 0 else 0.0)
+    acc.add(
+        "daily_nav_bridge", abs(r),
+        abs(r) / scale if scale > 0 else None, trade_date, book_name,
+    )
 
     if summary is None:
-        return
+        return violations
 
     cash_before = summary["cash_before"]
     v_minus = summary["v_minus"]
@@ -752,45 +837,47 @@ def _accumulate_checks(
     post_values = summary["post_values"]
     frozen_pre = summary["frozen_pre"]
 
+    scale_v = v_minus if v_minus > 0 else (nav if nav > 0 else 0.0)
+
     actual_traded = math.fsum(abs(s) for s in signed.values())
     r = fee - cost_rate * actual_traded
     acc.add(
         "fee_consistency", abs(r),
-        abs(r) / max(1.0, abs(fee), abs(actual_traded)), trade_date, book_name,
+        abs(r) / scale_v if scale_v > 0 else None, trade_date, book_name,
     )
 
     r = book.cash - (cash_before - math.fsum(signed.values()) - fee)
     acc.add(
         "cash_flow", abs(r),
-        abs(r) / max(1.0, abs(book.cash), abs(cash_before)), trade_date, book_name,
+        abs(r) / scale_v if scale_v > 0 else None, trade_date, book_name,
     )
 
     r = nav - (v_minus - fee)
-    acc.add("rebalance_nav", abs(r), abs(r) / max(1.0, abs(nav)), trade_date, book_name)
+    acc.add(
+        "rebalance_nav", abs(r),
+        abs(r) / scale_v if scale_v > 0 else None, trade_date, book_name,
+    )
 
     for instr, s in signed.items():
         pre = pre_values.get(instr, 0.0)
         post = post_values.get(instr, 0.0)
         r = (post - pre) - s
+        pscale = abs(pre) if pre != 0 else scale_v
         acc.add(
             "position_reconciliation", abs(r),
-            abs(r) / max(1.0, abs(post), abs(pre)), trade_date, book_name,
+            abs(r) / pscale if pscale > 0 else None, trade_date, book_name,
         )
 
     for instr, pre in frozen_pre.items():
         post = post_values.get(instr, 0.0)
         r = post - pre
+        pscale = abs(pre) if pre != 0 else scale_v
         acc.add(
             "frozen_invariance", abs(r),
-            abs(r) / max(1.0, abs(pre)), trade_date, book_name,
+            abs(r) / pscale if pscale > 0 else None, trade_date, book_name,
         )
 
-
-def _any_check_over_tolerance(acc: _ResidualAccumulator) -> bool:
-    for check in acc.results():
-        if check.max_abs > _ACCOUNTING_TOL:
-            return True
-    return False
+    return violations
 
 
 def _snapshots(

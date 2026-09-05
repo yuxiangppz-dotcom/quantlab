@@ -24,6 +24,7 @@ from quantlab.backtest.models import (
     SkippedExecution,
     TradeRecord,
 )
+from quantlab.backtest.report import build_report
 
 __all__ = [
     "AccountingResidual",
@@ -43,6 +44,7 @@ __all__ = [
     "STATUS_BLOCKED_UNSUPPORTED_EVENT",
     "STATUS_COMPLETED",
     "TradeRecord",
+    "build_report",
     "compute_metrics",
     "run_backtest",
     "weekly_signal_dates",

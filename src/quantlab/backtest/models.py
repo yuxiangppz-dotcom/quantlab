@@ -189,13 +189,19 @@ class LifecycleEvent:
 
 @dataclass(frozen=True)
 class AccountingResidual:
-    """Max residual for one final-accounting check."""
+    """Max absolute and relative residual for one final-accounting check.
+
+    ``max_abs`` and ``max_rel`` are tracked independently, so their occurrence
+    date / book may differ.
+    """
 
     check: str
     max_abs: float
+    max_abs_date: date | None
+    max_abs_book: str | None
     max_rel: float
-    trade_date: date | None
-    book: str | None
+    max_rel_date: date | None
+    max_rel_book: str | None
 
 
 @dataclass(frozen=True)
@@ -220,3 +226,5 @@ class BacktestResult:
     solver_root_residual: float
     accounting_checks: list[AccountingResidual]
     accounting_error: str | None
+    accounting_error_date: date | None
+    accounting_error_book: str | None

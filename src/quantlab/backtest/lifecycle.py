@@ -10,7 +10,10 @@ validity boundary is:
   onward, so it is checked with ``trade_date >= effective_date``.
 
 A missing price is never evidence of a delisting by itself, and ``list_status``
-is never used as a historical filter.
+is never used as a historical filter. A static conflict (an instrument having
+both a delist date and a code-change date) is a structured diagnostic only; it
+does not block historical sessions until one of the two invalidation conditions
+actually fires.
 """
 
 from __future__ import annotations
@@ -48,26 +51,51 @@ class LifecycleMonitor:
         }
         self.conflicts: set[str] = set(self.delist_map) & set(self.code_change_map)
 
+    def conflict_diagnostics(self) -> list[dict]:
+        """Structured static conflict diagnostics (do not imply termination yet)."""
+        return [
+            {
+                "instrument_id": i,
+                "delist_date": self.delist_map[i].isoformat(),
+                "code_change_date": self.code_change_map[i].isoformat(),
+            }
+            for i in sorted(self.conflicts)
+        ]
+
     def event_for(self, instrument_id: str, trade_date: date) -> EventSpec | None:
         """Return an event if ``instrument_id`` is invalid at ``trade_date``."""
-        if instrument_id in self.conflicts:
-            event_date = min(
-                self.delist_map[instrument_id], self.code_change_map[instrument_id]
-            )
-            return EventSpec(
-                event_type="conflict",
-                event_date=event_date,
-                description="instrument has both delist and code_change definitions",
-            )
         delist = self.delist_map.get(instrument_id)
-        if delist is not None and trade_date > delist:
+        code_change = self.code_change_map.get(instrument_id)
+
+        delist_fired = delist is not None and trade_date > delist
+        code_change_fired = code_change is not None and trade_date >= code_change
+
+        if instrument_id in self.conflicts:
+            # Only block once one of the two invalidation conditions actually
+            # fires; the mere coexistence of both definitions is not termination.
+            if delist_fired or code_change_fired:
+                fired_dates = []
+                if delist_fired:
+                    fired_dates.append(delist)
+                if code_change_fired:
+                    fired_dates.append(code_change)
+                return EventSpec(
+                    event_type="conflict",
+                    event_date=min(fired_dates),
+                    description=(
+                        f"conflict: delist_date {delist} and "
+                        f"code_change effective_date {code_change}"
+                    ),
+                )
+            return None
+
+        if delist_fired:
             return EventSpec(
                 event_type="delist",
                 event_date=delist,
                 description=f"held beyond delist_date {delist}",
             )
-        code_change = self.code_change_map.get(instrument_id)
-        if code_change is not None and trade_date >= code_change:
+        if code_change_fired:
             return EventSpec(
                 event_type="code_change",
                 event_date=code_change,

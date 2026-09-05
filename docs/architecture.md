@@ -107,7 +107,18 @@ and decoupled from price availability:
   the first session with `trade_date > delist_date`.
 - `code_change`: the old instrument is invalid from `effective_date`
   (`trade_date >= effective_date`).
-- contradictory event definitions are reported as `conflict`.
+- A static conflict (an instrument having both a delist date and a code-change
+  date) is reported as a structured diagnostic but only blocks once one of the
+  two invalidation conditions actually fires.
+
+Lifecycle constraints persist independently of event-log deduplication: a
+blocked held position stays frozen (and is not re-marked by later quotes), and
+a rejected new target is rejected again on every later execution. Accounting
+statistics are reported per book (gross and net), and absolute vs. relative
+residual maxima are tracked independently with their own date/book. A
+centralized `build_report` function gates performance publication so that
+`metrics` are produced only when the strict run completed, had no unsupported
+event or accounting error, and the inputs were reproducible.
 
 Two run modes exist: `strict` stops before the first unsupported event and
 reports `valid_through`, `first_blocking_event`, and `metrics = null`;

@@ -20,10 +20,9 @@ from quantlab.backtest import (
     MISSING_PRICE_POLICY,
     RUN_MODE_DIAGNOSTIC,
     RUN_MODE_STRICT,
-    STATUS_COMPLETED,
     BacktestConfig,
     LifecycleMonitor,
-    compute_metrics,
+    build_report,
     run_backtest,
     weekly_signal_dates,
 )
@@ -34,7 +33,7 @@ from quantlab.portfolio import RankPortfolioConfig, construct_rank_portfolio
 from quantlab.research import build_research_dataset, filter_v1_universe
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-ENGINE_SCHEMA_VERSION = "v0.2.1"
+ENGINE_SCHEMA_VERSION = "v0.2.2"
 
 PERIOD_START = date(2020, 1, 1)
 PERIOD_END = date(2024, 12, 31)
@@ -117,55 +116,61 @@ def _build_targets(storage: ParquetStorage, signal_dates: list[date]):
 
 
 def _statistics(result) -> dict:
-    rebalance_frozen = sum(rb.frozen_count for rb in result.rebalances)
-    frozen_instruments = {
-        t.instrument_id for t in result.trades if t.reason in (
-            "frozen_held_no_price", "lifecycle_blocked"
-        )
-    }
-    daily_missing = 0
-    stale_end = []
-    last_net = None
-    for b in result.books:
-        if b.book != "net":
-            continue
-        missing = [p for p in b.positions if p.missing_price]
-        daily_missing += len(missing)
-        last_net = b
-    if last_net is not None:
-        stale_end = [
-            {
-                "instrument_id": p.instrument_id,
-                "value": p.value,
-                "weight": p.weight,
-                "last_mark_date": p.last_mark_date.isoformat() if p.last_mark_date else None,
-            }
-            for p in last_net.positions
-            if p.missing_price
+    stats = {}
+    for book_name in ("gross", "net"):
+        book_trades = [t for t in result.trades if t.book == book_name]
+        frozen_trades = [
+            t for t in book_trades
+            if t.pre_value > 0 and t.reason in ("frozen_held_no_price", "lifecycle_blocked")
         ]
-    return {
-        "rebalance_frozen_position_occurrences": rebalance_frozen,
-        "unique_frozen_instruments": len(frozen_instruments),
-        "daily_missing_position_occurrences": daily_missing,
-        "end_or_blocked_missing_positions": stale_end,
-    }
+        daily_missing = 0
+        last_snapshot = None
+        for b in result.books:
+            if b.book != book_name:
+                continue
+            daily_missing += len([p for p in b.positions if p.missing_price])
+            last_snapshot = b
+        stale_end = []
+        if last_snapshot is not None:
+            stale_end = [
+                {
+                    "instrument_id": p.instrument_id,
+                    "value": p.value,
+                    "weight": p.weight,
+                    "last_mark_date": p.last_mark_date.isoformat()
+                    if p.last_mark_date else None,
+                }
+                for p in last_snapshot.positions
+                if p.missing_price
+            ]
+        stats[book_name] = {
+            "rebalance_frozen_position_occurrences": len(frozen_trades),
+            "unique_frozen_instruments": len(
+                {t.instrument_id for t in frozen_trades}
+            ),
+            "daily_missing_position_occurrences": daily_missing,
+            "end_or_blocked_missing_positions": stale_end,
+        }
+    return stats
 
 
 def _audit_case(result) -> dict | None:
     first = result.first_blocking_event
     if first is None:
         return None
-    trades = [
+    instrument_trades = [
         t for t in result.trades
         if t.instrument_id == first.instrument_id and t.book == first.book
     ]
-    executions = [
-        rb for rb in result.rebalances if rb.execution_date <= first.blocking_session
+    nonzero_trades = [
+        t for t in instrument_trades
+        if t.signed_trade_value != 0.0 and t.execution_date <= first.blocking_session
     ]
-    last_execution = executions[-1] if executions else None
+    last_trade = nonzero_trades[-1] if nonzero_trades else None
+
     pre_snapshot = None
     for b in result.books:
-        if b.book == first.book:
+        if b.book == first.book and b.trade_date < first.blocking_session:
             for p in b.positions:
                 if p.instrument_id == first.instrument_id:
                     pre_snapshot = {
@@ -186,10 +191,11 @@ def _audit_case(result) -> dict | None:
         "position_value": first.position_value,
         "last_mark_date": first.last_mark_date.isoformat() if first.last_mark_date else None,
         "description": first.description,
+        "has_prior_holding": last_trade is not None,
         "last_execution": {
-            "signal_date": last_execution.signal_date.isoformat(),
-            "execution_date": last_execution.execution_date.isoformat(),
-        } if last_execution else None,
+            "signal_date": last_trade.signal_date.isoformat(),
+            "execution_date": last_trade.execution_date.isoformat(),
+        } if last_trade else None,
         "trades": [
             {
                 "signal_date": t.signal_date.isoformat(),
@@ -202,7 +208,7 @@ def _audit_case(result) -> dict | None:
                 "price_kind": t.price_kind,
                 "reason": t.reason,
             }
-            for t in trades
+            for t in instrument_trades
         ],
         "pre_blocking_snapshot": pre_snapshot,
     }
@@ -222,6 +228,9 @@ def _main() -> None:
 
     code_paths = _code_paths()
     data_paths = _data_paths(storage, padded_dates)
+
+    git_sha_before = _git_sha()
+    git_dirty_before = _git_dirty()
 
     provenance_before = {
         "code": content_manifest(code_paths, PROJECT_ROOT),
@@ -247,9 +256,10 @@ def _main() -> None:
     )
     runtime = time.perf_counter() - t0
 
+    # re-discover code files so added/removed files are detected
     provenance_after = {
-        "code": content_manifest(code_paths, PROJECT_ROOT),
-        "data": content_manifest(data_paths, PROJECT_ROOT),
+        "code": content_manifest(_code_paths(), PROJECT_ROOT),
+        "data": content_manifest(_data_paths(storage, padded_dates), PROJECT_ROOT),
     }
     code_unchanged = (
         provenance_before["code"]["combined_sha256"]
@@ -261,28 +271,25 @@ def _main() -> None:
     )
     reproducible = code_unchanged and data_unchanged
 
-    strict_completed = strict_result.status == STATUS_COMPLETED
-    if strict_completed:
-        metrics = compute_metrics(strict_result.records, strict_result.rebalances, bt_config)
-    else:
-        metrics = None
-    diagnostic_metrics = compute_metrics(
-        diagnostic_result.records, diagnostic_result.rebalances, bt_config
-    )
-    performance_valid = strict_completed and strict_result.accounting_error is None
+    report = build_report(strict_result, diagnostic_result, reproducible, bt_config)
+    metrics = report["metrics"]
+    diagnostic_metrics = report["diagnostic_metrics"]
+    performance_valid = report["performance_valid"]
+    invalid_reasons = report["invalid_reasons"]
 
     unique_event_ids = {e.event_id for e in diagnostic_result.lifecycle_events}
 
     run_id = datetime.now().strftime("%Y%m%dT%H%M%S")
-    out_dir = PROJECT_ROOT / "data" / "experiments" / "research_backtest_v0_2_1" / run_id
+    out_dir = PROJECT_ROOT / "data" / "experiments" / "research_backtest_v0_2_2" / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
     summary = {
         "engine_schema_version": ENGINE_SCHEMA_VERSION,
         "analysis_type": "portfolio_engineering_backtest",
-        "code_version": _git_sha(),
-        "workspace_dirty": _git_dirty(),
+        "code_version": git_sha_before,
+        "workspace_dirty": git_dirty_before,
         "reproducible": reproducible,
+        "invalid_reasons": invalid_reasons,
         "run_time": datetime.now().isoformat(),
         "run_id": run_id,
         "requested_period": {"start": PERIOD_START.isoformat(), "end": PERIOD_END.isoformat()},
@@ -311,6 +318,7 @@ def _main() -> None:
             "delist": "valid through delist_date (inclusive); blocked on trade_date > delist_date",
             "code_change": "old instrument invalid from effective_date (inclusive)",
         },
+        "conflict_diagnostics": monitor.conflict_diagnostics(),
         "performance_claim": False,
         "test_observed": True,
         "performance_valid": performance_valid,
@@ -335,6 +343,9 @@ def _main() -> None:
             "solver_root_residual": strict_result.solver_root_residual,
             "accounting_checks": [c.__dict__ for c in strict_result.accounting_checks],
             "accounting_error": strict_result.accounting_error,
+            "accounting_error_date": strict_result.accounting_error_date.isoformat()
+            if strict_result.accounting_error_date else None,
+            "accounting_error_book": strict_result.accounting_error_book,
             "first_blocking_event": strict_result.first_blocking_event.__dict__
             if strict_result.first_blocking_event else None,
             "metrics": metrics,
@@ -387,26 +398,34 @@ def _main() -> None:
             out_dir / "strict_lifecycle_events.csv", index=False
         )
 
-    book_rows = []
-    position_rows = []
-    for b in diagnostic_result.books:
-        book_rows.append({
-            "trade_date": b.trade_date, "book": b.book, "nav": b.nav,
-            "daily_return": b.daily_return, "cash": b.cash,
-            "market_pnl": b.market_pnl, "fee": b.fee,
-            "gross_exposure": b.gross_exposure, "net_exposure": b.net_exposure,
-            "cash_weight": b.cash_weight, "holdings_count": b.holdings_count,
-        })
-        for p in b.positions:
-            position_rows.append({
-                "trade_date": b.trade_date, "book": b.book,
-                "instrument_id": p.instrument_id, "value": p.value,
-                "weight": p.weight, "last_price": p.last_price,
-                "last_mark_date": p.last_mark_date,
-                "missing_price": p.missing_price,
+    def _write_books(prefix: str, books) -> None:
+        book_rows = []
+        position_rows = []
+        for b in books:
+            book_rows.append({
+                "trade_date": b.trade_date, "book": b.book, "nav": b.nav,
+                "daily_return": b.daily_return, "cash": b.cash,
+                "market_pnl": b.market_pnl, "fee": b.fee,
+                "gross_exposure": b.gross_exposure, "net_exposure": b.net_exposure,
+                "cash_weight": b.cash_weight, "holdings_count": b.holdings_count,
             })
-    pd.DataFrame(book_rows).to_csv(out_dir / "diagnostic_daily_books.csv", index=False)
-    pd.DataFrame(position_rows).to_csv(out_dir / "diagnostic_daily_positions.csv", index=False)
+            for p in b.positions:
+                position_rows.append({
+                    "trade_date": b.trade_date, "book": b.book,
+                    "instrument_id": p.instrument_id, "value": p.value,
+                    "weight": p.weight, "last_price": p.last_price,
+                    "last_mark_date": p.last_mark_date,
+                    "missing_price": p.missing_price,
+                })
+        pd.DataFrame(book_rows).to_csv(out_dir / f"{prefix}_daily_books.csv", index=False)
+        pd.DataFrame(position_rows).to_csv(out_dir / f"{prefix}_daily_positions.csv", index=False)
+
+    _write_books("strict", strict_result.books)
+    _write_books("diagnostic", diagnostic_result.books)
+    if strict_result.skipped_executions:
+        pd.DataFrame([s.__dict__ for s in strict_result.skipped_executions]).to_csv(
+            out_dir / "strict_skipped_executions.csv", index=False
+        )
 
     print(f"=== research backtest {ENGINE_SCHEMA_VERSION} ===")
     print(f"strict status: {strict_result.status}")
