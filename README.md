@@ -267,6 +267,19 @@ This is an idealized portfolio simulation (`test_observed = true`,
 is a separate boolean from `performance_claim`; a blocked run never claims a
 completed full-period performance.
 
+## Lifecycle Admission (shadow)
+
+The runner also emits a **shadow admission audit** (`shadow_admission.csv`)
+under policy `no_new_exposure_after_termination_decision_v1`. It uses only
+*trusted* delisting facts — facts whose content is verified **and** whose
+historical public time is independently evidenced (a verified public date with
+no intraday time is available from the next trading day open). It never filters
+targets, reallocates weights, or changes the actual execution path; it only
+labels each positive target `restricted` or `unknown`. `unknown` means
+insufficient trusted fact coverage and is **not** a claim of safety. The fact
+input is fingerprinted and the same loaded facts drive both the audit and the
+shadow decision.
+
 ## Research Philosophy
 
 - Hypothesis before optimization.

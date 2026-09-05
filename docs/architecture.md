@@ -131,6 +131,22 @@ reports `valid_through`, `first_blocking_event`, and `metrics = null`;
 completed result. It is a research simulator, not an execution simulator — a
 blocked run never claims a completed full-period performance.
 
+### Lifecycle Admission (shadow)
+
+Delisting facts distinguish two time semantics: `effective_date` (when the
+market event takes effect) and `available_from` (when the strategy may use the
+information). A **trusted** fact additionally requires both content
+verification and independent public-time verification; a verified public date
+with no intraday time is conservatively available from the next trading day
+open. A document signature date or a URL path date alone is not a verified
+public time.
+
+The shadow policy `no_new_exposure_after_termination_decision_v1` labels each
+positive target `restricted` (a trusted, available termination decision exists)
+or `unknown` (insufficient trusted coverage — never a claim of safety). It is a
+pure decision over trusted facts and never alters the actual execution path;
+the shadow audit and the backtest share the same fingerprinted fact input.
+
 ## Future Concepts
 
 These are intended directions, not implemented yet.

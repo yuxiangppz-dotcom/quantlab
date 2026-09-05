@@ -26,8 +26,12 @@ from quantlab.backtest import (
     run_backtest,
     weekly_signal_dates,
 )
-from quantlab.backtest.delisting_facts import source_coverage
-from quantlab.backtest.provenance import content_manifest, environment_info
+from quantlab.backtest.admission import POLICY_NAME, POLICY_VERSION, shadow_admission
+from quantlab.backtest.delisting_facts import (
+    source_coverage,
+    trusted_facts_available_as_of,
+)
+from quantlab.backtest.provenance import content_manifest, environment_info, sha256_file
 from quantlab.data import ParquetStorage
 from quantlab.data.security_history import load_security_code_changes
 from quantlab.portfolio import RankPortfolioConfig, construct_rank_portfolio
@@ -240,6 +244,61 @@ def _delisting_audit(result, facts: dict) -> list[dict]:
     return rows
 
 
+def _shadow_audit(targets: dict, facts: dict, open_dates: list) -> dict:
+    rows = []
+    restricted_count = 0
+    restricted_weight = 0.0
+    restricted_instruments: set[str] = set()
+    unknown_count = 0
+    for signal_date in sorted(targets):
+        target = targets[signal_date]
+        exec_date = _next_open_session(open_dates, signal_date)
+        for pos in target.positions:
+            if pos.target_weight <= 0:
+                continue
+            trusted = trusted_facts_available_as_of(facts, pos.instrument_id, signal_date)
+            decision = shadow_admission(pos.instrument_id, signal_date, trusted)
+            rows.append({
+                "instrument_id": pos.instrument_id,
+                "signal_date": signal_date.isoformat(),
+                "execution_date": exec_date.isoformat() if exec_date else None,
+                "target_weight": pos.target_weight,
+                "admission_status": decision.status,
+                "fact_id": decision.fact_id,
+                "available_from": decision.available_from.isoformat()
+                if decision.available_from else None,
+                "source": decision.source,
+                "reason": decision.reason,
+                "policy_version": decision.policy_version,
+            })
+            if decision.status == "restricted":
+                restricted_count += 1
+                restricted_weight += pos.target_weight
+                restricted_instruments.add(pos.instrument_id)
+            else:
+                unknown_count += 1
+    return {
+        "policy_name": POLICY_NAME,
+        "policy_version": POLICY_VERSION,
+        "rows": rows,
+        "restricted_target_count": restricted_count,
+        "restricted_target_weight_sum": restricted_weight,
+        "restricted_target_weight_note": (
+            "cross-signal cumulative target weight sum, not portfolio exposure"
+        ),
+        "restricted_unique_instruments": len(restricted_instruments),
+        "unknown_count": unknown_count,
+        "unknown_note": "unknown = insufficient trusted fact coverage; not a claim of safety",
+    }
+
+
+def _next_open_session(open_dates: list, signal_date) -> object:
+    idx = open_dates.index(signal_date) if signal_date in open_dates else -1
+    if idx < 0 or idx + 1 >= len(open_dates):
+        return None
+    return open_dates[idx + 1]
+
+
 def _main() -> None:
     storage = ParquetStorage(PROJECT_ROOT / "data" / "canonical")
     calendar, securities, code_changes, open_dates = _load_inputs(storage)
@@ -311,9 +370,11 @@ def _main() -> None:
     facts_path = PROJECT_ROOT / "config" / "delisting_facts.json"
     delisting_facts = json.loads(facts_path.read_text())
     audit_rows = _delisting_audit(diagnostic_result, delisting_facts)
+    shadow = _shadow_audit(targets, delisting_facts, bt_open_dates)
+    fact_sha = sha256_file(facts_path)
 
     run_id = datetime.now().strftime("%Y%m%dT%H%M%S")
-    out_dir = PROJECT_ROOT / "data" / "experiments" / "research_backtest_v0_2_4" / run_id
+    out_dir = PROJECT_ROOT / "data" / "experiments" / "lifecycle_admission_v0_1" / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
     summary = {
@@ -358,6 +419,26 @@ def _main() -> None:
             "verified_count": sum(1 for r in audit_rows if r["verification_status"] == "verified"),
             "unknown_count": sum(1 for r in audit_rows if r["verification_status"] == "unknown"),
             "rows": audit_rows,
+        },
+        "shadow_admission": {
+            "policy_name": shadow["policy_name"],
+            "policy_version": shadow["policy_version"],
+            "fact_sha256": fact_sha,
+            "time_convention": (
+                "verified public date without intraday time -> next trading day open "
+                "(available_from)"
+            ),
+            "effective_vs_available_note": (
+                "effective_date = market event effective; available_from = strategy "
+                "usable time; shadow admission uses available_from only"
+            ),
+            "restricted_target_count": shadow["restricted_target_count"],
+            "restricted_target_weight_sum": shadow["restricted_target_weight_sum"],
+            "restricted_target_weight_note": shadow["restricted_target_weight_note"],
+            "restricted_unique_instruments": shadow["restricted_unique_instruments"],
+            "unknown_count": shadow["unknown_count"],
+            "unknown_note": shadow["unknown_note"],
+            "rows": shadow["rows"],
         },
         "performance_claim": False,
         "test_observed": True,
@@ -420,6 +501,31 @@ def _main() -> None:
         json.dumps(delisting_facts, indent=2, ensure_ascii=False)
     )
     pd.DataFrame(audit_rows).to_csv(out_dir / "delisting_audit.csv", index=False)
+    if shadow["rows"]:
+        pd.DataFrame(shadow["rows"]).to_csv(out_dir / "shadow_admission.csv", index=False)
+
+    def _failed_attempt_to_dict(fa):
+        return {
+            "trade_date": fa.trade_date.isoformat(),
+            "reason": fa.reason,
+            "trades": [t.__dict__ for t in fa.trades],
+            "rebalance": fa.rebalance.__dict__ if fa.rebalance else None,
+        }
+
+    if strict_result.failed_attempts:
+        (out_dir / "strict_failed_attempts.json").write_text(
+            json.dumps(
+                [_failed_attempt_to_dict(fa) for fa in strict_result.failed_attempts],
+                indent=2, default=str,
+            )
+        )
+    if diagnostic_result.failed_attempts:
+        (out_dir / "diagnostic_failed_attempts.json").write_text(
+            json.dumps(
+                [_failed_attempt_to_dict(fa) for fa in diagnostic_result.failed_attempts],
+                indent=2, default=str,
+            )
+        )
 
     pd.DataFrame([r.__dict__ for r in strict_result.records]).to_csv(
         out_dir / "strict_daily_records.csv", index=False
@@ -496,6 +602,11 @@ def _main() -> None:
           f"diagnostic_from={diagnostic_result.diagnostic_from}")
     print(f"diagnostic events: {len(diagnostic_result.lifecycle_events)} "
           f"(unique {len(unique_event_ids)})")
+    print(f"shadow admission ({shadow['policy_name']}_{shadow['policy_version']}): "
+          f"restricted_targets={shadow['restricted_target_count']} "
+          f"restricted_weight_sum={shadow['restricted_target_weight_sum']:.4f} "
+          f"restricted_unique={shadow['restricted_unique_instruments']} "
+          f"unknown={shadow['unknown_count']}")
     print(f"output dir: {out_dir}")
     print(f"runtime: {runtime:.1f}s")
 
