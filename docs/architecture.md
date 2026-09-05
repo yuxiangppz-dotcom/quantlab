@@ -15,8 +15,8 @@ Higher layers may read lower layers, never the reverse. In particular:
   metrics from canonical data only.
 - **`alpha`** produces signals (`alpha_score`) from a research dataset and
   metadata at time `t` only.
-- **`portfolio`** (future) turns signals into target weights.
-- **`backtest` / `execution`** (future) simulate or route those weights.
+- **`portfolio`** turns signals into target weights.
+- **`backtest` / `execution`** simulate or route those weights.
 
 ## Canonical vs Research
 
@@ -42,7 +42,8 @@ Provider (Tushare)
    → canonical sync (validate → atomic Parquet write)
    → research dataset builder (session-padded read)
    → alpha (score)
-   → evaluation (RankIC, quantile returns)
+   → portfolio (target weights)
+   → backtest (idealized PnL + metrics)
 ```
 
 The dataset builder pads the internal read range by `max(return_horizons)`
@@ -60,9 +61,28 @@ holdings on one `as_of` date — `(instrument_id → target_weight)` plus a resi
 cross-section. It separates "what to hold" from "how to trade", and it is an
 intention, not an order, fill, or return forecast.
 
-The v0 constructor is long-only and equal-weight, with a selection fraction and
-an optional per-name weight cap. It is direction-agnostic
-(`higher_is_better` / `lower_is_better`) so any alpha can reuse it.
+Weights are relative to NAV: `sum(position weights) + cash_weight == 1.0`.
+`target_weight` and `cash_weight` are signed floats (positive = long, negative =
+short), so the domain model does not permanently forbid short positions; only
+finiteness and non-empty unique `instrument_id` are enforced. Net and gross
+exposure are derived properties (`sum` and `sum(abs)` respectively) rather than
+stored fields.
+
+The v0 constructor stays long-only and equal-weight, with a selection fraction
+and an optional per-name weight cap. It is direction-agnostic
+(`higher_is_better` / `lower_is_better`) so any alpha can reuse it, and it
+balances cash as `1.0 - n*weight` (all-NaN input → `cash_weight = 1.0`).
+
+### Research Backtest
+
+Implemented in `src/quantlab/backtest/`. An idealized value-based engine
+(`cash_value` + per-instrument `positions_value`) that simulates T-signal →
+T+1-close execution and lets the portfolio drift between rebalances. PnL is
+derived only from chronological adjusted closes — `future_return_*` labels are
+never read. Held positions with a missing bar mark return 0; a new target with
+no execution-date bar is not opened and stays in cash. Transaction cost is a
+symmetric proportional charge that reduces net NAV but not gross NAV. It is a
+research simulator, not an execution simulator.
 
 ## Future Concepts
 

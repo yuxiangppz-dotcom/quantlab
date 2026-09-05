@@ -42,12 +42,13 @@ trading step reproducible and free of look-ahead bias.
 
 **Portfolio**
 
-- [x] Target portfolio representation
+- [x] Target portfolio representation (signed weights, NAV-balanced cash)
+- [x] Derived net / gross exposure (not a stored field)
 - [x] Portfolio construction (long-only rank-based, equal-weight v0)
 
 **Backtest**
 
-- [ ] Research backtest
+- [x] Research backtest (idealized: T+1-close execution, natural value drift)
 - [ ] A-share execution constraints
 
 **Live**
@@ -157,6 +158,8 @@ src/quantlab/
     data/        # canonical models, provider, storage, sync, security history
     research/    # prices, returns, dataset, universe, evaluation, characteristics
     alpha/       # alpha factors (currently momentum)
+    portfolio/   # target portfolio model and rank-based constructor
+    backtest/    # idealized research backtest engine + metrics
 scripts/         # data update + experiment runners
 config/          # security_code_changes.csv (version-controlled reference)
 docs/            # research protocol + architecture
@@ -222,6 +225,20 @@ uv run python scripts/run_momentum_robustness.py
 Results are written under `data/experiments/` (git-ignored), including
 `summary.json` (metadata + git SHA), `yearly_rank_ic.csv`, and bucket metrics.
 
+## Backtest Commands
+
+Run the fixed-config research backtest (2020–2024, momentum 20D lower-is-better,
+weekly rebalance, 20% selection, 10 bps cost):
+
+```bash
+uv run python scripts/run_research_backtest.py
+```
+
+Results are written under `data/experiments/research_backtest_v0/`, including
+`summary.json` (metadata + metrics), `daily_nav.csv`, and `rebalance_log.csv`.
+This is an idealized portfolio simulation (`test_observed = true`,
+`performance_claim = false`), not an execution simulator.
+
 ## Research Philosophy
 
 - Hypothesis before optimization.
@@ -236,8 +253,8 @@ Results are written under `data/experiments/` (git-ignored), including
 | Phase | Status |
 |---|---|
 | 1. Data + Alpha Research | ✅ |
-| 2. Portfolio Engine | next |
-| 3. Research Backtest | — |
+| 2. Portfolio Engine | ✅ |
+| 3. Research Backtest | ✅ |
 | 4. A-share Execution Engine | — |
 | 5. Risk / Attribution | — |
 | 6. Alpha Research Factory | — |
