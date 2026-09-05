@@ -15,6 +15,7 @@ from quantlab.data.models import (
     SZSE,
     AdjFactor,
     DailyBar,
+    DailyBasic,
     Security,
     TradingCalendar,
     format_yyyymmdd,
@@ -89,6 +90,20 @@ def adj_factor_from_row(row: Mapping[str, Any]) -> AdjFactor:
     )
 
 
+def daily_basic_from_row(row: Mapping[str, Any]) -> DailyBasic:
+    """Map a Tushare ``daily_basic`` row to a :class:`DailyBasic`.
+
+    ``turnover_rate`` percent -> decimal; ``total_mv`` / ``circ_mv`` 万元 -> CNY.
+    """
+    return DailyBasic(
+        instrument_id=row["ts_code"],
+        trade_date=parse_required_yyyymmdd(row["trade_date"]),
+        turnover_rate=_to_float(row["turnover_rate"]) / 100.0,
+        total_mv=_to_float(row["total_mv"]) * 10000.0,
+        circ_mv=_to_float(row["circ_mv"]) * 10000.0,
+    )
+
+
 class TushareProvider(DataProvider):
     """Data provider backed by the Tushare HTTP API."""
 
@@ -145,3 +160,10 @@ class TushareProvider(DataProvider):
     def get_adj_factors_by_date(self, trade_date: date) -> list[AdjFactor]:
         frame = self._pro.adj_factor(trade_date=format_yyyymmdd(trade_date))
         return [adj_factor_from_row(row) for row in frame.to_dict("records")]
+
+    def get_daily_basic_by_date(self, trade_date: date) -> list[DailyBasic]:
+        frame = self._pro.daily_basic(
+            trade_date=format_yyyymmdd(trade_date),
+            fields="ts_code,trade_date,turnover_rate,total_mv,circ_mv",
+        )
+        return [daily_basic_from_row(row) for row in frame.to_dict("records")]

@@ -18,6 +18,7 @@ from quantlab.data import (
     ParquetStorage,
     TushareProvider,
     sync_adj_factor_history,
+    sync_daily_basic_history,
     sync_daily_history,
 )
 
@@ -61,6 +62,11 @@ def main() -> None:
         help="Download full-market adjustment factors for every open trading day.",
     )
     parser.add_argument(
+        "--daily-basic",
+        action="store_true",
+        help="Download full-market daily basic metrics for every open trading day.",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Re-download data even if the local file already exists.",
@@ -76,10 +82,17 @@ def main() -> None:
     if args.start > args.end:
         parser.error(f"--start ({args.start}) must be <= --end ({args.end})")
 
-    if not (args.securities or args.calendar or args.daily_all or args.adj_factor or args.symbols):
+    if not (
+        args.securities
+        or args.calendar
+        or args.daily_all
+        or args.adj_factor
+        or args.daily_basic
+        or args.symbols
+    ):
         parser.error(
-            "at least one of --securities/--calendar/--daily-all/--adj-factor/--symbols "
-            "is required"
+            "at least one of --securities/--calendar/--daily-all/--adj-factor/"
+            "--daily-basic/--symbols is required"
         )
 
     provider = TushareProvider()
@@ -112,6 +125,15 @@ def main() -> None:
         )
         print(
             f"adj_factor: {result.total} open days, {result.synced} downloaded, "
+            f"{result.skipped} skipped"
+        )
+
+    if args.daily_basic:
+        result = sync_daily_basic_history(
+            provider, storage, args.start, args.end, force=args.force
+        )
+        print(
+            f"daily_basic: {result.total} open days, {result.synced} downloaded, "
             f"{result.skipped} skipped"
         )
 

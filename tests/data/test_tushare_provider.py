@@ -4,7 +4,13 @@ import pandas as pd
 import pytest
 
 import quantlab.data.tushare_provider as tushare_provider
-from quantlab.data.models import AdjFactor, DailyBar, DataValidationError, Security, TradingCalendar
+from quantlab.data.models import (
+    AdjFactor,
+    DailyBar,
+    DataValidationError,
+    Security,
+    TradingCalendar,
+)
 from quantlab.data.tushare_provider import TushareProvider
 
 
@@ -100,6 +106,22 @@ def test_adj_factor_required_trade_date_raises() -> None:
         tushare_provider.adj_factor_from_row(
             {"ts_code": "600519.SH", "trade_date": None, "adj_factor": 1.5}
         )
+
+
+def test_daily_basic_from_row_units() -> None:
+    row = {
+        "ts_code": "600519.SH",
+        "trade_date": "20260701",
+        "turnover_rate": 5.2,
+        "total_mv": 123.0,
+        "circ_mv": 100.0,
+    }
+    db = tushare_provider.daily_basic_from_row(row)
+    assert db.instrument_id == "600519.SH"
+    assert db.trade_date == date(2026, 7, 1)
+    assert db.turnover_rate == pytest.approx(0.052)   # 5.2% -> decimal
+    assert db.total_mv == pytest.approx(1_230_000.0)  # 123 万元 -> CNY
+    assert db.circ_mv == pytest.approx(1_000_000.0)   # 100 万元 -> CNY
 
 
 def test_required_trade_date_missing_raises() -> None:

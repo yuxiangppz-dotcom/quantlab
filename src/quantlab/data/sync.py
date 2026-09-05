@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 from datetime import date
 
-from quantlab.data.models import AdjFactor, DailyBar, DataValidationError
+from quantlab.data.models import AdjFactor, DailyBar, DailyBasic, DataValidationError
 from quantlab.data.provider import DataProvider
 from quantlab.data.storage import ParquetStorage
 
@@ -221,5 +221,69 @@ def sync_adj_factor_history(
             raise RuntimeError(f"Failed to download adj factors for {trade_date}") from exc
         validate_adj_factors(factors, trade_date)
         storage.save_adj_factors_by_date(factors, trade_date)
+        synced += 1
+    return SyncResult(total=len(open_dates), synced=synced, skipped=skipped, filtered=0)
+
+
+def validate_daily_basic(items: list[DailyBasic], expected_date: date) -> None:
+    """Validate one trading day's daily basic metrics."""
+    if not items:
+        raise DataValidationError(f"No daily basic for {expected_date}")
+
+    seen: set[tuple[str, date]] = set()
+    for item in items:
+        if not item.instrument_id:
+            raise DataValidationError(f"Empty instrument_id in daily basic for {expected_date}")
+        if item.trade_date != expected_date:
+            raise DataValidationError(
+                f"Unexpected trade_date {item.trade_date} (expected {expected_date}) "
+                f"for {item.instrument_id}"
+            )
+        key = (item.instrument_id, item.trade_date)
+        if key in seen:
+            raise DataValidationError(
+                f"Duplicate daily basic for {item.instrument_id} on {item.trade_date}"
+            )
+        seen.add(key)
+
+        if (
+            item.turnover_rate is None
+            or not math.isfinite(item.turnover_rate)
+            or item.turnover_rate < 0
+        ):
+            raise DataValidationError(
+                f"Invalid turnover_rate for {item.instrument_id} on {item.trade_date}"
+            )
+        if item.total_mv is None or not math.isfinite(item.total_mv) or item.total_mv <= 0:
+            raise DataValidationError(
+                f"Invalid total_mv for {item.instrument_id} on {item.trade_date}"
+            )
+        if item.circ_mv is None or not math.isfinite(item.circ_mv) or item.circ_mv <= 0:
+            raise DataValidationError(
+                f"Invalid circ_mv for {item.instrument_id} on {item.trade_date}"
+            )
+
+
+def sync_daily_basic_history(
+    provider: DataProvider,
+    storage: ParquetStorage,
+    start_date: date,
+    end_date: date,
+    force: bool = False,
+) -> SyncResult:
+    """Download and store full-market daily basic metrics for every open day."""
+    open_dates = _open_trade_dates(provider, start_date, end_date)
+    synced = 0
+    skipped = 0
+    for trade_date in open_dates:
+        if not force and storage.daily_basic_exists(trade_date):
+            skipped += 1
+            continue
+        try:
+            items = provider.get_daily_basic_by_date(trade_date)
+        except Exception as exc:
+            raise RuntimeError(f"Failed to download daily basic for {trade_date}") from exc
+        validate_daily_basic(items, trade_date)
+        storage.save_daily_basic_by_date(items, trade_date)
         synced += 1
     return SyncResult(total=len(open_dates), synced=synced, skipped=skipped, filtered=0)

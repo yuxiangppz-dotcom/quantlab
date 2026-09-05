@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from datetime import date
 
-from quantlab.data.models import AdjFactor, DailyBar, Security, TradingCalendar
+from quantlab.data.models import AdjFactor, DailyBar, DailyBasic, Security, TradingCalendar
 
 
 class DataProvider(ABC):
@@ -35,3 +35,7 @@ class DataProvider(ABC):
     @abstractmethod
     def get_adj_factors_by_date(self, trade_date: date) -> list[AdjFactor]:
         """Return the full-market adjustment factors for a single trading date."""
+
+    @abstractmethod
+    def get_daily_basic_by_date(self, trade_date: date) -> list[DailyBasic]:
+        """Return the full-market daily basic metrics for a single trading date."""

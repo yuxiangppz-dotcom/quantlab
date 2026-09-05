@@ -2,16 +2,24 @@ from datetime import date
 
 import pytest
 
-from quantlab.data.models import AdjFactor, DailyBar, DataValidationError, TradingCalendar
+from quantlab.data.models import (
+    AdjFactor,
+    DailyBar,
+    DailyBasic,
+    DataValidationError,
+    TradingCalendar,
+)
 from quantlab.data.provider import DataProvider
 from quantlab.data.storage import ParquetStorage
 from quantlab.data.sync import (
     audit_daily_adj_coverage,
     filter_unlisted_placeholders,
     sync_adj_factor_history,
+    sync_daily_basic_history,
     sync_daily_history,
     validate_adj_factors,
     validate_daily_bars,
+    validate_daily_basic,
 )
 
 
@@ -51,13 +59,27 @@ def _factor(**overrides) -> AdjFactor:
     return AdjFactor(**values)
 
 
+def _daily_basic(**overrides) -> DailyBasic:
+    values = dict(
+        instrument_id="600519.SH",
+        trade_date=date(2026, 1, 2),
+        turnover_rate=0.052,
+        total_mv=1_230_000.0,
+        circ_mv=1_000_000.0,
+    )
+    values.update(overrides)
+    return DailyBasic(**values)
+
+
 class FakeProvider(DataProvider):
-    def __init__(self, calendar, daily_by_date, adj_by_date=None):
+    def __init__(self, calendar, daily_by_date, adj_by_date=None, basic_by_date=None):
         self._calendar = calendar
         self._daily_by_date = daily_by_date
         self._adj_by_date = adj_by_date or {}
+        self._basic_by_date = basic_by_date or {}
         self.downloaded_dates = []
         self.adj_downloaded_dates = []
+        self.basic_downloaded_dates = []
 
     def get_securities(self):
         return []
@@ -75,6 +97,10 @@ class FakeProvider(DataProvider):
     def get_adj_factors_by_date(self, trade_date):
         self.adj_downloaded_dates.append(trade_date)
         return self._adj_by_date.get(trade_date, [])
+
+    def get_daily_basic_by_date(self, trade_date):
+        self.basic_downloaded_dates.append(trade_date)
+        return self._basic_by_date.get(trade_date, [])
 
 
 def test_validate_ok() -> None:
@@ -363,3 +389,57 @@ def test_audit_daily_adj_coverage(tmp_path) -> None:
     assert cov.adj_extra_count == 1
     assert cov.missing_sample == ("000001.SZ",)
     assert cov.extra_sample == ("300750.SZ",)
+
+
+def test_validate_daily_basic_ok() -> None:
+    validate_daily_basic([_daily_basic()], date(2026, 1, 2))
+
+
+def test_validate_daily_basic_invalid_total_mv() -> None:
+    with pytest.raises(DataValidationError):
+        validate_daily_basic([_daily_basic(total_mv=0.0)], date(2026, 1, 2))
+
+
+def test_validate_daily_basic_invalid_circ_mv() -> None:
+    with pytest.raises(DataValidationError):
+        validate_daily_basic([_daily_basic(circ_mv=-1.0)], date(2026, 1, 2))
+
+
+def test_validate_daily_basic_negative_turnover() -> None:
+    with pytest.raises(DataValidationError):
+        validate_daily_basic([_daily_basic(turnover_rate=-0.1)], date(2026, 1, 2))
+
+
+def test_validate_daily_basic_duplicate() -> None:
+    with pytest.raises(DataValidationError):
+        validate_daily_basic([_daily_basic(), _daily_basic()], date(2026, 1, 2))
+
+
+def test_sync_daily_basic_skips_existing(tmp_path) -> None:
+    day = date(2026, 1, 5)
+    storage = ParquetStorage(tmp_path)
+    storage.save_daily_basic_by_date([_daily_basic(trade_date=day)], day)
+    provider = FakeProvider(
+        calendar=_calendar(day),
+        daily_by_date={},
+        basic_by_date={day: [_daily_basic(trade_date=day)]},
+    )
+    result = sync_daily_basic_history(provider, storage, date(2026, 1, 1), date(2026, 1, 5))
+    assert provider.basic_downloaded_dates == []
+    assert result.skipped == 1
+
+
+def test_sync_daily_basic_force_overwrites(tmp_path) -> None:
+    day = date(2026, 1, 5)
+    storage = ParquetStorage(tmp_path)
+    storage.save_daily_basic_by_date([_daily_basic(trade_date=day)], day)
+    provider = FakeProvider(
+        calendar=_calendar(day),
+        daily_by_date={},
+        basic_by_date={day: [_daily_basic(trade_date=day, total_mv=999.0)]},
+    )
+    result = sync_daily_basic_history(
+        provider, storage, date(2026, 1, 1), date(2026, 1, 5), force=True
+    )
+    assert result.synced == 1
+    assert storage.load_daily_basic_by_date(day)[0].total_mv == 999.0

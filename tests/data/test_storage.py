@@ -3,7 +3,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from quantlab.data.models import AdjFactor, DailyBar, Security, TradingCalendar
+from quantlab.data.models import AdjFactor, DailyBar, DailyBasic, Security, TradingCalendar
 from quantlab.data.storage import DuplicateDataError, ParquetStorage, find_duplicates
 
 
@@ -47,6 +47,18 @@ def _make_factor(**overrides) -> AdjFactor:
     )
     values.update(overrides)
     return AdjFactor(**values)
+
+
+def _make_daily_basic(**overrides) -> DailyBasic:
+    values = dict(
+        instrument_id="600519.SH",
+        trade_date=date(2026, 1, 2),
+        turnover_rate=0.052,
+        total_mv=1_230_000.0,
+        circ_mv=1_000_000.0,
+    )
+    values.update(overrides)
+    return DailyBasic(**values)
 
 
 def test_securities_round_trip(tmp_path) -> None:
@@ -289,3 +301,35 @@ def test_upsert_securities_atomic_write(tmp_path, monkeypatch) -> None:
         storage.upsert_securities([_make_security(instrument_id="000001.SZ", symbol="000001")])
     loaded = storage.load_securities()
     assert [s.instrument_id for s in loaded] == ["600519.SH"]
+
+
+def test_daily_basic_round_trip(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    trade_date = date(2026, 1, 2)
+    expected = [_make_daily_basic()]
+    storage.save_daily_basic_by_date(expected, trade_date)
+    loaded = storage.load_daily_basic_by_date(trade_date)
+    assert loaded == expected
+    assert isinstance(loaded[0].trade_date, date)
+
+
+def test_daily_basic_duplicate_raises(tmp_path) -> None:
+    storage = ParquetStorage(tmp_path)
+    trade_date = date(2026, 1, 2)
+    with pytest.raises(DuplicateDataError):
+        storage.save_daily_basic_by_date([_make_daily_basic(), _make_daily_basic()], trade_date)
+
+
+def test_daily_basic_atomic_write(tmp_path, monkeypatch) -> None:
+    storage = ParquetStorage(tmp_path)
+    trade_date = date(2026, 1, 2)
+    path = storage.daily_basic_path(trade_date)
+
+    def _fail(self, *args, **kwargs):
+        raise OSError("simulated write failure")
+
+    monkeypatch.setattr("pandas.DataFrame.to_parquet", _fail)
+    with pytest.raises(OSError):
+        storage.save_daily_basic_by_date([_make_daily_basic()], trade_date)
+    assert not path.exists()
+    assert list(path.parent.glob("*.tmp")) == []

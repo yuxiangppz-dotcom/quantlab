@@ -102,6 +102,22 @@ class SecurityCodeChange:
     original_list_date: date
 
 
+@dataclass(frozen=True)
+class DailyBasic:
+    """Daily basic trading metrics for one instrument on one date.
+
+    ``turnover_rate`` is a decimal fraction (Tushare percent -> decimal, e.g.
+    5.2% -> 0.052). ``total_mv`` and ``circ_mv`` are in CNY (Tushare 万元 ->
+    CNY, e.g. 123456 万元 -> 1,234,560,000).
+    """
+
+    instrument_id: str
+    trade_date: date
+    turnover_rate: float
+    total_mv: float
+    circ_mv: float
+
+
 def market_from_symbol(symbol: str) -> str:
     """Return the market code ("SH"/"SZ"/"BJ") for a 6-digit A-share symbol."""
     if len(symbol) != 6 or not symbol.isdigit():

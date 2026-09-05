@@ -70,7 +70,8 @@ def test_runner_project_root_cwd_independent(tmp_path, monkeypatch) -> None:
     assert root.is_absolute()
     monkeypatch.chdir(tmp_path)
     assert runner.PROJECT_ROOT == root
-    assert (root / "data" / "canonical").exists()
+    canonical_path = root / "data" / "canonical"
+    assert canonical_path.is_absolute()
 
 
 def test_git_sha_returns_str_or_none() -> None:

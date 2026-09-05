@@ -3,6 +3,7 @@
 from quantlab.data.models import (
     AdjFactor,
     DailyBar,
+    DailyBasic,
     DataValidationError,
     Security,
     SecurityCodeChange,
@@ -16,9 +17,11 @@ from quantlab.data.sync import (
     SyncResult,
     audit_daily_adj_coverage,
     sync_adj_factor_history,
+    sync_daily_basic_history,
     sync_daily_history,
     validate_adj_factors,
     validate_daily_bars,
+    validate_daily_basic,
 )
 from quantlab.data.tushare_provider import TushareProvider
 
@@ -26,6 +29,7 @@ __all__ = [
     "AdjFactor",
     "CoverageResult",
     "DailyBar",
+    "DailyBasic",
     "DataProvider",
     "DataValidationError",
     "DuplicateDataError",
@@ -38,7 +42,9 @@ __all__ = [
     "audit_daily_adj_coverage",
     "load_security_code_changes",
     "sync_adj_factor_history",
+    "sync_daily_basic_history",
     "sync_daily_history",
     "validate_adj_factors",
     "validate_daily_bars",
+    "validate_daily_basic",
 ]

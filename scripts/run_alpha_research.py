@@ -35,6 +35,8 @@ MOMENTUM_20D = {
     "universe": "V1 SH/SZ A-share",
     "alpha_definition": "return_20d",
     "lookback": 20,
+    "data_start": "2010-01-04",
+    "data_end": "2026-09-04",
     "label_horizons": [5, 20],
     "discovery": ["2010-01-04", "2019-12-31"],
     "validation": ["2020-01-01", "2024-12-31"],
@@ -45,8 +47,6 @@ MOMENTUM_20D = {
 }
 
 _EXPERIMENTS = {"momentum_20d": MOMENTUM_20D}
-
-_YEARS = list(range(2010, 2027))
 
 
 def _git_sha() -> str | None:
@@ -63,11 +63,7 @@ def _eligible_signal_end(
     period_end: date,
     horizon: int,
 ) -> date | None:
-    """Latest signal date whose forward label stays within ``period_end``.
-
-    ``t`` is eligible only if ``t + horizon`` sessions (on the market calendar)
-    is still ``<= period_end``.
-    """
+    """Latest signal date whose forward label stays within ``period_end``."""
     dates = sorted(set(open_trade_dates))
     last_idx = bisect.bisect_right(dates, period_end) - 1
     if last_idx < horizon:
@@ -75,31 +71,43 @@ def _eligible_signal_end(
     return dates[last_idx - horizon]
 
 
-def _run_year(storage: ParquetStorage, year: int, lookback: int) -> dict:
-    end = date(2026, 9, 4) if year == 2026 else date(year, 12, 31)
+def _run_year(
+    storage: ParquetStorage,
+    year: int,
+    lookback: int,
+    data_end: date,
+    label_horizons: list[int],
+) -> dict:
+    end = data_end if year == data_end.year else date(year, 12, 31)
     df = build_research_dataset(storage, date(year, 1, 1), end)
     universe = filter_v1_universe(df)
     alpha = calculate_momentum_alpha(universe, lookback=lookback)
+    label_cols = [f"future_return_{h}d" for h in label_horizons]
     merged = alpha.merge(
-        universe[["instrument_id", "trade_date", "future_return_5d", "future_return_20d"]],
+        universe[["instrument_id", "trade_date"] + label_cols],
         on=["instrument_id", "trade_date"],
     )
-    return {
-        "ic5": daily_rank_ic(merged, "future_return_5d"),
-        "ic20": daily_rank_ic(merged, "future_return_20d"),
-        "q5": quantile_returns(merged, "future_return_5d"),
-        "q20": quantile_returns(merged, "future_return_20d"),
-    }
+    result = {}
+    for h in label_horizons:
+        result[f"ic{h}"] = daily_rank_ic(merged, f"future_return_{h}d")
+        result[f"q{h}"] = quantile_returns(merged, f"future_return_{h}d")
+    return result
 
 
-def _period_metrics(data: dict, open_dates: list[date], period: list[str]) -> dict:
+def _period_metrics(
+    data: dict,
+    open_dates: list[date],
+    period: list[str],
+    label_horizons: list[int],
+    years: list[int],
+) -> dict:
     start = date.fromisoformat(period[0])
     end = date.fromisoformat(period[1])
     result = {}
-    for horizon in (5, 20):
+    for horizon in label_horizons:
         eligible_end = _eligible_signal_end(open_dates, end, horizon)
-        ic = pd.concat([data[y][f"ic{horizon}"] for y in _YEARS])
-        q = pd.concat([data[y][f"q{horizon}"] for y in _YEARS])
+        ic = pd.concat([data[y][f"ic{horizon}"] for y in years])
+        q = pd.concat([data[y][f"q{horizon}"] for y in years])
         if eligible_end is not None:
             ic = ic[(ic.index >= start) & (ic.index <= eligible_end)]
             q = q[(q["trade_date"] >= start) & (q["trade_date"] <= eligible_end)]
@@ -134,24 +142,26 @@ def run_momentum_20d(config: dict) -> Path:
     calendar = storage.load_trading_calendar()
     open_dates = sorted({c.trade_date for c in calendar if c.is_open})
 
+    data_start = date.fromisoformat(config["data_start"])
+    data_end = date.fromisoformat(config["data_end"])
+    years = list(range(data_start.year, data_end.year + 1))
+    label_horizons = config["label_horizons"]
+
     t0 = time.perf_counter()
     data = {}
     yearly_ic_rows = []
-    for year in _YEARS:
-        data[year] = _run_year(storage, year, config["lookback"])
-        s5 = summarize_ic(data[year]["ic5"])
-        s20 = summarize_ic(data[year]["ic20"])
-        yearly_ic_rows.append({
-            "year": year,
-            "ic_5d": s5["mean_rank_ic"],
-            "ic_20d": s20["mean_rank_ic"],
-            "ic_5d_pos_ratio": s5["positive_ratio"],
-            "ic_20d_pos_ratio": s20["positive_ratio"],
-        })
+    for year in years:
+        data[year] = _run_year(storage, year, config["lookback"], data_end, label_horizons)
+        row = {"year": year}
+        for h in label_horizons:
+            s = summarize_ic(data[year][f"ic{h}"])
+            row[f"ic_{h}d"] = s["mean_rank_ic"]
+            row[f"ic_{h}d_pos_ratio"] = s["positive_ratio"]
+        yearly_ic_rows.append(row)
 
-    discovery = _period_metrics(data, open_dates, config["discovery"])
-    validation = _period_metrics(data, open_dates, config["validation"])
-    test = _period_metrics(data, open_dates, config["test"])
+    discovery = _period_metrics(data, open_dates, config["discovery"], label_horizons, years)
+    validation = _period_metrics(data, open_dates, config["validation"], label_horizons, years)
+    test = _period_metrics(data, open_dates, config["test"], label_horizons, years)
     runtime = time.perf_counter() - t0
 
     run_id = datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -163,8 +173,8 @@ def run_momentum_20d(config: dict) -> Path:
         "run_time": datetime.now().isoformat(),
         "run_id": run_id,
         "code_version": _git_sha(),
-        "data_start": "2010-01-04",
-        "data_end": "2026-09-04",
+        "data_start": config["data_start"],
+        "data_end": config["data_end"],
         "universe": config["universe"],
         "alpha_definition": config["alpha_definition"],
         "lookback": config["lookback"],
@@ -202,7 +212,8 @@ def run_momentum_20d(config: dict) -> Path:
     _print_period("test", test)
     print("\n=== yearly mean RankIC ===")
     for row in yearly_ic_rows:
-        print(f"  {row['year']}: IC_5d={row['ic_5d']:.4f}, IC_20d={row['ic_20d']:.4f}")
+        parts = [f"IC_{h}d={row[f'ic_{h}d']:.4f}" for h in label_horizons]
+        print(f"  {row['year']}: " + ", ".join(parts))
     print(f"\noutput dir: {out_dir}")
     print(f"total runtime: {runtime:.1f}s")
     return out_dir

@@ -11,7 +11,14 @@ from typing import Any
 
 import pandas as pd
 
-from quantlab.data.models import AdjFactor, DailyBar, DataValidationError, Security, TradingCalendar
+from quantlab.data.models import (
+    AdjFactor,
+    DailyBar,
+    DailyBasic,
+    DataValidationError,
+    Security,
+    TradingCalendar,
+)
 
 
 class DuplicateDataError(Exception):
@@ -67,6 +74,13 @@ _BAR_COLUMNS = [
     "amount",
 ]
 _ADJ_COLUMNS = ["instrument_id", "trade_date", "adj_factor"]
+_DAILY_BASIC_COLUMNS = [
+    "instrument_id",
+    "trade_date",
+    "turnover_rate",
+    "total_mv",
+    "circ_mv",
+]
 
 
 def _securities_to_frame(securities: list[Security]) -> pd.DataFrame:
@@ -172,6 +186,25 @@ def _frame_to_adj_factors(frame: pd.DataFrame) -> list[AdjFactor]:
             instrument_id=row["instrument_id"],
             trade_date=_to_required_date(row["trade_date"]),
             adj_factor=float(row["adj_factor"]),
+        )
+        for row in frame.to_dict("records")
+    ]
+
+
+def _daily_basic_to_frame(items: list[DailyBasic]) -> pd.DataFrame:
+    frame = pd.DataFrame([asdict(item) for item in items], columns=_DAILY_BASIC_COLUMNS)
+    frame["trade_date"] = pd.to_datetime(frame["trade_date"], errors="coerce")
+    return frame
+
+
+def _frame_to_daily_basic(frame: pd.DataFrame) -> list[DailyBasic]:
+    return [
+        DailyBasic(
+            instrument_id=row["instrument_id"],
+            trade_date=_to_required_date(row["trade_date"]),
+            turnover_rate=float(row["turnover_rate"]),
+            total_mv=float(row["total_mv"]),
+            circ_mv=float(row["circ_mv"]),
         )
         for row in frame.to_dict("records")
     ]
@@ -313,6 +346,29 @@ class ParquetStorage:
         if not path.exists():
             return []
         return _frame_to_adj_factors(pd.read_parquet(path))
+
+    def daily_basic_path(self, trade_date: date) -> Path:
+        return (
+            self.base_dir / "daily_basic"
+            / f"year={trade_date.year}"
+            / f"month={trade_date.month:02d}"
+            / f"{trade_date.isoformat()}.parquet"
+        )
+
+    def daily_basic_exists(self, trade_date: date) -> bool:
+        return self.daily_basic_path(trade_date).exists()
+
+    def save_daily_basic_by_date(self, items: list[DailyBasic], trade_date: date) -> Path:
+        frame = _daily_basic_to_frame(items)
+        _ensure_unique(frame, ["instrument_id", "trade_date"])
+        frame = frame.sort_values("instrument_id")
+        return self._write(frame, self.daily_basic_path(trade_date))
+
+    def load_daily_basic_by_date(self, trade_date: date) -> list[DailyBasic]:
+        path = self.daily_basic_path(trade_date)
+        if not path.exists():
+            return []
+        return _frame_to_daily_basic(pd.read_parquet(path))
 
     @staticmethod
     def _write(frame: pd.DataFrame, path: Path) -> Path:
