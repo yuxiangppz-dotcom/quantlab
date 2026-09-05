@@ -2,16 +2,21 @@ from datetime import date, timedelta
 
 import pytest
 
-from quantlab.backtest import BacktestConfig, DailyBacktestRecord, compute_metrics
+from quantlab.backtest import (
+    BacktestConfig,
+    DailyBacktestRecord,
+    RebalanceRecord,
+    compute_metrics,
+)
 
 
-def _rec(d, nav, ret, cost=0.0, turnover=0.0) -> DailyBacktestRecord:
+def _rec(d, nav_gross, nav_net, ret_gross=0.0, ret_net=0.0, cost=0.0, turnover=0.0):
     return DailyBacktestRecord(
         trade_date=d,
-        nav_gross=nav,
-        nav_net=nav - cost,
-        daily_return_gross=ret,
-        daily_return_net=ret,
+        nav_gross=nav_gross,
+        nav_net=nav_net,
+        daily_return_gross=ret_gross,
+        daily_return_net=ret_net,
         gross_exposure=1.0,
         net_exposure=1.0,
         cash_weight=0.0,
@@ -19,6 +24,21 @@ def _rec(d, nav, ret, cost=0.0, turnover=0.0) -> DailyBacktestRecord:
         traded_notional_ratio=turnover * 2,
         transaction_cost=cost,
         holdings_count=1,
+    )
+
+
+def _rebalance(d, cost=0.0, unavailable=0):
+    return RebalanceRecord(
+        signal_date=d,
+        execution_date=d,
+        target_count=1,
+        filled_target_count=1,
+        unavailable_target_count=unavailable,
+        pre_trade_gross_exposure=0.0,
+        post_trade_gross_exposure=1.0,
+        traded_notional_ratio=1.0,
+        turnover=0.5,
+        transaction_cost=cost,
     )
 
 
@@ -32,7 +52,8 @@ def test_max_drawdown() -> None:
     records = []
     prev = 1.0
     for i, nav in enumerate(navs):
-        records.append(_rec(start + timedelta(days=i), nav, nav / prev - 1))
+        ret = nav / prev - 1 if i > 0 else 0.0
+        records.append(_rec(start + timedelta(days=i), nav, nav, ret, ret))
         prev = nav
     m = compute_metrics(records, [], _config())
     assert m["max_drawdown_net"] == pytest.approx(0.99 / 1.1 - 1)
@@ -40,12 +61,13 @@ def test_max_drawdown() -> None:
 
 def test_cagr() -> None:
     start = date(2026, 1, 5)
-    # 252 天，nav 从 1.0 线性到 1.21
+    n_records = 253  # 252 return intervals
     records = []
-    for i in range(252):
-        nav = 1.0 + 0.21 * i / 251
-        ret = (1.0 + 0.21 * i / 251) / (1.0 + 0.21 * (i - 1) / 251) - 1 if i > 0 else 0.0
-        records.append(_rec(start + timedelta(days=i), nav, ret))
+    for i in range(n_records):
+        nav = 1.0 + 0.21 * i / 252
+        prev = 1.0 + 0.21 * (i - 1) / 252 if i > 0 else 1.0
+        ret = nav / prev - 1 if i > 0 else 0.0
+        records.append(_rec(start + timedelta(days=i), nav, nav, ret, ret))
     m = compute_metrics(records, [], _config())
     assert m["total_return_net"] == pytest.approx(0.21, abs=1e-6)
     assert m["cagr_net"] == pytest.approx(0.21, abs=1e-4)
@@ -56,27 +78,63 @@ def test_sharpe_positive() -> None:
     records = []
     nav = 1.0
     for i in range(252):
-        ret = 0.001 + 0.0002 * (1 if i % 2 == 0 else -1)
+        ret = 0.0 if i == 0 else 0.001 + 0.0002 * (1 if i % 2 == 0 else -1)
         nav *= 1 + ret
-        records.append(_rec(start + timedelta(days=i), nav, ret))
+        records.append(_rec(start + timedelta(days=i), nav, nav, ret, ret))
     m = compute_metrics(records, [], _config())
     assert m["sharpe_net"] > 1
 
 
 def test_vol_and_sharpe_zero() -> None:
     start = date(2026, 1, 5)
-    records = [_rec(start + timedelta(days=i), 1.0, 0.0) for i in range(100)]
+    records = [_rec(start + timedelta(days=i), 1.0, 1.0) for i in range(100)]
     m = compute_metrics(records, [], _config())
     assert m["annualized_volatility_net"] == pytest.approx(0.0, abs=1e-12)
+    assert m["sharpe_net"] != m["sharpe_net"]  # NaN when variance is 0
 
 
-def test_cost_metrics() -> None:
+def test_turnover_metrics() -> None:
     start = date(2026, 1, 5)
     records = [
-        _rec(start + timedelta(days=i), 1.0, 0.0, cost=0.001, turnover=0.5)
-        for i in range(10)
+        _rec(start + timedelta(days=i), 1.0, 1.0, turnover=0.5) for i in range(10)
+    ]
+    rebalances = [_rebalance(start + timedelta(days=i)) for i in range(5)]
+    m = compute_metrics(records, rebalances, _config())
+    assert m["total_turnover"] == pytest.approx(5.0)
+    assert m["average_daily_turnover"] == pytest.approx(5.0 / 9)
+    assert m["average_rebalance_turnover"] == pytest.approx(5.0 / 5)
+    assert m["annualized_turnover"] == pytest.approx(5.0 / (9 / 252))
+
+
+def test_cost_metrics_and_drag() -> None:
+    start = date(2026, 1, 5)
+    records = [
+        _rec(start + timedelta(days=0), 1.0, 1.0, cost=0.0),
+        _rec(start + timedelta(days=1), 1.0, 0.999, ret_net=-0.001, cost=0.001),
+        _rec(start + timedelta(days=2), 1.0, 0.997002, ret_net=-0.002, cost=0.001998),
+    ]
+    rebalances = [
+        _rebalance(start + timedelta(days=1), cost=0.001),
+        _rebalance(start + timedelta(days=2), cost=0.001998),
+    ]
+    m = compute_metrics(records, rebalances, _config())
+    assert m["total_transaction_cost"] == pytest.approx(0.002998)
+    assert m["cumulative_cost_paid_vs_initial_nav"] == pytest.approx(0.002998)
+    assert m["total_return_gross"] == pytest.approx(0.0)
+    assert m["total_return_net"] == pytest.approx(0.997002 - 1.0)
+    assert m["terminal_return_cost_drag"] == pytest.approx(0.002998)
+    assert m["cagr_cost_drag"] > 0
+
+
+def test_return_interval_uses_n_minus_1() -> None:
+    start = date(2026, 1, 5)
+    records = [
+        _rec(start + timedelta(days=0), 1.0, 1.0),
+        _rec(start + timedelta(days=1), 1.1, 1.1, 0.1, 0.1),
+        _rec(start + timedelta(days=2), 1.21, 1.21, 0.1, 0.1),
     ]
     m = compute_metrics(records, [], _config())
-    assert m["total_transaction_cost"] == pytest.approx(0.01)
-    assert m["cost_drag"] == pytest.approx(0.01)
-    assert m["average_turnover"] == pytest.approx(0.5)
+    # 3 records -> 2 return intervals for CAGR
+    assert m["cagr_gross"] == pytest.approx(1.21 ** (252 / 2) - 1)
+    # volatility over records[1:] = [0.1, 0.1] -> 0 (first record excluded)
+    assert m["annualized_volatility_gross"] == pytest.approx(0.0, abs=1e-12)

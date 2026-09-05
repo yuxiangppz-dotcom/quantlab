@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Run the v0 research backtest (idealized portfolio simulation).
+"""Run the v0.1 research backtest (idealized portfolio simulation).
 
 Fixed engineering configuration: momentum_20d (lower_is_better), weekly
-rebalance, V1 universe, 20% selection, 10 bps transaction cost.
+rebalance, V1 universe, 20% selection, 10 bps transaction cost. Gross and net
+NAV are tracked independently; transaction cost permanently reduces net NAV.
 """
 
 from __future__ import annotations
@@ -16,7 +17,13 @@ from pathlib import Path
 import pandas as pd
 
 from quantlab.alpha import calculate_momentum_alpha
-from quantlab.backtest import BacktestConfig, compute_metrics, run_backtest, weekly_signal_dates
+from quantlab.backtest import (
+    HELD_MISSING_BAR_REBALANCE_POLICY,
+    BacktestConfig,
+    compute_metrics,
+    run_backtest,
+    weekly_signal_dates,
+)
 from quantlab.data import ParquetStorage
 from quantlab.portfolio import RankPortfolioConfig, construct_rank_portfolio
 from quantlab.research import build_research_dataset, filter_v1_universe
@@ -44,8 +51,7 @@ def main() -> None:
     signal_dates = [
         d for d in weekly_signal_dates(open_dates) if PERIOD_START <= d <= PERIOD_END
     ]
-    last_exec_date = open_dates[open_dates.index(signal_dates[-1]) + 1]
-    data_end = last_exec_date + timedelta(days=7)
+    data_end = PERIOD_END + timedelta(days=7)
 
     t0 = time.perf_counter()
 
@@ -70,7 +76,7 @@ def main() -> None:
         targets[signal_date] = construct_rank_portfolio(cross, signal_date, portfolio_config)
 
     bt_config = BacktestConfig(initial_nav=1.0, transaction_cost_bps=10.0, annualization=252)
-    bt_open_dates = [d for d in open_dates if signal_dates[0] <= d <= last_exec_date]
+    bt_open_dates = [d for d in open_dates if PERIOD_START <= d <= PERIOD_END]
     records, rebalance_log = run_backtest(
         price_frame, bt_open_dates, targets, bt_config, execution_lag_sessions=1
     )
@@ -81,22 +87,31 @@ def main() -> None:
     out_dir = PROJECT_ROOT / "data" / "experiments" / "research_backtest_v0" / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    sim_start = bt_open_dates[0].isoformat() if bt_open_dates else PERIOD_START.isoformat()
+    sim_end = bt_open_dates[-1].isoformat() if bt_open_dates else PERIOD_END.isoformat()
+
     summary = {
         "analysis_type": "portfolio_engineering_backtest",
         "code_version": _git_sha(),
         "run_time": datetime.now().isoformat(),
         "run_id": run_id,
-        "data_start": PERIOD_START.isoformat(),
-        "data_end": PERIOD_END.isoformat(),
+        "period_start": PERIOD_START.isoformat(),
+        "period_end": PERIOD_END.isoformat(),
+        "simulation_start": sim_start,
+        "simulation_end": sim_end,
         "signal_definition": "return_20d",
         "score_direction": "lower_is_better",
         "selection_fraction": 0.20,
         "rebalance_schedule": "weekly_last_open_session",
         "execution_lag": "next_market_session_close",
         "execution_price_assumption": "next_session_close",
+        "held_missing_bar_rebalance_policy": HELD_MISSING_BAR_REBALANCE_POLICY,
         "transaction_cost_bps": 10.0,
         "performance_claim": False,
         "test_observed": True,
+        "accounting_baseline_note": (
+            "gross/net NAV separated; cost permanently reduces net NAV only"
+        ),
         "metrics": metrics,
         "total_runtime_seconds": runtime,
     }
@@ -107,21 +122,34 @@ def main() -> None:
         out_dir / "rebalance_log.csv", index=False
     )
 
-    print("=== research backtest v0 ===")
+    print("=== research backtest v0.1 (accounting corrected) ===")
     print(f"signal dates (weekly): {len(signal_dates)}")
+    print(f"simulation: {sim_start} .. {sim_end} "
+          f"({len(records)} records, {len(records) - 1} return intervals)")
     print(f"total_return gross={metrics['total_return_gross']:.4f} "
           f"net={metrics['total_return_net']:.4f}")
     print(f"cagr gross={metrics['cagr_gross']:.4f} net={metrics['cagr_net']:.4f}")
-    print(f"annualized_vol net={metrics['annualized_volatility_net']:.4f}")
+    print(f"annualized_vol gross={metrics['annualized_volatility_gross']:.4f} "
+          f"net={metrics['annualized_volatility_net']:.4f}")
     print(f"sharpe gross={metrics['sharpe_gross']:.4f} net={metrics['sharpe_net']:.4f}")
     print(f"max_drawdown gross={metrics['max_drawdown_gross']:.4f} "
           f"net={metrics['max_drawdown_net']:.4f}")
-    print(f"average_turnover={metrics['average_turnover']:.4f} "
+    print(f"total_turnover={metrics['total_turnover']:.4f} "
+          f"avg_daily={metrics['average_daily_turnover']:.4f} "
+          f"avg_rebalance={metrics['average_rebalance_turnover']:.4f} "
           f"annualized={metrics['annualized_turnover']:.4f}")
-    print(f"total_transaction_cost={metrics['total_transaction_cost']:.4f} "
-          f"cost_drag={metrics['cost_drag']:.4f}")
+    print(f"total_transaction_cost={metrics['total_transaction_cost']:.4f}")
+    print(f"cumulative_cost_paid_vs_initial_nav="
+          f"{metrics['cumulative_cost_paid_vs_initial_nav']:.4f}")
+    print(f"terminal_return_cost_drag={metrics['terminal_return_cost_drag']:.4f} "
+          f"cagr_cost_drag={metrics['cagr_cost_drag']:.4f}")
+    print(f"annualized_traded_notional={metrics['annualized_traded_notional']:.4f} "
+          f"implied_annual_cost_rate={metrics['implied_annual_cost_rate']:.4f}")
     print(f"average_holdings={metrics['average_holdings']:.2f}")
-    print(f"unavailable_execution_count={metrics['unavailable_execution_count']}")
+    print(f"average_gross_exposure={metrics['average_gross_exposure']:.4f} "
+          f"average_cash_weight={metrics['average_cash_weight']:.4f}")
+    print(f"rebalance_count={metrics['rebalance_count']} "
+          f"unavailable_execution_count={metrics['unavailable_execution_count']}")
     print(f"output dir: {out_dir}")
     print(f"runtime: {runtime:.1f}s")
 

@@ -9,6 +9,8 @@ import pandas as pd
 from quantlab.backtest.models import BacktestConfig, DailyBacktestRecord, RebalanceRecord
 from quantlab.portfolio.models import TargetPortfolio
 
+HELD_MISSING_BAR_REBALANCE_POLICY = "stale_mark_idealized"
+
 
 def weekly_signal_dates(open_trade_dates: list[date]) -> list[date]:
     """Return the last open market session of each calendar week."""
@@ -44,16 +46,27 @@ def run_backtest(
     config: BacktestConfig,
     execution_lag_sessions: int = 1,
 ) -> tuple[list[DailyBacktestRecord], list[RebalanceRecord]]:
-    """Simulate an idealized long-only portfolio.
+    """Simulate an idealized portfolio with independent gross and net NAV.
+
+    State is weight-based: a single set of portfolio weights (``current_weights``
+    plus ``cash_weight``) drifts naturally with asset returns, while two NAV
+    scalars (``gross_nav`` and ``net_nav``) evolve independently:
+
+    - market returns multiply both NAVs equally;
+    - transaction cost permanently reduces only ``net_nav``.
+
+    Historical cost therefore never re-enters gross NAV.
 
     Timing: a signal at session T rebalances at the close of the next open
     session (T+1); the new portfolio starts earning from T+1 close onward. PnL
     is computed from chronological adjusted closes, never from ``future_return``
     labels.
 
-    Suspended held positions are marked with return 0 (portfolio marking, not
-    feature fill); a new target with no execution-date bar is not opened and the
-    corresponding cash stays uninvested.
+    Held positions with a missing bar are marked with return 0 using their last
+    available price, which is preserved across suspension gaps
+    (``held_missing_bar_rebalance_policy = "stale_mark_idealized"``). A new
+    target with no execution-date bar is not opened and its allocation stays in
+    cash without incurring cost.
     """
     dates = sorted(set(open_dates))
     execution_map: dict[date, tuple[date, TargetPortfolio]] = {}
@@ -64,28 +77,45 @@ def run_backtest(
 
     price = price_frame.pivot(index="trade_date", columns="instrument_id", values="adj_close")
 
-    cash_value = config.initial_nav
-    positions_value: dict[str, float] = {}
-    prev_nav_gross = config.initial_nav
-    prev_nav_net = config.initial_nav
-    prev_prices: dict[str, float] = {}
+    gross_nav = config.initial_nav
+    net_nav = config.initial_nav
+    weights: dict[str, float] = {}
+    cash_weight = 1.0
+    last_price: dict[str, float] = {}
 
     records: list[DailyBacktestRecord] = []
     rebalance_log: list[RebalanceRecord] = []
+
+    prev_gross_nav = gross_nav
+    prev_net_nav = net_nav
 
     for trade_date in dates:
         current_prices: dict[str, float] = {}
         if trade_date in price.index:
             current_prices = price.loc[trade_date].dropna().to_dict()
 
-        # 1. mark-to-market: held positions earn prev->current close return
-        for instr in list(positions_value):
-            if instr in prev_prices and instr in current_prices:
-                r = current_prices[instr] / prev_prices[instr] - 1
-                positions_value[instr] *= 1 + r
-            # held but missing either price -> mark unchanged (return 0)
+        # 1. mark-to-market drift: held positions earn last_available -> current
+        asset_returns: dict[str, float] = {}
+        for instr in list(weights):
+            if instr in current_prices:
+                lp = last_price.get(instr)
+                r = current_prices[instr] / lp - 1 if lp is not None and lp > 0 else 0.0
+                asset_returns[instr] = r
+                last_price[instr] = current_prices[instr]
+            else:
+                asset_returns[instr] = 0.0
 
-        nav_gross = cash_value + sum(positions_value.values())
+        portfolio_return = sum(w * asset_returns.get(i, 0.0) for i, w in weights.items())
+
+        gross_nav *= 1 + portfolio_return
+        net_nav *= 1 + portfolio_return
+
+        denom = 1 + portfolio_return
+        if denom != 0.0:
+            weights = {
+                i: w * (1 + asset_returns.get(i, 0.0)) / denom for i, w in weights.items()
+            }
+            cash_weight = cash_weight / denom
 
         # 2. execution
         turnover = 0.0
@@ -93,75 +123,82 @@ def run_backtest(
         cost = 0.0
         if trade_date in execution_map:
             signal_date, target = execution_map[trade_date]
+            pre_trade_gross = sum(abs(w) for w in weights.values())
+
             target_weights = {p.instrument_id: p.target_weight for p in target.positions}
-            target_cash = target.cash_weight
-
-            pre_gross = sum(abs(v) for v in positions_value.values()) / nav_gross
-
-            all_instr = set(target_weights) | set(positions_value)
-            traded_value = sum(
-                abs(target_weights.get(i, 0.0) * nav_gross - positions_value.get(i, 0.0))
-                for i in all_instr
-            )
-            traded_ratio = traded_value / nav_gross if nav_gross > 0 else 0.0
-            turnover = 0.5 * traded_ratio
-            cost = traded_ratio * config.cost_rate * nav_gross
-
+            effective: dict[str, float] = {}
             unavailable = 0
-            new_positions: dict[str, float] = {}
+            moved_to_cash = 0.0
             for instr, w in target_weights.items():
                 if w == 0.0:
                     continue
-                if instr not in current_prices:
+                if instr not in current_prices and instr not in weights:
                     unavailable += 1
-                    target_cash += w
+                    moved_to_cash += w
                 else:
-                    new_positions[instr] = w * nav_gross
+                    effective[instr] = w
+                    if instr not in weights:
+                        last_price[instr] = current_prices[instr]
 
-            positions_value = new_positions
-            cash_value = nav_gross - cost - sum(positions_value.values())
+            effective_cash = target.cash_weight + moved_to_cash
 
-            rebalance_log.append(RebalanceRecord(
-                signal_date=signal_date,
-                execution_date=trade_date,
-                target_count=len(target.positions),
-                filled_target_count=len(new_positions),
-                unavailable_target_count=unavailable,
-                pre_trade_gross_exposure=pre_gross,
-                post_trade_gross_exposure=sum(abs(v) for v in new_positions.values()) / nav_gross
-                if nav_gross > 0
-                else 0.0,
-                traded_notional_ratio=traded_ratio,
+            all_risky = set(weights) | set(effective)
+            traded_ratio = sum(
+                abs(effective.get(i, 0.0) - weights.get(i, 0.0)) for i in all_risky
+            )
+            turnover = 0.5 * traded_ratio
+            cost_fraction = traded_ratio * config.cost_rate
+            cost = net_nav * cost_fraction
+            net_nav *= 1 - cost_fraction
+
+            weights = effective
+            cash_weight = effective_cash
+
+            for instr in list(last_price):
+                if instr not in weights:
+                    del last_price[instr]
+
+            post_trade_gross = sum(abs(w) for w in weights.values())
+
+            rebalance_log.append(
+                RebalanceRecord(
+                    signal_date=signal_date,
+                    execution_date=trade_date,
+                    target_count=len(target.positions),
+                    filled_target_count=len(effective),
+                    unavailable_target_count=unavailable,
+                    pre_trade_gross_exposure=pre_trade_gross,
+                    post_trade_gross_exposure=post_trade_gross,
+                    traded_notional_ratio=traded_ratio,
+                    turnover=turnover,
+                    transaction_cost=cost,
+                )
+            )
+
+        gross_exposure = sum(abs(w) for w in weights.values())
+        net_exposure = sum(weights.values())
+
+        daily_return_gross = gross_nav / prev_gross_nav - 1 if prev_gross_nav > 0 else 0.0
+        daily_return_net = net_nav / prev_net_nav - 1 if prev_net_nav > 0 else 0.0
+
+        records.append(
+            DailyBacktestRecord(
+                trade_date=trade_date,
+                nav_gross=gross_nav,
+                nav_net=net_nav,
+                daily_return_gross=daily_return_gross,
+                daily_return_net=daily_return_net,
+                gross_exposure=gross_exposure,
+                net_exposure=net_exposure,
+                cash_weight=cash_weight,
                 turnover=turnover,
+                traded_notional_ratio=traded_ratio,
                 transaction_cost=cost,
-            ))
+                holdings_count=len(weights),
+            )
+        )
 
-        nav_net = nav_gross - cost
-
-        gross_exp = sum(abs(v) for v in positions_value.values()) / nav_net if nav_net > 0 else 0.0
-        net_exp = sum(positions_value.values()) / nav_net if nav_net > 0 else 0.0
-        cash_weight = cash_value / nav_net if nav_net > 0 else 0.0
-
-        daily_ret_gross = nav_gross / prev_nav_gross - 1 if prev_nav_gross > 0 else 0.0
-        daily_ret_net = nav_net / prev_nav_net - 1 if prev_nav_net > 0 else 0.0
-
-        records.append(DailyBacktestRecord(
-            trade_date=trade_date,
-            nav_gross=nav_gross,
-            nav_net=nav_net,
-            daily_return_gross=daily_ret_gross,
-            daily_return_net=daily_ret_net,
-            gross_exposure=gross_exp,
-            net_exposure=net_exp,
-            cash_weight=cash_weight,
-            turnover=turnover,
-            traded_notional_ratio=traded_ratio,
-            transaction_cost=cost,
-            holdings_count=len(positions_value),
-        ))
-
-        prev_nav_gross = nav_gross
-        prev_nav_net = nav_net
-        prev_prices = current_prices
+        prev_gross_nav = gross_nav
+        prev_net_nav = net_nav
 
     return records, rebalance_log
