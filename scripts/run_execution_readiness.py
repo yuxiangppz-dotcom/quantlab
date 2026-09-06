@@ -28,7 +28,7 @@ from quantlab.execution import (  # noqa: E402
     default_a_share_rule_book,
 )
 from quantlab.execution.artifacts import (  # noqa: E402
-    EXECUTION_READINESS_SCHEMA_V0_2,
+    EXECUTION_READINESS_SCHEMA_V0_2_1,
     READINESS_CHECK_COLUMNS,
     execution_readiness_artifact_contract,
     verify_execution_readiness_artifact,
@@ -148,12 +148,12 @@ def main() -> int:
         default=PROJECT_ROOT
         / "data"
         / "experiments"
-        / EXECUTION_READINESS_SCHEMA_V0_2,
+        / EXECUTION_READINESS_SCHEMA_V0_2_1,
     )
     parser.add_argument("--run-id", default=None)
     args = parser.parse_args()
 
-    schema = EXECUTION_READINESS_SCHEMA_V0_2
+    schema = EXECUTION_READINESS_SCHEMA_V0_2_1
     if not _git_clean():
         raise RuntimeError("formal execution readiness requires a clean git workspace")
     head_before = _git_head()
@@ -268,8 +268,38 @@ def main() -> int:
             "canonical_data_written": False,
             "order_submission_attempted": False,
             "fill_claimed": False,
+            "external_broker_submission": False,
             "scenarios": order_path_smoke,
         })
+        atomic_write_json(
+            publisher.staging / "transaction_fault_injection.json",
+            order_path_smoke.get("fault_injection_matrix", {}),
+        )
+        atomic_write_json(
+            publisher.staging / "fee_reservation_reconciliation.json",
+            {
+                "reconciled": bool(
+                    order_path_smoke.get("multi_partial_fee_reconciliation")
+                    and order_path_smoke.get("full_fill_release")
+                    and order_path_smoke.get("cancel_release")
+                    and order_path_smoke.get("partial_fill_drawdown")
+                ),
+                "fee_cap_semantics": "cumulative_order_lifetime",
+                "typed_fee_quote_required": True,
+                "multi_partial_fee_reconciliation": order_path_smoke.get(
+                    "multi_partial_fee_reconciliation", False
+                ),
+                "full_fill_release": order_path_smoke.get(
+                    "full_fill_release", False
+                ),
+                "partial_fill_drawdown": order_path_smoke.get(
+                    "partial_fill_drawdown", False
+                ),
+                "cancel_release": order_path_smoke.get(
+                    "cancel_release", False
+                ),
+            },
+        )
         atomic_write_json(publisher.staging / "input_inventory.json", input_inventory)
         final = publisher.publish(summary)
         verified = verify_execution_readiness_artifact(

@@ -621,6 +621,104 @@ def _rule_coverage(
     return result
 
 
+def v021_composite_statuses(
+    smoke: dict[str, Any],
+    suspensions_raw_clean: bool,
+) -> dict[str, str]:
+    """Re-derive every v0.2.1 composite check status from smoke evidence.
+
+    This is the single source of truth shared by the report builder and
+    the artifact semantic validator: a composite READY requires ALL of
+    its disclosed sub-conditions, never a pre-computed total boolean.
+    """
+    def _flag(key: str) -> bool:
+        return smoke.get(key) is True
+
+    weekend = _flag("weekend_t_plus_one_exact")
+    holiday = _flag("holiday_t_plus_one_exact")
+    coverage = _flag("missing_next_session_fail_closed")
+    t_plus_one_complete = weekend and holiday and coverage
+    planning_ready = (
+        _flag("order_plan_deterministic")
+        and _flag("buy_limit_from_order_price_evidence")
+        and _flag("omitted_held_name_exits")
+        and _flag("non_conforming_delta_blocks")
+        and _flag("buys_funded_from_available_cash_only")
+    )
+    atomic_cash_ready = (
+        _flag("aggregate_cash_contention_blocked")
+        and _flag("partial_fill_drawdown")
+        and _flag("full_fill_release")
+        and _flag("cancel_release")
+        and _flag("multi_partial_fee_reconciliation")
+        and _flag("batch_rollback_preserves_state")
+    )
+    fault_matrix = smoke.get("fault_injection_matrix")
+    fault_required = (
+        "batch_first_submission_runtimeerror_restored",
+        "batch_middle_submission_keyboardinterrupt_restored",
+        "batch_last_submission_runtimeerror_restored",
+        "invariant_failure_after_mutation_restored",
+        "single_append_baseexception_restored",
+    )
+    fault_ok = (
+        isinstance(fault_matrix, dict)
+        and fault_matrix.get("all_passed") is True
+        and all(fault_matrix.get(key) is True for key in fault_required)
+    )
+    lineage_ready = (
+        _flag("plan_to_order_lineage")
+        and _flag("transactional_submission_committed")
+        and smoke.get("external_broker_submission") is False
+    )
+    return {
+        "calendar_derived_t_plus_one": (
+            "ready" if t_plus_one_complete else "blocked"
+        ),
+        "t_plus_one_sellability": (
+            "ready" if t_plus_one_complete else "partial"
+        ),
+        "account_aware_order_planning": (
+            "ready" if planning_ready else "blocked"
+        ),
+        "atomic_cash_reservation": (
+            "ready" if atomic_cash_ready else "blocked"
+        ),
+        "transactional_submission_atomicity": (
+            "ready"
+            if fault_ok
+            and _flag("batch_rollback_preserves_state")
+            and _flag("transactional_submission_committed")
+            else "blocked"
+        ),
+        "fee_budget_limit_protection": (
+            "ready"
+            if _flag("multi_partial_fee_reconciliation")
+            and _flag("full_fill_release")
+            else "blocked"
+        ),
+        "plan_to_order_lineage": (
+            "ready" if lineage_ready else "blocked"
+        ),
+        "suspension_partition_coverage": "partial",
+        "stale_assessment_rejection": (
+            "ready" if _flag("stale_assessment_rejected") else "blocked"
+        ),
+        "day_trade_date_binding": (
+            "ready" if _flag("wrong_trade_date_rejected") else "blocked"
+        ),
+        "atomic_share_reservation": (
+            "ready" if _flag("share_contention_blocked") else "blocked"
+        ),
+        "production_submission_path_reachable": (
+            "ready"
+            if _flag("production_submission_path_reachable")
+            and _flag("gating_dimensions_fail_closed")
+            else "blocked"
+        ),
+    }
+
+
 def _apply_v0_2_1_semantics(
     checks: tuple[ReadinessCheck, ...],
     smoke: dict[str, Any],
