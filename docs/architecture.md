@@ -35,6 +35,11 @@ Higher layers may read lower layers, never the reverse. In particular:
 
 Research never writes back to canonical storage.
 
+Execution also never treats research-adjusted prices as executable prices.
+Target handoff may use a raw, unadjusted observation known by the signal cutoff
+to plan integer share quantities. That observation is not an order price, a
+fill, or evidence that the market was accessible.
+
 ## Data Flow
 
 ```
@@ -44,6 +49,8 @@ Provider (Tushare)
    → alpha (score)
    → portfolio (target weights)
    → backtest (idealized PnL + metrics)
+   → execution handoff (target weights → integer share targets)
+   → constraint decisions / append-only ledger
 ```
 
 The dataset builder pads the internal read range by `max(return_horizons)`

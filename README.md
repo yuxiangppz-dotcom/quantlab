@@ -59,7 +59,10 @@ trading step reproducible and free of look-ahead bias.
 - [x] Index attribution + benchmark coverage audit (price-index close basis)
 - [x] Performance baseline v0.1.1 correctness closure (relative-wealth active metrics, formal clean-git reproducibility, full run-spec symmetry audit)
 - [ ] Systematic termination announcement coverage (BLOCKED: current Tushare account lacks `anns_d`)
-- [ ] A-share execution constraints
+- [x] Execution framework v0.1 (typed orders, append-only ledger, PIT rule
+  decisions, fail-closed target-to-share handoff, formal readiness audit)
+- [ ] Historical execution replay readiness (blocked by PIT identity/rule gaps,
+  price-limit/auction/fill evidence, exact fees, and corporate actions)
 
 **Live**
 
@@ -170,6 +173,7 @@ src/quantlab/
     alpha/       # alpha factors (currently momentum)
     portfolio/   # target portfolio model and rank-based constructor
     backtest/    # idealized research backtest engine + metrics
+    execution/   # target handoff, order/ledger contracts, constraints, readiness
 scripts/         # data update + experiment runners
 config/          # security_code_changes.csv (version-controlled reference)
 docs/            # research protocol + architecture
@@ -218,6 +222,20 @@ uv run python scripts/update_market_data.py \
 `--daily-all` / `--adj-factor` / `--daily-basic` are resumable: existing files
 are skipped unless `--force` is passed. `--securities` and `--calendar` upsert
 (merge) rather than replace.
+
+## Execution Readiness
+
+The execution framework is intentionally separate from a claim that historical,
+paper, or live trading is ready. From a committed, clean workspace, run:
+
+```bash
+uv run python scripts/run_execution_readiness.py
+```
+
+It publishes only evidence and readiness gates under
+`data/experiments/execution_readiness_v0_1/<run_id>/`; it computes no strategy
+performance, invents no fills, calls no provider, and writes no canonical data.
+See [docs/execution_readiness.md](docs/execution_readiness.md).
 
 The `data/` directory is git-ignored; canonical data is never committed.
 

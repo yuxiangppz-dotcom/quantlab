@@ -10,6 +10,7 @@ from quantlab.execution import (
     ConstraintDimension,
     ConstraintStatus,
     ExecutionValidationError,
+    InstructionSourceMetadata,
     OrderIntent,
     OrderType,
     PositionLot,
@@ -21,6 +22,22 @@ from quantlab.execution import (
 )
 
 
+def _source_metadata(target_fingerprint: str) -> InstructionSourceMetadata:
+    return InstructionSourceMetadata(
+        target_as_of=date(2026, 1, 9),
+        target_fingerprint=target_fingerprint,
+        planning_input_fingerprint="c" * 64,
+        planner_version="planner-v1",
+        planning_nav_fen=1_000_000,
+        minimum_cash_fen=0,
+        planning_price_basis=PriceBasis.RAW,
+        planning_price_policy="raw-close-known-by-cutoff",
+        share_rounding_policy="buy-lot-floor",
+        cash_policy="target-cash",
+        planning_price_source_ids=("raw-daily-bar",),
+    )
+
+
 def test_rebalance_instruction_is_share_denominated_and_pit_ordered() -> None:
     cutoff = datetime(2026, 1, 9, 7, 0, tzinfo=UTC)
     instruction = RebalanceInstruction(
@@ -30,6 +47,7 @@ def test_rebalance_instruction_is_share_denominated_and_pit_ordered() -> None:
         execution_date=date(2026, 1, 12),
         targets=(PositionTarget("000001.SZ", 200),),
         source_fingerprint="a" * 64,
+        source_metadata=_source_metadata("a" * 64),
     )
     assert exchange_date(cutoff) == date(2026, 1, 9)
     assert instruction.targets[0].target_shares == 200
@@ -42,6 +60,20 @@ def test_rebalance_instruction_is_share_denominated_and_pit_ordered() -> None:
             execution_date=date(2026, 1, 8),
             targets=(),
             source_fingerprint="b" * 64,
+            source_metadata=_source_metadata("b" * 64),
+        )
+
+
+def test_rebalance_instruction_binds_source_fingerprint_to_metadata() -> None:
+    with pytest.raises(ExecutionValidationError, match="must match"):
+        RebalanceInstruction(
+            instruction_id="rebalance-3",
+            portfolio_id="strategy-v1",
+            signal_as_of=datetime(2026, 1, 9, 15, 1, tzinfo=EXCHANGE_TIMEZONE),
+            execution_date=date(2026, 1, 12),
+            targets=(),
+            source_fingerprint="a" * 64,
+            source_metadata=_source_metadata("b" * 64),
         )
 
 

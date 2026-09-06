@@ -126,6 +126,56 @@ class PositionTarget:
 
 
 @dataclass(frozen=True)
+class InstructionSourceMetadata:
+    """Immutable provenance for a portfolio-to-shares handoff."""
+
+    target_as_of: date
+    target_fingerprint: str
+    planning_input_fingerprint: str
+    planner_version: str
+    planning_nav_fen: int
+    minimum_cash_fen: int
+    planning_price_basis: PriceBasis
+    planning_price_policy: str
+    share_rounding_policy: str
+    cash_policy: str
+    planning_price_source_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if len(self.target_fingerprint) != 64 or any(
+            char not in "0123456789abcdef" for char in self.target_fingerprint
+        ):
+            raise ExecutionValidationError("target_fingerprint must be SHA-256")
+        if len(self.planning_input_fingerprint) != 64 or any(
+            char not in "0123456789abcdef"
+            for char in self.planning_input_fingerprint
+        ):
+            raise ExecutionValidationError(
+                "planning_input_fingerprint must be SHA-256"
+            )
+        require_identifier(self.planner_version, "planner_version")
+        require_int(self.planning_nav_fen, "planning_nav_fen", minimum=1)
+        require_int(self.minimum_cash_fen, "minimum_cash_fen")
+        if self.minimum_cash_fen > self.planning_nav_fen:
+            raise ExecutionValidationError("minimum_cash_fen exceeds planning NAV")
+        if self.planning_price_basis is not PriceBasis.RAW:
+            raise ExecutionValidationError(
+                "portfolio handoff requires raw unadjusted planning prices"
+            )
+        require_identifier(self.planning_price_policy, "planning_price_policy")
+        require_identifier(self.share_rounding_policy, "share_rounding_policy")
+        require_identifier(self.cash_policy, "cash_policy")
+        if tuple(sorted(set(self.planning_price_source_ids))) != (
+            self.planning_price_source_ids
+        ):
+            raise ExecutionValidationError(
+                "planning_price_source_ids must be unique and sorted"
+            )
+        for source_id in self.planning_price_source_ids:
+            require_identifier(source_id, "planning_price_source_id")
+
+
+@dataclass(frozen=True)
 class RebalanceInstruction:
     """Share-denominated target handed from portfolio construction.
 
@@ -140,12 +190,21 @@ class RebalanceInstruction:
     execution_date: date
     targets: tuple[PositionTarget, ...]
     source_fingerprint: str
+    source_metadata: InstructionSourceMetadata
 
     def __post_init__(self) -> None:
         require_identifier(self.instruction_id, "instruction_id")
         require_identifier(self.portfolio_id, "portfolio_id")
         require_identifier(self.source_fingerprint, "source_fingerprint")
+        if self.source_fingerprint != self.source_metadata.target_fingerprint:
+            raise ExecutionValidationError(
+                "source_fingerprint must match source metadata target fingerprint"
+            )
         require_aware(self.signal_as_of, "signal_as_of")
+        if self.source_metadata.target_as_of != exchange_date(self.signal_as_of):
+            raise ExecutionValidationError(
+                "source metadata target_as_of must match the signal cutoff date"
+            )
         if self.execution_date < exchange_date(self.signal_as_of):
             raise ExecutionValidationError(
                 "execution_date precedes the Shanghai-local signal cutoff"

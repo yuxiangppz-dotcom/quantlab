@@ -1,0 +1,187 @@
+import csv
+import json
+from datetime import date
+
+import pytest
+
+from quantlab.artifacts import ArtifactPublisher
+from quantlab.execution.artifacts import (
+    EXECUTION_READINESS_SCHEMA,
+    READINESS_CHECK_COLUMNS,
+    execution_readiness_artifact_contract,
+    verify_execution_readiness_artifact,
+)
+from quantlab.execution.readiness import (
+    ReadinessStatus,
+    build_execution_readiness_report,
+)
+
+HEAD = "a" * 40
+RUN_ID = "20260906T200000"
+
+
+def _evidence():
+    family = {
+        "expected_files": 1212,
+        "existing_files": 1212,
+        "missing_files": 0,
+        "missing_examples": [],
+        "schema_invalid_files": 0,
+        "schema_invalid_examples": [],
+        "total_bytes": 100,
+        "combined_content_sha256": "b" * 64,
+        "schema_samples": [],
+        "all_schemas_valid": True,
+    }
+    return {
+        "calendar": {
+            "period_calendar_days": 1827,
+            "sse_calendar_days": 1827,
+            "szse_calendar_days": 1827,
+            "all_calendar_days_present": True,
+            "sse_open_sessions": 1212,
+            "szse_open_sessions": 1212,
+            "open_sessions_aligned": True,
+            "duplicate_exchange_date_rows": 0,
+            "open_session_dates": ["2020-01-02", "2024-12-31"],
+        },
+        "security_master": {
+            "rows": 5000,
+            "required_fields_present": True,
+            "board_history_effective_dated": False,
+        },
+        "code_lineage": {
+            "records": 3,
+            "declared_complete_registry": False,
+        },
+        "daily": dict(family),
+        "stock_st": dict(family),
+        "suspensions": dict(family),
+    }
+
+
+def test_readiness_keeps_framework_separate_from_execution_gates() -> None:
+    report, inventory = build_execution_readiness_report(
+        _evidence(),
+        period_start=date(2020, 1, 1),
+        period_end=date(2024, 12, 31),
+        handoff_smoke_valid=True,
+    )
+    assert report.framework_valid is True
+    assert report.historical_execution_ready is False
+    assert report.paper_execution_ready is False
+    assert report.live_execution_ready is False
+    assert set(report.status_counts) == {status.value for status in ReadinessStatus}
+    assert inventory["SZSE:MAIN"]["known_gap"] == "2023-04-10/2024-12-31"
+
+
+def test_missing_daily_partitions_block_historical_but_not_framework() -> None:
+    evidence = _evidence()
+    evidence["daily"]["missing_files"] = 1
+    report, _ = build_execution_readiness_report(
+        evidence,
+        period_start=date(2020, 1, 1),
+        period_end=date(2024, 12, 31),
+        handoff_smoke_valid=True,
+    )
+    check = next(item for item in report.checks if item.check_id == "raw_daily_bar_fields")
+    assert check.status is ReadinessStatus.BLOCKED
+    assert report.framework_valid is True
+    assert report.historical_execution_ready is False
+
+
+def _publish(tmp_path, *, performance_field=False, wrong_gate=False):
+    contract = execution_readiness_artifact_contract()
+    publisher = ArtifactPublisher(
+        tmp_path, RUN_ID, expected_registry=contract, head=HEAD,
+        schema=EXECUTION_READINESS_SCHEMA,
+    )
+    summary = {
+        "analysis_type": "execution_readiness",
+        "experiment_schema": EXECUTION_READINESS_SCHEMA,
+        "run_id": RUN_ID,
+        "code_version": HEAD,
+        "check_count": 17,
+        "status_counts": {
+            "ready": 3,
+            "partial": 1,
+            "blocked": 0,
+            "not_modeled": 13,
+            "not_applicable": 0,
+        },
+        "gates": {
+            "framework_valid": True,
+            "historical_execution_ready": False,
+            "paper_execution_ready": False,
+            "live_execution_ready": False,
+        },
+        "claims": {
+            "performance_claim": False,
+            "fill_claim": False,
+            "order_submission": False,
+            "canonical_data_written": False,
+            "external_provider_called": False,
+        },
+    }
+    if performance_field:
+        summary["sharpe"] = 1.0
+    if wrong_gate:
+        summary["gates"]["historical_execution_ready"] = True
+    (publisher.staging / "summary.json").write_text(json.dumps(summary))
+    with (publisher.staging / "readiness_checks.csv").open("w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=READINESS_CHECK_COLUMNS)
+        writer.writeheader()
+        framework_ids = {
+            "artifact_protocol",
+            "target_portfolio_handoff",
+            "order_and_ledger_contracts",
+            "t_plus_one_sellability",
+        }
+        from quantlab.execution.readiness import READINESS_CHECK_IDS
+
+        for check_id in READINESS_CHECK_IDS:
+            status = "ready" if check_id in framework_ids else "not_modeled"
+            if check_id == "t_plus_one_sellability":
+                status = "partial"
+            critical_for = "framework" if check_id in framework_ids else "historical"
+            if check_id == "paper_broker_gateway":
+                critical_for = "paper"
+            elif check_id == "live_operational_controls":
+                critical_for = "live"
+            writer.writerow({
+                "check_id": check_id, "category": "framework", "status": status,
+                "finding": "ok", "evidence_json": "{}", "limitation": "none",
+                "critical_for": critical_for,
+            })
+    (publisher.staging / "rule_inventory.json").write_text("{}")
+    (publisher.staging / "handoff_smoke.json").write_text(json.dumps({
+        "is_order_submission": False, "is_fill_evidence": False,
+    }))
+    (publisher.staging / "input_inventory.json").write_text(json.dumps({
+        "stable_during_audit": True,
+    }))
+    return publisher.publish(summary)
+
+
+def test_execution_readiness_artifact_verifies_domain_semantics(tmp_path) -> None:
+    final = _publish(tmp_path)
+    result = verify_execution_readiness_artifact(
+        final, expected_run_id=RUN_ID, expected_head=HEAD
+    )
+    assert result["complete"] is True
+
+
+def test_execution_readiness_artifact_rejects_performance_fields(tmp_path) -> None:
+    final = _publish(tmp_path, performance_field=True)
+    with pytest.raises(RuntimeError, match="performance fields are prohibited"):
+        verify_execution_readiness_artifact(
+            final, expected_run_id=RUN_ID, expected_head=HEAD
+        )
+
+
+def test_execution_readiness_artifact_rederives_gates(tmp_path) -> None:
+    final = _publish(tmp_path, wrong_gate=True)
+    with pytest.raises(RuntimeError, match="gates do not match"):
+        verify_execution_readiness_artifact(
+            final, expected_run_id=RUN_ID, expected_head=HEAD
+        )
