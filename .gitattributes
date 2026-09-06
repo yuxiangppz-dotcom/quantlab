@@ -1,0 +1,26 @@
+# QuantLab enforces LF endings for all text sources so that commit-range
+# `git diff --check` and hash-based artifact manifests stay byte-stable
+# across Windows checkouts.
+* text=auto eol=lf
+
+*.py   text eol=lf
+*.md   text eol=lf
+*.json text eol=lf
+*.csv  text eol=lf
+*.toml text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.sh   text eol=lf
+*.txt  text eol=lf
+*.cfg  text eol=lf
+*.ini  text eol=lf
+
+# Windows-only metadata must never be normalized
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary artifacts
+*.parquet binary
+*.png binary
+*.jpg binary
+*.ico binary

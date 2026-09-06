@@ -1,6 +1,35 @@
 # Execution Framework and Readiness
 
-## v0.2.1 — Transaction, Evidence, and Lineage Closure (current)
+## Freeze status of prior artifacts (v0.2.1 review record)
+
+The v0.2.1 formal artifact (`20260907T001202`) is **verifiable but not
+frozen**. Its generic artifact integrity (hashes, marker, inventory,
+fail-closed marker protocol) holds, but the v0.2.1 review identified
+unclosed correctness gaps that the generic layer cannot see:
+
+- the execution-state fingerprint accepted caller-supplied values, so the
+  TOCTOU binding was advisory rather than canonical;
+- constraint assessments and submissions did not persist an immutable
+  assessment authority (event id, decision fingerprint, fee-schedule
+  binding), and submissions could present a fresh fingerprint instead of
+  the stored authority;
+- batch submissions validated members against a moving state, so the
+  first member's own reservation could invalidate the second; the final
+  commit of internal indexes sat partially outside the exception
+  boundary;
+- the public `append(OrderSubmitted(..., worst_case_fee_fen=int))` path
+  allowed bypassing the typed fee quote;
+- a DAY request could be materialized on a Shanghai-local date different
+  from its intended trade date;
+- the semantic validator did not pin exact canonical key sets on the
+  smoke/fault/fee evidence, did not re-aggregate totals from children,
+  and did not cross-bind readiness evidence field-by-field.
+
+v0.2.2 (`execution_readiness_v0_2_2`) closes these; v0.2.1 stays as
+verifiable historical evidence under its original bytes and must not be
+cited as a frozen readiness baseline.
+
+## v0.2.1 — Transaction, Evidence, and Lineage Closure (superseded)
 
 v0.2.1 fixes the correctness gaps found in v0.2 (marked below as a
 superseded candidate). Its formal artifacts publish under
