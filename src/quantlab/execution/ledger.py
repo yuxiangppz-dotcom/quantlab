@@ -37,7 +37,12 @@ from quantlab.execution.models import (
     require_identifier,
     require_int,
 )
-from quantlab.execution.planning import ExecutionStateView, FeeCapQuote
+from quantlab.execution.planning import (
+    AvailabilityReservation,
+    AvailabilityState,
+    ExecutionStateView,
+    FeeCapQuote,
+)
 from quantlab.execution.rules import TradingCalendar
 
 
@@ -73,7 +78,7 @@ class ConstraintsAssessed:
     order_id: str
     decisions: tuple[ConstraintDecision, ...]
     account_fingerprint: str | None = None
-    execution_state_fingerprint: str | None = None
+    availability_fingerprint: str | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.event_id, "event_id")
@@ -83,10 +88,10 @@ class ConstraintsAssessed:
             require_identifier(
                 self.account_fingerprint, "account_fingerprint"
             )
-        if self.execution_state_fingerprint is not None:
+        if self.availability_fingerprint is not None:
             require_identifier(
-                self.execution_state_fingerprint,
-                "execution_state_fingerprint",
+                self.availability_fingerprint,
+                "availability_fingerprint",
             )
         dimensions = [decision.dimension for decision in self.decisions]
         if len(dimensions) != len(set(dimensions)):
@@ -117,17 +122,17 @@ class OrderSubmitted:
     occurred_at: datetime
     request: OrderRequest
     worst_case_fee_fen: int = 0
-    execution_state_fingerprint: str | None = None
+    availability_fingerprint: str | None = None
     fee_quote_fingerprint: str | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.event_id, "event_id")
         require_aware(self.occurred_at, "occurred_at")
         require_int(self.worst_case_fee_fen, "worst_case_fee_fen")
-        if self.execution_state_fingerprint is not None:
+        if self.availability_fingerprint is not None:
             require_identifier(
-                self.execution_state_fingerprint,
-                "execution_state_fingerprint",
+                self.availability_fingerprint,
+                "availability_fingerprint",
             )
         if self.fee_quote_fingerprint is not None:
             if len(self.fee_quote_fingerprint) != 64 or any(
@@ -468,45 +473,51 @@ class ExecutionLedger:
             available_sellable_shares=available_shares,
         )
 
-    def execution_state_fingerprint(self) -> str:
-        """Unique fingerprint of the FULL execution state.
+    def availability_state(self, as_of: datetime | None = None) -> AvailabilityState:
+        """Canonical resource state, derived from the ledger itself.
 
-        Binds account id, settled cash, position lots, every active cash/
-        share reservation, and the live order states that can still change
-        availability (submitted / partially filled, with their remaining
-        quantities). Constraint assessments and submissions bind this
-        fingerprint; any reservation, fill, cancel, or expiry moves it and
-        stale bindings are rejected before they can mutate the ledger.
+        Binds account id, the Shanghai-local as_of instant and the trade
+        date it maps to, settled cash, every position lot, every active
+        reservation WITH its full economic terms (limit price, fee cap,
+        fee already used, reserved cash, reserved shares), and the
+        derived available cash / per-instrument available sellable
+        shares. Lifecycle-only transitions (INTENDED -> VALIDATED) do not
+        appear here, so they can never invalidate a batch's own
+        authorization; every resource mutation does.
         """
-        reservations = [
-            {
-                "order_id": reservation.order_id,
-                "instrument_id": reservation.instrument_id,
-                "reserved_cash_fen": reservation.reserved_cash_fen,
-                "reserved_shares": reservation.reserved_shares,
-            }
+        moment = as_of if as_of is not None else self._initial.as_of
+        reservations = tuple(
+            AvailabilityReservation(
+                order_id=reservation.order_id,
+                instrument_id=reservation.instrument_id,
+                limit_price_fen=reservation.limit_price_fen,
+                fee_cap_fen=reservation.fee_cap_fen,
+                fee_used_fen=reservation.fee_used_fen,
+                reserved_cash_fen=reservation.reserved_cash_fen,
+                reserved_shares=reservation.reserved_shares,
+            )
             for reservation in sorted(
                 self._reservations.values(), key=lambda item: item.order_id
             )
-        ]
-        open_orders = [
-            {
-                "order_id": order_id,
-                "status": state.status.value,
-                "remaining_quantity": state.remaining_quantity,
-            }
-            for order_id, state in sorted(self._orders.items())
-            if state.status in _OPEN_ORDER_STATUSES
-        ]
-        payload = {
-            "account_id": self._initial.account_id,
-            "settled_cash_fen": self._cash_fen,
-            "lots": _fingerprint_lots(self._lots),
-            "reservations": reservations,
-            "open_orders": open_orders,
-        }
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        return "sha256:" + hashlib.sha256(encoded).hexdigest()
+        )
+        available: dict[str, int] = {}
+        for instrument_id in {lot.instrument_id for lot in self._lots}:
+            availability = self.availability(instrument_id, exchange_date(moment))
+            available[instrument_id] = availability.available_sellable_shares
+        return AvailabilityState(
+            account_id=self._initial.account_id,
+            as_of=moment,
+            trade_date=exchange_date(moment),
+            settled_cash_fen=self._cash_fen,
+            lots=tuple(self._lots),
+            reservations=reservations,
+            available_cash_fen=self._cash_fen - self.reserved_cash_fen(),
+            available_sellable_shares=available,
+        )
+
+    def availability_fingerprint(self, as_of: datetime | None = None) -> str:
+        """Canonical availability fingerprint (derived, never declared)."""
+        return self.availability_state(as_of).fingerprint
 
     def snapshot(self, as_of: datetime) -> AccountSnapshot:
         require_aware(as_of, "as_of")
@@ -524,20 +535,13 @@ class ExecutionLedger:
 
         Buys must be funded from available (unreserved) cash and sells from
         available (unreserved) sellable shares; the view carries the
-        execution-state fingerprint so plans and orders bind the exact
-        state they were derived from.
+        canonical availability state, whose fingerprint is derived from its
+        own payload so plans and orders bind the exact state they were
+        derived from.
         """
         settled = self.snapshot(as_of)
-        available: dict[str, int] = {}
-        for instrument_id in {lot.instrument_id for lot in self._lots}:
-            availability = self.availability(instrument_id, exchange_date(as_of))
-            available[instrument_id] = availability.available_sellable_shares
-        return ExecutionStateView(
-            account=settled,
-            available_cash_fen=self._cash_fen - self.reserved_cash_fen(),
-            available_sellable_shares=available,
-            fingerprint=self.execution_state_fingerprint(),
-        )
+        state = self.availability_state(as_of)
+        return ExecutionStateView(account=settled, state=state)
 
     def _begin(self) -> _LedgerSnapshot:
         return _LedgerSnapshot(
@@ -689,7 +693,7 @@ class ExecutionLedger:
         staged: list[OrderSubmitted] = []
         staged_cash = 0
         staged_shares: dict[str, int] = {}
-        pre_batch_state = self.execution_state_fingerprint()
+        pre_batch_state = self.availability_fingerprint()
         batch_snapshot = self._begin()
         try:
             for event, fee_quote in submissions:
@@ -700,12 +704,12 @@ class ExecutionLedger:
                         "schedule evidence; a bare integer is not accepted"
                     )
                 if (
-                    event.execution_state_fingerprint is not None
-                    and event.execution_state_fingerprint != pre_batch_state
+                    event.availability_fingerprint is not None
+                    and event.availability_fingerprint != pre_batch_state
                 ):
                     raise LedgerTransitionError(
                         "batch submission rejected: assessment execution state "
-                        f"{event.execution_state_fingerprint} is not the current "
+                        f"{event.availability_fingerprint} is not the current "
                         f"pre-batch state {pre_batch_state}"
                     )
                 state = self.order(event.request.order_id)
@@ -800,13 +804,13 @@ class ExecutionLedger:
                     f"fingerprint drifted (assessment bound "
                     f"{event.account_fingerprint}, current {current})"
                 )
-        if event.execution_state_fingerprint is not None:
-            current_state = self.execution_state_fingerprint()
-            if current_state != event.execution_state_fingerprint:
+        if event.availability_fingerprint is not None:
+            current_state = self.availability_fingerprint()
+            if current_state != event.availability_fingerprint:
                 raise LedgerTransitionError(
-                    "stale constraint assessment rejected: execution state "
-                    f"fingerprint drifted (assessment bound "
-                    f"{event.execution_state_fingerprint}, current "
+                    "stale constraint assessment rejected: availability "
+                    f"state drifted (assessment bound "
+                    f"{event.availability_fingerprint}, current "
                     f"{current_state})"
                 )
         next_status = derive_order_status(state.intent.side, event.decisions)
@@ -819,13 +823,13 @@ class ExecutionLedger:
             raise LedgerTransitionError(
                 f"cannot submit order {request.order_id} from {state.status.value}"
             )
-        if event.execution_state_fingerprint is not None:
-            current_state = self.execution_state_fingerprint()
-            if current_state != event.execution_state_fingerprint:
+        if event.availability_fingerprint is not None:
+            current_state = self.availability_fingerprint()
+            if current_state != event.availability_fingerprint:
                 raise LedgerTransitionError(
-                    "stale submission rejected: execution state drifted "
+                    "stale submission rejected: availability state drifted "
                     f"since assessment (submission bound "
-                    f"{event.execution_state_fingerprint}, current "
+                    f"{event.availability_fingerprint}, current "
                     f"{current_state})"
                 )
         if request.request_id in self._request_ids:

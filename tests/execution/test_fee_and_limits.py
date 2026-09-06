@@ -148,7 +148,7 @@ def _prepare(ledger: ExecutionLedger, order_id: str, side: Side, quantity: int):
             _instant(FRI, 3),
             order_id,
             dimensions,
-            execution_state_fingerprint=ledger.execution_state_fingerprint(),
+            availability_fingerprint=ledger.availability_fingerprint(),
         )
     )
 

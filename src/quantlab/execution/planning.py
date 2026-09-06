@@ -29,6 +29,7 @@ from enum import StrEnum
 from quantlab.execution.models import (
     AccountSnapshot,
     ExecutionValidationError,
+    PositionLot,
     PriceBasis,
     RebalanceInstruction,
     Side,
@@ -40,27 +41,60 @@ from quantlab.execution.models import (
 )
 from quantlab.execution.rules import PITIdentityBook, PITRuleBook, TradingCalendar
 
-PLANNER_VERSION = "account_aware_order_plan_v0_2_1"
+PLANNER_VERSION = "account_aware_order_plan_v0_2_2"
 
 
 @dataclass(frozen=True)
-class ExecutionStateView:
-    """Reservation-aware account view used for planning and lineage.
+class AvailabilityReservation:
+    """Canonical per-order reservation record for the availability state."""
 
-    ``account`` is the settled snapshot; ``available_cash_fen`` and
-    ``available_sellable_shares`` are what remains AFTER every active
-    cash/share reservation. ``fingerprint`` is the unique execution-state
-    fingerprint of that full state (settled plus reservations plus live
-    order states); plans bind it so drift invalidates reuse.
-    """
-
-    account: AccountSnapshot
-    available_cash_fen: int
-    available_sellable_shares: Mapping[str, int]
-    fingerprint: str
+    order_id: str
+    instrument_id: str
+    limit_price_fen: int
+    fee_cap_fen: int
+    fee_used_fen: int
+    reserved_cash_fen: int
+    reserved_shares: int
 
     def __post_init__(self) -> None:
-        require_identifier(self.fingerprint, "execution_state_fingerprint")
+        require_identifier(self.order_id, "order_id")
+        require_identifier(self.instrument_id, "instrument_id")
+        require_int(self.limit_price_fen, "limit_price_fen", minimum=0)
+        require_int(self.fee_cap_fen, "fee_cap_fen", minimum=0)
+        require_int(self.fee_used_fen, "fee_used_fen", minimum=0)
+        require_int(self.reserved_cash_fen, "reserved_cash_fen", minimum=0)
+        require_int(self.reserved_shares, "reserved_shares", minimum=0)
+        if self.fee_used_fen > self.fee_cap_fen:
+            raise ExecutionValidationError(
+                "fee_used_fen cannot exceed fee_cap_fen"
+            )
+
+
+@dataclass(frozen=True)
+class AvailabilityState:
+    """Canonical resource state for TOCTOU binding.
+
+    This is the ONLY canonical carrier of "what can still be spent or
+    sold". Its fingerprint is derived from its own payload bytes - never
+    accepted from a caller - so any fabricated view is rejected by the
+    ledger's recomputation at accept time. Pure lifecycle transitions
+    (INTENDED -> VALIDATED) do not touch this state; reservations, fills,
+    cancels, expiries, and settled-cash/lot changes do.
+    """
+
+    account_id: str
+    as_of: datetime
+    trade_date: date
+    settled_cash_fen: int
+    lots: tuple[PositionLot, ...]
+    reservations: tuple[AvailabilityReservation, ...]
+    available_cash_fen: int
+    available_sellable_shares: Mapping[str, int]
+
+    def __post_init__(self) -> None:
+        require_identifier(self.account_id, "account_id")
+        require_aware(self.as_of, "as_of")
+        require_int(self.settled_cash_fen, "settled_cash_fen")
         if self.available_cash_fen < 0:
             raise ExecutionValidationError(
                 "available_cash_fen must be non-negative"
@@ -69,6 +103,102 @@ class ExecutionStateView:
             raise ExecutionValidationError(
                 "available_sellable_shares must be non-negative"
             )
+
+    def _payload(self) -> dict:
+        return {
+            "account_id": self.account_id,
+            "as_of": self.as_of.isoformat(),
+            "trade_date": self.trade_date.isoformat(),
+            "settled_cash_fen": self.settled_cash_fen,
+            "lots": _fingerprint_lots_payload(self.lots),
+            "reservations": [
+                {
+                    "order_id": item.order_id,
+                    "instrument_id": item.instrument_id,
+                    "limit_price_fen": item.limit_price_fen,
+                    "fee_cap_fen": item.fee_cap_fen,
+                    "fee_used_fen": item.fee_used_fen,
+                    "reserved_cash_fen": item.reserved_cash_fen,
+                    "reserved_shares": item.reserved_shares,
+                }
+                for item in sorted(
+                    self.reservations, key=lambda item: item.order_id
+                )
+            ],
+            "available_cash_fen": self.available_cash_fen,
+            "available_sellable_shares": {
+                key: self.available_sellable_shares[key]
+                for key in sorted(self.available_sellable_shares)
+            },
+        }
+
+    @property
+    def fingerprint(self) -> str:
+        encoded = json.dumps(
+            self._payload(), sort_keys=True, separators=(",", ":")
+        ).encode()
+        return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+@dataclass(frozen=True)
+class ExecutionStateView:
+    """Reservation-aware account view used for planning and lineage.
+
+    The view wraps the canonical :class:`AvailabilityState`; its
+    fingerprint is derived from that state's own bytes, never declared by
+    the caller. The ledger re-derives and compares the canonical value
+    when accepting intents, assessments, and submissions.
+    """
+
+    account: AccountSnapshot
+    state: AvailabilityState
+
+    def __post_init__(self) -> None:
+        if self.account.account_id != self.state.account_id:
+            raise ExecutionValidationError(
+                "execution-state view does not match the account snapshot"
+            )
+        if self.account.cash_fen != self.state.settled_cash_fen:
+            raise ExecutionValidationError(
+                "execution-state view settled cash differs from the account"
+            )
+
+    @property
+    def available_cash_fen(self) -> int:
+        return self.state.available_cash_fen
+
+    @property
+    def available_sellable_shares(self) -> Mapping[str, int]:
+        return self.state.available_sellable_shares
+
+    @property
+    def fingerprint(self) -> str:
+        return self.state.fingerprint
+
+    @property
+    def availability_fingerprint(self) -> str:
+        return self.state.fingerprint
+
+
+def _fingerprint_lots_payload(lots: tuple[PositionLot, ...]) -> list[dict]:
+    return [
+        {
+            "lot_id": lot.lot_id,
+            "instrument_id": lot.instrument_id,
+            "quantity": lot.quantity,
+            "acquired_trade_date": lot.acquired_trade_date.isoformat(),
+            "sellable_from": lot.sellable_from.isoformat(),
+        }
+        for lot in sorted(
+            lots,
+            key=lambda lot: (
+                lot.instrument_id,
+                lot.sellable_from,
+                lot.acquired_trade_date,
+                lot.lot_id,
+            ),
+        )
+    ]
 
 
 class OrderPlanStatus(StrEnum):
@@ -150,6 +280,10 @@ class FeeCapQuote:
             raise ExecutionValidationError(
                 "fee quote source_fingerprint must be SHA-256"
             )
+        if not isinstance(self.synthetic, bool):
+            raise ExecutionValidationError(
+                "fee quote synthetic flag must be a strict bool"
+            )
 
 
 @dataclass(frozen=True)
@@ -173,6 +307,7 @@ class OrderPlanLeg:
     limit_price_basis: PriceBasis | None = None
     limit_price_source_id: str | None = None
     limit_price_source_fingerprint: str | None = None
+    limit_price_evidence_fingerprint: str | None = None
     limit_price_available_at: datetime | None = None
     worst_case_fee_fen: int | None = None
     fee_quote_fingerprint: str | None = None
@@ -193,16 +328,78 @@ class OrderPlan:
     reason_codes: tuple[str, ...]
     legs: tuple[OrderPlanLeg, ...]
     worst_case_cash_fen_required: int
-    execution_state_fingerprint: str | None = None
+    availability_fingerprint: str | None = None
+
+
+def fingerprint_fee_cap_quote(quote: FeeCapQuote) -> str:
+    """Canonical SHA-256 of the FULL fee quote payload.
+
+    This is the lineage fingerprint carried by legs, intents, assessments,
+    requests, and submission events. It is derived from every quote field -
+    instrument, account, trade date, cap, evidence id, source fingerprint,
+    and the synthetic flag - never copied from the source SHA alone.
+    """
+    payload = {
+        "instrument_id": quote.instrument_id,
+        "account_id": quote.account_id,
+        "trade_date": quote.trade_date.isoformat(),
+        "cap_fen": quote.cap_fen,
+        "evidence_id": quote.evidence_id,
+        "source_fingerprint": quote.source_fingerprint,
+        "synthetic": quote.synthetic,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def fingerprint_order_price_evidence(evidence: OrderPriceEvidence) -> str:
+    """Canonical SHA-256 of the full order-price evidence payload."""
+    payload = {
+        "instrument_id": evidence.instrument_id,
+        "price": str(evidence.price),
+        "price_date": evidence.price_date.isoformat(),
+        "available_at": evidence.available_at.isoformat(),
+        "basis": evidence.basis.value,
+        "source_id": evidence.source_id,
+        "source_fingerprint": evidence.source_fingerprint,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def fingerprint_rebalance_instruction(instruction: RebalanceInstruction) -> str:
-    """Deterministic fingerprint of the instruction's economic content."""
+    """Deterministic fingerprint of the instruction's economic content.
+
+    Binds the signal cutoff, the full source metadata, and every target.
+    """
     payload = {
         "instruction_id": instruction.instruction_id,
         "portfolio_id": instruction.portfolio_id,
+        "signal_as_of": instruction.signal_as_of.isoformat(),
         "execution_date": instruction.execution_date.isoformat(),
         "source_fingerprint": instruction.source_fingerprint,
+        "source_metadata": {
+            "target_as_of":
+                instruction.source_metadata.target_as_of.isoformat(),
+            "target_fingerprint":
+                instruction.source_metadata.target_fingerprint,
+            "planning_input_fingerprint":
+                instruction.source_metadata.planning_input_fingerprint,
+            "planner_version": instruction.source_metadata.planner_version,
+            "planning_nav_fen": instruction.source_metadata.planning_nav_fen,
+            "minimum_cash_fen":
+                instruction.source_metadata.minimum_cash_fen,
+            "planning_price_basis":
+                instruction.source_metadata.planning_price_basis.value,
+            "planning_price_policy":
+                instruction.source_metadata.planning_price_policy,
+            "share_rounding_policy":
+                instruction.source_metadata.share_rounding_policy,
+            "cash_policy": instruction.source_metadata.cash_policy,
+            "planning_price_source_ids": list(
+                instruction.source_metadata.planning_price_source_ids
+            ),
+        },
         "targets": [
             {
                 "instrument_id": target.instrument_id,
@@ -331,15 +528,38 @@ def build_order_plan(
         fee_cap: FeeCapQuote | None = None,
         delta: int = 0,
     ) -> None:
+        leg_payload = {
+            "instruction_id": instruction.instruction_id,
+            "instruction_fingerprint": instruction_fingerprint,
+            "account_fingerprint": account_fingerprint,
+            "instrument_id": instrument_id,
+            "side": side.value if side else None,
+            "current_shares": current.get(instrument_id, 0),
+            "sellable_shares": sellable.get(instrument_id, 0),
+            "target_shares": target_shares,
+            "delta_shares": delta,
+            "status": status.value,
+            "reason_code": reason_code,
+            "lot_rule_id": lot_rule_id,
+            "limit_price": (str(price.price) if price else None),
+            "limit_price_basis": (price.basis.value if price else None),
+            "limit_price_source_id": (price.source_id if price else None),
+            "limit_price_source_fingerprint": (
+                price.source_fingerprint if price else None
+            ),
+            "limit_price_evidence_fingerprint": (
+                fingerprint_order_price_evidence(price) if price else None
+            ),
+            "limit_price_available_at": (
+                price.available_at.isoformat() if price else None
+            ),
+            "worst_case_fee_fen": (fee_cap.cap_fen if fee_cap else None),
+            "fee_quote_fingerprint": (
+                fingerprint_fee_cap_quote(fee_cap) if fee_cap else None
+            ),
+        }
         leg_id = hashlib.sha256(
-            "\x1f".join((
-                instruction.instruction_id,
-                account_fingerprint,
-                instrument_id,
-                str(delta),
-                status.value,
-                reason_code,
-            )).encode()
+            json.dumps(leg_payload, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
         legs.append(
             OrderPlanLeg(
@@ -362,10 +582,13 @@ def build_order_plan(
                 limit_price_source_fingerprint=(
                     price.source_fingerprint if price else None
                 ),
+                limit_price_evidence_fingerprint=(
+                    leg_payload["limit_price_evidence_fingerprint"]
+                ),
                 limit_price_available_at=(price.available_at if price else None),
                 worst_case_fee_fen=(fee_cap.cap_fen if fee_cap else None),
                 fee_quote_fingerprint=(
-                    fee_cap.source_fingerprint if fee_cap else None
+                    leg_payload["fee_quote_fingerprint"]
                 ),
             )
         )
@@ -406,6 +629,22 @@ def build_order_plan(
             continue
 
         evidence = order_prices.get(instrument_id)
+        if evidence is not None and not isinstance(evidence, OrderPriceEvidence):
+            # handoff planning prices and other foreign price objects are
+            # never order prices; the TYPE check must come first so a
+            # foreign object yields a structured blocked leg instead of an
+            # AttributeError on a missing attribute
+            reasons.add("order_price_evidence_invalid")
+            _leg(
+                instrument_id, side, target_shares,
+                OrderPlanLegStatus.BLOCKED, "order_price_evidence_invalid",
+                "order limits require raw order-price evidence with its own "
+                "available_at and source fingerprint",
+                lot_rule_id=rule.rule_id,
+                identity_record=identity.source_record_id,
+                delta=delta,
+            )
+            continue
         if evidence is not None and evidence.instrument_id != instrument_id:
             # evidence is keyed by instrument; a mismatched payload would
             # price one instrument with another instrument's evidence
@@ -415,20 +654,6 @@ def build_order_plan(
                 OrderPlanLegStatus.BLOCKED,
                 "order_price_evidence_instrument_mismatch",
                 "order-price evidence belongs to a different instrument",
-                lot_rule_id=rule.rule_id,
-                identity_record=identity.source_record_id,
-                delta=delta,
-            )
-            continue
-        if evidence is not None and not isinstance(evidence, OrderPriceEvidence):
-            # handoff planning prices and other foreign price objects are
-            # never order prices
-            reasons.add("order_price_evidence_invalid")
-            _leg(
-                instrument_id, side, target_shares,
-                OrderPlanLegStatus.BLOCKED, "order_price_evidence_invalid",
-                "order limits require raw order-price evidence with its own "
-                "available_at and source fingerprint",
                 lot_rule_id=rule.rule_id,
                 identity_record=identity.source_record_id,
                 delta=delta,
@@ -621,20 +846,42 @@ def build_order_plan(
         "account_fingerprint": account_fingerprint,
         "account_id": account.account_id,
         "execution_date": instruction.execution_date.isoformat(),
+        "created_at": created_at.isoformat(),
+        "availability_fingerprint": (
+            execution_state.fingerprint
+            if execution_state is not None
+            else None
+        ),
+        "worst_case_cash_fen_required": worst_case_cash,
+        "price_evidence": sorted(
+            fingerprint_order_price_evidence(evidence)
+            for evidence in order_prices.values()
+            if isinstance(evidence, OrderPriceEvidence)
+        ),
+        "fee_quote_fingerprints": sorted(
+            fingerprint_fee_cap_quote(quote)
+            for quote in fee_caps.values()
+        ),
         "legs": [
             {
+                "leg_id": leg.leg_id,
                 "instrument_id": leg.instrument_id,
                 "side": leg.side.value if leg.side else None,
                 "current_shares": leg.current_shares,
+                "sellable_shares": leg.sellable_shares,
                 "target_shares": leg.target_shares,
                 "delta_shares": leg.delta_shares,
                 "status": leg.status.value,
                 "reason_code": leg.reason_code,
+                "lot_rule_id": leg.lot_rule_id,
                 "limit_price": (
                     str(leg.limit_price) if leg.limit_price is not None else None
                 ),
                 "limit_price_source_fingerprint": leg.limit_price_source_fingerprint,
+                "limit_price_evidence_fingerprint":
+                    leg.limit_price_evidence_fingerprint,
                 "worst_case_fee_fen": leg.worst_case_fee_fen,
+                "fee_quote_fingerprint": leg.fee_quote_fingerprint,
             }
             for leg in legs
         ],
@@ -654,7 +901,7 @@ def build_order_plan(
         reason_codes=tuple(sorted(reasons)),
         legs=tuple(legs),
         worst_case_cash_fen_required=worst_case_cash,
-        execution_state_fingerprint=(
+        availability_fingerprint=(
             execution_state.fingerprint if execution_state is not None else None
         ),
     )

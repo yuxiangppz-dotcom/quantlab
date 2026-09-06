@@ -40,9 +40,11 @@ from quantlab.execution.models import (
     TimeInForce,
 )
 from quantlab.execution.planning import (
+    AvailabilityState,
     FeeCapQuote,
     OrderPriceEvidence,
     build_order_plan,
+    fingerprint_fee_cap_quote,
 )
 from quantlab.execution.rules import (
     InstrumentIdentity,
@@ -356,9 +358,16 @@ def run_order_path_smoke() -> dict:
     )
     state_view = ExecutionStateView(
         account=plan_account,
-        available_cash_fen=50_000_000,
-        available_sellable_shares={"600001.SH": 200},
-        fingerprint="sha256:" + "5" * 64,
+        state=AvailabilityState(
+            account_id=plan_account.account_id,
+            as_of=plan_account.as_of,
+            trade_date=SMOKE_MON,
+            settled_cash_fen=plan_account.cash_fen,
+            lots=plan_account.lots,
+            reservations=(),
+            available_cash_fen=50_000_000,
+            available_sellable_shares={"600001.SH": 200},
+        ),
     )
     planning_prices = {
         SMOKE_INSTRUMENT: PlanningPrice(
@@ -444,7 +453,8 @@ def run_order_path_smoke() -> dict:
     intent = batch.intents[0]
     request = batch.requests[0]
     drifted_view = replace(
-        state_view, fingerprint="sha256:" + "6" * 64
+        state_view,
+        state=replace(state_view.state, available_cash_fen=49_999_999),
     )
     try:
         verify_lineage(intent, instruction_one, plan_one, drifted_view)
@@ -455,9 +465,9 @@ def run_order_path_smoke() -> dict:
         intent.plan_id == plan_one.plan_id
         and intent.leg_id == leg.leg_id
         and intent.instruction_id == instruction_one.instruction_id
-        and intent.execution_state_fingerprint == state_view.fingerprint
+        and intent.availability_fingerprint == state_view.fingerprint
         and intent.limit_price_source_fingerprint == "1" * 64
-        and intent.fee_quote_fingerprint == "4" * 64
+        and intent.fee_quote_fingerprint == fingerprint_fee_cap_quote(_fee_cap())
         and intent.intended_trade_date == SMOKE_MON
         and intent.time_in_force.value == "day"
         and intent.quantity == target_shares
@@ -546,8 +556,8 @@ def run_order_path_smoke() -> dict:
             suspension=_open(SMOKE_MON),
             fee_schedule=_smoke_fee(),
             daily_bar_available=None,
-            execution_state_fingerprint=(
-                lineage_ledger.execution_state_fingerprint()
+            availability_fingerprint=(
+                lineage_ledger.availability_fingerprint()
             ),
         )
         lineage_ledger.append(assessment.event)
@@ -559,8 +569,8 @@ def run_order_path_smoke() -> dict:
                         order_request.created_at,
                         order_request,
                         worst_case_fee_fen=SMOKE_FEE_CAP_FEN,
-                        execution_state_fingerprint=(
-                            lineage_ledger.execution_state_fingerprint()
+                        availability_fingerprint=(
+                            lineage_ledger.availability_fingerprint()
                         ),
                     ),
                     _fee_cap(),
@@ -942,8 +952,8 @@ def run_transaction_fault_injection() -> dict:
                 suspension=_open(SMOKE_FRI),
                 fee_schedule=_smoke_fee(),
                 daily_bar_available=None,
-                execution_state_fingerprint=(
-                    ledger.execution_state_fingerprint()
+                availability_fingerprint=(
+                    ledger.availability_fingerprint()
                 ),
             )
             ledger.append(result.event)
@@ -967,8 +977,8 @@ def run_transaction_fault_injection() -> dict:
                     request.created_at,
                     request,
                     worst_case_fee_fen=SMOKE_FEE_CAP_FEN,
-                    execution_state_fingerprint=(
-                        ledger.execution_state_fingerprint()
+                    availability_fingerprint=(
+                        ledger.availability_fingerprint()
                     ),
                 )
             )

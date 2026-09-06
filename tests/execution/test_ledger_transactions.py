@@ -169,7 +169,7 @@ def _assess(ledger: ExecutionLedger, engine, intent, minute: int):
         suspension=_open(FRI),
         fee_schedule=_fee_schedule(),
         daily_bar_available=None,
-        execution_state_fingerprint=ledger.execution_state_fingerprint(),
+        availability_fingerprint=ledger.availability_fingerprint(),
     )
     ledger.append(result.event)
     return result
@@ -181,7 +181,7 @@ def _submit_event(intent: OrderIntent, minute: int, fee: int = FEE_CAP):
         _instant(FRI, minute),
         _request(intent, minute),
         worst_case_fee_fen=fee,
-        execution_state_fingerprint=None,
+        availability_fingerprint=None,
     )
 
 

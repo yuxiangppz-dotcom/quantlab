@@ -83,7 +83,7 @@ def materialize_order_batch(
         raise ExecutionValidationError(
             "lineage mismatch: instruction content drifted from the plan"
         )
-    if plan.execution_state_fingerprint != state.fingerprint:
+    if plan.availability_fingerprint != state.fingerprint:
         raise ExecutionValidationError(
             "lineage mismatch: account execution state drifted since the "
             "plan was built"
@@ -114,7 +114,7 @@ def materialize_order_batch(
             time_in_force=TimeInForce.DAY,
             plan_id=plan.plan_id,
             leg_id=leg.leg_id,
-            execution_state_fingerprint=state.fingerprint,
+            availability_fingerprint=state.fingerprint,
             limit_price_source_fingerprint=leg.limit_price_source_fingerprint,
             fee_quote_fingerprint=leg.fee_quote_fingerprint,
         )
@@ -159,8 +159,8 @@ def verify_lineage(
             f"instruction_id {intent.instruction_id} != "
             f"{instruction.instruction_id}"
         )
-    if intent.execution_state_fingerprint != state.fingerprint:
-        failures.append("execution_state_fingerprint drifted")
+    if intent.availability_fingerprint != state.fingerprint:
+        failures.append("availability_fingerprint drifted")
     if plan.instruction_fingerprint != fingerprint_rebalance_instruction(
         instruction
     ):

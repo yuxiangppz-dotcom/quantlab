@@ -160,7 +160,7 @@ def _submit(
         suspension=_open(FRI),
         fee_schedule=_fee_schedule(),
         daily_bar_available=None,
-        execution_state_fingerprint=ledger.execution_state_fingerprint(),
+        availability_fingerprint=ledger.availability_fingerprint(),
     )
     ledger.append(result.event)
     request = OrderRequest(
@@ -183,7 +183,7 @@ def _submit(
             request.created_at,
             request,
             worst_case_fee_fen=FEE_CAP,
-            execution_state_fingerprint=ledger.execution_state_fingerprint(),
+            availability_fingerprint=ledger.availability_fingerprint(),
         )
     )
 
@@ -198,11 +198,11 @@ def test_settled_fingerprint_is_blind_to_reservations() -> None:
     assert ledger.reserved_cash_fen() == 330_000
 
 
-def test_execution_state_fingerprint_moves_on_reservation() -> None:
+def test_availability_fingerprint_moves_on_reservation() -> None:
     ledger = ExecutionLedger(_account(cash_fen=500_000), calendar=_calendar())
-    before = ledger.execution_state_fingerprint()
+    before = ledger.availability_fingerprint()
     _submit(ledger, _engine(), "state-buy-a")
-    after = ledger.execution_state_fingerprint()
+    after = ledger.availability_fingerprint()
     assert before != after
 
 
@@ -221,11 +221,11 @@ def test_assessment_before_foreign_reservation_is_stale() -> None:
         suspension=_open(FRI),
         fee_schedule=_fee_schedule(),
         daily_bar_available=None,
-        execution_state_fingerprint=ledger.execution_state_fingerprint(),
+        availability_fingerprint=ledger.availability_fingerprint(),
     )
     # a different order reserves cash before this assessment is appended
     _submit(ledger, engine, "state-other", minute=6)
-    with pytest.raises(LedgerTransitionError, match="execution state"):
+    with pytest.raises(LedgerTransitionError, match="availability state"):
         ledger.append(result.event)
 
 
@@ -244,10 +244,10 @@ def test_submission_rechecks_fingerprint_before_reservation() -> None:
         suspension=_open(FRI),
         fee_schedule=_fee_schedule(),
         daily_bar_available=None,
-        execution_state_fingerprint=ledger.execution_state_fingerprint(),
+        availability_fingerprint=ledger.availability_fingerprint(),
     )
     ledger.append(result.event)
-    stale_state = ledger.execution_state_fingerprint()
+    stale_state = ledger.availability_fingerprint()
     _submit(ledger, engine, "state-buy-first", minute=6)
     request = OrderRequest(
         request_id="state-buy-late-request",
@@ -263,14 +263,14 @@ def test_submission_rechecks_fingerprint_before_reservation() -> None:
         limit_price_source_id=intent.limit_price_source_id,
         time_in_force=intent.time_in_force,
     )
-    with pytest.raises(LedgerTransitionError, match="execution state"):
+    with pytest.raises(LedgerTransitionError, match="availability state"):
         ledger.append(
             OrderSubmitted(
                 "state-buy-late-submitted",
                 request.created_at,
                 request,
                 worst_case_fee_fen=FEE_CAP,
-                execution_state_fingerprint=stale_state,
+                availability_fingerprint=stale_state,
             )
         )
 
@@ -334,13 +334,23 @@ def test_planner_funds_buys_from_available_cash_only() -> None:
     }
     # settled cash 1_000_000 >= worst case 430_000, but only 100_000 is
     # unreserved; planning on settled cash would wrongly clear the plan
-    from quantlab.execution.planning import ExecutionStateView
+    from quantlab.execution.planning import (
+        AvailabilityState,
+        ExecutionStateView,
+    )
 
     view = ExecutionStateView(
         account=account,
-        available_cash_fen=100_000,
-        available_sellable_shares={},
-        fingerprint="sha256:" + "1" * 64,
+        state=AvailabilityState(
+            account_id=account.account_id,
+            as_of=account.as_of,
+            trade_date=MON,
+            settled_cash_fen=account.cash_fen,
+            lots=account.lots,
+            reservations=(),
+            available_cash_fen=100_000,
+            available_sellable_shares={},
+        ),
     )
     blocked = build_order_plan(
         _instruction(),
@@ -357,7 +367,7 @@ def test_planner_funds_buys_from_available_cash_only() -> None:
     assert "aggregate_buy_worst_case_exceeds_available_cash" in (
         blocked.reason_codes
     )
-    assert blocked.execution_state_fingerprint == view.fingerprint
+    assert blocked.availability_fingerprint == view.fingerprint
 
 
 def test_planner_uses_available_sellable_for_exits() -> None:
@@ -367,7 +377,10 @@ def test_planner_uses_available_sellable_for_exits() -> None:
         PositionTarget,
         RebalanceInstruction,
     )
-    from quantlab.execution.planning import ExecutionStateView
+    from quantlab.execution.planning import (
+        AvailabilityState,
+        ExecutionStateView,
+    )
 
     calendar = _calendar()
     identities = _identities()
@@ -423,9 +436,16 @@ def test_planner_uses_available_sellable_for_exits() -> None:
     assert settled_only.status.value == "submit_ready"
     reserved_view = ExecutionStateView(
         account=account,
-        available_cash_fen=1_000_000,
-        available_sellable_shares={"600000.SH": 0},
-        fingerprint="sha256:" + "2" * 64,
+        state=AvailabilityState(
+            account_id=account.account_id,
+            as_of=account.as_of,
+            trade_date=MON,
+            settled_cash_fen=account.cash_fen,
+            lots=account.lots,
+            reservations=(),
+            available_cash_fen=1_000_000,
+            available_sellable_shares={"600000.SH": 0},
+        ),
     )
     blocked = build_order_plan(
         instruction, account, execution_state=reserved_view, **kwargs

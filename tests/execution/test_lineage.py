@@ -35,6 +35,7 @@ from quantlab.execution.orchestration import (
     verify_lineage,
 )
 from quantlab.execution.planning import (
+    AvailabilityState,
     ExecutionStateView,
     FeeCapQuote,
     OrderPriceEvidence,
@@ -104,9 +105,16 @@ def _account() -> AccountSnapshot:
 def _view(account: AccountSnapshot | None = None) -> ExecutionStateView:
     return ExecutionStateView(
         account=account or _account(),
-        available_cash_fen=50_000_000,
-        available_sellable_shares={},
-        fingerprint="sha256:" + "7" * 64,
+        state=AvailabilityState(
+            account_id=(account or _account()).account_id,
+            as_of=(account or _account()).as_of,
+            trade_date=MON,
+            settled_cash_fen=(account or _account()).cash_fen,
+            lots=(account or _account()).lots,
+            reservations=(),
+            available_cash_fen=50_000_000,
+            available_sellable_shares={},
+        ),
     )
 
 
@@ -273,14 +281,19 @@ def test_materialized_batch_binds_full_lineage() -> None:
     assert intent.instruction_id == plan.instruction_id
     assert intent.plan_id == plan.plan_id
     assert intent.leg_id == plan.legs[0].leg_id
-    assert intent.execution_state_fingerprint == _view(account).fingerprint
+    assert intent.availability_fingerprint == _view(account).fingerprint
     assert intent.limit_price_source_fingerprint == "b" * 64
     assert intent.limit_price == PRICE
     assert intent.limit_price_basis is PriceBasis.RAW
     assert intent.intended_trade_date == MON
     assert intent.time_in_force is TimeInForce.DAY
     assert intent.quantity == 400
-    assert intent.fee_quote_fingerprint == "c" * 64
+    from quantlab.execution.planning import fingerprint_fee_cap_quote
+
+    assert intent.fee_quote_fingerprint == fingerprint_fee_cap_quote(
+        _fee_quote()
+    )
+    assert intent.fee_quote_fingerprint != "c" * 64
     # deterministic: same inputs, same intents
     batch_two = materialize_order_batch(
         _instruction((PositionTarget("600000.SH", 400),)),
@@ -316,9 +329,16 @@ def test_not_traded_legs_are_not_materialized() -> None:
     )
     view = ExecutionStateView(
         account=account,
-        available_cash_fen=10_000_000,
-        available_sellable_shares={"600000.SH": 400},
-        fingerprint="sha256:" + "9" * 64,
+        state=AvailabilityState(
+            account_id=account.account_id,
+            as_of=account.as_of,
+            trade_date=MON,
+            settled_cash_fen=account.cash_fen,
+            lots=account.lots,
+            reservations=(),
+            available_cash_fen=10_000_000,
+            available_sellable_shares={"600000.SH": 400},
+        ),
     )
     plan = _plan(
         (PositionTarget("600000.SH", 400),),
@@ -344,12 +364,19 @@ def test_lineage_drift_invalidates_reuse() -> None:
     )
     intent = batch.intents[0]
     verify_lineage(intent, instruction, plan, _view(account))
-    # drifted plan: same instruction, different account state fingerprint
+    # drifted plan: same instruction, different availability state
     drifted_state = ExecutionStateView(
         account=account,
-        available_cash_fen=1,
-        available_sellable_shares={},
-        fingerprint="sha256:" + "8" * 64,
+        state=AvailabilityState(
+            account_id=account.account_id,
+            as_of=account.as_of,
+            trade_date=MON,
+            settled_cash_fen=account.cash_fen,
+            lots=account.lots,
+            reservations=(),
+            available_cash_fen=1,
+            available_sellable_shares={},
+        ),
     )
     with pytest.raises(ExecutionValidationError, match="lineage"):
         verify_lineage(intent, instruction, plan, drifted_state)

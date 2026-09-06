@@ -279,7 +279,7 @@ class OrderIntent:
     time_in_force: TimeInForce = TimeInForce.DAY
     plan_id: str | None = None
     leg_id: str | None = None
-    execution_state_fingerprint: str | None = None
+    availability_fingerprint: str | None = None
     limit_price_source_fingerprint: str | None = None
     fee_quote_fingerprint: str | None = None
 
@@ -304,7 +304,7 @@ class OrderIntent:
         for fingerprint, name in (
             (self.plan_id, "plan_id"),
             (self.leg_id, "leg_id"),
-            (self.execution_state_fingerprint, "execution_state_fingerprint"),
+            (self.availability_fingerprint, "availability_fingerprint"),
         ):
             if fingerprint is not None:
                 require_identifier(fingerprint, name)
