@@ -58,7 +58,9 @@ STANDARD_GROUP_FAMILY: tuple[str, ...] = (
     "failed_attempts.json",
 )
 
-ArtifactSemanticValidator = Callable[["ArtifactContract"], tuple[str, ...]]
+ArtifactSemanticValidator = Callable[
+    ["ArtifactContract", "Path"], tuple[str, ...]
+]
 
 
 @dataclass(frozen=True)
@@ -147,16 +149,25 @@ class ArtifactContract:
             "top_level": list(self.top_level),
         }
 
-    def semantic_failures(self) -> tuple[str, ...]:
+    def semantic_failures(self, run_dir: Path) -> tuple[str, ...]:
+        """Run every domain validator against the actual run directory.
+
+        Validators receive the directory so domain semantics (payload
+        content, cross-document claims) are evaluated on real bytes at every
+        enforcement point: preflight, post-promotion formal verification,
+        and the independent external verifier.
+        """
+        run_dir = Path(run_dir)
         return tuple(
             failure
             for validator in self.semantic_validators
-            for failure in validator(self)
+            for failure in validator(self, run_dir)
         )
 
 
 def validate_backtest_recovery_bounds(
     contract: ArtifactContract,
+    run_dir: Path,
 ) -> tuple[str, ...]:
     """Backtest-only completeness rule for primary/control scenarios."""
     failures: list[str] = []
@@ -333,9 +344,6 @@ def verify_formal_artifact(
     contract = _coerce_contract(expected_registry, expected_schema)
     registry = contract.registry()
     expected_schema = expected_schema or contract.schema
-    semantic_failures = contract.semantic_failures()
-    if semantic_failures:
-        raise RuntimeError("artifact contract invalid: " + "; ".join(semantic_failures))
 
     groups: Mapping[str, list[str]] = registry["groups"]  # type: ignore[assignment]
 
@@ -354,10 +362,18 @@ def verify_formal_artifact(
         )
     if (run_dir / INCOMPLETE_MARKER).exists():
         failures.append(f"{INCOMPLETE_MARKER} present: directory is not formal")
+    # domain semantics are evaluated against the real directory at every
+    # enforcement point (preflight, post-promotion formal, external) so a
+    # semantic failure can never survive into a valid completion marker
+    failures.extend(
+        f"domain semantic failure: {failure}"
+        for failure in contract.semantic_failures(run_dir)
+    )
 
     manifest_path = run_dir / ARTIFACT_MANIFEST
     if not manifest_path.exists():
-        raise RuntimeError(f"missing {ARTIFACT_MANIFEST}")
+        failures.append(f"missing {ARTIFACT_MANIFEST}")
+        raise RuntimeError("artifact verification failed: " + "; ".join(failures))
     manifest = _parse_json_file(manifest_path, failures, ARTIFACT_MANIFEST)
     if manifest is None:
         raise RuntimeError("artifact verification failed: " + "; ".join(failures))

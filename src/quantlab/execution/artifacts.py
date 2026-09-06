@@ -1,4 +1,12 @@
-"""Formal artifact contract and semantic verifier for execution readiness."""
+"""Formal artifact contract and semantic verifier for execution readiness.
+
+The readiness domain semantics (check inventory, status counts, gate
+re-derivation, prohibited performance fields, explicit false claims, handoff
+denials, input stability) are bound to the artifact CONTRACT itself, so they
+run at every enforcement point: the publisher's preflight (before
+promotion), the post-promotion formal verification (before the completion
+marker is accepted), and the independent external verifier.
+"""
 
 from __future__ import annotations
 
@@ -46,11 +54,15 @@ _PERFORMANCE_KEYS = {
 def execution_readiness_artifact_contract(
     schema: str = EXECUTION_READINESS_SCHEMA,
 ) -> ArtifactContract:
+    """Contract whose domain validator enforces readiness semantics on the
+    actual directory at preflight, post-promotion formal verification, and
+    external verification."""
     return ArtifactContract(
         name="execution_readiness",
         schema=schema,
         groups={},
         top_level=EXECUTION_READINESS_TOP_LEVEL,
+        semantic_validators=(validate_execution_readiness_semantics,),
     )
 
 
@@ -64,26 +76,11 @@ def _walk_keys(value: Any):
             yield from _walk_keys(nested)
 
 
-def verify_execution_readiness_artifact(
-    run_dir: str | Path,
-    *,
-    expected_run_id: str | None = None,
-    expected_head: str | None = None,
-    expected_schema: str = EXECUTION_READINESS_SCHEMA,
-    formal: bool = True,
-) -> dict[str, Any]:
-    """Verify generic integrity plus readiness-specific no-performance semantics."""
+def execution_readiness_semantic_failures(run_dir: str | Path) -> tuple[str, ...]:
+    """Re-derive every readiness domain semantic from the bytes on disk."""
     run_dir = Path(run_dir)
-    result = verify_formal_artifact(
-        run_dir,
-        execution_readiness_artifact_contract(expected_schema),
-        expected_run_id=expected_run_id,
-        expected_head=expected_head,
-        expected_schema=expected_schema,
-        formal=formal,
-    )
     failures: list[str] = []
-    payloads = {}
+    payloads: dict[str, Any] = {}
     json_names = (
         "summary.json",
         "rule_inventory.json",
@@ -125,8 +122,9 @@ def verify_execution_readiness_artifact(
         if claims.get(claim) is not False:
             failures.append(f"summary claim {claim} must be explicitly false")
 
+    checks_path = run_dir / "readiness_checks.csv"
     try:
-        with (run_dir / "readiness_checks.csv").open(newline="") as fh:
+        with checks_path.open(newline="") as fh:
             rows = list(csv.DictReader(fh))
         columns = tuple(rows[0].keys()) if rows else ()
         if columns != READINESS_CHECK_COLUMNS:
@@ -195,6 +193,37 @@ def verify_execution_readiness_artifact(
     inventory = payloads.get("input_inventory.json", {})
     if inventory.get("stable_during_audit") is not True:
         failures.append("input inventory was not stable during audit")
-    if failures:
-        raise RuntimeError("execution readiness verification failed: " + "; ".join(failures))
-    return result
+    return tuple(failures)
+
+
+def validate_execution_readiness_semantics(
+    contract: ArtifactContract,
+    run_dir: Path,
+) -> tuple[str, ...]:
+    """Contract-level domain validator bound to the readiness contract."""
+    return execution_readiness_semantic_failures(run_dir)
+
+
+def verify_execution_readiness_artifact(
+    run_dir: str | Path,
+    *,
+    expected_run_id: str | None = None,
+    expected_head: str | None = None,
+    expected_schema: str = EXECUTION_READINESS_SCHEMA,
+    formal: bool = True,
+) -> dict[str, Any]:
+    """Verify generic integrity plus readiness-specific semantics.
+
+    The domain semantics are part of the contract, so this single call
+    enforces them in formal mode (after promotion, before the completion
+    marker is accepted), in preflight mode, and from the independent
+    external verifier.
+    """
+    return verify_formal_artifact(
+        Path(run_dir),
+        execution_readiness_artifact_contract(expected_schema),
+        expected_run_id=expected_run_id,
+        expected_head=expected_head,
+        expected_schema=expected_schema,
+        formal=formal,
+    )

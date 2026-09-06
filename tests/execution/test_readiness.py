@@ -172,16 +172,26 @@ def test_execution_readiness_artifact_verifies_domain_semantics(tmp_path) -> Non
 
 
 def test_execution_readiness_artifact_rejects_performance_fields(tmp_path) -> None:
-    final = _publish(tmp_path, performance_field=True)
+    """A prohibited performance field is a domain semantic failure: it must
+    abort publication BEFORE promotion and never leave a success marker."""
+    from quantlab.artifacts import COMPLETION_MARKER, INCOMPLETE_MARKER
+
     with pytest.raises(RuntimeError, match="performance fields are prohibited"):
-        verify_execution_readiness_artifact(
-            final, expected_run_id=RUN_ID, expected_head=HEAD
-        )
+        _publish(tmp_path, performance_field=True)
+    assert (tmp_path / RUN_ID).exists() is False
+    staging = tmp_path / f"{RUN_ID}.incomplete"
+    assert (staging / COMPLETION_MARKER).exists() is False
+    assert (staging / INCOMPLETE_MARKER).exists()
 
 
 def test_execution_readiness_artifact_rederives_gates(tmp_path) -> None:
-    final = _publish(tmp_path, wrong_gate=True)
+    """Gates are re-derived from check evidence at preflight: a hand-written
+    gate can never reach promotion."""
+    from quantlab.artifacts import COMPLETION_MARKER, INCOMPLETE_MARKER
+
     with pytest.raises(RuntimeError, match="gates do not match"):
-        verify_execution_readiness_artifact(
-            final, expected_run_id=RUN_ID, expected_head=HEAD
-        )
+        _publish(tmp_path, wrong_gate=True)
+    assert (tmp_path / RUN_ID).exists() is False
+    staging = tmp_path / f"{RUN_ID}.incomplete"
+    assert (staging / COMPLETION_MARKER).exists() is False
+    assert (staging / INCOMPLETE_MARKER).exists()
