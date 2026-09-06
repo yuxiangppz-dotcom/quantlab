@@ -506,11 +506,11 @@ def inspect_execution_inputs(
     )
     stock_st["row_audit"] = audit_partition_rows(
         root, "lifecycle_context_v1/stock_st", open_dates,
-        expected_fields=_ST_FIELDS, family_kind="context",
+        expected_fields=_ST_FIELDS, family_kind="stock_st",
     )
     suspensions["row_audit"] = audit_partition_rows(
         root, "lifecycle_context_v1/suspensions", open_dates,
-        expected_fields=_SUSPENSION_FIELDS, family_kind="context",
+        expected_fields=_SUSPENSION_FIELDS, family_kind="suspensions",
     )
     security_fields = set(pq.read_schema(securities_path).names)
     securities = pd.read_parquet(securities_path, columns=["instrument_id"])
