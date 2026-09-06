@@ -1,17 +1,23 @@
 """Atomic formal-run artifacts: streaming exports, staging, verification.
 
-v0.1.1 root causes closed here:
+Fail-closed publication state machine (v0.1.3):
 
-- ``export_group`` materialized the FULL position row list before building a
-  DataFrame (unbounded memory); exports now stream bounded chunks.
-- Files were written directly to their final names; every file now goes to a
-  ``.tmp`` sidecar first and is ``os.replace``d into place only after a clean
-  close, so a crash can never leave a half-written formal file.
-- ``summary.json`` was written BEFORE the group exports; the whole run now
-  lands in ``<run_id>.incomplete/`` and is promoted to ``<run_id>/`` by an
-  atomic rename only after an independent verification passes and a
-  ``COMPLETED.json`` marker is written. A failed run can therefore never
-  publish a formal-looking directory.
+- ``export_group`` streams bounded chunks and writes every file via a
+  ``.tmp`` sidecar + ``os.replace``, so a crash never leaves a half-written
+  formal file.
+- The whole run lands in ``<run_id>.incomplete/``. Publication is:
+  manifest -> preflight verification (no completion marker involved) ->
+  atomic promotion -> completion marker written INSIDE the promoted
+  directory (the commit point) -> formal verification.
+- A ``COMPLETED.json`` inside a ``.incomplete`` directory is always invalid:
+  the formal verifier rejects staged directories unconditionally, and
+  ``mark_incomplete`` removes any marker a failed attempt left behind. A
+  crash before the marker write leaves a promoted directory that fails
+  formal verification for lack of the marker; a crash after it leaves an
+  artifact whose claims the verifier re-derives from the bytes on disk.
+- The formal verifier cross-binds directory basename, run id, HEAD, schema,
+  summary, manifest, marker and the canonical registry; nothing is trusted
+  from recorded booleans.
 """
 
 from __future__ import annotations
@@ -124,24 +130,54 @@ def record_rows(records, fields: list[str]) -> Iterator[dict]:
         yield row
 
 
+def _parse_json_file(path: Path, failures: list[str], label: str) -> dict | None:
+    try:
+        return json.loads(path.read_text())
+    except FileNotFoundError:
+        failures.append(f"missing {label}")
+    except (ValueError, OSError) as exc:
+        failures.append(f"{label}: unparseable ({exc})")
+    return None
+
+
 def verify_formal_artifact(
     run_dir: str | Path,
     expected_registry: Mapping,
+    expected_run_id: str | None = None,
     expected_head: str | None = None,
     expected_schema: str | None = None,
+    formal: bool = True,
 ) -> dict:
-    """Independently verify a formal run directory. Fail-hard on any gap.
+    """Cross-bind and verify a run directory. Fail-hard on any gap.
 
-    Checks (never trusting ``summary.json`` booleans):
+    ``formal=True`` is the publication gate: it requires the completion
+    marker inside a directory whose basename is exactly the run id, and it
+    rejects ``.incomplete`` directories unconditionally — a staging
+    directory can never pass formal verification, no matter what its
+    ``COMPLETED.json`` claims. ``formal=False`` is the publisher-internal
+    preflight: identical payload/metadata binding, but the completion
+    marker is not required (and must not exist yet).
 
-    - every registry group has every required file;
-    - both settlement bounds of the primary strategy AND the control are
-      present in the registry;
-    - per-file sha256/bytes/row count/header match ``artifact_manifest.json``;
-    - the manifest itself covers exactly the declared inventory;
-    - ``COMPLETED.json`` exists with ``formal_run_valid`` and the manifest
-      hash;
-    - ``summary.json`` schema and HEAD match the expectations.
+    Checks (never trusting any recorded boolean — everything is re-derived
+    from the bytes on disk):
+
+    - registry: both settlement bounds of the primary strategy AND the
+      control are present;
+    - manifest: ``run_id``/``head``/``schema``/``summary_head`` match the
+      directory, the summary, and the external expectations; the manifest's
+      ``groups``/``top_level`` equal the canonical registry exactly and its
+      ``files`` keys equal the declared inventory exactly;
+    - payload: every declared file's sha256/bytes/header/row count match the
+      manifest; the actual file set equals the declared inventory exactly
+      (no missing, no extra, no ``.tmp``/``.partial``, no
+      ``INCOMPLETE.json``);
+    - summary: ``run_id``/``code_version``/``experiment_schema`` present and
+      consistent with the externals;
+    - marker (formal only): ``status == "complete"`` and
+      ``formal_run_valid is True``, ``run_id``/``head``/``schema`` bound,
+      ``artifact_manifest_sha256`` present and equal to the manifest file's
+      hash, and completed (non-pending) evidence records;
+    - directory: basename equals the run id (formal mode).
     """
     run_dir = Path(run_dir)
     failures: list[str] = []
@@ -155,51 +191,82 @@ def verify_formal_artifact(
     if failures:
         raise RuntimeError("registry incomplete: " + "; ".join(failures))
 
+    is_staging = run_dir.name.endswith(".incomplete")
+    dir_run_id = run_dir.name[: -len(".incomplete")] if is_staging else run_dir.name
+    if formal and is_staging:
+        # fail-closed: a staging directory can never pass formal
+        # verification, even if it contains a "successful" completion marker
+        raise RuntimeError(
+            f"fail-closed: {run_dir.name} is a staged .incomplete directory; "
+            "formal verification applies only to promoted run directories"
+        )
+    if expected_run_id is not None and dir_run_id != expected_run_id:
+        failures.append(
+            f"directory run id {dir_run_id!r} != expected {expected_run_id!r}"
+        )
+    if (run_dir / INCOMPLETE_MARKER).exists():
+        failures.append(f"{INCOMPLETE_MARKER} present: directory is not formal")
+
     manifest_path = run_dir / ARTIFACT_MANIFEST
     if not manifest_path.exists():
         raise RuntimeError(f"missing {ARTIFACT_MANIFEST}")
-    manifest = json.loads(manifest_path.read_text())
-    manifest_files: Mapping = manifest["files"]
+    manifest = _parse_json_file(manifest_path, failures, ARTIFACT_MANIFEST)
+    if manifest is None:
+        raise RuntimeError("artifact verification failed: " + "; ".join(failures))
+    manifest_files: Mapping = manifest.get("files") or {}
 
-    declared_inventory = set(expected_registry["top_level"])
-    for group, family in groups.items():
-        for kind in family:
-            declared_inventory.add(f"{group}_{kind}")
+    declared_inventory = {
+        f"{group}_{kind}"
+        for group, family in groups.items()
+        for kind in family
+    } | set(expected_registry["top_level"])
 
-    actual_files = {
-        p.name for p in run_dir.iterdir()
-        if p.is_file() and not p.name.endswith(".tmp")
-    }
+    # -- manifest metadata binding -----------------------------------------
+    for field, expected in (
+        ("run_id", expected_run_id if expected_run_id is not None else dir_run_id),
+        ("head", expected_head),
+        ("schema", expected_schema),
+    ):
+        if expected is not None and manifest.get(field) != expected:
+            failures.append(
+                f"manifest {field} {manifest.get(field)!r} != {expected!r}"
+            )
+    if manifest.get("groups") != dict(groups):
+        failures.append("manifest groups/top_level registry differs from canonical")
+    if set(manifest.get("top_level") or ()) != set(expected_registry["top_level"]):
+        failures.append("manifest top_level registry differs from canonical")
+    if set(manifest_files) != declared_inventory:
+        missing_in_manifest = sorted(declared_inventory - set(manifest_files))
+        extra_in_manifest = sorted(set(manifest_files) - declared_inventory)
+        failures.append(
+            "manifest inventory mismatch: "
+            f"missing={missing_in_manifest} extra={extra_in_manifest}"
+        )
+
+    # -- actual payload files ------------------------------------------------
+    actual_files = {p.name for p in run_dir.iterdir() if p.is_file()}
+    declared_with_extras = declared_inventory | {ARTIFACT_MANIFEST}
+    if formal:
+        declared_with_extras.add(COMPLETION_MARKER)
     missing = sorted(declared_inventory - actual_files)
     if missing:
-        raise RuntimeError(f"missing required files: {missing}")
-    unexpected = sorted(actual_files - declared_inventory - {
-        ARTIFACT_MANIFEST, COMPLETION_MARKER, INCOMPLETE_MARKER,
-    })
+        failures.append(f"missing required files: {missing}")
+    unexpected = sorted(actual_files - declared_with_extras)
     if unexpected:
-        raise RuntimeError(f"undeclared files present: {unexpected}")
+        failures.append(f"undeclared files present: {unexpected}")
+    temp_files = sorted(
+        name for name in actual_files
+        if name.endswith(".tmp") or name.endswith(".partial")
+    )
+    if temp_files:
+        failures.append(f"temporary/partial files present: {temp_files}")
 
-    recorded_manifest_sha = None
-    completion_path = run_dir / COMPLETION_MARKER
-    if completion_path.exists():
-        completed = json.loads(completion_path.read_text())
-        recorded_manifest_sha = completed.get("artifact_manifest_sha256")
-        if completed.get("formal_run_valid") is not True:
-            failures.append("completion marker does not state formal_run_valid")
-        if (
-            recorded_manifest_sha
-            and recorded_manifest_sha != sha256_file(manifest_path)
-        ):
-            failures.append("completion marker manifest hash mismatch")
-    else:
-        failures.append(f"missing {COMPLETION_MARKER}")
-
-    for name in sorted(declared_inventory):
+    # -- payload integrity ---------------------------------------------------
+    for name in sorted(declared_inventory & actual_files):
         path = run_dir / name
         recorded = manifest_files.get(name)
         if recorded is None:
-            failures.append(f"{name}: not in artifact manifest")
-            continue
+            continue  # already reported as a manifest inventory mismatch
         if sha256_file(path) != recorded.get("sha256"):
             failures.append(f"{name}: sha256 mismatch")
         if path.stat().st_size != recorded.get("bytes"):
@@ -214,27 +281,78 @@ def verify_formal_artifact(
                 failures.append(f"{name}: row count mismatch "
                                 f"({actual_rows} != {recorded.get('rows')})")
 
-    summary_path = run_dir / "summary.json"
-    if not summary_path.exists():
-        failures.append("missing summary.json")
-    else:
-        summary = json.loads(summary_path.read_text())
-        if expected_head is not None and summary.get("code_version") != expected_head:
+    # -- summary binding -------------------------------------------------------
+    summary = _parse_json_file(run_dir / "summary.json", failures, "summary.json")
+    if summary is not None:
+        if summary.get("run_id") != dir_run_id:
             failures.append(
-                f"summary HEAD {summary.get('code_version')} != {expected_head}"
+                f"summary run_id {summary.get('run_id')!r} != {dir_run_id!r}"
+            )
+        if (
+            expected_head is not None
+            and summary.get("code_version") != expected_head
+        ):
+            failures.append(
+                f"summary HEAD {summary.get('code_version')!r} != {expected_head!r}"
             )
         if (
             expected_schema is not None
             and summary.get("experiment_schema") != expected_schema
         ):
             failures.append("summary experiment_schema mismatch")
+        if manifest is not None and manifest.get("summary_head") not in (
+            None, summary.get("code_version"),
+        ):
+            failures.append("manifest summary_head disagrees with summary")
+    if failures and not formal:
+        raise RuntimeError("preflight verification failed: " + "; ".join(failures))
+    if failures:
+        raise RuntimeError("artifact verification failed: " + "; ".join(failures))
 
+    # -- completion marker (formal only; the commit point) -------------------
+    if formal:
+        marker = _parse_json_file(
+            run_dir / COMPLETION_MARKER, failures, COMPLETION_MARKER
+        )
+        if marker is None:
+            failures.append(f"missing or unparseable {COMPLETION_MARKER}")
+        else:
+            if marker.get("status") != "complete":
+                failures.append("completion marker status is not 'complete'")
+            if marker.get("formal_run_valid") is not True:
+                failures.append("completion marker does not state formal_run_valid")
+            for field, expected in (
+                ("run_id", dir_run_id),
+                (
+                    "head",
+                    expected_head if expected_head is not None else manifest.get("head"),
+                ),
+                (
+                    "schema",
+                    expected_schema if expected_schema is not None else manifest.get("schema"),
+                ),
+            ):
+                if expected is not None and marker.get(field) != expected:
+                    failures.append(
+                        f"completion marker {field} {marker.get(field)!r} != {expected!r}"
+                    )
+            recorded_sha = marker.get("artifact_manifest_sha256")
+            if not recorded_sha:
+                failures.append("completion marker missing artifact_manifest_sha256")
+            elif recorded_sha != sha256_file(manifest_path):
+                failures.append("completion marker manifest hash mismatch")
+            evidence = marker.get("preflight")
+            if not isinstance(evidence, dict) or evidence.get("complete") is not True:
+                failures.append(
+                    "completion marker evidence is not a completed preflight record"
+                )
     if failures:
         raise RuntimeError("artifact verification failed: " + "; ".join(failures))
     return {
         "complete": True,
         "verified_files": len(declared_inventory),
         "artifact_manifest_sha256": sha256_file(manifest_path),
+        "mode": "formal" if formal else "preflight",
     }
 
 
@@ -303,53 +421,82 @@ class ArtifactPublisher:
     # -- publication -------------------------------------------------------
 
     def publish(self, summary: Mapping | None = None) -> Path:
-        """Hash everything, write the manifest + completion marker, verify,
-        and only then atomically promote staging to the final run directory."""
+        """Fail-closed publication state machine.
+
+        1. write the artifact manifest into staging;
+        2. preflight-verify staging (payload/metadata binding; a completion
+           marker inside staging is invalid and is not required here);
+        3. atomically promote staging to the final run-id directory;
+        4. atomically write ``COMPLETED.json`` INSIDE the final directory
+           (the commit point; carries the completed preflight evidence);
+        5. formal-verify the final directory with the full metadata binding.
+
+        The marker is never written before its evidence exists, and it is
+        always written inside an already-promoted directory — a crash at any
+        point leaves a state the formal verifier rejects (no marker inside
+        staging is honored; a promoted directory without a marker fails).
+        """
         manifest = self.build_artifact_manifest(summary)
         manifest_path = self.staging / ARTIFACT_MANIFEST
         atomic_write_json(manifest_path, manifest)
-        marker_path = self.staging / COMPLETION_MARKER
-        atomic_write_json(
-            marker_path,
-            {
-                "status": "complete",
-                "formal_run_valid": True,
-                "run_id": self.run_id,
-                "head": self.head,
-                "schema": self.schema,
-                "artifact_manifest_sha256": sha256_file(manifest_path),
-                "completed_at": datetime.now().isoformat(),
-                "verifier": "inline_verify_pending_promotion",
-            },
-        )
         try:
-            result = verify_formal_artifact(
+            preflight = verify_formal_artifact(
                 self.staging,
                 self.expected_registry,
+                expected_run_id=self.run_id,
                 expected_head=self.head,
                 expected_schema=self.schema,
+                formal=False,
             )
-        except RuntimeError as exc:
-            marker_path.unlink(missing_ok=True)
+        except BaseException as exc:
             self.mark_incomplete(exc)
             raise
-        atomic_write_json(
-            marker_path,
-            {
-                "status": "complete",
-                "formal_run_valid": True,
-                "run_id": self.run_id,
-                "head": self.head,
-                "schema": self.schema,
-                "artifact_manifest_sha256": sha256_file(manifest_path),
-                "completed_at": datetime.now().isoformat(),
-                "verifier": result,
-            },
-        )
-        os.replace(self.staging, self.final)
+
+        try:
+            os.replace(self.staging, self.final)
+        except BaseException as exc:
+            self.mark_incomplete(exc)
+            raise
+
+        try:
+            atomic_write_json(
+                self.final / COMPLETION_MARKER,
+                {
+                    "status": "complete",
+                    "formal_run_valid": True,
+                    "run_id": self.run_id,
+                    "head": self.head,
+                    "schema": self.schema,
+                    "artifact_manifest_sha256": sha256_file(
+                        self.final / ARTIFACT_MANIFEST
+                    ),
+                    "completed_at": datetime.now().isoformat(),
+                    "preflight": preflight,
+                },
+            )
+            verify_formal_artifact(
+                self.final,
+                self.expected_registry,
+                expected_run_id=self.run_id,
+                expected_head=self.head,
+                expected_schema=self.schema,
+                formal=True,
+            )
+        except BaseException as exc:
+            # fail-closed: strip any (possibly half-written) marker, record
+            # the explicit incomplete state, and never leave a directory
+            # that could be mistaken for formal
+            (self.final / COMPLETION_MARKER).unlink(missing_ok=True)
+            self._mark_final_incomplete(exc)
+            raise
         return self.final
 
     def mark_incomplete(self, reason: BaseException | str) -> None:
+        """Explicitly invalidate the staging attempt: any completion marker
+        present is removed — a .incomplete directory can never claim
+        formal_run_valid, whatever its contents."""
+        (self.staging / COMPLETION_MARKER).unlink(missing_ok=True)
+        (self.staging / (COMPLETION_MARKER + ".tmp")).unlink(missing_ok=True)
         atomic_write_json(
             self.staging / INCOMPLETE_MARKER,
             {
@@ -361,6 +508,25 @@ class ArtifactPublisher:
                     "this staged directory is NOT a formal artifact; it must "
                     "not be cited as a performance baseline and "
                     "performance_valid / formal_run_valid do not hold"
+                ),
+            },
+        )
+
+    def _mark_final_incomplete(self, reason: BaseException | str) -> None:
+        """Explicitly invalidate a PROMOTED directory whose formal
+        verification failed (no valid COMPLETED.json exists at this point,
+        so COMPLETED/INCOMPLETE can never coexist)."""
+        atomic_write_json(
+            self.final / INCOMPLETE_MARKER,
+            {
+                "status": "incomplete",
+                "run_id": self.run_id,
+                "head": self.head,
+                "reason": str(reason),
+                "note": (
+                    "this promoted directory failed formal verification and "
+                    "is NOT a formal artifact; performance_valid / "
+                    "formal_run_valid do not hold"
                 ),
             },
         )

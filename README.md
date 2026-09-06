@@ -283,7 +283,7 @@ uv run python scripts/run_research_backtest.py
 ```
 
 Results are written under
-`data/experiments/performance_baseline_benchmark_correctness_v0_1_2/<run_id>/`,
+`data/experiments/performance_baseline_benchmark_correctness_v0_1_3/<run_id>/`,
 including
 `summary.json` (metadata + status + provenance + metrics), `manifest.json`
 (input data content fingerprint), `strict_daily_records.csv`,
@@ -431,21 +431,35 @@ Current facts of the formal 2020–2024 baseline
   prices. `code_change_lineage_audit` proves per lineage: zero
   future-successor violations, zero old/new overlap, and counts
   eligible-but-unpriced predecessors.
-- **Atomic formal artifacts (v0.1.2)**: every run is written into
-  `<run_id>.incomplete/` and only promoted to `<run_id>/` by an atomic
-  rename after the SHA-256 `artifact_manifest.json` is built and the
-  independent verifier (`scripts/verify_formal_run.py`) passes; a
-  `COMPLETED.json` marker (schema, HEAD, manifest hash, verifier result)
-  asserts `formal_run_valid`. A failed or interrupted run can never leave a
-  formal-looking final directory or a success-looking `summary.json`.
-  Exports are bounded-memory (positions/trades stream in chunks, never a
-  full row list) and per-file atomic (temp sidecar + rename).
+- **Fail-closed artifact commit protocol (v0.1.3)**: every run is written
+  into `<run_id>.incomplete/`; publication follows a strict state machine —
+  manifest → preflight verification (no completion marker involved; any
+  `COMPLETED.json` inside a staging directory is invalid by definition) →
+  atomic promotion → completion marker written atomically INSIDE the
+  promoted directory (the commit point) → formal verification. A crash at
+  any point is fail-closed: staged directories never pass formal
+  verification regardless of their contents, and a promoted directory
+  without a valid marker is rejected for lack of it. The formal verifier
+  cross-binds directory basename, run id, external HEAD/schema/run-id,
+  summary, manifest and marker, and re-derives every payload hash from the
+  bytes on disk. The formal CLI mode requires an explicit
+  `--expected-head <full SHA>`; a non-formal diagnostic mode is available
+  only under an explicit `--mode diagnostic` flag. Exports are
+  bounded-memory (positions/trades stream in chunks, never a full row list)
+  and per-file atomic (temp sidecar + rename).
+- **v0.1.2 runs `20260906T135141.incomplete` and
+  `20260906T131724.incomplete` are INCOMPLETE artifacts**: the former
+  carries a stale `COMPLETED.json` (`verifier=inline_verify_pending_promotion`)
+  written before verification crashed — exactly the fail-open marker the
+  v0.1.3 protocol eliminates; it is retained as regression evidence and
+  must NOT be cited as a formal baseline. Formal metrics come exclusively
+  from verifier-passed v0.1.3 artifacts.
 - **v0.1.1 run `20260906T120051` is an INCOMPLETE artifact**: it crashed
   mid-export (control recovery-1 daily positions) after writing
   `summary.json`, missing `equal_weight_v1_control_recovery_assumption_0`
   entirely and the recovery-1 control `daily_positions.csv`. It is retained
   as superseded evidence only and must NOT be cited as a formal baseline;
-  formal metrics come exclusively from verifier-passed v0.1.2 artifacts.
+  formal metrics come exclusively from verifier-passed v0.1.3 artifacts.
 
 ## Research Philosophy
 

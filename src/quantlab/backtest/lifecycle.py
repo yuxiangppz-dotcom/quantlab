@@ -225,10 +225,20 @@ def pit_eligible_instrument_ids(
     eligible: set[str] = set()
     for s in securities:
         successor = successor_change.get(s.instrument_id)
+        predecessor = predecessor_change.get(s.instrument_id)
         if successor is not None:
             # successor identity begins exactly at the effective date; the
             # master's backfilled original list_date is NOT a visibility fact
             if as_of < successor.effective_date:
+                continue
+        elif predecessor is not None:
+            # predecessor identity START is defined by the lineage fact's
+            # original_list_date — authoritative even when the master row
+            # carries a different (e.g. later) list_date
+            start = predecessor.original_list_date
+            if start is None:
+                start = s.list_date
+            if start is None or as_of < start:
                 continue
         elif s.list_date is None or s.list_date > as_of:
             continue

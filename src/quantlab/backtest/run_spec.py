@@ -2,9 +2,13 @@
 
 A spec is constructed once from the actual invocation inputs and is then the
 ONLY way the runner submits a backtest to the engine — ``spec.run()`` generates
-the ``run_backtest`` kwargs from the spec's own fields. The strategy/control
-symmetry audit reads these same spec objects, so the audit compares what was
-actually executed; post-hoc mirror dicts re-typed from constants are rejected.
+the ``run_backtest`` kwargs from the spec's own fields. Every audit
+fingerprint (lifecycle mode, monitor state, risk facts, targets) is DERIVED
+from the actual objects the spec holds — callers cannot supply self-certifying
+strings — and ``run()``/``strategy_control_symmetry_audit`` fail hard if the
+underlying objects drift after construction. The strategy/control symmetry
+audit therefore compares what was actually executed; post-hoc mirror dicts
+re-typed from constants are rejected.
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ from datetime import date
 
 import pandas as pd
 
+from quantlab.backtest.audit import fingerprint_targets
 from quantlab.backtest.engine import MISSING_PRICE_POLICY, run_backtest
 from quantlab.portfolio.models import TargetPortfolio
 
@@ -48,9 +53,36 @@ def fingerprint_risk_facts(risk_facts: Mapping) -> str:
     return "sha256:" + hashlib.sha256(payload).hexdigest()
 
 
+def fingerprint_lifecycle_monitor(monitor) -> str:
+    """Deterministic fingerprint of the monitor's ACTUAL state.
+
+    Hashes the mode and the delist/code-change maps the monitor will
+    actually enforce, so a snapshot can never certify anything other than
+    the live object's behavior.
+    """
+    payload = {
+        "mode": monitor.mode,
+        "delist_map": sorted(
+            (k, v.isoformat()) for k, v in monitor.delist_map.items()
+        ),
+        "code_change_map": sorted(
+            (k, v.isoformat()) for k, v in monitor.code_change_map.items()
+        ),
+        "conflicts": sorted(monitor.conflicts),
+    }
+    encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
 @dataclass(frozen=True)
 class BacktestRunSpec:
-    """One formal backtest invocation, executable and auditable."""
+    """One formal backtest invocation, executable and auditable.
+
+    The lifecycle mode, monitor snapshot, risk-fact fingerprint and target
+    fingerprint are derived from the actual objects at construction time;
+    ``run()`` and the symmetry audit re-derive them and fail hard on any
+    drift, so a caller can never present a stale or forged certification.
+    """
 
     label: str
     price_frame: pd.DataFrame
@@ -60,15 +92,52 @@ class BacktestRunSpec:
     execution_lag_sessions: int
     mode: str
     lifecycle: object  # LifecycleMonitor
-    lifecycle_mode: str
-    lifecycle_monitor_snapshot: str
     requested_period_start: date
     requested_period_end: date
     risk_facts: Mapping
-    risk_fact_snapshot: str
     risk_policy: str
-    targets_fingerprint: str | None = None
     notes: tuple[str, ...] = field(default=())
+
+    def __post_init__(self) -> None:
+        self._bind()
+
+    def _bind(self) -> None:
+        """Derive and freeze the audit fingerprints from actual objects."""
+        object.__setattr__(
+            self, "lifecycle_mode", getattr(self.lifecycle, "mode", None)
+        )
+        object.__setattr__(
+            self,
+            "lifecycle_monitor_snapshot",
+            fingerprint_lifecycle_monitor(self.lifecycle),
+        )
+        object.__setattr__(
+            self, "risk_fact_snapshot", fingerprint_risk_facts(self.risk_facts)
+        )
+        object.__setattr__(
+            self, "targets_fingerprint", fingerprint_targets(dict(self.targets))
+        )
+
+    def verify_bindings(self) -> None:
+        """Fail hard if the underlying objects drifted after construction."""
+        expected = {
+            "lifecycle_mode": getattr(self.lifecycle, "mode", None),
+            "lifecycle_monitor_snapshot": fingerprint_lifecycle_monitor(
+                self.lifecycle
+            ),
+            "risk_fact_snapshot": fingerprint_risk_facts(self.risk_facts),
+            "targets_fingerprint": fingerprint_targets(dict(self.targets)),
+        }
+        drifted = {
+            name: (getattr(self, name), value)
+            for name, value in expected.items()
+            if getattr(self, name) != value
+        }
+        if drifted:
+            raise RuntimeError(
+                "run spec binding drift detected (objects were mutated after "
+                f"construction): {drifted}"
+            )
 
     def engine_kwargs(self) -> dict:
         """The exact kwargs submitted to ``run_backtest`` — generated from
@@ -89,10 +158,12 @@ class BacktestRunSpec:
 
     def run(self):
         """Execute the backtest described by this spec."""
+        self.verify_bindings()
         return run_backtest(**self.engine_kwargs())
 
     def symmetry_fields(self) -> dict:
         settlement = getattr(self.config, "delisting_settlement", None)
+        self.verify_bindings()
         return {
             "open_dates": list(self.open_dates),
             "signal_dates": sorted(self.targets),
@@ -128,8 +199,10 @@ def strategy_control_symmetry_audit(
     Both arguments must be :class:`BacktestRunSpec` instances — the objects
     whose ``engine_kwargs()`` were submitted to the engine. Mirror dicts are
     rejected (``TypeError``). Every spec-derived field that can move
-    performance is compared explicitly; only target construction (and its
-    fingerprint) may differ.
+    performance is compared explicitly. A formal strategy/control pair must
+    differ in label AND in actual target fingerprints — identical
+    construction can never pass as a control — and every execution field
+    outside target construction must be identical.
     """
     if not isinstance(strategy_spec, BacktestRunSpec) or not isinstance(
         control_spec, BacktestRunSpec
@@ -151,8 +224,15 @@ def strategy_control_symmetry_audit(
         audit_name: strategy_fields[spec_key] == control_fields[spec_key]
         for spec_key, audit_name in _SYMMETRY_FIELDS
     }
-    checks["same_target_construction_allowed_to_differ"] = (
-        strategy_spec.targets_fingerprint != control_spec.targets_fingerprint
-        or strategy_spec.label != control_spec.label
-    )
+    if strategy_spec.label == control_spec.label:
+        raise RuntimeError(
+            "formal strategy and control must carry different labels; "
+            f"got {strategy_spec.label!r} twice"
+        )
+    if strategy_spec.targets_fingerprint == control_spec.targets_fingerprint:
+        raise RuntimeError(
+            "formal strategy and control must be built by different target "
+            "constructions (identical target fingerprints)"
+        )
+    checks["same_target_construction_allowed_to_differ"] = True
     return checks

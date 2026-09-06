@@ -12,10 +12,8 @@ import pytest
 
 from quantlab.backtest.artifacts import (
     COMPLETION_MARKER,
-    INCOMPLETE_MARKER,
     ArtifactPublisher,
     sha256_file,
-    verify_formal_artifact,
 )
 from quantlab.backtest.experiment import export_group
 from quantlab.backtest.models import (
@@ -255,11 +253,16 @@ def _fill_group(tmp_path, prefix) -> None:
 
 
 def test_publisher_promotes_staging_only_after_verification(tmp_path) -> None:
+    """Publisher/verifier behavior is covered comprehensively by
+    tests/backtest/test_artifact_protocol.py (v0.1.3 fail-closed protocol);
+    this smoke check only guards the happy path end-to-end."""
     staging = tmp_path / "20260105T000000.incomplete"
     staging.mkdir()
     for group in PRIMARY_GROUPS:
         _fill_group(staging, group)
-    (staging / "summary.json").write_text(json.dumps({"code_version": "head0"}))
+    (staging / "summary.json").write_text(json.dumps({
+        "code_version": "head0", "run_id": "20260105T000000",
+    }))
     (staging / "manifest.json").write_text("{}")
 
     publisher = ArtifactPublisher(
@@ -273,110 +276,3 @@ def test_publisher_promotes_staging_only_after_verification(tmp_path) -> None:
     assert completed["formal_run_valid"] is True
     assert completed["head"] == "head0"
     assert (final / "artifact_manifest.json").exists()
-
-
-def test_publisher_failure_keeps_incomplete_and_never_promotes(tmp_path) -> None:
-    staging = tmp_path / "20260105T000000.incomplete"
-    staging.mkdir()
-    _fill_group(staging, "primary_strategy_recovery_assumption_1")
-    publisher = ArtifactPublisher(
-        tmp_path, "20260105T000000",
-        expected_registry=_registry(), head="head0",
-    )
-    with pytest.raises(
-        RuntimeError, match="equal_weight_v1_control_recovery_assumption_0"
-    ):
-        publisher.publish()
-    assert (tmp_path / "20260105T000000").exists() is False
-    assert json.loads((staging / INCOMPLETE_MARKER).read_text())["status"] == "incomplete"
-    assert (staging / "COMPLETED.json").exists() is False
-
-
-def test_verifier_fail_hard_on_hash_header_or_row_mismatch(tmp_path) -> None:
-    staging = tmp_path / "20260105T000000.incomplete"
-    staging.mkdir()
-    for group in PRIMARY_GROUPS:
-        _fill_group(staging, group)
-    (staging / "summary.json").write_text(json.dumps({"code_version": "head0"}))
-    (staging / "manifest.json").write_text("{}")
-    publisher = ArtifactPublisher(
-        tmp_path, "20260105T000000",
-        expected_registry=_registry(), head="head0",
-    )
-    manifest = publisher.build_artifact_manifest()
-    (staging / "artifact_manifest.json").write_text(json.dumps(manifest))
-    _write_completion_marker(staging)
-
-    csv = staging / "primary_strategy_recovery_assumption_1_daily_records.csv"
-
-    # tamper with a file AFTER the manifest was written -> hash mismatch
-    csv.write_text(csv.read_text() + "0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0\n")
-    with pytest.raises(RuntimeError, match="sha256"):
-        verify_formal_artifact(staging, _registry(), expected_head="head0")
-
-    # restore, then corrupt a header -> header mismatch
-    _fill_group(staging, "primary_strategy_recovery_assumption_1")
-    csv.write_text("wrong,header\n")
-    with pytest.raises(RuntimeError, match="header"):
-        verify_formal_artifact(staging, _registry(), expected_head="head0")
-
-    # restore, then truncate rows -> row count mismatch
-    _fill_group(staging, "primary_strategy_recovery_assumption_1")
-    lines = csv.read_text().splitlines()
-    csv.write_text("\n".join(lines[:-1]) + "\n")
-    with pytest.raises(RuntimeError, match="row count"):
-        verify_formal_artifact(staging, _registry(), expected_head="head0")
-
-
-def test_verifier_requires_both_control_bounds_and_completion(tmp_path) -> None:
-    staging = tmp_path / "20260105T000000.incomplete"
-    staging.mkdir()
-    registry = _registry()
-    for g in registry["groups"]:
-        _fill_group(staging, g)
-    (staging / "summary.json").write_text(json.dumps({"code_version": "head0"}))
-    (staging / "manifest.json").write_text("{}")
-    publisher = ArtifactPublisher(
-        tmp_path, "20260105T000000", expected_registry=registry, head="head0",
-    )
-    manifest = publisher.build_artifact_manifest()
-    (staging / "artifact_manifest.json").write_text(json.dumps(manifest))
-    _write_completion_marker(staging)
-    result = verify_formal_artifact(staging, registry, expected_head="head0")
-    assert result["complete"] is True
-
-    # a control bound missing from the registry must fail the verification
-    partial_registry = _registry(
-        groups=(
-            "primary_strategy_recovery_assumption_1",
-            "primary_strategy_recovery_assumption_0",
-            "equal_weight_v1_control_recovery_assumption_1",
-        ),
-    )
-    with pytest.raises(RuntimeError, match="recovery"):
-        verify_formal_artifact(staging, partial_registry, expected_head="head0")
-
-
-def test_verifier_rejects_head_or_schema_mismatch(tmp_path) -> None:
-    staging = tmp_path / "20260105T000000.incomplete"
-    staging.mkdir()
-    for group in PRIMARY_GROUPS:
-        _fill_group(staging, group)
-    summary = {
-        "code_version": "headOTHER",
-        "experiment_schema": "performance_baseline_benchmark_correctness_v0_1_2",
-    }
-    (staging / "summary.json").write_text(json.dumps(summary))
-    (staging / "manifest.json").write_text("{}")
-    publisher = ArtifactPublisher(
-        tmp_path, "20260105T000000",
-        expected_registry=_registry(), head="head0",
-    )
-    manifest = publisher.build_artifact_manifest(summary)
-    (staging / "artifact_manifest.json").write_text(json.dumps(manifest))
-    _write_completion_marker(staging)
-    with pytest.raises(RuntimeError, match="HEAD"):
-        verify_formal_artifact(
-            staging, _registry(), expected_head="head0",
-            expected_schema="performance_baseline_benchmark_correctness_v0_1_2",
-        )

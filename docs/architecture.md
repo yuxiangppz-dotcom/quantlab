@@ -362,6 +362,46 @@ with an explicit `INCOMPLETE.json` marker and never publishes a
 formal-looking final directory; `performance_valid` and `formal_run_valid`
 never hold on an incomplete artifact.
 
+### Fail-Closed Completion Marker Protocol (v0.1.3)
+
+The v0.1.2 sequence (marker → verify → promote) was fail-open: a process
+killed during verification left `COMPLETED.json` with
+`formal_run_valid=true` and `verifier="inline_verify_pending_promotion"`
+inside a staging directory (observed on `20260906T135141.incomplete`). The
+v0.1.3 publication state machine is:
+
+1. staging payload complete (exports + summary + audits);
+2. `artifact_manifest.json` written;
+3. **preflight verification** on staging — full payload/metadata binding,
+   no completion marker required, and any `COMPLETED.json` found in a
+   staging directory is a hard failure;
+4. atomic promotion (rename to the final run-id directory);
+5. **completion marker** written atomically INSIDE the promoted directory —
+   the commit point, carrying the completed preflight evidence, the
+   manifest SHA-256, run id, HEAD and schema;
+6. **formal verification** on the final directory — cross-binds directory
+   basename, run id, external HEAD/schema/run-id, summary, manifest and
+   marker, re-derives every payload hash, and rejects `INCOMPLETE.json`,
+   temp/partial files, registry tampering and any inventory mismatch.
+
+Because the marker is written only inside an already-promoted directory,
+every interruption point is fail-closed: a crash before step 5 leaves a
+promoted directory that fails formal verification for lack of the marker; a
+crash after step 5 leaves an artifact whose claims the verifier re-derives
+from the bytes on disk (a corrupted payload fails the hash re-check despite
+`formal_run_valid=true`). `mark_incomplete` removes any completion marker a
+failed attempt left in staging, and a formal directory can never contain
+both `COMPLETED.json` and `INCOMPLETE.json`.
+
+The formal CLI mode (`scripts/verify_formal_run.py`, default) requires an
+explicit `--expected-head <full SHA>`; a non-formal diagnostic mode exists
+only behind an explicit `--mode diagnostic` flag and binds no external
+expectations. All audit fingerprints in `BacktestRunSpec` (lifecycle mode,
+monitor state, risk facts, targets) are derived from the actual objects the
+spec submits to the engine; `run()` and the symmetry audit fail hard on any
+post-construction drift, and a formal strategy/control pair must differ in
+both label and actual target fingerprints.
+
 ### Known limitations and deferred work
 
 - **Lifecycle fact coverage is incomplete.** Trusted termination-decision facts

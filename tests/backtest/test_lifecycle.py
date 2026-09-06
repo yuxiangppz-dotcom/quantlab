@@ -663,6 +663,43 @@ def test_pit_lineage_master_row_predecessor_still_governed_by_monitor() -> None:
     assert on == ["NEW.SZ"]
 
 
+def test_pit_lineage_predecessor_master_row_start_follows_lineage_fact() -> None:
+    """When a predecessor master row exists, the identity START is defined by
+    the code-change lineage fact (``original_list_date``), not by the
+    master row's (possibly divergent) ``list_date``. The switch happens
+    exactly on the effective date and the two identities never overlap."""
+    securities = [
+        # master row lists the predecessor LATER than the lineage fact does
+        _security("OLD.SZ", list_date=date(2016, 1, 1)),
+        _security("NEW.SZ", list_date=date(2010, 1, 1)),  # backfilled
+    ]
+    changes = [
+        _lineage_change(
+            "OLD.SZ", "NEW.SZ",
+            effective=D2, original_list_date=date(2015, 1, 1),
+        ),
+    ]
+
+    def eligible(as_of):
+        return pit_eligible_instrument_ids(
+            securities, changes, as_of, LEGACY_DELIST_DATE_INCLUSIVE
+        )
+
+    # after the lineage original_list_date but BEFORE the master list_date:
+    # the old identity is already eligible (lineage fact is authoritative)
+    assert eligible(date(2015, 6, 1)) == ["OLD.SZ"]
+    # before the lineage original_list_date: nothing of this lineage exists
+    assert eligible(date(2014, 12, 1)) == []
+    # exactly on the effective date the identity switches
+    assert eligible(D2) == ["NEW.SZ"]
+    # no overlap on any probed session
+    day = date(2015, 1, 1)
+    while day <= date(2026, 12, 31):
+        ids = set(eligible(day))
+        assert not {"OLD.SZ", "NEW.SZ"} <= ids, day
+        day += timedelta(days=1)
+
+
 def test_code_change_lineage_audit_reports_identity_evidence() -> None:
     """The formal lineage audit proves: no future-successor visibility, no
     old/new overlap, and counts eligible-but-unpriced predecessors."""

@@ -73,8 +73,6 @@ from quantlab.backtest import (
     build_report,
     code_change_lineage_audit,
     compute_metrics,
-    fingerprint_risk_facts,
-    fingerprint_security_master,
     first_invalid_open_session,
     formal_reproducibility_evidence,
     pit_eligibility_frame,
@@ -131,8 +129,8 @@ from quantlab.research.universe import is_v1_a_share
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ENGINE_SCHEMA_VERSION = "v0.3.0"
-EXPERIMENT_SCHEMA = "performance_baseline_benchmark_correctness_v0_1_2"
-ANALYSIS_TYPE = "performance_baseline_benchmark_correctness_v0_1_2"
+EXPERIMENT_SCHEMA = "performance_baseline_benchmark_correctness_v0_1_3"
+ANALYSIS_TYPE = "performance_baseline_benchmark_correctness_v0_1_3"
 
 _SHADOW_ADMISSION_COLUMNS = [
     "instrument_id", "signal_date", "execution_date", "target_weight",
@@ -1158,13 +1156,10 @@ def _main() -> None:
     # single source of truth: every primary run is described by an immutable
     # BacktestRunSpec; spec.run() generates the exact kwargs submitted to the
     # engine, and the symmetry audit reads these same spec objects (never
-    # re-typed mirror dicts)
-    lifecycle_monitor_snapshot = fingerprint_security_master(
-        securities, code_changes, LEGACY_DELIST_DATE_INCLUSIVE
-    )
-    risk_fact_snapshot = fingerprint_risk_facts(delisting_facts)
-
-    def _primary_spec(label, bound_config, run_targets, targets_fingerprint):
+    # re-typed mirror dicts). All audit fingerprints (lifecycle mode, monitor
+    # state, risk facts, targets) are DERIVED from the actual objects inside
+    # the spec — no caller-supplied self-certifying strings exist.
+    def _primary_spec(label, bound_config, run_targets):
         return BacktestRunSpec(
             label=label,
             price_frame=price_frame,
@@ -1174,30 +1169,21 @@ def _main() -> None:
             execution_lag_sessions=1,
             mode=RUN_MODE_STRICT,
             lifecycle=monitor,
-            lifecycle_mode=LEGACY_DELIST_DATE_INCLUSIVE,
-            lifecycle_monitor_snapshot=lifecycle_monitor_snapshot,
             requested_period_start=PERIOD_START,
             requested_period_end=PERIOD_END,
             risk_facts=delisting_facts,
-            risk_fact_snapshot=risk_fact_snapshot,
             risk_policy=EXIT_POLICY_ID,
-            targets_fingerprint=targets_fingerprint,
         )
 
     strategy_specs = {
-        bound: _primary_spec(
-            "primary_strategy", cfg, targets, fingerprint_targets(targets)
-        )
+        bound: _primary_spec("primary_strategy", cfg, targets)
         for bound, cfg in (
             ("recovery_assumption_1", settlement_config),
             ("recovery_assumption_0", settlement_zero_config),
         )
     }
     control_specs = {
-        bound: _primary_spec(
-            CONTROL_PORTFOLIO_NAME, cfg, control_targets,
-            fingerprint_targets(control_targets),
-        )
+        bound: _primary_spec(CONTROL_PORTFOLIO_NAME, cfg, control_targets)
         for bound, cfg in (
             ("recovery_assumption_1", settlement_config),
             ("recovery_assumption_0", settlement_zero_config),

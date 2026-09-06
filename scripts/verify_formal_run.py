@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""Independent verifier for a formal QuantLab run directory.
+"""Independent verifier for a formal QuantLab run directory (v0.1.3).
 
-Re-derives the complete expected artifact inventory from the declared
-registry (14 groups x 13 standard files + top-level artifacts), then fails
-hard on: missing files, sha256 mismatches, size mismatches, CSV header
-mismatches, row-count mismatches, missing control recovery bounds, a missing
-or invalid COMPLETED.json marker, a manifest that does not match the actual
-directory, or a summary whose schema/HEAD disagree with the expectations.
+Formal mode (default) requires an explicit external ``--expected-head`` and
+cross-binds: directory basename, run id, HEAD, schema, summary, artifact
+manifest, completion marker and the canonical registry. It fails hard on
+staged ``.incomplete`` directories, missing/invalid completion markers,
+``INCOMPLETE.json`` files, temp/partial files, inventory or hash mismatches,
+and any metadata disagreement between marker/manifest/summary/directory.
+
+``--mode diagnostic`` is the explicitly-named NON-formal mode: it checks
+embedded metadata and payload integrity only (no external HEAD binding, no
+completion-marker requirement) and must never be used for publication.
 
 Exit codes: 0 = verified, 1 = verification failure. This verifier never
-trusts summary.json booleans.
+trusts recorded booleans.
 """
 
 from __future__ import annotations
@@ -26,7 +30,7 @@ from quantlab.backtest.artifacts import (  # noqa: E402
     verify_formal_artifact,
 )
 
-EXPERIMENT_SCHEMA = "performance_baseline_benchmark_correctness_v0_1_2"
+SCHEMA = "performance_baseline_benchmark_correctness_v0_1_3"
 
 EXPORT_GROUPS = (
     "A_legacy_baseline",
@@ -56,45 +60,62 @@ TOP_LEVEL = (
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Formal (default) or diagnostic-only artifact verification.",
+    )
     parser.add_argument("run_dir", type=Path, help="formal run directory")
+    parser.add_argument(
+        "--mode",
+        choices=("formal", "diagnostic"),
+        default="formal",
+        help="formal (default; requires --expected-head) or the explicitly "
+        "named non-formal diagnostic mode",
+    )
     parser.add_argument(
         "--expected-head",
         default=None,
-        help="git HEAD the run was launched from (enforced against summary)",
+        help="git HEAD the run was launched from (REQUIRED in formal mode)",
+    )
+    parser.add_argument(
+        "--expected-schema", default=SCHEMA, help="expected experiment schema"
+    )
+    parser.add_argument(
+        "--expected-run-id", default=None, help="expected run id (basename)"
     )
     args = parser.parse_args()
+
+    formal = args.mode == "formal"
+    if formal and not args.expected_head:
+        parser.error(
+            "formal mode requires an explicit --expected-head <full SHA>; "
+            "use --mode diagnostic for the non-formal embedded-metadata check"
+        )
 
     run_dir = args.run_dir
     if not run_dir.is_dir():
         print(f"FAIL: {run_dir} is not a directory")
-        return 1
-    if run_dir.name.endswith(".incomplete"):
-        print("FAIL: staged .incomplete directory is not a formal artifact")
         return 1
 
     registry = {
         "groups": {g: list(STANDARD_GROUP_FAMILY) for g in EXPORT_GROUPS},
         "top_level": list(TOP_LEVEL),
     }
-    summary = json.loads((run_dir / "summary.json").read_text())
-    expected_head = args.expected_head or summary.get("code_version")
 
     try:
         result = verify_formal_artifact(
             run_dir,
             registry,
-            expected_head=expected_head,
-            expected_schema=EXPERIMENT_SCHEMA,
+            expected_run_id=args.expected_run_id,
+            expected_head=args.expected_head,
+            expected_schema=args.expected_schema,
+            formal=formal,
         )
     except RuntimeError as exc:
         print(f"FAIL: {exc}")
         return 1
 
-    print("VERIFIED:", json.dumps(result, indent=2))
+    print(f"VERIFIED ({args.mode}):", json.dumps(result, indent=2))
     print(f"run_dir: {run_dir}")
-    print(f"schema: {summary.get('experiment_schema')}")
-    print(f"head: {summary.get('code_version')}")
     return 0
 
 
