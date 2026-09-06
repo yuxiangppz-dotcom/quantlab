@@ -283,7 +283,7 @@ uv run python scripts/run_research_backtest.py
 ```
 
 Results are written under
-`data/experiments/performance_baseline_benchmark_correctness_v0_1_1/<run_id>/`,
+`data/experiments/performance_baseline_benchmark_correctness_v0_1_2/<run_id>/`,
 including
 `summary.json` (metadata + status + provenance + metrics), `manifest.json`
 (input data content fingerprint), `strict_daily_records.csv`,
@@ -418,6 +418,34 @@ Current facts of the formal 2020–2024 baseline
   `delist_date_is_first_invalid_v1` remains a candidate. Termination
   announcement coverage is still
   `blocked_by_missing_anns_d_permission`.
+- **PIT code-lineage identity (v0.1.2)**: a code-change fact defines an
+  explicit identity interval — before the `effective_date` only the old
+  instrument id exists; from the effective date (inclusive) only the new id
+  exists. A successor's vendor-backfilled `original_list_date` (mirrored
+  into the successor master row) is NOT a visibility fact, so a future
+  successor id (e.g. `302132.SZ`, effective 2025-02-17) never appears in
+  2020–2024 eligibility even though the vendor backfilled history bars under
+  it. A predecessor absent from the security master (e.g. `300114.SZ`)
+  stays PIT-eligible (eligible-but-unpriced) until the day before the
+  effective date and is never silently aliased to the successor's backfilled
+  prices. `code_change_lineage_audit` proves per lineage: zero
+  future-successor violations, zero old/new overlap, and counts
+  eligible-but-unpriced predecessors.
+- **Atomic formal artifacts (v0.1.2)**: every run is written into
+  `<run_id>.incomplete/` and only promoted to `<run_id>/` by an atomic
+  rename after the SHA-256 `artifact_manifest.json` is built and the
+  independent verifier (`scripts/verify_formal_run.py`) passes; a
+  `COMPLETED.json` marker (schema, HEAD, manifest hash, verifier result)
+  asserts `formal_run_valid`. A failed or interrupted run can never leave a
+  formal-looking final directory or a success-looking `summary.json`.
+  Exports are bounded-memory (positions/trades stream in chunks, never a
+  full row list) and per-file atomic (temp sidecar + rename).
+- **v0.1.1 run `20260906T120051` is an INCOMPLETE artifact**: it crashed
+  mid-export (control recovery-1 daily positions) after writing
+  `summary.json`, missing `equal_weight_v1_control_recovery_assumption_0`
+  entirely and the recovery-1 control `daily_positions.csv`. It is retained
+  as superseded evidence only and must NOT be cited as a formal baseline;
+  formal metrics come exclusively from verifier-passed v0.1.2 artifacts.
 
 ## Research Philosophy
 

@@ -183,36 +183,71 @@ def pit_eligible_instrument_ids(
     mode: str,
     universe_predicate=None,
 ) -> list[str]:
-    """Return instrument ids PIT-eligible on ``as_of`` from the security master.
+    """Return instrument ids PIT-eligible on ``as_of`` from the security master
+    and the frozen code-change lineage facts.
 
-    Eligibility is defined purely by the instrument master and the frozen
-    lifecycle boundary semantics — never by price availability:
+    Eligibility is defined purely by the instrument master, the code-change
+    lineage and the frozen lifecycle boundary semantics — never by price
+    availability:
 
-    - listed on or before ``as_of`` (``list_date <= as_of``);
-    - not lifecycle-invalid at ``as_of`` under ``mode`` (delist boundary via
+    - **Code-change identity intervals are authoritative.** Before a
+      code-change ``effective_date`` only the OLD instrument id exists;
+      from the effective date (inclusive) only the NEW id exists. A
+      successor's vendor-backfilled ``original_list_date`` (mirrored into
+      the successor master row's ``list_date``) must never make the future
+      successor id PIT-visible early, and backfilled successor-id price
+      history never makes it a historically visible code.
+    - **Predecessors absent from the master stay eligible** (from the
+      lineage ``original_list_date`` until the day before the effective
+      date). Such an instrument is typically eligible-but-unpriced and is
+      handled by the engine's missing-price rules (unfilled weight stays
+      cash); it is never silently dropped and never silently aliased to the
+      successor's backfilled prices.
+    - Old and new identities of one lineage can never be co-eligible on the
+      same session (no double counting).
+    - Other instruments: listed on or before ``as_of`` and not
+      lifecycle-invalid at ``as_of`` under ``mode`` (delist boundary via
       :func:`is_instrument_invalid_on_delist_boundary`, code-change
       ``effective_date`` rule), checked through the same
-      :class:`LifecycleMonitor` the engine uses;
-    - passes ``universe_predicate`` when provided (e.g. the V1 SH/SZ A-share
-      definition); current ``list_status`` is never used as a historical
-      filter.
-
-    An instrument suspended on ``as_of`` (no bar that day) stays in the
-    result; what happens to it is decided downstream (unfilled target weight
-    stays cash, held positions stay frozen at their stale mark).
+      :class:`LifecycleMonitor` the engine uses.
+    - ``universe_predicate`` (e.g. the V1 SH/SZ A-share definition) applies
+      to every candidate; current ``list_status`` is never used as a
+      historical filter.
     """
     monitor = LifecycleMonitor(securities, code_changes, mode=mode)
     predicate = (
         universe_predicate if universe_predicate is not None else (lambda _: True)
     )
-    return sorted(
-        s.instrument_id
-        for s in securities
-        if s.list_date is not None
-        and s.list_date <= as_of
-        and predicate(s.instrument_id)
-        and monitor.event_for(s.instrument_id, as_of) is None
-    )
+    master_ids = {s.instrument_id for s in securities}
+    predecessor_change = {c.old_instrument_id: c for c in code_changes}
+    successor_change = {c.new_instrument_id: c for c in code_changes}
+
+    eligible: set[str] = set()
+    for s in securities:
+        successor = successor_change.get(s.instrument_id)
+        if successor is not None:
+            # successor identity begins exactly at the effective date; the
+            # master's backfilled original list_date is NOT a visibility fact
+            if as_of < successor.effective_date:
+                continue
+        elif s.list_date is None or s.list_date > as_of:
+            continue
+        if not predicate(s.instrument_id):
+            continue
+        if monitor.event_for(s.instrument_id, as_of) is None:
+            eligible.add(s.instrument_id)
+
+    for old_id, change in predecessor_change.items():
+        if old_id in master_ids:
+            # master row present: the monitor governs identity (its
+            # code_change event fires from the effective date)
+            continue
+        if not predicate(old_id):
+            continue
+        start = change.original_list_date
+        if start is not None and start <= as_of < change.effective_date:
+            eligible.add(old_id)
+    return sorted(eligible)
 
 
 def pit_eligibility_frame(

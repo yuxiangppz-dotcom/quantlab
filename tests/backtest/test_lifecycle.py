@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 import pytest
@@ -8,6 +8,7 @@ from quantlab.backtest import (
     LEGACY_DELIST_DATE_INCLUSIVE,
     BacktestConfig,
     LifecycleMonitor,
+    code_change_lineage_audit,
     first_invalid_open_session,
     is_instrument_invalid_on_delist_boundary,
     pit_eligibility_frame,
@@ -505,15 +506,17 @@ def test_pit_eligible_instrument_ids_code_change_boundary() -> None:
         _security("B.SZ"),
     ]
     changes = [_code_change("A.SZ", "A.NEW.SZ", effective=D1)]
-    # before the effective date the old code is eligible
+    # before the effective date only the old identity is eligible — the
+    # successor master row's list_date never makes it visible early
     before = pit_eligible_instrument_ids(securities, changes, D0, LEGACY_DELIST_DATE_INCLUSIVE)
     assert before == ["A.SZ", "B.SZ"]
-    # from the effective date the old code is gone; the new code needs its
-    # own master row with list_date <= as_of to appear
+    # from the effective date (inclusive) the identity switch happens: the
+    # successor is eligible and the old code is gone — even when the
+    # successor's backfilled list_date would suggest a later start
     on_effective = pit_eligible_instrument_ids(
         securities, changes, D1, LEGACY_DELIST_DATE_INCLUSIVE
     )
-    assert on_effective == ["B.SZ"]
+    assert on_effective == ["A.NEW.SZ", "B.SZ"]
     with_new = pit_eligible_instrument_ids(
         securities, changes, D2, LEGACY_DELIST_DATE_INCLUSIVE
     )
@@ -547,3 +550,151 @@ def test_pit_eligibility_frame_covers_every_signal_date_independently() -> None:
     assert d2_rows == ["A.SZ", "B.SZ"]
     # frame shape matches the (instrument_id, trade_date) cross-section contract
     assert list(frame.columns) == ["instrument_id", "trade_date"]
+
+
+# ------------------------------------------------- PIT code-change lineage --
+
+
+def _lineage_change(old, new, effective, original_list_date=date(2000, 1, 1)):
+    return SecurityCodeChange(
+        old_instrument_id=old,
+        new_instrument_id=new,
+        effective_date=effective,
+        old_name="x",
+        original_list_date=original_list_date,
+    )
+
+
+def test_pit_lineage_successor_backfilled_list_date_not_visible_early() -> None:
+    """Production shape (300114.SZ -> 302132.SZ, effective 2025-02-17).
+
+    The master has ONLY the successor row whose ``list_date`` is the vendor's
+    backfilled original list date (2010-08-27); the old id is absent from the
+    master entirely, and the vendor also backfilled 2020-2024 bars under the
+    successor id. The successor must NOT be PIT-visible before its effective
+    date, and the old id must stay PIT-eligible (eligible-but-unpriced) until
+    the day before the effective date.
+    """
+    securities = [
+        _security("302132.SZ", list_date=date(2010, 8, 27)),  # backfilled
+    ]
+    changes = [
+        _lineage_change(
+            "300114.SZ", "302132.SZ",
+            effective=date(2025, 2, 17), original_list_date=date(2010, 8, 27),
+        ),
+    ]
+    before = pit_eligible_instrument_ids(
+        securities, changes, date(2024, 12, 31), LEGACY_DELIST_DATE_INCLUSIVE,
+        is_v1_a_share,
+    )
+    assert before == ["300114.SZ"]  # old identity, eligible-but-unpriced
+
+    on = pit_eligible_instrument_ids(
+        securities, changes, date(2025, 2, 17), LEGACY_DELIST_DATE_INCLUSIVE,
+        is_v1_a_share,
+    )
+    assert on == ["302132.SZ"]  # identity switches exactly on the effective date
+
+    after = pit_eligible_instrument_ids(
+        securities, changes, date(2025, 3, 3), LEGACY_DELIST_DATE_INCLUSIVE,
+        is_v1_a_share,
+    )
+    assert after == ["302132.SZ"]
+
+
+def test_pit_lineage_pre_period_lineage_uses_successor_id() -> None:
+    """2018/2019 lineages: within 2020+ only the successor id is eligible."""
+    securities = [
+        _security("001872.SZ", list_date=date(1993, 5, 5)),
+        _security("001914.SZ", list_date=date(1994, 9, 28)),
+    ]
+    changes = [
+        _lineage_change("000022.SZ", "001872.SZ", effective=date(2018, 12, 26)),
+        _lineage_change("000043.SZ", "001914.SZ", effective=date(2019, 12, 16)),
+    ]
+    eligible = pit_eligible_instrument_ids(
+        securities, changes, date(2020, 6, 1), LEGACY_DELIST_DATE_INCLUSIVE,
+        is_v1_a_share,
+    )
+    assert "001872.SZ" in eligible and "001914.SZ" in eligible
+    assert "000022.SZ" not in eligible and "000043.SZ" not in eligible
+
+
+def test_pit_lineage_old_and_new_never_co_eligible() -> None:
+    """No session may carry both identities of one lineage."""
+    securities = [
+        _security("302132.SZ", list_date=date(2010, 8, 27)),
+    ]
+    changes = [
+        _lineage_change(
+            "300114.SZ", "302132.SZ",
+            effective=date(2025, 2, 17), original_list_date=date(2010, 8, 27),
+        ),
+    ]
+    day = date(2024, 1, 1)
+    while day < date(2025, 6, 1):
+        eligible = set(
+            pit_eligible_instrument_ids(
+                securities, changes, day, LEGACY_DELIST_DATE_INCLUSIVE,
+                is_v1_a_share,
+            )
+        )
+        assert not {"300114.SZ", "302132.SZ"} <= eligible, day
+        day += timedelta(days=1)
+
+
+def test_pit_lineage_master_row_predecessor_still_governed_by_monitor() -> None:
+    """A predecessor present in the master (with its own list/delist facts)
+    remains governed by the monitor; the lineage only removes it from the
+    effective date onward."""
+    securities = [
+        _security("OLD.SZ", delist_date=date(2026, 12, 31), list_date=date(2015, 1, 1)),
+        _security("NEW.SZ", list_date=date(2010, 1, 1)),  # backfilled list_date
+    ]
+    changes = [_lineage_change("OLD.SZ", "NEW.SZ", effective=D2)]
+    before = pit_eligible_instrument_ids(
+        securities, changes, D0, LEGACY_DELIST_DATE_INCLUSIVE
+    )
+    assert before == ["OLD.SZ"]  # NEW not visible before effective despite list_date
+    on = pit_eligible_instrument_ids(
+        securities, changes, D2, LEGACY_DELIST_DATE_INCLUSIVE
+    )
+    assert on == ["NEW.SZ"]
+
+
+def test_code_change_lineage_audit_reports_identity_evidence() -> None:
+    """The formal lineage audit proves: no future-successor visibility, no
+    old/new overlap, and counts eligible-but-unpriced predecessors."""
+    securities = [
+        _security("302132.SZ", list_date=date(2010, 8, 27)),
+    ]
+    changes = [
+        _lineage_change(
+            "300114.SZ", "302132.SZ",
+            effective=date(2025, 2, 17), original_list_date=date(2010, 8, 27),
+        ),
+    ]
+    signal_dates = [date(2024, 12, 20), date(2024, 12, 27), date(2025, 2, 21)]
+    price_frame = pd.DataFrame(
+        [
+            {"instrument_id": "302132.SZ", "trade_date": d, "adj_close": 10.0}
+            for d in signal_dates
+        ]
+    )
+    rows = code_change_lineage_audit(
+        changes, securities, signal_dates, LEGACY_DELIST_DATE_INCLUSIVE,
+        price_frame, is_v1_a_share,
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["old_instrument_id"] == "300114.SZ"
+    assert row["new_instrument_id"] == "302132.SZ"
+    assert row["effective_date"] == "2025-02-17"
+    assert row["future_successor_violation_count"] == 0
+    assert row["old_new_overlap_count"] == 0
+    # both pre-effective signal dates carry the old id without any price row
+    assert row["eligible_but_unpriced_predecessor_count"] == 2
+    assert row["old_id_in_security_master"] is False
+    assert row["old_eligible_signal_date_count"] == 2
+    assert row["new_eligible_signal_date_count"] == 1

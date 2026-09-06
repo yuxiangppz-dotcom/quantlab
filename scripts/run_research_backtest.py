@@ -48,6 +48,7 @@ rebalance, V1 universe, 20% selection, 10 bps transaction cost.
 
 from __future__ import annotations
 
+import gc
 import json
 import subprocess
 import time
@@ -66,16 +67,20 @@ from quantlab.backtest import (
     RUN_MODE_DIAGNOSTIC,
     RUN_MODE_STRICT,
     BacktestConfig,
+    BacktestRunSpec,
     DelistingSettlementConfig,
     LifecycleMonitor,
     build_report,
+    code_change_lineage_audit,
     compute_metrics,
+    fingerprint_risk_facts,
     fingerprint_security_master,
     first_invalid_open_session,
     formal_reproducibility_evidence,
     pit_eligibility_frame,
     risk_policy_statistics,
     run_backtest,
+    strategy_control_symmetry_audit,
     weekly_signal_dates,
 )
 from quantlab.backtest.admission import (
@@ -86,6 +91,12 @@ from quantlab.backtest.admission import (
     compute_restricted_by_signal,
     evaluate_buy_rejection,
     shadow_admission,
+)
+from quantlab.backtest.artifacts import (
+    STANDARD_GROUP_FAMILY,
+    ArtifactPublisher,
+    atomic_write_json,
+    atomic_write_text,
 )
 from quantlab.backtest.audit import (
     consumer_impact_audit,
@@ -114,15 +125,20 @@ from quantlab.portfolio import RankPortfolioConfig, construct_rank_portfolio
 from quantlab.portfolio.control import (
     CONTROL_PORTFOLIO_NAME,
     build_equal_weight_control_targets,
-    strategy_control_symmetry_audit,
 )
 from quantlab.research import build_research_dataset, filter_v1_universe
 from quantlab.research.universe import is_v1_a_share
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ENGINE_SCHEMA_VERSION = "v0.3.0"
-EXPERIMENT_SCHEMA = "performance_baseline_benchmark_correctness_v0_1_1"
-ANALYSIS_TYPE = "performance_baseline_benchmark_correctness_v0_1_1"
+EXPERIMENT_SCHEMA = "performance_baseline_benchmark_correctness_v0_1_2"
+ANALYSIS_TYPE = "performance_baseline_benchmark_correctness_v0_1_2"
+
+_SHADOW_ADMISSION_COLUMNS = [
+    "instrument_id", "signal_date", "execution_date", "target_weight",
+    "admission_status", "fact_id", "available_from", "source", "reason",
+    "policy_version",
+]
 
 PERIOD_START = date(2020, 1, 1)
 PERIOD_END = date(2024, 12, 31)
@@ -1121,14 +1137,16 @@ def _main() -> None:
 
     # formal equal_weight_v1_control: real portfolio, same schedule/cost/
     # lifecycle/risk/settlement, only the target construction differs.
-    # Control eligibility is built from the PIT security master (historical
-    # list_date, frozen delist/code-change boundary semantics, V1 SH/SZ
-    # A-share definition) — NOT from the price-backed research universe — so
-    # an instrument eligible but suspended on the signal date keeps its 1/N
-    # weight instead of silently shrinking the denominator; the engine then
-    # leaves unfilled weights in cash and keeps held suspended names frozen
-    # at their stale mark. Current list_status is never used as a historical
-    # filter.
+    # Control eligibility is built from the PIT security master plus the
+    # frozen code-change lineage (historical list_date, frozen
+    # delist/code-change boundary semantics, V1 SH/SZ A-share definition) —
+    # NOT from the price-backed research universe — so an instrument
+    # eligible but suspended on the signal date keeps its 1/N weight and a
+    # predecessor absent from the master stays eligible-but-unpriced; the
+    # engine then leaves unfilled weights in cash and keeps held suspended
+    # names frozen at their stale mark. Current list_status is never used as
+    # a historical filter, and a successor's backfilled original list_date
+    # never makes the future successor id PIT-visible early.
     control_eligibility = pit_eligibility_frame(
         securities, code_changes, signal_dates, LEGACY_DELIST_DATE_INCLUSIVE,
         universe_predicate=is_v1_a_share,
@@ -1136,18 +1154,59 @@ def _main() -> None:
     control_targets = build_equal_weight_control_targets(
         control_eligibility, signal_dates
     )
-    control_recovery_1 = run_backtest(
-        price_frame, bt_open_dates, control_targets, settlement_config,
-        execution_lag_sessions=1, mode=RUN_MODE_STRICT, lifecycle=monitor,
-        requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
-        risk_facts=delisting_facts, risk_policy=EXIT_POLICY_ID,
+
+    # single source of truth: every primary run is described by an immutable
+    # BacktestRunSpec; spec.run() generates the exact kwargs submitted to the
+    # engine, and the symmetry audit reads these same spec objects (never
+    # re-typed mirror dicts)
+    lifecycle_monitor_snapshot = fingerprint_security_master(
+        securities, code_changes, LEGACY_DELIST_DATE_INCLUSIVE
     )
-    control_recovery_0 = run_backtest(
-        price_frame, bt_open_dates, control_targets, settlement_zero_config,
-        execution_lag_sessions=1, mode=RUN_MODE_STRICT, lifecycle=monitor,
-        requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
-        risk_facts=delisting_facts, risk_policy=EXIT_POLICY_ID,
-    )
+    risk_fact_snapshot = fingerprint_risk_facts(delisting_facts)
+
+    def _primary_spec(label, bound_config, run_targets, targets_fingerprint):
+        return BacktestRunSpec(
+            label=label,
+            price_frame=price_frame,
+            open_dates=tuple(bt_open_dates),
+            targets=run_targets,
+            config=bound_config,
+            execution_lag_sessions=1,
+            mode=RUN_MODE_STRICT,
+            lifecycle=monitor,
+            lifecycle_mode=LEGACY_DELIST_DATE_INCLUSIVE,
+            lifecycle_monitor_snapshot=lifecycle_monitor_snapshot,
+            requested_period_start=PERIOD_START,
+            requested_period_end=PERIOD_END,
+            risk_facts=delisting_facts,
+            risk_fact_snapshot=risk_fact_snapshot,
+            risk_policy=EXIT_POLICY_ID,
+            targets_fingerprint=targets_fingerprint,
+        )
+
+    strategy_specs = {
+        bound: _primary_spec(
+            "primary_strategy", cfg, targets, fingerprint_targets(targets)
+        )
+        for bound, cfg in (
+            ("recovery_assumption_1", settlement_config),
+            ("recovery_assumption_0", settlement_zero_config),
+        )
+    }
+    control_specs = {
+        bound: _primary_spec(
+            CONTROL_PORTFOLIO_NAME, cfg, control_targets,
+            fingerprint_targets(control_targets),
+        )
+        for bound, cfg in (
+            ("recovery_assumption_1", settlement_config),
+            ("recovery_assumption_0", settlement_zero_config),
+        )
+    }
+    settlement_risk_strict = strategy_specs["recovery_assumption_1"].run()
+    settlement_risk_zero_strict = strategy_specs["recovery_assumption_0"].run()
+    control_recovery_1 = control_specs["recovery_assumption_1"].run()
+    control_recovery_0 = control_specs["recovery_assumption_0"].run()
 
     # benchmark inputs: per-instrument session coverage is audited; formal
     # index attribution fails hard on incomplete coverage
@@ -1155,54 +1214,36 @@ def _main() -> None:
         storage, padded_dates, universe
     )
 
-    # strategy/control symmetry: every field that can move performance is
-    # compared from the actual invocation values; only target construction
+    # strategy/control symmetry: the audit reads the two ACTUAL run specs
+    # that generated the engine invocations above; only target construction
     # (and its fingerprint) is allowed to differ
-    lifecycle_monitor_snapshot = fingerprint_security_master(
-        securities, code_changes, LEGACY_DELIST_DATE_INCLUSIVE
-    )
-
-    def _primary_run_spec(bound_config) -> dict:
-        return {
-            "open_dates": bt_open_dates,
-            "signal_dates": signal_dates,
-            "execution_lag_sessions": 1,
-            "cost_bps": bound_config.transaction_cost_bps,
-            "missing_price_policy": MISSING_PRICE_POLICY,
-            "run_mode": RUN_MODE_STRICT,
-            "lifecycle_boundary_mode": LEGACY_DELIST_DATE_INCLUSIVE,
-            "lifecycle_monitor_snapshot": lifecycle_monitor_snapshot,
-            "risk_policy_id": EXIT_POLICY_ID,
-            "risk_fact_snapshot": fact_sha,
-            "settlement_recovery_rate": (
-                bound_config.delisting_settlement.recovery_rate
-            ),
-            "settlement_fee_bps": (
-                bound_config.delisting_settlement.settlement_fee_bps
-            ),
-            "initial_nav": bound_config.initial_nav,
-            "requested_period": (
-                PERIOD_START.isoformat(), PERIOD_END.isoformat(),
-            ),
-            "annualization": bound_config.annualization,
-        }
-
     control_symmetry = {}
-    for bound_key, bound_config in (
-        ("recovery_assumption_1", settlement_config),
-        ("recovery_assumption_0", settlement_zero_config),
-    ):
-        strategy_spec = _primary_run_spec(bound_config)
-        control_spec = _primary_run_spec(bound_config)
-        control_symmetry[bound_key] = strategy_control_symmetry_audit(
-            strategy_spec, control_spec
+    for bound in ("recovery_assumption_1", "recovery_assumption_0"):
+        checks = strategy_control_symmetry_audit(
+            strategy_specs[bound], control_specs[bound]
         )
-        control_symmetry[bound_key]["same_effective_target_dates"] = (
+        checks["same_effective_target_dates"] = (
             sorted(targets) == sorted(control_targets)
         )
-    control_symmetry["same_target_construction_allowed_to_differ"] = (
-        fingerprint_targets(targets) != fingerprint_targets(control_targets)
+        control_symmetry[bound] = checks
+
+    # PIT code-lineage audit: every formal code-change fact must show zero
+    # future-successor visibility and zero old/new overlap on signal dates
+    code_lineage = code_change_lineage_audit(
+        code_changes, securities, signal_dates, LEGACY_DELIST_DATE_INCLUSIVE,
+        price_frame, is_v1_a_share,
     )
+    lineage_violations = [
+        row
+        for row in code_lineage
+        if row["future_successor_violation_count"]
+        or row["old_new_overlap_count"]
+    ]
+    if lineage_violations:
+        raise RuntimeError(
+            f"PIT code-lineage violations in formal eligibility: "
+            f"{lineage_violations}"
+        )
 
     runs = {
         "recovery_assumption_1": {
@@ -1425,9 +1466,45 @@ def _main() -> None:
         },
     )
 
+    # formal run publication: everything is written into
+    # ``<run_id>.incomplete/`` and only promoted to ``<run_id>/`` by an
+    # atomic rename after the artifact manifest + independent verification
+    # pass. A failed or interrupted run can therefore never leave a
+    # formal-looking final directory.
     run_id = datetime.now().strftime("%Y%m%dT%H%M%S")
-    out_dir = PROJECT_ROOT / "data" / "experiments" / EXPERIMENT_SCHEMA / run_id
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_root = PROJECT_ROOT / "data" / "experiments" / EXPERIMENT_SCHEMA
+    export_groups = (
+        "A_legacy_baseline",
+        "A_legacy_baseline_diagnostic",
+        "C_legacy_admission_v2",
+        "C_legacy_admission_v2_diagnostic",
+        "A_v1_baseline",
+        "A_v1_baseline_diagnostic",
+        "C_v1_admission_v2",
+        "C_v1_admission_v2_diagnostic",
+        "legacy_settlement_recovery_1",
+        "legacy_settlement_recovery_0",
+        "primary_strategy_recovery_assumption_1",
+        "primary_strategy_recovery_assumption_0",
+        "equal_weight_v1_control_recovery_assumption_1",
+        "equal_weight_v1_control_recovery_assumption_0",
+    )
+    expected_registry = {
+        "groups": {g: list(STANDARD_GROUP_FAMILY) for g in export_groups},
+        "top_level": [
+            "summary.json",
+            "manifest.json",
+            "delisting_facts.json",
+            "delisting_audit.csv",
+            "shadow_admission.csv",
+            "code_lineage_audit.json",
+        ],
+    }
+    publisher = ArtifactPublisher(
+        out_root, run_id, expected_registry=expected_registry,
+        head=git_sha_before, schema=EXPERIMENT_SCHEMA,
+    )
+    out_dir = publisher.staging
 
     summary = {
         "engine_schema_version": ENGINE_SCHEMA_VERSION,
@@ -1548,6 +1625,7 @@ def _main() -> None:
         },
         "index_return_basis": "price_index_close",
         "control_universe_audit": control_universe_audit,
+        "code_lineage_audit": code_lineage,
         "control_target_fingerprint": fingerprint_targets(control_targets),
         "strategy_target_fingerprint": fingerprint_targets(targets),
         "code_manifest": provenance_before["code"],
@@ -1777,34 +1855,65 @@ def _main() -> None:
         },
         "total_runtime_seconds": runtime,
     }
-    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str))
-    (out_dir / "manifest.json").write_text(json.dumps(provenance_before, indent=2, default=str))
-    (out_dir / "delisting_facts.json").write_text(
-        json.dumps(delisting_facts, indent=2, ensure_ascii=False)
+    summary["formal_run_valid"] = None
+    summary["formal_run_valid_authority"] = (
+        "formal_run_valid is asserted only by the COMPLETED.json marker of a "
+        "PROMOTED run directory; staged .incomplete directories are never "
+        "formal artifacts. Verify independently with "
+        "scripts/verify_formal_run.py."
     )
-    pd.DataFrame(audit_rows).to_csv(out_dir / "delisting_audit.csv", index=False)
-    if shadow["rows"]:
-        pd.DataFrame(shadow["rows"]).to_csv(out_dir / "shadow_admission.csv", index=False)
 
-    export_group(out_dir, "A_legacy_baseline", strict_result)
-    export_group(out_dir, "A_legacy_baseline_diagnostic", diagnostic_result)
-    export_group(out_dir, "C_legacy_admission_v2", admission_v2_strict)
-    export_group(out_dir, "C_legacy_admission_v2_diagnostic", admission_v2_diagnostic)
-    export_group(out_dir, "A_v1_baseline", baseline_new_strict)
-    export_group(out_dir, "A_v1_baseline_diagnostic", baseline_new_diagnostic)
-    export_group(out_dir, "C_v1_admission_v2", admission_v2_new_strict)
-    export_group(out_dir, "C_v1_admission_v2_diagnostic", admission_v2_new_diagnostic)
-    export_group(out_dir, "legacy_settlement_recovery_1", settlement_strict)
-    export_group(out_dir, "legacy_settlement_recovery_0", settlement_zero_strict)
-    export_group(
-        out_dir, "primary_strategy_recovery_assumption_1", settlement_risk_strict
-    )
-    export_group(
-        out_dir, "primary_strategy_recovery_assumption_0", settlement_risk_zero_strict
-    )
-    export_group(out_dir, "equal_weight_v1_control_recovery_assumption_1", control_recovery_1)
-    export_group(out_dir, "equal_weight_v1_control_recovery_assumption_0", control_recovery_0)
+    group_manifests = {}
+    try:
+        atomic_write_json(out_dir / "summary.json", summary)
+        atomic_write_json(out_dir / "manifest.json", provenance_before)
+        atomic_write_json(out_dir / "code_lineage_audit.json", code_lineage)
+        atomic_write_text(
+            out_dir / "delisting_facts.json",
+            json.dumps(delisting_facts, indent=2, ensure_ascii=False),
+        )
+        pd.DataFrame(audit_rows).to_csv(
+            out_dir / "delisting_audit.csv", index=False
+        )
+        shadow_frame = pd.DataFrame(shadow["rows"])
+        if shadow_frame.empty:
+            shadow_frame = pd.DataFrame(columns=_SHADOW_ADMISSION_COLUMNS)
+        shadow_frame.to_csv(out_dir / "shadow_admission.csv", index=False)
 
+        for prefix, result in (
+            ("A_legacy_baseline", strict_result),
+            ("A_legacy_baseline_diagnostic", diagnostic_result),
+            ("C_legacy_admission_v2", admission_v2_strict),
+            ("C_legacy_admission_v2_diagnostic", admission_v2_diagnostic),
+            ("A_v1_baseline", baseline_new_strict),
+            ("A_v1_baseline_diagnostic", baseline_new_diagnostic),
+            ("C_v1_admission_v2", admission_v2_new_strict),
+            ("C_v1_admission_v2_diagnostic", admission_v2_new_diagnostic),
+            ("legacy_settlement_recovery_1", settlement_strict),
+            ("legacy_settlement_recovery_0", settlement_zero_strict),
+            ("primary_strategy_recovery_assumption_1", settlement_risk_strict),
+            (
+                "primary_strategy_recovery_assumption_0",
+                settlement_risk_zero_strict,
+            ),
+            (
+                "equal_weight_v1_control_recovery_assumption_1",
+                control_recovery_1,
+            ),
+            (
+                "equal_weight_v1_control_recovery_assumption_0",
+                control_recovery_0,
+            ),
+        ):
+            group_manifests[prefix] = export_group(out_dir, prefix, result)
+    except BaseException as exc:
+        # never promote a partially exported run; staging stays behind with
+        # an explicit INCOMPLETE marker for diagnostics
+        publisher.mark_incomplete(exc)
+        raise
+
+    # console report (only small derived payloads); must run BEFORE the
+    # large backtest result objects are released below
     print(f"=== research backtest {ENGINE_SCHEMA_VERSION} ===")
     print(f"strict status: {strict_result.status}")
     print(f"performance_valid: {performance_valid}")
@@ -1865,11 +1974,11 @@ def _main() -> None:
         print(f"PRIMARY baseline: total_return_net={sm['total_return_net']:.4f} "
               f"cagr_net={sm['cagr_net']:.4f} sharpe_net={sm['sharpe_net']:.4f} "
               f"max_drawdown_net={sm['max_drawdown_net']:.4f}")
-    first_target_size = len(next(iter(control_targets.values())).positions)
-    print(f"control status: {control_recovery_1.status} "
+    print(f"control status: {control_reports['recovery_assumption_1']['status']} "
           f"performance_valid="
           f"{control_reports['recovery_assumption_1']['performance_valid']} "
-          f"n_holdings_first_target={first_target_size}")
+          f"n_holdings_first_target="
+          f"{control_universe_audit['control_target_count']}")
     print(
         f"control universe audit (first signal "
         f"{control_universe_audit['first_signal_date']}): "
@@ -1893,7 +2002,37 @@ def _main() -> None:
         f"-> reproducible={reproducible}"
     )
     _print_benchmark_table(benchmark_section)
-    print(f"output dir: {out_dir}")
+
+    # release the large backtest result objects and research frames BEFORE
+    # publication: manifest hashing + verification only need the staged
+    # files, and the result heap alone can exceed the WSL VM memory ceiling
+    # (an OOM-killed publish would leave a staged COMPLETED.json behind)
+    del (
+        strict_result, diagnostic_result, admission_strict,
+        admission_diagnostic, admission_v2_strict, admission_v2_diagnostic,
+        baseline_new_strict, baseline_new_diagnostic, settlement_strict,
+        settlement_zero_strict, settlement_risk_strict,
+        settlement_risk_zero_strict, control_recovery_1, control_recovery_0,
+        runs, legacy_settlement, strategy_specs, control_specs,
+        control_targets, control_eligibility, research_df,
+        universe, alpha_df,
+    )
+    gc.collect()
+
+    try:
+        final_dir = publisher.publish(summary)
+    except BaseException as exc:
+        publisher.mark_incomplete(exc)
+        raise
+
+    print(f"output dir: {final_dir}")
+    print(
+        "artifact manifest: "
+        f"{len(expected_registry['groups'])} groups x "
+        f"{len(STANDARD_GROUP_FAMILY)} files + "
+        f"{len(expected_registry['top_level'])} top-level artifacts "
+        "(verifier passed; COMPLETED.json written)"
+    )
     print(f"runtime: {runtime:.1f}s")
 
 

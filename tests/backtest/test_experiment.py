@@ -1,153 +1,382 @@
-import json
-from datetime import date, timedelta
+"""Atomic-artifact and bounded-memory export tests (v0.1.2 closure).
 
-from quantlab.backtest import BacktestConfig
-from quantlab.backtest.experiment import build_group_report, export_group
+Covers the three v0.1.1 failures: summary written before exports, unbounded
+``position_rows`` lists, and non-atomic per-file writes that can leave a
+formal-looking artifact directory after a mid-export crash.
+"""
+
+import json
+from datetime import date
+
+import pytest
+
+from quantlab.backtest.artifacts import (
+    COMPLETION_MARKER,
+    INCOMPLETE_MARKER,
+    ArtifactPublisher,
+    sha256_file,
+    verify_formal_artifact,
+)
+from quantlab.backtest.experiment import export_group
 from quantlab.backtest.models import (
-    STATUS_ACCOUNTING_ERROR,
-    STATUS_BLOCKED_UNSUPPORTED_EVENT,
-    STATUS_COMPLETED,
+    BacktestConfig,
     BacktestResult,
     BookSnapshot,
     DailyBacktestRecord,
     PositionRecord,
+    RebalanceRecord,
 )
 
 D0 = date(2026, 1, 5)
+D1 = date(2026, 1, 6)
+
+GROUP_FILE_FAMILY = (
+    "daily_records.csv",
+    "daily_books.csv",
+    "daily_positions.csv",
+    "rebalance_log.csv",
+    "trade_details.csv",
+    "lifecycle_events.csv",
+    "risk_policy_audit.csv",
+    "forced_exit_attempts.csv",
+    "successful_forced_exits.csv",
+    "pending_no_price.csv",
+    "prevented_entry_refill.csv",
+    "blocked_before_exit.csv",
+    "failed_attempts.json",
+)
 
 
-def _record(d, nav=1.0) -> DailyBacktestRecord:
-    return DailyBacktestRecord(
-        trade_date=d, nav_gross=nav, nav_net=nav,
-        daily_return_gross=0.0, daily_return_net=0.0,
-        gross_exposure=1.0, net_exposure=1.0, cash_weight=0.0,
-        turnover=0.0, traded_notional_ratio=0.0, transaction_cost=0.0,
-        holdings_count=1,
-        gross_book_gross_exposure=1.0, gross_book_net_exposure=1.0,
-        gross_book_cash_weight=0.0, gross_book_turnover=0.0,
-        gross_book_traded_notional_ratio=0.0, gross_book_holdings_count=1,
-    )
-
-
-def _snapshot(d, book="net") -> BookSnapshot:
-    return BookSnapshot(
-        trade_date=d, book=book, nav=1.0, daily_return=0.0, cash=0.0,
-        market_pnl=0.0, fee=0.0, gross_exposure=1.0, net_exposure=1.0,
-        cash_weight=0.0, holdings_count=1,
-        positions=(PositionRecord("A", 1.0, 1.0, 100.0, D0, False),),
-    )
-
-
-def _result(status, accounting_error=None, n=2, failed=0):
-    records = [_record(D0 + timedelta(days=i)) for i in range(n)]
-    books = [_snapshot(D0 + timedelta(days=i)) for i in range(n)]
-    failed_attempts = []
-    from quantlab.backtest.models import FailedAttempt
-
-    if failed:
-        fa = FailedAttempt(
-            trade_date=D0 + timedelta(days=n),
-            reason=accounting_error or "boom",
-            trades=(),
-            rebalance=None,
-        )
-        failed_attempts = [fa]
-
-    return BacktestResult(
-        run_mode="strict", status=status,
-        requested_period_start=D0, requested_period_end=D0 + timedelta(days=n - 1),
-        simulated_period_start=D0, simulated_period_end=D0 + timedelta(days=n - 1),
-        valid_through=D0 + timedelta(days=n - 1), diagnostic_from=None,
-        first_blocking_event=None,
-        records=records, rebalances=[], books=books, trades=[],
-        skipped_executions=[], lifecycle_events=[],
-        failed_attempts=failed_attempts,
-        solver_root_residual=0.0, accounting_checks=[],
-        accounting_error=accounting_error,
-        accounting_error_date=None, accounting_error_book=None,
-    )
-
-
-def _cfg():
+def _config() -> BacktestConfig:
     return BacktestConfig(initial_nav=1.0, transaction_cost_bps=0.0, annualization=252)
 
 
-def test_export_group_writes_required_files(tmp_path) -> None:
-    strict = _result(STATUS_COMPLETED)
-    export_group(tmp_path, "X", strict)
-    for suffix in (
-        "daily_records.csv", "rebalance_log.csv", "trade_details.csv",
-        "daily_books.csv", "daily_positions.csv", "failed_attempts.json",
+def _result(n_sessions: int = 2, positions_per_day: int = 3) -> BacktestResult:
+    records, books, rebalances = [], [], []
+    for i in range(n_sessions):
+        d = date(2026, 1, 5 + i)
+        records.append(
+            DailyBacktestRecord(
+                trade_date=d,
+                nav_gross=1.0 + 0.01 * i,
+                nav_net=1.0 + 0.01 * i,
+                daily_return_gross=0.0,
+                daily_return_net=0.0,
+                gross_exposure=0.5,
+                net_exposure=0.5,
+                cash_weight=0.5,
+                turnover=0.0,
+                traded_notional_ratio=0.0,
+                transaction_cost=0.0,
+                holdings_count=positions_per_day,
+                gross_book_gross_exposure=0.5,
+                gross_book_net_exposure=0.5,
+                gross_book_cash_weight=0.5,
+                gross_book_turnover=0.0,
+                gross_book_traded_notional_ratio=0.0,
+                gross_book_holdings_count=positions_per_day,
+            )
+        )
+        for book in ("gross", "net"):
+            books.append(
+                BookSnapshot(
+                    trade_date=d,
+                    book=book,
+                    nav=1.0,
+                    daily_return=0.0,
+                    cash=0.5,
+                    market_pnl=0.0,
+                    fee=0.0,
+                    gross_exposure=0.5,
+                    net_exposure=0.5,
+                    cash_weight=0.5,
+                    holdings_count=positions_per_day,
+                    positions=tuple(
+                        PositionRecord(
+                            instrument_id=f"I{j}",
+                            value=0.1,
+                            weight=0.1,
+                            last_price=1.0,
+                            last_mark_date=d,
+                            missing_price=False,
+                        )
+                        for j in range(positions_per_day)
+                    ),
+                )
+            )
+        rebalance_fields = dict(
+            signal_date=d,
+            execution_date=d,
+            target_count=positions_per_day,
+            nonzero_trade_count=0,
+            unavailable_target_count=0,
+            frozen_count=0,
+            restricted_binding_count=0,
+            gross_book_restricted_binding_count=0,
+        )
+        zeros = {k: 0.0 for k in (
+            "buy_notional_ratio", "sell_notional_ratio", "traded_notional_ratio",
+            "turnover", "transaction_cost", "pre_trade_gross_exposure",
+            "post_trade_gross_exposure", "allocation_deviation",
+            "gross_book_buy_notional_ratio", "gross_book_sell_notional_ratio",
+            "gross_book_traded_notional_ratio", "gross_book_turnover",
+            "gross_book_transaction_cost", "gross_book_pre_trade_gross_exposure",
+            "gross_book_post_trade_gross_exposure",
+            "gross_book_allocation_deviation",
+        )}
+        rebalances.append(RebalanceRecord(**rebalance_fields, **zeros))
+    return BacktestResult(
+        run_mode="strict",
+        status="completed",
+        requested_period_start=date(2026, 1, 5),
+        requested_period_end=date(2026, 1, 6),
+        simulated_period_start=date(2026, 1, 5),
+        simulated_period_end=date(2026, 1, 6),
+        valid_through=date(2026, 1, 6),
+        diagnostic_from=None,
+        first_blocking_event=None,
+        records=records,
+        rebalances=rebalances,
+        books=books,
+        trades=[],
+        skipped_executions=[],
+        lifecycle_events=[],
+        failed_attempts=[],
+        solver_root_residual=0.0,
+        accounting_checks=[],
+        accounting_error=None,
+        accounting_error_date=None,
+        accounting_error_book=None,
+    )
+
+
+# ------------------------------------------------------ bounded, atomic CSVs --
+
+
+def test_export_group_writes_complete_family_with_row_counts(tmp_path) -> None:
+    result = _result(n_sessions=2, positions_per_day=3)
+    manifest = export_group(tmp_path, "g", result)
+    for kind in GROUP_FILE_FAMILY:
+        assert (tmp_path / f"g_{kind}").exists(), kind
+    assert manifest["complete"] is True
+    assert manifest["files"]["g_daily_positions.csv"]["rows"] == 2 * 2 * 3
+    assert manifest["files"]["g_daily_books.csv"]["rows"] == 2 * 2
+    assert manifest["files"]["g_daily_records.csv"]["rows"] == 2
+    # headers stable even for empty extracts
+    for kind in (
+        "trade_details.csv", "lifecycle_events.csv", "risk_policy_audit.csv",
+        "forced_exit_attempts.csv", "successful_forced_exits.csv",
+        "pending_no_price.csv", "prevented_entry_refill.csv",
+        "blocked_before_exit.csv",
     ):
-        assert (tmp_path / f"X_{suffix}").exists(), suffix
+        header = (tmp_path / f"g_{kind}").read_text().splitlines()[0]
+        assert header, kind
+    assert json.loads((tmp_path / "g_failed_attempts.json").read_text()) == []
 
 
-def test_empty_failed_attempts_writes_empty_list(tmp_path) -> None:
-    strict = _result(STATUS_COMPLETED, failed=0)
-    export_group(tmp_path, "X", strict)
-    data = json.loads((tmp_path / "X_failed_attempts.json").read_text())
-    assert data == []
+def test_export_group_positions_streamed_in_chunks(tmp_path) -> None:
+    """The exporter must never materialize the full position row list.
+
+    A chunk cap far below the position count still produces a complete,
+    correct file.
+    """
+    result = _result(n_sessions=2, positions_per_day=50)
+    manifest = export_group(tmp_path, "g", result, chunk_rows=7)
+    lines = (tmp_path / "g_daily_positions.csv").read_text().splitlines()
+    assert len(lines) == 1 + 2 * 2 * 50  # header + rows
+    assert manifest["files"]["g_daily_positions.csv"]["rows"] == 200
+    assert (tmp_path / "g_daily_positions.csv.tmp").exists() is False
 
 
-def test_failed_attempts_exported(tmp_path) -> None:
-    strict = _result(STATUS_ACCOUNTING_ERROR, accounting_error="boom", failed=1)
-    export_group(tmp_path, "X", strict)
-    data = json.loads((tmp_path / "X_failed_attempts.json").read_text())
-    assert len(data) == 1
-    assert data[0]["reason"] == "boom"
+def test_export_group_no_partial_final_file_on_mid_stream_error(tmp_path) -> None:
+    """A crash mid-positions must not leave a half-written final CSV."""
+    result = _result(n_sessions=3, positions_per_day=10)
+
+    def exploding_rows():
+        count = 0
+        for b in result.books:
+            for p in b.positions:
+                count += 1
+                if count > 25:
+                    raise RuntimeError("boom mid-stream")
+                yield {
+                    "trade_date": b.trade_date, "book": b.book,
+                    "instrument_id": p.instrument_id, "value": p.value,
+                    "weight": p.weight, "last_price": p.last_price,
+                    "last_mark_date": p.last_mark_date,
+                    "missing_price": p.missing_price,
+                }
+
+    with pytest.raises(RuntimeError, match="boom"):
+        export_group(tmp_path, "g", result, position_rows_iter=exploding_rows())
+    # no half-written final file, and the temp sidecar was cleaned up
+    assert (tmp_path / "g_daily_positions.csv").exists() is False
+    assert (tmp_path / "g_daily_positions.csv.tmp").exists() is False
 
 
-def test_group_report_blocked_metrics_null(tmp_path) -> None:
-    strict = _result(STATUS_BLOCKED_UNSUPPORTED_EVENT)
-    rep = build_group_report(
-        strict, None, _cfg(), [D0, D0 + timedelta(days=1)], True
+# ------------------------------------------------ directory-level publication --
+
+
+PRIMARY_GROUPS = (
+    "primary_strategy_recovery_assumption_1",
+    "primary_strategy_recovery_assumption_0",
+    "equal_weight_v1_control_recovery_assumption_1",
+    "equal_weight_v1_control_recovery_assumption_0",
+)
+
+
+def _registry(tmp_path=None, groups=PRIMARY_GROUPS):
+    return {
+        "groups": {g: list(GROUP_FILE_FAMILY) for g in groups},
+        "top_level": ["summary.json", "manifest.json"],
+    }
+
+
+def _write_completion_marker(staging) -> None:
+    """Write the marker the way the publisher does (manifest hash bound)."""
+    manifest_path = staging / "artifact_manifest.json"
+    import json as _json
+    from datetime import datetime as _dt
+
+    _json_tmp = {
+        "status": "complete",
+        "formal_run_valid": True,
+        "head": _json.loads((staging / "summary.json").read_text())["code_version"],
+        "artifact_manifest_sha256": sha256_file(manifest_path),
+        "completed_at": _dt.now().isoformat(),
+        "verifier": "test",
+    }
+    (staging / COMPLETION_MARKER).write_text(_json.dumps(_json_tmp))
+
+
+def _fill_group(tmp_path, prefix) -> None:
+    result = _result()
+    export_group(tmp_path, prefix, result)
+
+
+def test_publisher_promotes_staging_only_after_verification(tmp_path) -> None:
+    staging = tmp_path / "20260105T000000.incomplete"
+    staging.mkdir()
+    for group in PRIMARY_GROUPS:
+        _fill_group(staging, group)
+    (staging / "summary.json").write_text(json.dumps({"code_version": "head0"}))
+    (staging / "manifest.json").write_text("{}")
+
+    publisher = ArtifactPublisher(
+        tmp_path, "20260105T000000",
+        expected_registry=_registry(), head="head0",
     )
-    assert rep["performance_valid"] is False
-    assert rep["metrics"] is None
-    assert rep["invalid_reasons"]
+    final = publisher.publish()
+    assert final == tmp_path / "20260105T000000"
+    assert final.exists() and staging.exists() is False
+    completed = json.loads((final / "COMPLETED.json").read_text())
+    assert completed["formal_run_valid"] is True
+    assert completed["head"] == "head0"
+    assert (final / "artifact_manifest.json").exists()
 
 
-def test_group_report_completed_metrics_present() -> None:
-    strict = _result(STATUS_COMPLETED, n=3)
-    sessions = [D0 + timedelta(days=i) for i in range(3)]
-    rep = build_group_report(strict, None, _cfg(), sessions, True)
-    assert rep["performance_valid"] is True
-    assert rep["metrics"] is not None
-
-
-def test_three_group_structure_consistent() -> None:
-    strict_a = _result(STATUS_BLOCKED_UNSUPPORTED_EVENT, n=2)
-    strict_b = _result(STATUS_BLOCKED_UNSUPPORTED_EVENT, n=3)
-    strict_c = _result(STATUS_BLOCKED_UNSUPPORTED_EVENT, n=4)
-    sessions = [D0 + timedelta(days=i) for i in range(4)]
-    ra = build_group_report(strict_a, None, _cfg(), sessions, True)
-    rb = build_group_report(strict_b, None, _cfg(), sessions, True)
-    rc = build_group_report(strict_c, None, _cfg(), sessions, True)
-    assert set(ra.keys()) == set(rb.keys()) == set(rc.keys())
-    for key in ra:
-        assert key in rb and key in rc
-
-
-def test_group_report_lifecycle_mode_and_strict_fields() -> None:
-    strict = _result(STATUS_BLOCKED_UNSUPPORTED_EVENT, n=2)
-    sessions = [D0 + timedelta(days=i) for i in range(2)]
-    rep = build_group_report(
-        strict, None, _cfg(), sessions, True,
-        lifecycle_mode="delist_date_is_first_invalid_v1",
+def test_publisher_failure_keeps_incomplete_and_never_promotes(tmp_path) -> None:
+    staging = tmp_path / "20260105T000000.incomplete"
+    staging.mkdir()
+    _fill_group(staging, "primary_strategy_recovery_assumption_1")
+    publisher = ArtifactPublisher(
+        tmp_path, "20260105T000000",
+        expected_registry=_registry(), head="head0",
     )
-    assert rep["lifecycle_mode"] == "delist_date_is_first_invalid_v1"
-    assert rep["strict_status"] == STATUS_BLOCKED_UNSUPPORTED_EVENT
-    assert rep["strict_record_count"] == 2
-    assert rep["solver_root_residual"] == 0.0
-    assert rep["reproducible"] is True
-    # blocked strict -> metrics null, invalid reasons present
-    assert rep["performance_valid"] is False
-    assert rep["metrics"] is None
-    assert rep["invalid_reasons"]
+    with pytest.raises(
+        RuntimeError, match="equal_weight_v1_control_recovery_assumption_0"
+    ):
+        publisher.publish()
+    assert (tmp_path / "20260105T000000").exists() is False
+    assert json.loads((staging / INCOMPLETE_MARKER).read_text())["status"] == "incomplete"
+    assert (staging / "COMPLETED.json").exists() is False
 
 
-def test_group_report_default_lifecycle_mode_none() -> None:
-    strict = _result(STATUS_COMPLETED, n=2)
-    sessions = [D0 + timedelta(days=i) for i in range(2)]
-    rep = build_group_report(strict, None, _cfg(), sessions, True)
-    assert rep["lifecycle_mode"] is None
+def test_verifier_fail_hard_on_hash_header_or_row_mismatch(tmp_path) -> None:
+    staging = tmp_path / "20260105T000000.incomplete"
+    staging.mkdir()
+    for group in PRIMARY_GROUPS:
+        _fill_group(staging, group)
+    (staging / "summary.json").write_text(json.dumps({"code_version": "head0"}))
+    (staging / "manifest.json").write_text("{}")
+    publisher = ArtifactPublisher(
+        tmp_path, "20260105T000000",
+        expected_registry=_registry(), head="head0",
+    )
+    manifest = publisher.build_artifact_manifest()
+    (staging / "artifact_manifest.json").write_text(json.dumps(manifest))
+    _write_completion_marker(staging)
+
+    csv = staging / "primary_strategy_recovery_assumption_1_daily_records.csv"
+
+    # tamper with a file AFTER the manifest was written -> hash mismatch
+    csv.write_text(csv.read_text() + "0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0\n")
+    with pytest.raises(RuntimeError, match="sha256"):
+        verify_formal_artifact(staging, _registry(), expected_head="head0")
+
+    # restore, then corrupt a header -> header mismatch
+    _fill_group(staging, "primary_strategy_recovery_assumption_1")
+    csv.write_text("wrong,header\n")
+    with pytest.raises(RuntimeError, match="header"):
+        verify_formal_artifact(staging, _registry(), expected_head="head0")
+
+    # restore, then truncate rows -> row count mismatch
+    _fill_group(staging, "primary_strategy_recovery_assumption_1")
+    lines = csv.read_text().splitlines()
+    csv.write_text("\n".join(lines[:-1]) + "\n")
+    with pytest.raises(RuntimeError, match="row count"):
+        verify_formal_artifact(staging, _registry(), expected_head="head0")
+
+
+def test_verifier_requires_both_control_bounds_and_completion(tmp_path) -> None:
+    staging = tmp_path / "20260105T000000.incomplete"
+    staging.mkdir()
+    registry = _registry()
+    for g in registry["groups"]:
+        _fill_group(staging, g)
+    (staging / "summary.json").write_text(json.dumps({"code_version": "head0"}))
+    (staging / "manifest.json").write_text("{}")
+    publisher = ArtifactPublisher(
+        tmp_path, "20260105T000000", expected_registry=registry, head="head0",
+    )
+    manifest = publisher.build_artifact_manifest()
+    (staging / "artifact_manifest.json").write_text(json.dumps(manifest))
+    _write_completion_marker(staging)
+    result = verify_formal_artifact(staging, registry, expected_head="head0")
+    assert result["complete"] is True
+
+    # a control bound missing from the registry must fail the verification
+    partial_registry = _registry(
+        groups=(
+            "primary_strategy_recovery_assumption_1",
+            "primary_strategy_recovery_assumption_0",
+            "equal_weight_v1_control_recovery_assumption_1",
+        ),
+    )
+    with pytest.raises(RuntimeError, match="recovery"):
+        verify_formal_artifact(staging, partial_registry, expected_head="head0")
+
+
+def test_verifier_rejects_head_or_schema_mismatch(tmp_path) -> None:
+    staging = tmp_path / "20260105T000000.incomplete"
+    staging.mkdir()
+    for group in PRIMARY_GROUPS:
+        _fill_group(staging, group)
+    summary = {
+        "code_version": "headOTHER",
+        "experiment_schema": "performance_baseline_benchmark_correctness_v0_1_2",
+    }
+    (staging / "summary.json").write_text(json.dumps(summary))
+    (staging / "manifest.json").write_text("{}")
+    publisher = ArtifactPublisher(
+        tmp_path, "20260105T000000",
+        expected_registry=_registry(), head="head0",
+    )
+    manifest = publisher.build_artifact_manifest(summary)
+    (staging / "artifact_manifest.json").write_text(json.dumps(manifest))
+    _write_completion_marker(staging)
+    with pytest.raises(RuntimeError, match="HEAD"):
+        verify_formal_artifact(
+            staging, _registry(), expected_head="head0",
+            expected_schema="performance_baseline_benchmark_correctness_v0_1_2",
+        )

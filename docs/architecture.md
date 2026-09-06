@@ -308,6 +308,60 @@ equal-weight under identical execution/risk/settlement?":
   decision occurrences, executed exits, pending exits, prevented entries)
   instead of raw audit-row counts.
 
+### PIT Code-Lineage Identity (v0.1.2)
+
+A `SecurityCodeChange` fact defines an explicit PIT identity interval for one
+instrument lineage:
+
+- **Before the `effective_date`**: only the OLD instrument id exists. If the
+  old id is absent from the security master (the vendor dropped it when
+  creating the successor), it is still synthesized as PIT-eligible from the
+  lineage fact (`original_list_date <= as_of < effective_date`) — an
+  eligible-but-unpriced instrument handled by the engine's missing-price
+  rules (unfilled weight stays cash). It is never silently dropped and never
+  silently aliased to the successor's backfilled prices without a frozen
+  alias policy.
+- **From the `effective_date` (inclusive)**: only the NEW id exists. The
+  successor master row's `list_date` may be the vendor's backfilled
+  `original_list_date` (production case: `300114.SZ -> 302132.SZ`, effective
+  2025-02-17, successor master `list_date=2010-08-27` with 2020–2024
+  backfilled bars) — that backfill is NOT a visibility fact, so the future
+  successor id never enters 2020–2024 eligibility.
+- Old and new identities of one lineage can never be co-eligible on the same
+  session (no double counting). The 2018/2019 completed lineages therefore
+  use only successor ids inside 2020–2024.
+
+`code_change_lineage_audit` records per lineage: old/new id, effective date,
+per-formal-signal-date eligibility, `future_successor_violation_count` (must
+be 0), `old_new_overlap_count` (must be 0), and
+`eligible_but_unpriced_predecessor_count`. The formal run fails hard on any
+violation.
+
+### Formal Artifact Staging and Verification (v0.1.2)
+
+A formal run is published in two phases:
+
+1. **Staging** — every file (summary, manifests, lineage/facts audits, and 14
+   export groups × 13 standard files) is written into
+   `data/experiments/<schema>/<run_id>.incomplete/`. Exports stream bounded
+   chunks (positions/trades never materialize as a full row list) and every
+   file is written to a `.tmp` sidecar first and `os.replace`d into place
+   after a clean close, so a crash never leaves a half-written formal file.
+2. **Promotion** — an SHA-256 `artifact_manifest.json` (registry, per-file
+   hash/size/row-count/header) is built, a `COMPLETED.json` marker is written
+   (schema, HEAD, manifest hash, verifier result, `formal_run_valid: true`),
+   and only after `verify_formal_artifact` passes is the staging directory
+   atomically renamed to `<run_id>/`.
+
+`verify_formal_artifact` (and the standalone `scripts/verify_formal_run.py`)
+fail hard on: any missing required file, hash/size/header/row-count
+mismatch, a missing control recovery bound, a missing or invalid completion
+marker, a manifest inconsistent with the directory, or summary schema/HEAD
+disagreement. A failed or interrupted run keeps its `.incomplete/` staging
+with an explicit `INCOMPLETE.json` marker and never publishes a
+formal-looking final directory; `performance_valid` and `formal_run_valid`
+never hold on an incomplete artifact.
+
 ### Known limitations and deferred work
 
 - **Lifecycle fact coverage is incomplete.** Trusted termination-decision facts

@@ -1,6 +1,7 @@
 """Research backtest."""
 
 from quantlab.backtest.audit import (
+    code_change_lineage_audit,
     fingerprint_frame,
     fingerprint_security_master,
     fingerprint_targets,
@@ -65,6 +66,11 @@ from quantlab.backtest.risk_policy import (
     risk_policy_statistics,
     termination_decisions_available_as_of,
 )
+from quantlab.backtest.run_spec import (
+    BacktestRunSpec,
+    fingerprint_risk_facts,
+    strategy_control_symmetry_audit,
+)
 
 __all__ = [
     "AccountingResidual",
@@ -96,13 +102,16 @@ __all__ = [
     "EXIT_POLICY_ID",
     "EXIT_POLICY_NAME",
     "EXIT_POLICY_VERSION",
+    "BacktestRunSpec",
     "align_returns",
     "build_report",
+    "code_change_lineage_audit",
     "compare_benchmark",
     "compute_metrics",
     "content_manifest",
     "cross_sectional_equal_weight_return_diagnostic",
     "environment_info",
+    "fingerprint_risk_facts",
     "first_invalid_open_session",
     "formal_reproducibility_evidence",
     "fingerprint_frame",
@@ -115,6 +124,7 @@ __all__ = [
     "returns_from_closes",
     "run_backtest",
     "risk_policy_statistics",
+    "strategy_control_symmetry_audit",
     "strategy_daily_returns",
     "termination_decisions_available_as_of",
     "weekly_signal_dates",

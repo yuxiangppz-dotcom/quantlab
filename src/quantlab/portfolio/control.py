@@ -15,7 +15,7 @@ never fabricates fills.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from datetime import date
 
 import pandas as pd
@@ -74,57 +74,3 @@ def build_equal_weight_control_targets(
             cash_weight=0.0,
         )
     return targets
-
-
-_SYMMETRY_SPEC_FIELDS: tuple[tuple[str, str], ...] = (
-    # (run-spec key, audit check name) — every field that can move performance
-    ("open_dates", "same_open_dates"),
-    ("signal_dates", "same_signal_schedule"),
-    ("execution_lag_sessions", "same_execution_lag"),
-    ("cost_bps", "same_cost_bps"),
-    ("missing_price_policy", "same_missing_price_policy"),
-    ("run_mode", "same_run_mode"),
-    ("lifecycle_boundary_mode", "same_lifecycle_boundary_mode"),
-    ("lifecycle_monitor_snapshot", "same_lifecycle_monitor_snapshot"),
-    ("risk_policy_id", "same_risk_policy_id"),
-    ("risk_fact_snapshot", "same_risk_fact_snapshot"),
-    ("settlement_recovery_rate", "same_settlement_recovery_rate"),
-    ("settlement_fee_bps", "same_settlement_fee_bps"),
-    ("initial_nav", "same_initial_nav"),
-    ("requested_period", "same_requested_period"),
-    ("annualization", "same_annualization"),
-)
-
-
-def strategy_control_symmetry_audit(
-    strategy_run: Mapping[str, object],
-    control_run: Mapping[str, object],
-) -> dict[str, bool]:
-    """Audit that strategy and control runs differ ONLY in target construction.
-
-    Both mappings describe one ``run_backtest`` invocation and must be taken
-    from the actual run specification (not re-typed constants). Every field
-    that can move performance is compared explicitly: open-session calendar,
-    signal schedule, execution lag, transaction cost, missing-price policy,
-    strict/diagnostic run mode, lifecycle boundary mode, lifecycle monitor
-    snapshot (security-master + code-change + mode fingerprint), risk policy
-    id, risk fact snapshot, settlement recovery rate and fee bps, initial
-    NAV, requested period, and annualization. Target construction and target
-    fingerprints are the ONLY allowed asymmetry.
-
-    Raises ``ValueError`` when either run spec is missing a required field —
-    a partial spec can never pass by accident.
-    """
-    required_keys = {key for key, _ in _SYMMETRY_SPEC_FIELDS}
-    missing_strategy = required_keys.difference(strategy_run)
-    missing_control = required_keys.difference(control_run)
-    if missing_strategy or missing_control:
-        raise ValueError(
-            "run specs missing symmetry fields: "
-            f"strategy={sorted(missing_strategy)}, "
-            f"control={sorted(missing_control)}"
-        )
-    return {
-        audit_name: strategy_run[spec_key] == control_run[spec_key]
-        for spec_key, audit_name in _SYMMETRY_SPEC_FIELDS
-    }

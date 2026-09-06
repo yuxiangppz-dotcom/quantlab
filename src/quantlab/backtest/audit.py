@@ -172,6 +172,103 @@ def fingerprint_security_master(
     return _canonical_hash(payload)
 
 
+def code_change_lineage_audit(
+    code_changes: list,
+    securities: list,
+    signal_dates: list,
+    mode: str,
+    price_frame: pd.DataFrame,
+    universe_predicate=None,
+) -> list[dict]:
+    """Per-lineage PIT identity evidence for every formal signal date.
+
+    For each code-change fact this reports:
+
+    - old/new instrument id and the effective date;
+    - on how many formal signal dates each identity was PIT-eligible;
+    - ``future_successor_violation_count``: signal dates where the successor
+      id was eligible STRICTLY BEFORE its effective date (vendor-backfilled
+      successor history leaking into the past — must be 0);
+    - ``old_new_overlap_count``: sessions carrying both identities of one
+      lineage (double counting — must be 0);
+    - ``eligible_but_unpriced_predecessor_count``: signal dates where the
+      predecessor was eligible but had no price row (correct state: stays in
+      the denominator, engine leaves the unfilled weight in cash).
+
+    Eligibility comes from :func:`pit_eligible_instrument_ids` — the same
+    function the control portfolio consumes — so the audit proves the actual
+    production wiring, not a parallel re-implementation.
+    """
+    from quantlab.backtest.lifecycle import pit_eligible_instrument_ids
+
+    eligible_by_date = {
+        d: set(
+            pit_eligible_instrument_ids(
+                securities, code_changes, d, mode, universe_predicate
+            )
+        )
+        for d in signal_dates
+    }
+    priced: set[tuple] = set()
+    if price_frame is not None and not price_frame.empty:
+        priced_frame = price_frame[["instrument_id", "trade_date"]].copy()
+        priced_frame["trade_date"] = pd.to_datetime(priced_frame["trade_date"]).dt.date
+        priced = set(
+            zip(priced_frame["instrument_id"], priced_frame["trade_date"], strict=True)
+        )
+    master_ids = {s.instrument_id for s in securities}
+
+    rows: list[dict] = []
+    for change in sorted(code_changes, key=lambda c: c.effective_date):
+        old_eligible = [
+            d
+            for d in signal_dates
+            if change.old_instrument_id in eligible_by_date[d]
+        ]
+        new_eligible = [
+            d
+            for d in signal_dates
+            if change.new_instrument_id in eligible_by_date[d]
+        ]
+        future_violations = [d for d in new_eligible if d < change.effective_date]
+        overlaps = [
+            d
+            for d in signal_dates
+            if change.old_instrument_id in eligible_by_date[d]
+            and change.new_instrument_id in eligible_by_date[d]
+        ]
+        unpriced_predecessors = [
+            d
+            for d in old_eligible
+            if (change.old_instrument_id, d) not in priced
+        ]
+        rows.append(
+            {
+                "old_instrument_id": change.old_instrument_id,
+                "new_instrument_id": change.new_instrument_id,
+                "effective_date": change.effective_date.isoformat(),
+                "old_id_in_security_master": (
+                    change.old_instrument_id in master_ids
+                ),
+                "old_eligible_signal_date_count": len(old_eligible),
+                "new_eligible_signal_date_count": len(new_eligible),
+                "future_successor_violation_count": len(future_violations),
+                "old_new_overlap_count": len(overlaps),
+                "eligible_but_unpriced_predecessor_count": (
+                    len(unpriced_predecessors)
+                ),
+                "note": (
+                    "successor id visible only from the effective date; the "
+                    "backfilled original list_date is not a visibility fact; "
+                    "old id absent from the master stays "
+                    "eligible-but-unpriced until the day before the "
+                    "effective date"
+                ),
+            }
+        )
+    return rows
+
+
 def fingerprint_targets(targets: dict) -> str:
     """Deterministic content fingerprint of a target sequence."""
     canon: dict = {}
