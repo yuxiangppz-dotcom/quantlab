@@ -483,7 +483,6 @@ def build_order_plan(
             delta=delta,
         )
 
-    orderable = [leg for leg in legs if leg.status is OrderPlanLegStatus.ORDERABLE]
     if reasons or any(leg.status is OrderPlanLegStatus.BLOCKED for leg in legs):
         status = OrderPlanStatus.BLOCKED
     else:

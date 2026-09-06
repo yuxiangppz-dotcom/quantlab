@@ -501,14 +501,14 @@ class ExecutionLedger:
                 need = int(intent.limit_price * intent.quantity * 100) + (
                     worst_case_fee_fen
                 )
-                if need > self.availability(
+                available_now = self.availability(
                     intent.instrument_id,
                     intent.intended_trade_date,
-                ).available_cash_fen - staged_cash:
+                ).available_cash_fen - staged_cash
+                if need > available_now:
                     raise LedgerAccountingError(
                         f"buy reservation for {intent.instrument_id} needs "
-                        f"{need} fen, available "
-                        f"{self.availability(intent.instrument_id, intent.intended_trade_date).available_cash_fen - staged_cash} fen "
+                        f"{need} fen, available {available_now} fen "
                         "after earlier staged reservations"
                     )
                 staged_cash += need

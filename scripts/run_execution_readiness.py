@@ -8,7 +8,8 @@ import json
 import subprocess
 import sys
 from dataclasses import asdict
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -19,13 +20,15 @@ from quantlab.artifacts import ArtifactPublisher, atomic_write_json, stream_csv 
 from quantlab.execution import (  # noqa: E402
     EXCHANGE_TIMEZONE,
     PITIdentityBook,
+    PlanningPrice,
+    PriceBasis,
     TargetHandoffConfig,
     TradingCalendar,
     build_rebalance_instruction,
     default_a_share_rule_book,
 )
 from quantlab.execution.artifacts import (  # noqa: E402
-    EXECUTION_READINESS_SCHEMA,
+    EXECUTION_READINESS_SCHEMA_V0_2,
     READINESS_CHECK_COLUMNS,
     execution_readiness_artifact_contract,
     verify_execution_readiness_artifact,
@@ -34,11 +37,28 @@ from quantlab.execution.readiness import (  # noqa: E402
     build_execution_readiness_report,
     inspect_execution_inputs,
 )
-from quantlab.portfolio import TargetPortfolio  # noqa: E402
+from quantlab.execution.smoke import run_order_path_smoke  # noqa: E402
+from quantlab.portfolio import TargetPortfolio, TargetWeight  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PERIOD_START = date(2020, 1, 1)
 PERIOD_END = date(2024, 12, 31)
+# synthetic, non-trading smoke week inside the byte-verified rule coverage
+SMOKE_THU = date(2024, 11, 28)
+SMOKE_FRI = date(2024, 11, 29)
+SMOKE_MON = date(2024, 12, 2)
+
+
+def _instant(day: date, minute: int = 0) -> datetime:
+    return datetime.combine(day, time(9, 30), EXCHANGE_TIMEZONE) + timedelta(
+        minutes=minute
+    )
+
+
+def _smoke_identity_book() -> PITIdentityBook:
+    from quantlab.execution.smoke import _identities
+
+    return _identities()
 
 
 def _git_head() -> str:
@@ -78,6 +98,43 @@ def _jsonable_handoff(result) -> dict:
     return payload
 
 
+def _handoff_smoke_with_position(calendar) -> dict:
+    """Synthetic positive-weight handoff (planning only, never an order)."""
+    target = TargetPortfolio(
+        as_of=SMOKE_FRI,
+        positions=(TargetWeight("600000.SH", 0.9),),
+        cash_weight=0.1,
+    )
+    result = build_rebalance_instruction(
+        target,
+        TargetHandoffConfig(
+            portfolio_id="execution-readiness-positive-weight-smoke",
+            signal_as_of=datetime.combine(
+                SMOKE_FRI, time(15, 30), EXCHANGE_TIMEZONE
+            ),
+            execution_date=SMOKE_MON,
+            planning_nav_fen=30_000_000,
+            minimum_cash_fen=0,
+        ),
+        {
+            "600000.SH": PlanningPrice(
+                instrument_id="600000.SH",
+                price=Decimal("10.00"),
+                price_date=SMOKE_FRI,
+                available_at=_instant(SMOKE_FRI, 360),
+                basis=PriceBasis.RAW,
+                source_id="synthetic-planning-price",
+            )
+        },
+        calendar=calendar,
+        identities=_smoke_identity_book(),
+        rules=default_a_share_rule_book(),
+    )
+    payload = _jsonable_handoff(result)
+    payload["scenario"] = "positive_weight_share_handoff"
+    return payload
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Formal execution-readiness audit for 2020-01-01 through 2024-12-31."
@@ -88,11 +145,15 @@ def main() -> int:
     parser.add_argument(
         "--out-root",
         type=Path,
-        default=PROJECT_ROOT / "data" / "experiments" / EXECUTION_READINESS_SCHEMA,
+        default=PROJECT_ROOT
+        / "data"
+        / "experiments"
+        / EXECUTION_READINESS_SCHEMA_V0_2,
     )
     parser.add_argument("--run-id", default=None)
     args = parser.parse_args()
 
+    schema = EXECUTION_READINESS_SCHEMA_V0_2
     if not _git_clean():
         raise RuntimeError("formal execution readiness requires a clean git workspace")
     head_before = _git_head()
@@ -106,9 +167,8 @@ def main() -> int:
     execution_date = calendar.next_session(PERIOD_END)
     if execution_date is None:
         raise RuntimeError("canonical calendar lacks the next session after audit end")
-    smoke_target = TargetPortfolio(as_of=PERIOD_END, positions=(), cash_weight=1.0)
-    smoke = build_rebalance_instruction(
-        smoke_target,
+    all_cash_smoke = build_rebalance_instruction(
+        TargetPortfolio(as_of=PERIOD_END, positions=(), cash_weight=1.0),
         TargetHandoffConfig(
             portfolio_id="execution-readiness-all-cash-smoke",
             signal_as_of=datetime.combine(PERIOD_END, time(15, 30), EXCHANGE_TIMEZONE),
@@ -121,19 +181,23 @@ def main() -> int:
         identities=PITIdentityBook(()),
         rules=default_a_share_rule_book(),
     )
+    positive_weight_smoke = _handoff_smoke_with_position(calendar)
+    order_path_smoke = run_order_path_smoke()
     report, rule_inventory = build_execution_readiness_report(
         evidence,
         period_start=PERIOD_START,
         period_end=PERIOD_END,
-        handoff_smoke_valid=smoke.instruction is not None,
+        handoff_smoke_valid=all_cash_smoke.instruction is not None,
+        schema=schema,
+        order_path_smoke=order_path_smoke,
     )
 
     publisher = ArtifactPublisher(
         args.out_root,
         run_id,
-        expected_registry=execution_readiness_artifact_contract(),
+        expected_registry=execution_readiness_artifact_contract(schema),
         head=head_before,
-        schema=EXECUTION_READINESS_SCHEMA,
+        schema=schema,
     )
     try:
         evidence_after, inventory_after = inspect_execution_inputs(
@@ -152,7 +216,7 @@ def main() -> int:
         }
         summary = {
             "analysis_type": "execution_readiness",
-            "experiment_schema": EXECUTION_READINESS_SCHEMA,
+            "experiment_schema": schema,
             "run_id": run_id,
             "code_version": head_before,
             "period_start": PERIOD_START.isoformat(),
@@ -168,8 +232,9 @@ def main() -> int:
                 "external_provider_called": False,
             },
             "interpretation": (
-                "Framework contracts are valid; historical, paper, and live execution "
-                "remain fail-closed until their independent blockers are resolved."
+                "Framework contracts and the executable order path are "
+                "audited; historical, paper, and live execution remain "
+                "fail-closed until their independent blockers are resolved."
             ),
         }
         atomic_write_json(publisher.staging / "summary.json", summary)
@@ -189,14 +254,29 @@ def main() -> int:
             } for check in report.checks),
         )
         atomic_write_json(publisher.staging / "rule_inventory.json", rule_inventory)
-        atomic_write_json(publisher.staging / "handoff_smoke.json", _jsonable_handoff(smoke))
+        atomic_write_json(
+            publisher.staging / "handoff_smoke.json",
+            {
+                "all_cash": _jsonable_handoff(all_cash_smoke),
+                "positive_weight": positive_weight_smoke,
+            },
+        )
+        atomic_write_json(publisher.staging / "order_path_smoke.json", {
+            "synthetic": True,
+            "non_trading": True,
+            "provider_called": False,
+            "canonical_data_written": False,
+            "order_submission_attempted": False,
+            "fill_claimed": False,
+            "scenarios": order_path_smoke,
+        })
         atomic_write_json(publisher.staging / "input_inventory.json", input_inventory)
         final = publisher.publish(summary)
         verified = verify_execution_readiness_artifact(
             final,
             expected_run_id=run_id,
             expected_head=head_before,
-            expected_schema=EXECUTION_READINESS_SCHEMA,
+            expected_schema=schema,
         )
     except BaseException as exc:
         if publisher.staging.exists():

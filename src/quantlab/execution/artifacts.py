@@ -17,18 +17,22 @@ from typing import Any
 
 from quantlab.artifacts import ArtifactContract, verify_formal_artifact
 from quantlab.execution.readiness import (
-    FRAMEWORK_CHECK_IDS,
-    READINESS_CHECK_IDS,
     ReadinessStatus,
+    framework_check_ids,
+    readiness_check_ids,
 )
 
 EXECUTION_READINESS_SCHEMA = "execution_readiness_v0_1"
+EXECUTION_READINESS_SCHEMA_V0_2 = "execution_readiness_v0_2"
 EXECUTION_READINESS_TOP_LEVEL = (
     "summary.json",
     "readiness_checks.csv",
     "rule_inventory.json",
     "handoff_smoke.json",
     "input_inventory.json",
+)
+EXECUTION_READINESS_TOP_LEVEL_V0_2 = EXECUTION_READINESS_TOP_LEVEL + (
+    "order_path_smoke.json",
 )
 READINESS_CHECK_COLUMNS = (
     "check_id",
@@ -56,12 +60,17 @@ def execution_readiness_artifact_contract(
 ) -> ArtifactContract:
     """Contract whose domain validator enforces readiness semantics on the
     actual directory at preflight, post-promotion formal verification, and
-    external verification."""
+    external verification. The v0.2 schema extends the inventory with the
+    order-path smoke evidence."""
     return ArtifactContract(
         name="execution_readiness",
         schema=schema,
         groups={},
-        top_level=EXECUTION_READINESS_TOP_LEVEL,
+        top_level=(
+            EXECUTION_READINESS_TOP_LEVEL_V0_2
+            if schema == "execution_readiness_v0_2"
+            else EXECUTION_READINESS_TOP_LEVEL
+        ),
         semantic_validators=(validate_execution_readiness_semantics,),
     )
 
@@ -76,9 +85,14 @@ def _walk_keys(value: Any):
             yield from _walk_keys(nested)
 
 
-def execution_readiness_semantic_failures(run_dir: str | Path) -> tuple[str, ...]:
+def execution_readiness_semantic_failures(
+    run_dir: str | Path,
+    schema: str = EXECUTION_READINESS_SCHEMA,
+) -> tuple[str, ...]:
     """Re-derive every readiness domain semantic from the bytes on disk."""
     run_dir = Path(run_dir)
+    expected_check_ids = readiness_check_ids(schema)
+    expected_framework_ids = framework_check_ids(schema)
     failures: list[str] = []
     payloads: dict[str, Any] = {}
     json_names = (
@@ -134,7 +148,7 @@ def execution_readiness_semantic_failures(run_dir: str | Path) -> tuple[str, ...
             failures.append("readiness check contains an invalid status")
         if len({row["check_id"] for row in rows}) != len(rows):
             failures.append("readiness check ids are not unique")
-        if tuple(row["check_id"] for row in rows) != READINESS_CHECK_IDS:
+        if tuple(row["check_id"] for row in rows) != expected_check_ids:
             failures.append("readiness check inventory or order is non-canonical")
         if summary.get("check_count") != len(rows):
             failures.append("summary check_count does not match readiness rows")
@@ -160,9 +174,9 @@ def execution_readiness_semantic_failures(run_dir: str | Path) -> tuple[str, ...
         by_id = {row["check_id"]: row for row in rows}
         framework_valid = all(
             by_id[check_id]["status"] in {"ready", "partial"}
-            for check_id in FRAMEWORK_CHECK_IDS
+            for check_id in expected_framework_ids
             if check_id in by_id
-        ) and FRAMEWORK_CHECK_IDS <= set(by_id)
+        ) and expected_framework_ids <= set(by_id)
 
         def gate_ready(name: str) -> bool:
             scoped = [
@@ -186,10 +200,16 @@ def execution_readiness_semantic_failures(run_dir: str | Path) -> tuple[str, ...
         failures.append(f"readiness CSV semantic parse failed: {exc}")
 
     handoff = payloads.get("handoff_smoke.json", {})
-    if handoff.get("is_order_submission") is not False:
-        failures.append("handoff smoke must deny order submission")
-    if handoff.get("is_fill_evidence") is not False:
-        failures.append("handoff smoke must deny fill evidence")
+    handoff_variants = (
+        list(handoff.values())
+        if {"all_cash", "positive_weight"} <= set(handoff)
+        else [handoff]
+    )
+    for variant in handoff_variants:
+        if variant.get("is_order_submission") is not False:
+            failures.append("handoff smoke must deny order submission")
+        if variant.get("is_fill_evidence") is not False:
+            failures.append("handoff smoke must deny fill evidence")
     inventory = payloads.get("input_inventory.json", {})
     if inventory.get("stable_during_audit") is not True:
         failures.append("input inventory was not stable during audit")
@@ -201,7 +221,9 @@ def validate_execution_readiness_semantics(
     run_dir: Path,
 ) -> tuple[str, ...]:
     """Contract-level domain validator bound to the readiness contract."""
-    return execution_readiness_semantic_failures(run_dir)
+    return execution_readiness_semantic_failures(
+        run_dir, schema=contract.schema or EXECUTION_READINESS_SCHEMA
+    )
 
 
 def verify_execution_readiness_artifact(

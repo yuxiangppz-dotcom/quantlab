@@ -173,7 +173,7 @@ src/quantlab/
     alpha/       # alpha factors (currently momentum)
     portfolio/   # target portfolio model and rank-based constructor
     backtest/    # idealized research backtest engine + metrics
-    execution/   # target handoff, order/ledger contracts, constraints, readiness
+    execution/   # handoff, order planning, ledger reservations, constraints, readiness
 scripts/         # data update + experiment runners
 config/          # security_code_changes.csv (version-controlled reference)
 docs/            # research protocol + architecture
@@ -233,8 +233,14 @@ uv run python scripts/run_execution_readiness.py
 ```
 
 It publishes only evidence and readiness gates under
-`data/experiments/execution_readiness_v0_1/<run_id>/`; it computes no strategy
-performance, invents no fills, calls no provider, and writes no canonical data.
+`data/experiments/execution_readiness_v0_2/<run_id>/` (schema
+`execution_readiness_v0_2`; the v0.1 artifact and verifier remain valid).
+The audit includes a synthetic, non-trading order-path smoke suite (account-
+aware planning, submission eligibility, atomic reservations, DAY/T+1
+binding, stale-account rejection), row-level daily/ST/suspension partition
+audits, and the fail-closed readiness gates. It computes no strategy
+performance, invents no fills, calls no provider, writes no canonical data,
+and submits no orders.
 See [docs/execution_readiness.md](docs/execution_readiness.md).
 
 The `data/` directory is git-ignored; canonical data is never committed.

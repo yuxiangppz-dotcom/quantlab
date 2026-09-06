@@ -51,6 +51,39 @@ FRAMEWORK_CHECK_IDS = frozenset({
     "t_plus_one_sellability",
 })
 
+# v0.2 extends the canonical inventory with the audited order-path
+# capabilities; the v0.1 inventory stays frozen for the v0.1 artifacts.
+_SUBMISSION_CHECKS_V0_2 = (
+    "production_submission_path_reachable",
+    "account_aware_order_planning",
+    "atomic_cash_reservation",
+    "atomic_share_reservation",
+    "stale_assessment_rejection",
+    "day_trade_date_binding",
+    "calendar_derived_t_plus_one",
+)
+READINESS_CHECK_IDS_V0_2 = (
+    READINESS_CHECK_IDS[0],
+    READINESS_CHECK_IDS[1],
+    READINESS_CHECK_IDS[2],
+    *_SUBMISSION_CHECKS_V0_2,
+    *READINESS_CHECK_IDS[3:],
+)
+FRAMEWORK_CHECK_IDS_V0_2 = FRAMEWORK_CHECK_IDS | set(_SUBMISSION_CHECKS_V0_2)
+
+
+def readiness_check_ids(schema: str) -> tuple[str, ...]:
+    """Canonical check inventory for one readiness schema version."""
+    if schema == "execution_readiness_v0_2":
+        return READINESS_CHECK_IDS_V0_2
+    return READINESS_CHECK_IDS
+
+
+def framework_check_ids(schema: str) -> frozenset[str]:
+    if schema == "execution_readiness_v0_2":
+        return FRAMEWORK_CHECK_IDS_V0_2
+    return FRAMEWORK_CHECK_IDS
+
 
 @dataclass(frozen=True)
 class ReadinessCheck:
@@ -83,12 +116,13 @@ class ExecutionReadinessReport:
     historical_execution_ready: bool
     paper_execution_ready: bool
     live_execution_ready: bool
+    schema: str = "execution_readiness_v0_1"
 
     def __post_init__(self) -> None:
         ids = [check.check_id for check in self.checks]
         if len(ids) != len(set(ids)):
             raise ValueError("duplicate readiness check_id")
-        if tuple(ids) != READINESS_CHECK_IDS:
+        if tuple(ids) != readiness_check_ids(self.schema):
             raise ValueError("readiness check inventory or order is non-canonical")
         if self.live_execution_ready and not self.paper_execution_ready:
             raise ValueError("live readiness cannot exceed paper readiness")
@@ -200,6 +234,116 @@ def _content_snapshot(
     }
 
 
+def audit_partition_rows(
+    root: str | Path,
+    family: str,
+    open_dates: list[date],
+    *,
+    expected_fields: set[str],
+    family_kind: str,
+) -> dict[str, Any]:
+    """Row-level audit of every declared partition in one family.
+
+    Per partition: the partition path date must equal every row's
+    ``trade_date``; primary keys must be unique; required fields must be
+    non-null and finite; daily bars must satisfy valid OHLC relations and
+    non-negative volume/amount. Findings and anomaly samples are returned
+    for the evidence file.
+    """
+    root_path = Path(root)
+    audited_partitions = 0
+    audited_rows = 0
+    date_mismatches = 0
+    duplicate_primary_keys = 0
+    null_or_nonfinite = 0
+    ohlc_violations = 0
+    negative_volume_amount = 0
+    anomaly_samples: list[dict[str, Any]] = []
+
+    def _sample(kind: str, path: Path, mask: pd.Series) -> None:
+        if len(anomaly_samples) >= 10:
+            return
+        offending = path_frame.loc[mask]
+        for _, row in offending.head(2).iterrows():
+            anomaly_samples.append({
+                "partition": str(path.relative_to(root_path)),
+                "kind": kind,
+                "row": {
+                    key: (
+                        value.isoformat() if hasattr(value, "isoformat") else value
+                    )
+                    for key, value in list(row.items())[:12]
+                },
+            })
+
+    for value in open_dates:
+        path = (
+            root_path / family / f"year={value.year}" / f"month={value.month:02d}"
+            / f"{value.isoformat()}.parquet"
+        )
+        if not path.exists():
+            continue
+        path_frame = pd.read_parquet(path)
+        audited_partitions += 1
+        if path_frame.empty:
+            continue
+        audited_rows += len(path_frame)
+        path_frame = path_frame.copy()
+        normalized = pd.to_datetime(path_frame["trade_date"]).dt.date
+        date_mask = normalized != value
+        date_mismatches += int(date_mask.sum())
+        _sample("trade_date_mismatch", path, date_mask)
+
+        key_series = (
+            path_frame["instrument_id"].astype(str)
+            + "|"
+            + normalized.astype(str)
+            if family_kind == "daily"
+            else path_frame["instrument_id"].astype(str)
+        )
+        duplicate_mask = key_series.duplicated()
+        duplicate_primary_keys += int(duplicate_mask.sum())
+        _sample("duplicate_primary_key", path, duplicate_mask)
+
+        null_mask = path_frame[list(expected_fields)].isna().any(axis=1)
+        null_or_nonfinite += int(null_mask.sum())
+        _sample("null_required_field", path, null_mask)
+
+        if family_kind == "daily":
+            low, high = path_frame["low"], path_frame["high"]
+            open_, close_ = path_frame["open"], path_frame["close"]
+            ohlc_mask = (
+                (low <= 0)
+                | (low > open_)
+                | (low > close_)
+                | (open_ > high)
+                | (close_ > high)
+            )
+            ohlc_violations += int(ohlc_mask.sum())
+            _sample("ohlc_relation", path, ohlc_mask)
+            volume_mask = (path_frame["volume"] < 0) | (path_frame["amount"] < 0)
+            negative_volume_amount += int(volume_mask.sum())
+            _sample("negative_volume_or_amount", path, volume_mask)
+
+    total_anomalies = (
+        date_mismatches + duplicate_primary_keys + null_or_nonfinite
+        + ohlc_violations + negative_volume_amount
+    )
+    return {
+        "row_level_audit": True,
+        "audited_partitions": audited_partitions,
+        "audited_rows": audited_rows,
+        "date_mismatches": date_mismatches,
+        "duplicate_primary_keys": duplicate_primary_keys,
+        "null_or_nonfinite_required_fields": null_or_nonfinite,
+        "ohlc_relation_violations": ohlc_violations,
+        "negative_volume_or_amount": negative_volume_amount,
+        "total_anomalies": total_anomalies,
+        "anomaly_samples": anomaly_samples,
+        "all_rows_clean": total_anomalies == 0,
+    }
+
+
 def inspect_execution_inputs(
     canonical_root: str | Path,
     code_changes_path: str | Path,
@@ -259,6 +403,18 @@ def inspect_execution_inputs(
         partition_paths("lifecycle_context_v1/suspensions"),
         root=root,
         expected_fields=_SUSPENSION_FIELDS,
+    )
+    daily["row_audit"] = audit_partition_rows(
+        root, "daily", open_dates,
+        expected_fields=_RAW_BAR_FIELDS, family_kind="daily",
+    )
+    stock_st["row_audit"] = audit_partition_rows(
+        root, "lifecycle_context_v1/stock_st", open_dates,
+        expected_fields=_ST_FIELDS, family_kind="context",
+    )
+    suspensions["row_audit"] = audit_partition_rows(
+        root, "lifecycle_context_v1/suspensions", open_dates,
+        expected_fields=_SUSPENSION_FIELDS, family_kind="context",
     )
     security_fields = set(pq.read_schema(securities_path).names)
     securities = pd.read_parquet(securities_path, columns=["instrument_id"])
@@ -376,9 +532,19 @@ def build_execution_readiness_report(
     period_end: date,
     handoff_smoke_valid: bool,
     rule_book: PITRuleBook | None = None,
+    schema: str = "execution_readiness_v0_1",
+    order_path_smoke: dict[str, Any] | None = None,
 ) -> tuple[ExecutionReadinessReport, dict[str, Any]]:
-    """Apply frozen readiness semantics to observed evidence."""
+    """Apply frozen readiness semantics to observed evidence.
+
+    ``schema`` selects the canonical check inventory: v0.2 extends the v0.1
+    inventory with the audited order-path capabilities and upgrades the
+    T+1 check once its calendar-bound derivation is proven by the smoke
+    evidence in ``order_path_smoke``.
+    """
     rule_book = rule_book or default_a_share_rule_book()
+    is_v0_2 = schema == "execution_readiness_v0_2"
+    smoke = order_path_smoke or {}
     calendar = evidence["calendar"]
     calendar_ready = bool(
         calendar["all_calendar_days_present"]
@@ -387,7 +553,11 @@ def build_execution_readiness_report(
         and calendar["sse_open_sessions"] > 0
     )
     family_ready = {
-        name: snapshot["missing_files"] == 0 and snapshot["all_schemas_valid"]
+        name: (
+            snapshot["missing_files"] == 0
+            and snapshot["all_schemas_valid"]
+            and snapshot.get("row_audit", {}).get("all_rows_clean", False)
+        )
         for name, snapshot in (
             ("daily", evidence["daily"]),
             ("stock_st", evidence["stock_st"]),
@@ -428,6 +598,149 @@ def build_execution_readiness_report(
             "Typed orders, five-dimension decisions, and append-only ledger are implemented.",
             {"money_unit": "integer_fen", "timestamp_policy": "timezone_aware"},
             "No broker gateway is connected.", ("framework",),
+        ),
+        *(
+            (
+                ReadinessCheck(
+                    "production_submission_path_reachable", "framework",
+                    (
+                        ReadinessStatus.READY
+                        if smoke.get("production_submission_path_reachable")
+                        else ReadinessStatus.BLOCKED
+                    ),
+                    "The real constraint engine reaches a submission-eligible "
+                    "order with fill probability still unknown.",
+                    {
+                        "engine": "AShareConstraintEngine",
+                        "derived_status": "validated",
+                        "fillability_unknown_allowed": True,
+                        "gates_rechecked": sorted(smoke.get(
+                            "submission_gate_matrix", {}
+                        )),
+                    },
+                    "Submission eligibility is not fillability.",
+                    ("framework",),
+                ),
+                ReadinessCheck(
+                    "account_aware_order_planning", "framework",
+                    (
+                        ReadinessStatus.READY
+                        if smoke.get("account_aware_order_planning")
+                        else ReadinessStatus.BLOCKED
+                    ),
+                    "Account-aware planning turns instructions into audited, "
+                    "lot-conforming order legs with raw limit-price evidence.",
+                    {
+                        "plan_id_deterministic": smoke.get(
+                            "order_plan_deterministic", False
+                        ),
+                        "omitted_held_name_exits": smoke.get(
+                            "omitted_held_name_exits", False
+                        ),
+                        "non_conforming_delta_blocks": smoke.get(
+                            "non_conforming_delta_blocks", False
+                        ),
+                        "buys_funded_from_available_cash_only": smoke.get(
+                            "aggregate_cash_contention_blocked", False
+                        ),
+                    },
+                    "A plan is never a submission.",
+                    ("framework",),
+                ),
+                ReadinessCheck(
+                    "atomic_cash_reservation", "framework",
+                    (
+                        ReadinessStatus.READY
+                        if smoke.get("atomic_cash_reservation")
+                        else ReadinessStatus.BLOCKED
+                    ),
+                    "Buy submissions reserve worst-case cash atomically; "
+                    "contending orders cannot double-spend.",
+                    {
+                        "contention_blocked": smoke.get(
+                            "aggregate_cash_contention_blocked", False
+                        ),
+                        "partial_fill_drawdown": smoke.get(
+                            "partial_fill_drawdown", False
+                        ),
+                        "cancel_release": smoke.get("cancel_release", False),
+                    },
+                    "Production fee caps stay unknown without a real fee table.",
+                    ("framework",),
+                ),
+                ReadinessCheck(
+                    "atomic_share_reservation", "framework",
+                    (
+                        ReadinessStatus.READY
+                        if smoke.get("atomic_share_reservation")
+                        else ReadinessStatus.BLOCKED
+                    ),
+                    "Sell submissions reserve sellable shares atomically; "
+                    "double-booking one lot fails closed.",
+                    {"contention_blocked": smoke.get(
+                        "share_contention_blocked", False
+                    )},
+                    "Corporate actions remain unmodeled.",
+                    ("framework",),
+                ),
+                ReadinessCheck(
+                    "stale_assessment_rejection", "framework",
+                    (
+                        ReadinessStatus.READY
+                        if smoke.get("stale_assessment_rejected")
+                        else ReadinessStatus.BLOCKED
+                    ),
+                    "Constraint assessments bind an account-state fingerprint "
+                    "and stale ones are rejected.",
+                    {"stale_rejected": smoke.get(
+                        "stale_assessment_rejected", False
+                    )},
+                    "Re-assessment after any account mutation is mandatory.",
+                    ("framework",),
+                ),
+                ReadinessCheck(
+                    "day_trade_date_binding", "framework",
+                    (
+                        ReadinessStatus.READY
+                        if smoke.get("wrong_trade_date_rejected")
+                        else ReadinessStatus.BLOCKED
+                    ),
+                    "DAY orders bind their intended trade date end to end; "
+                    "late reports cannot drift the economic trade date.",
+                    {"wrong_trade_date_rejected": smoke.get(
+                        "wrong_trade_date_rejected", False
+                    )},
+                    "DAY only; no GTC default exists.",
+                    ("framework",),
+                ),
+                ReadinessCheck(
+                    "calendar_derived_t_plus_one", "framework",
+                    (
+                        ReadinessStatus.READY
+                        if smoke.get("weekend_t_plus_one_exact")
+                        and smoke.get("missing_next_session_fail_closed")
+                        else ReadinessStatus.BLOCKED
+                    ),
+                    "Buy-lot sellable_from is derived and verified as exactly "
+                    "calendar.next_session(trade_date).",
+                    {
+                        "calendar_bound": True,
+                        "weekend_exact": smoke.get(
+                            "weekend_t_plus_one_exact", False
+                        ),
+                        "holiday_exact": smoke.get(
+                            "holiday_t_plus_one_exact", False
+                        ),
+                        "incomplete_coverage_fail_closed": smoke.get(
+                            "missing_next_session_fail_closed", False
+                        ),
+                    },
+                    "T+1 is only as good as the calendar's coverage.",
+                    ("framework",),
+                ),
+            )
+            if is_v0_2
+            else ()
         ),
         ReadinessCheck(
             "canonical_calendar", "historical_data",
@@ -481,12 +794,31 @@ def build_execution_readiness_report(
             ("historical",),
         ),
         ReadinessCheck(
-            "t_plus_one_sellability", "market_rules", ReadinessStatus.PARTIAL,
-            "Lot state blocks same-day sale, but next-session derivation is caller-supplied.",
+            "t_plus_one_sellability", "market_rules",
+            (
+                ReadinessStatus.READY
+                if is_v0_2
+                and smoke.get("weekend_t_plus_one_exact")
+                and smoke.get("missing_next_session_fail_closed")
+                else ReadinessStatus.PARTIAL
+            ),
+            (
+                "Lot state blocks same-day sale, and buy-lot sellable_from is "
+                "derived from and verified against the canonical calendar's "
+                "next session (weekend, holiday, and coverage boundaries "
+                "tested)."
+                if is_v0_2
+                else "Lot state blocks same-day sale, but next-session "
+                     "derivation is caller-supplied."
+            ),
             {
                 "model": "position_lot",
                 "same_day_sale_blocked": True,
-                "calendar_bound_next_session_derivation": False,
+                "calendar_bound_next_session_derivation": is_v0_2,
+                "weekend_exact": smoke.get("weekend_t_plus_one_exact", False),
+                "incomplete_coverage_fail_closed": smoke.get(
+                    "missing_next_session_fail_closed", False
+                ),
             },
             "A supplied later date is validated as later, not as exactly the next session.",
             ("framework", "historical"),
@@ -531,10 +863,11 @@ def build_execution_readiness_report(
             "Live trading is prohibited.", ("live",),
         ),
     )
+    framework_ids = framework_check_ids(schema)
     framework_valid = all(
         check.status in {ReadinessStatus.READY, ReadinessStatus.PARTIAL}
         for check in checks
-        if check.check_id in FRAMEWORK_CHECK_IDS
+        if check.check_id in framework_ids
     )
     historical_ready = all(
         check.status in {ReadinessStatus.READY, ReadinessStatus.NOT_APPLICABLE}
@@ -560,6 +893,7 @@ def build_execution_readiness_report(
             historical_execution_ready=historical_ready,
             paper_execution_ready=paper_ready,
             live_execution_ready=live_ready,
+            schema=schema,
         ),
         rule_inventory,
     )

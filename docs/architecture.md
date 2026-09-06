@@ -454,6 +454,28 @@ An append-only record of intended vs. executed orders and fills. The ledger is
 the boundary between research simulation and real trading — it makes execution
 attributable and audit-able.
 
+### Executable Order Path and Reservations v0.2
+
+The execution chain is instruction → account-aware `OrderPlan` → constraint
+assessment → atomic reservation → broker-facing `OrderRequest` →
+fill/cancel/expire accounting, with submission eligibility deliberately
+distinct from eventual fillability: unknown fill probability or queue
+position never blocks an otherwise fully qualified limit order, while order
+admissibility, market accessibility, fee determinability, and sell-order
+position sellability stay fail-closed. Planning deltas are
+`target − current` over the COMPLETE desired position set (an omitted held
+name exits); buy limits require separate raw order-price evidence (never
+handoff planning prices); non-lot-conforming deltas block with structured
+reasons instead of silently rounding the target; buys are funded only from
+available cash at the worst case (limit notional plus an explicit fee cap).
+Buy submissions reserve worst-case cash, sell submissions reserve sellable
+shares; batches reserve all-or-nothing, partial fills draw reservations
+down, cancel/expire releases the remainder, and constraint assessments bind
+an account-state fingerprint so stale ones are rejected. `TimeInForce.DAY`
+is explicit; `OrderRequest` binds the intended trade date; buy-lot
+`sellable_from` must equal `calendar.next_session(trade_date)`, and
+incomplete calendar coverage is fail-closed.
+
 ### Research vs Execution Separation
 
 Research produces signals and evaluates them on historical data. Execution
