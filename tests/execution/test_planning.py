@@ -138,7 +138,7 @@ def _price(instrument_id: str = "600000.SH") -> OrderPriceEvidence:
 def _fee_cap(instrument_id: str = "600000.SH", cap: int = 30_000) -> FeeCapQuote:
     return FeeCapQuote(
         instrument_id=instrument_id,
-        account_id="test-account",
+        account_id="account-1",
         trade_date=EXECUTION,
         cap_fen=cap,
         evidence_id="synthetic-fee-cap-test-only",

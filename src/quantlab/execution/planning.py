@@ -175,6 +175,7 @@ class OrderPlanLeg:
     limit_price_source_fingerprint: str | None = None
     limit_price_available_at: datetime | None = None
     worst_case_fee_fen: int | None = None
+    fee_quote_fingerprint: str | None = None
 
 
 @dataclass(frozen=True)
@@ -363,6 +364,9 @@ def build_order_plan(
                 ),
                 limit_price_available_at=(price.available_at if price else None),
                 worst_case_fee_fen=(fee_cap.cap_fen if fee_cap else None),
+                fee_quote_fingerprint=(
+                    fee_cap.source_fingerprint if fee_cap else None
+                ),
             )
         )
 
@@ -402,6 +406,20 @@ def build_order_plan(
             continue
 
         evidence = order_prices.get(instrument_id)
+        if evidence is not None and evidence.instrument_id != instrument_id:
+            # evidence is keyed by instrument; a mismatched payload would
+            # price one instrument with another instrument's evidence
+            reasons.add("order_price_evidence_instrument_mismatch")
+            _leg(
+                instrument_id, side, target_shares,
+                OrderPlanLegStatus.BLOCKED,
+                "order_price_evidence_instrument_mismatch",
+                "order-price evidence belongs to a different instrument",
+                lot_rule_id=rule.rule_id,
+                identity_record=identity.source_record_id,
+                delta=delta,
+            )
+            continue
         if evidence is not None and not isinstance(evidence, OrderPriceEvidence):
             # handoff planning prices and other foreign price objects are
             # never order prices
@@ -451,6 +469,18 @@ def build_order_plan(
                 delta=delta,
             )
             continue
+        if exchange_date(evidence.available_at) < evidence.price_date:
+            reasons.add("order_price_evidence_pre_dated")
+            _leg(
+                instrument_id, side, target_shares,
+                OrderPlanLegStatus.BLOCKED, "order_price_evidence_pre_dated",
+                "order-price evidence claims availability before its price date",
+                lot_rule_id=rule.rule_id,
+                identity_record=identity.source_record_id,
+                price=evidence,
+                delta=delta,
+            )
+            continue
         price_session = calendar.session_status(evidence.price_date)
         if price_session is not True or evidence.price_date > instruction.execution_date:
             reasons.add("order_price_date_invalid")
@@ -489,6 +519,23 @@ def build_order_plan(
                     OrderPlanLegStatus.BLOCKED, "fee_cap_unknown",
                     "a buy cannot reserve cash without an explicit worst-case "
                     "fee cap; production without a real fee table stays unknown",
+                    lot_rule_id=rule.rule_id,
+                    identity_record=identity.source_record_id,
+                    price=evidence,
+                    delta=delta,
+                )
+                continue
+            if (
+                fee_cap.instrument_id != instrument_id
+                or fee_cap.account_id != account.account_id
+                or fee_cap.trade_date != instruction.execution_date
+            ):
+                reasons.add("fee_quote_mismatch")
+                _leg(
+                    instrument_id, side, target_shares,
+                    OrderPlanLegStatus.BLOCKED, "fee_quote_mismatch",
+                    "the fee quote is bound to a different instrument, "
+                    "account, or trade date",
                     lot_rule_id=rule.rule_id,
                     identity_record=identity.source_record_id,
                     price=evidence,

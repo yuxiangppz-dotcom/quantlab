@@ -35,7 +35,6 @@ from quantlab.execution.models import (
     OrderRequest,
     OrderType,
     PositionLot,
-    PositionTarget,
     PriceBasis,
     Side,
     TimeInForce,
@@ -233,9 +232,11 @@ def _fill(
     )
 
 
-def _order_price_evidence() -> OrderPriceEvidence:
+def _order_price_evidence(
+    instrument_id: str = SMOKE_INSTRUMENT,
+) -> OrderPriceEvidence:
     return OrderPriceEvidence(
-        instrument_id=SMOKE_INSTRUMENT,
+        instrument_id=instrument_id,
         price=SMOKE_PRICE,
         price_date=SMOKE_FRI,
         available_at=_instant(SMOKE_FRI, 0),
@@ -318,9 +319,24 @@ def run_order_path_smoke() -> dict:
         if key != "fillability_unknown"
     )
 
-    # 2. account-aware planning
+    # 2. account-aware planning through the REAL handoff + order adapter:
+    #    positive TargetPortfolio -> RebalanceInstruction -> OrderPlan ->
+    #    OrderBatch. No order field is copied by hand anywhere below.
+    from quantlab.execution.handoff import (
+        PlanningPrice,
+        TargetHandoffConfig,
+        build_rebalance_instruction,
+    )
+    from quantlab.execution.orchestration import (
+        materialize_order_batch,
+        verify_lineage,
+    )
+    from quantlab.execution.planning import ExecutionStateView
+    from quantlab.portfolio import TargetPortfolio, TargetWeight
+
+    planning_nav_fen = 4_000_000
     plan_account = _account(
-        as_of=_instant(SMOKE_FRI, 0), cash_fen=10_000_000_000
+        as_of=_instant(SMOKE_FRI, 0), cash_fen=50_000_000
     )
     plan_account = replace(
         plan_account,
@@ -334,74 +350,225 @@ def run_order_path_smoke() -> dict:
             ),
         ),
     )
-    prices = {
-        "600000.SH": _order_price_evidence(),
-        "600001.SH": _order_price_evidence(),
+    state_view = ExecutionStateView(
+        account=plan_account,
+        available_cash_fen=50_000_000,
+        available_sellable_shares={"600001.SH": 200},
+        fingerprint="sha256:" + "5" * 64,
+    )
+    planning_prices = {
+        SMOKE_INSTRUMENT: PlanningPrice(
+            instrument_id=SMOKE_INSTRUMENT,
+            price=SMOKE_PRICE,
+            price_date=SMOKE_FRI,
+            available_at=_instant(SMOKE_FRI, 360),
+            basis=PriceBasis.RAW,
+            source_id="synthetic-raw-price-source",
+        ),
     }
-    fee_caps = {"600000.SH": _fee_cap()}
+    order_prices = {
+        SMOKE_INSTRUMENT: _order_price_evidence(),
+        "600001.SH": _order_price_evidence("600001.SH"),
+    }
+    fee_caps = {SMOKE_INSTRUMENT: _fee_cap()}
 
-    def _plan(targets):
-        from quantlab.execution import InstructionSourceMetadata, RebalanceInstruction
-
-        fingerprint = "2" * 64
-        instruction = RebalanceInstruction(
-            instruction_id="smoke-instruction",
-            portfolio_id="smoke-portfolio",
-            signal_as_of=_instant(SMOKE_FRI, 375),
-            execution_date=SMOKE_MON,
-            targets=tuple(targets),
-            source_fingerprint=fingerprint,
-            source_metadata=InstructionSourceMetadata(
-                target_as_of=SMOKE_FRI,
-                target_fingerprint=fingerprint,
-                planning_input_fingerprint="3" * 64,
-                planner_version="target_weight_to_share_target_v0_1",
-                planning_nav_fen=10_000_000_000,
+    def _handoff_plan(weights, *, account=None, view=None, cash_weight=0.1):
+        target = TargetPortfolio(
+            as_of=SMOKE_FRI, positions=tuple(weights), cash_weight=cash_weight
+        )
+        handoff = build_rebalance_instruction(
+            target,
+            TargetHandoffConfig(
+                portfolio_id="smoke-portfolio",
+                signal_as_of=_instant(SMOKE_FRI, 375),
+                execution_date=SMOKE_MON,
+                planning_nav_fen=planning_nav_fen,
                 minimum_cash_fen=0,
-                planning_price_basis=PriceBasis.RAW,
-                planning_price_policy="synthetic-smoke",
-                share_rounding_policy="synthetic-smoke",
-                cash_policy="synthetic-smoke",
-                planning_price_source_ids=("synthetic-raw-price-source",),
             ),
+            planning_prices,
+            calendar=calendar,
+            identities=identities,
+            rules=rules,
         )
-        return build_order_plan(
-            instruction, plan_account, created_at=_instant(SMOKE_MON, 0),
-            order_prices=prices, fee_caps=fee_caps,
-            calendar=calendar, identities=identities, rules=rules,
+        instruction = handoff.instruction
+        assert instruction is not None
+        plan = build_order_plan(
+            instruction,
+            account or plan_account,
+            created_at=_instant(SMOKE_MON, 0),
+            order_prices=order_prices,
+            fee_caps=fee_caps,
+            calendar=calendar,
+            identities=identities,
+            rules=rules,
+            execution_state=view or state_view,
         )
+        return instruction, plan
 
-    plan_one = _plan((PositionTarget(SMOKE_INSTRUMENT, 400),))
-    plan_two = _plan((PositionTarget(SMOKE_INSTRUMENT, 400),))
+    instruction_one, plan_one = _handoff_plan(
+        (TargetWeight(SMOKE_INSTRUMENT, 0.9),)
+    )
+    instruction_two, plan_two = _handoff_plan(
+        (TargetWeight(SMOKE_INSTRUMENT, 0.9),)
+    )
     leg = plan_one.legs[0]
-    evidence["order_plan_deterministic"] = plan_one.plan_id == plan_two.plan_id
+    batch = materialize_order_batch(
+        instruction_one,
+        plan_one,
+        state=state_view,
+        created_at=_instant(SMOKE_MON, 1),
+    )
+    target_shares = leg.target_shares
+    evidence["order_plan_deterministic"] = (
+        plan_one.plan_id == plan_two.plan_id
+        and batch.intents
+        == materialize_order_batch(
+            instruction_one,
+            plan_one,
+            state=state_view,
+            created_at=_instant(SMOKE_MON, 1),
+        ).intents
+    )
     evidence["buy_limit_from_order_price_evidence"] = (
         leg.limit_price_source_fingerprint == "1" * 64
         and leg.limit_price_available_at == _instant(SMOKE_FRI, 0)
     )
     evidence["buys_funded_from_available_cash_only"] = (
         plan_one.worst_case_cash_fen_required
-        == 400 * 1_000 + SMOKE_FEE_CAP_FEN
+        == target_shares * 1_000 + SMOKE_FEE_CAP_FEN
+    )
+    intent = batch.intents[0]
+    request = batch.requests[0]
+    drifted_view = replace(
+        state_view, fingerprint="sha256:" + "6" * 64
+    )
+    try:
+        verify_lineage(intent, instruction_one, plan_one, drifted_view)
+        drift_detected = False
+    except Exception:
+        drift_detected = True
+    evidence["plan_to_order_lineage"] = (
+        intent.plan_id == plan_one.plan_id
+        and intent.leg_id == leg.leg_id
+        and intent.instruction_id == instruction_one.instruction_id
+        and intent.execution_state_fingerprint == state_view.fingerprint
+        and intent.limit_price_source_fingerprint == "1" * 64
+        and intent.fee_quote_fingerprint == "4" * 64
+        and intent.intended_trade_date == SMOKE_MON
+        and intent.time_in_force.value == "day"
+        and intent.quantity == target_shares
+        and all(
+            getattr(request, field) == getattr(intent, field)
+            for field in (
+                "instrument_id", "side", "quantity", "order_type",
+                "limit_price", "intended_trade_date", "limit_price_basis",
+                "limit_price_source_id", "time_in_force",
+            )
+        )
+        and drift_detected
     )
     evidence["account_aware_order_planning"] = (
         evidence["order_plan_deterministic"]
         and evidence["buy_limit_from_order_price_evidence"]
         and evidence["buys_funded_from_available_cash_only"]
+        and plan_one.status.value == "submit_ready"
     )
 
-    omitted = _plan((PositionTarget(SMOKE_INSTRUMENT, 400),))
+    omitted = _handoff_plan((TargetWeight(SMOKE_INSTRUMENT, 0.9),))
     evidence["omitted_held_name_exits"] = any(
         item.side is Side.SELL and item.delta_shares == -200
         and item.status.value == "orderable"
-        for item in omitted.legs
+        for item in omitted[1].legs
     )
 
-    odd_plan = _plan((PositionTarget(SMOKE_INSTRUMENT, 450),))
-    evidence["non_conforming_delta_blocks"] = (
-        odd_plan.legs[0].status.value == "blocked"
-        and odd_plan.legs[0].reason_code == "buy_delta_not_lot_conforming"
-        and odd_plan.legs[0].target_shares == 450
+    # a delta that cannot satisfy the lot grid blocks the leg: the account
+    # already holds 50 shares, so the planned buy delta is 3600 - 50 = 3550
+    odd_lot = PositionLot(
+        lot_id="smoke-lot-odd-600000",
+        instrument_id=SMOKE_INSTRUMENT,
+        quantity=50,
+        acquired_trade_date=SMOKE_THU,
+        sellable_from=SMOKE_FRI,
     )
+    odd_account = replace(
+        plan_account, lots=(odd_lot,) + plan_account.lots
+    )
+    odd_view = replace(state_view, account=odd_account)
+    _, odd_plan = _handoff_plan(
+        (TargetWeight(SMOKE_INSTRUMENT, 0.9),), account=odd_account, view=odd_view
+    )
+    evidence["non_conforming_delta_blocks"] = (
+        odd_plan.status.value == "blocked"
+        and odd_plan.legs[0].reason_code == "buy_delta_not_lot_conforming"
+        and odd_plan.legs[0].target_shares == 3600
+        and odd_plan.legs[0].delta_shares == 3550
+    )
+
+    # 2b. transactional submission of the real adapter batch: intents ->
+    #     assessments (execution-state bound) -> submit_orders with the
+    #     typed fee quote. Internal ledger OrderSubmitted events are NOT an
+    #     external broker submission. The buy leg carries the full path;
+    #     the omitted-exit sell leg is exercised by the share-reservation
+    #     scenario below.
+    lineage_ledger = ExecutionLedger(
+        _account(as_of=_instant(SMOKE_MON, 0), cash_fen=5_000_000),
+        calendar=calendar,
+    )
+    submit_batch = materialize_order_batch(
+        instruction_one,
+        plan_one,
+        state=state_view,
+        created_at=_instant(SMOKE_MON, 10),
+    )
+    buy_pairs = [
+        (order_intent, order_request)
+        for order_intent, order_request in zip(
+            submit_batch.intents, submit_batch.requests, strict=True
+        )
+        if order_intent.side is Side.BUY
+    ]
+    for order_intent, order_request in buy_pairs:
+        lineage_ledger.append(
+            OrderIntended(
+                f"smoke-event-{order_intent.order_id}",
+                order_intent.created_at,
+                order_intent,
+            )
+        )
+        assessment = engine.assess(
+            order_intent,
+            lineage_ledger.snapshot(order_intent.created_at),
+            order_intent.created_at,
+            suspension=_open(SMOKE_MON),
+            fee_schedule=_smoke_fee(),
+            daily_bar_available=None,
+            execution_state_fingerprint=(
+                lineage_ledger.execution_state_fingerprint()
+            ),
+        )
+        lineage_ledger.append(assessment.event)
+        lineage_ledger.submit_orders(
+            [
+                (
+                    OrderSubmitted(
+                        f"smoke-event-{order_intent.order_id}-submitted",
+                        order_request.created_at,
+                        order_request,
+                        worst_case_fee_fen=SMOKE_FEE_CAP_FEN,
+                        execution_state_fingerprint=(
+                            lineage_ledger.execution_state_fingerprint()
+                        ),
+                    ),
+                    _fee_cap(),
+                )
+            ]
+        )
+    evidence["transactional_submission_committed"] = all(
+        item.status.value == "submitted" for item in lineage_ledger.orders
+    ) and lineage_ledger.reserved_cash_fen() == (
+        target_shares * 1_000 + SMOKE_FEE_CAP_FEN
+    )
+    evidence["external_broker_submission"] = False
 
     # 3. atomic cash reservation: contention, partial fill, cancel release
     cash_ledger = ExecutionLedger(account, calendar=calendar)

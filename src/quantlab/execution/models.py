@@ -277,6 +277,11 @@ class OrderIntent:
     limit_price_basis: PriceBasis | None = None
     limit_price_source_id: str | None = None
     time_in_force: TimeInForce = TimeInForce.DAY
+    plan_id: str | None = None
+    leg_id: str | None = None
+    execution_state_fingerprint: str | None = None
+    limit_price_source_fingerprint: str | None = None
+    fee_quote_fingerprint: str | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.order_id, "order_id")
@@ -296,6 +301,22 @@ class OrderIntent:
             raise ExecutionValidationError("order_type must be an OrderType enum")
         if not isinstance(self.session, OrderSession):
             raise ExecutionValidationError("session must be an OrderSession enum")
+        for fingerprint, name in (
+            (self.plan_id, "plan_id"),
+            (self.leg_id, "leg_id"),
+            (self.execution_state_fingerprint, "execution_state_fingerprint"),
+        ):
+            if fingerprint is not None:
+                require_identifier(fingerprint, name)
+        for fingerprint, name in (
+            (self.limit_price_source_fingerprint, "limit_price_source_fingerprint"),
+            (self.fee_quote_fingerprint, "fee_quote_fingerprint"),
+        ):
+            if fingerprint is not None and (
+                len(fingerprint) != 64
+                or any(char not in "0123456789abcdef" for char in fingerprint)
+            ):
+                raise ExecutionValidationError(f"{name} must be SHA-256")
         if self.intended_trade_date < exchange_date(self.created_at):
             raise ExecutionValidationError(
                 "intended_trade_date precedes the Shanghai-local creation date"

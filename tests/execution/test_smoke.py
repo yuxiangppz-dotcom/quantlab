@@ -13,6 +13,8 @@ REQUIRED_TRUE_FLAGS = (
     "order_plan_deterministic",
     "buy_limit_from_order_price_evidence",
     "buys_funded_from_available_cash_only",
+    "plan_to_order_lineage",
+    "transactional_submission_committed",
     "omitted_held_name_exits",
     "non_conforming_delta_blocks",
     "aggregate_cash_contention_blocked",
@@ -33,6 +35,7 @@ REQUIRED_FALSE_FLAGS = (
     "canonical_data_written",
     "order_submission_attempted",
     "fill_claimed",
+    "external_broker_submission",
 )
 
 
