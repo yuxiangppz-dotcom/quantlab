@@ -309,8 +309,31 @@ def _fingerprint_lots(lots) -> list[dict[str, str]]:
     ]
 
 
+@dataclass(frozen=True)
+class _LedgerSnapshot:
+    """Byte-for-byte capture of every mutable ledger container."""
+
+    cash_fen: int
+    lots: list
+    orders: dict
+    events: list
+    events_by_id: dict
+    fill_ids: set
+    request_ids: set
+    reservations: dict
+
+
 class ExecutionLedger:
-    """Append-only event ledger with atomic validation-before-mutation."""
+    """Append-only event ledger with transactional strong exception safety.
+
+    Every public mutation (``append``, ``submit_orders``) first captures a
+    snapshot of all mutable state, applies its changes, re-checks the
+    invariants, and only then commits. Any ``Exception`` or
+    ``BaseException`` — injected, accidental, or a ``KeyboardInterrupt`` —
+    restores the exact prior containers (cash, lots, orders, reservations,
+    events, event ids, fill ids, request ids), so a failed call leaves no
+    partial reservation, no half-applied event, and no orphaned id.
+    """
 
     def __init__(
         self,
@@ -496,8 +519,34 @@ class ExecutionLedger:
             fingerprint=self.execution_state_fingerprint(),
         )
 
+    def _begin(self) -> _LedgerSnapshot:
+        return _LedgerSnapshot(
+            cash_fen=self._cash_fen,
+            lots=list(self._lots),
+            orders=dict(self._orders),
+            events=list(self._events),
+            events_by_id=dict(self._events_by_id),
+            fill_ids=set(self._fill_ids),
+            request_ids=set(self._request_ids),
+            reservations=dict(self._reservations),
+        )
+
+    def _restore(self, snapshot: _LedgerSnapshot) -> None:
+        self._cash_fen = snapshot.cash_fen
+        self._lots = snapshot.lots
+        self._orders = snapshot.orders
+        self._events = snapshot.events
+        self._events_by_id = snapshot.events_by_id
+        self._fill_ids = snapshot.fill_ids
+        self._request_ids = snapshot.request_ids
+        self._reservations = snapshot.reservations
+
     def append(self, event: LedgerEvent) -> bool:
-        """Append one event; exact duplicate event ids are idempotent."""
+        """Append one event; exact duplicate event ids are idempotent.
+
+        The event either fully applies (including the post-apply invariant
+        check) or the ledger is restored to its exact prior state.
+        """
         previous = self._events_by_id.get(event.event_id)
         if previous is not None:
             if previous == event:
@@ -510,22 +559,26 @@ class ExecutionLedger:
         if self._events and event.occurred_at < self._events[-1].occurred_at:
             raise LedgerTransitionError("events must be appended in timestamp order")
 
-        if isinstance(event, OrderIntended):
-            self._apply_intended(event)
-        elif isinstance(event, ConstraintsAssessed):
-            self._apply_assessment(event)
-        elif isinstance(event, OrderSubmitted):
-            self._apply_submitted(event)
-        elif isinstance(event, FillRecorded):
-            self._apply_fill(event)
-        elif isinstance(event, OrderCanceled):
-            self._apply_terminal(event.order_id, OrderStatus.CANCELED)
-        elif isinstance(event, OrderExpired):
-            self._apply_terminal(event.order_id, OrderStatus.EXPIRED)
-        else:  # pragma: no cover - closed union and defensive runtime guard
-            raise TypeError(f"unsupported ledger event: {type(event).__name__}")
-
-        self._check_invariants()
+        snapshot = self._begin()
+        try:
+            if isinstance(event, OrderIntended):
+                self._apply_intended(event)
+            elif isinstance(event, ConstraintsAssessed):
+                self._apply_assessment(event)
+            elif isinstance(event, OrderSubmitted):
+                self._apply_submitted(event)
+            elif isinstance(event, FillRecorded):
+                self._apply_fill(event)
+            elif isinstance(event, OrderCanceled):
+                self._apply_terminal(event.order_id, OrderStatus.CANCELED)
+            elif isinstance(event, OrderExpired):
+                self._apply_terminal(event.order_id, OrderStatus.EXPIRED)
+            else:  # pragma: no cover - closed union and defensive runtime guard
+                raise TypeError(f"unsupported ledger event: {type(event).__name__}")
+            self._check_invariants()
+        except BaseException:
+            self._restore(snapshot)
+            raise
         self._events.append(event)
         self._events_by_id[event.event_id] = event
         return True
@@ -579,64 +632,69 @@ class ExecutionLedger:
         staged_cash = 0
         staged_shares: dict[str, int] = {}
         pre_batch_state = self.execution_state_fingerprint()
-        for event, worst_case_fee_fen in submissions:
-            event = replace(event, worst_case_fee_fen=worst_case_fee_fen)
-            if (
-                event.execution_state_fingerprint is not None
-                and event.execution_state_fingerprint != pre_batch_state
-            ):
-                raise LedgerTransitionError(
-                    "batch submission rejected: assessment execution state "
-                    f"{event.execution_state_fingerprint} is not the current "
-                    f"pre-batch state {pre_batch_state}"
-                )
-            state = self.order(event.request.order_id)
-            if state.status is not OrderStatus.VALIDATED:
-                raise LedgerTransitionError(
-                    f"cannot submit order {event.request.order_id} "
-                    f"from {state.status.value}"
-                )
-            intent = state.intent
-            if intent.side is Side.BUY:
-                if worst_case_fee_fen <= 0:
-                    raise LedgerAccountingError(
-                        "buy submission requires an explicit worst-case fee "
-                        "cap for its cash reservation; production data "
-                        "without a real fee table stays unknown instead of "
-                        "assuming zero fees"
+        batch_snapshot = self._begin()
+        try:
+            for event, worst_case_fee_fen in submissions:
+                event = replace(event, worst_case_fee_fen=worst_case_fee_fen)
+                if (
+                    event.execution_state_fingerprint is not None
+                    and event.execution_state_fingerprint != pre_batch_state
+                ):
+                    raise LedgerTransitionError(
+                        "batch submission rejected: assessment execution state "
+                        f"{event.execution_state_fingerprint} is not the current "
+                        f"pre-batch state {pre_batch_state}"
                     )
-                need = int(intent.limit_price * intent.quantity * 100) + (
-                    worst_case_fee_fen
-                )
-                available_now = self.availability(
-                    intent.instrument_id,
-                    intent.intended_trade_date,
-                ).available_cash_fen - staged_cash
-                if need > available_now:
-                    raise LedgerAccountingError(
-                        f"buy reservation for {intent.instrument_id} needs "
-                        f"{need} fen, available {available_now} fen "
-                        "after earlier staged reservations"
+                state = self.order(event.request.order_id)
+                if state.status is not OrderStatus.VALIDATED:
+                    raise LedgerTransitionError(
+                        f"cannot submit order {event.request.order_id} "
+                        f"from {state.status.value}"
                     )
-                staged_cash += need
-            else:
-                available = (
-                    self.availability(
-                        intent.instrument_id, intent.intended_trade_date
-                    ).available_sellable_shares
-                    - staged_shares.get(intent.instrument_id, 0)
-                )
-                if intent.quantity > available:
-                    raise LedgerAccountingError(
-                        f"sell reservation for {intent.instrument_id} needs "
-                        f"{intent.quantity} sellable shares, available {available}"
+                intent = state.intent
+                if intent.side is Side.BUY:
+                    if worst_case_fee_fen <= 0:
+                        raise LedgerAccountingError(
+                            "buy submission requires an explicit worst-case fee "
+                            "cap for its cash reservation; production data "
+                            "without a real fee table stays unknown instead of "
+                            "assuming zero fees"
+                        )
+                    need = int(intent.limit_price * intent.quantity * 100) + (
+                        worst_case_fee_fen
                     )
-                staged_shares[intent.instrument_id] = (
-                    staged_shares.get(intent.instrument_id, 0) + intent.quantity
-                )
-            staged.append(event)
-        for event in staged:
-            self.append(event)
+                    available_now = self.availability(
+                        intent.instrument_id,
+                        intent.intended_trade_date,
+                    ).available_cash_fen - staged_cash
+                    if need > available_now:
+                        raise LedgerAccountingError(
+                            f"buy reservation for {intent.instrument_id} needs "
+                            f"{need} fen, available {available_now} fen "
+                            "after earlier staged reservations"
+                        )
+                    staged_cash += need
+                else:
+                    available = (
+                        self.availability(
+                            intent.instrument_id, intent.intended_trade_date
+                        ).available_sellable_shares
+                        - staged_shares.get(intent.instrument_id, 0)
+                    )
+                    if intent.quantity > available:
+                        raise LedgerAccountingError(
+                            f"sell reservation for {intent.instrument_id} needs "
+                            f"{intent.quantity} sellable shares, available {available}"
+                        )
+                    staged_shares[intent.instrument_id] = (
+                        staged_shares.get(intent.instrument_id, 0) + intent.quantity
+                    )
+                staged.append(event)
+            for event in staged:
+                self.append(event)
+        except BaseException:
+            self._restore(batch_snapshot)
+            raise
 
     def _apply_intended(self, event: OrderIntended) -> None:
         order_id = event.intent.order_id
