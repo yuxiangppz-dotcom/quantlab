@@ -118,21 +118,38 @@ class OrderPriceEvidence:
 class FeeCapQuote:
     """Explicit worst-case fee cap used to reserve cash for a buy.
 
-    ``synthetic`` marks test-only quotes. Production callers must supply a
-    quote derived from a real, effective-dated, account-specific fee
-    schedule; without one the buy leg stays unknown and never reserves cash
-    on an assumed zero fee or an invented bps number.
+    The cap is the CUMULATIVE fee ceiling over the whole lifetime of one
+    order (every partial fill included). The quote is typed provenance, not
+    a bare integer: it binds the instrument, the account, the intended
+    trade date, the fee-schedule evidence id, and a SHA-256 fingerprint of
+    the schedule evidence it was derived from. ``synthetic`` marks test-only
+    quotes. Production callers must supply a quote derived from a real,
+    effective-dated, account-specific fee schedule; without one the buy leg
+    stays unknown and never reserves cash on an assumed zero fee or an
+    invented bps number.
     """
 
     instrument_id: str
+    account_id: str
+    trade_date: date
     cap_fen: int
     evidence_id: str
+    source_fingerprint: str
     synthetic: bool
 
     def __post_init__(self) -> None:
         require_identifier(self.instrument_id, "instrument_id")
+        require_identifier(self.account_id, "account_id")
+        if not isinstance(self.trade_date, date):
+            raise ExecutionValidationError("trade_date must be a date")
         require_int(self.cap_fen, "cap_fen", minimum=1)
         require_identifier(self.evidence_id, "evidence_id")
+        if len(self.source_fingerprint) != 64 or any(
+            char not in "0123456789abcdef" for char in self.source_fingerprint
+        ):
+            raise ExecutionValidationError(
+                "fee quote source_fingerprint must be SHA-256"
+            )
 
 
 @dataclass(frozen=True)

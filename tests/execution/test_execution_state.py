@@ -324,8 +324,11 @@ def test_planner_funds_buys_from_available_cash_only() -> None:
     fee_caps = {
         "600000.SH": FeeCapQuote(
             instrument_id="600000.SH",
+            account_id="state-account",
+            trade_date=MON,
             cap_fen=FEE_CAP,
             evidence_id="state-fee-quote",
+            source_fingerprint="f" * 64,
             synthetic=True,
         )
     }

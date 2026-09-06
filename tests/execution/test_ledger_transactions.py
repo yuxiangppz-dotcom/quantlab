@@ -201,6 +201,20 @@ def _state(ledger: ExecutionLedger) -> tuple:
     )
 
 
+def _quote() -> "object":
+    from quantlab.execution.planning import FeeCapQuote
+
+    return FeeCapQuote(
+        instrument_id="600000.SH",
+        account_id="txn-account",
+        trade_date=FRI,
+        cap_fen=FEE_CAP,
+        evidence_id="txn-fee-quote",
+        source_fingerprint="6" * 64,
+        synthetic=True,
+    )
+
+
 def _prepared_batch_ledger(self) -> tuple[ExecutionLedger, list]:
     """Ledger with three intended+validated orders ready for submission."""
     ledger = ExecutionLedger(_account(), calendar=_calendar())
@@ -230,7 +244,7 @@ def test_batch_middle_keyboardinterrupt_rolls_back_everything() -> None:
     ExecutionLedger._apply_submitted = failing  # type: ignore[method-assign]
     try:
         with pytest.raises(KeyboardInterrupt):
-            ledger.submit_orders([(event, FEE_CAP) for event in events])
+            ledger.submit_orders([(event, _quote()) for event in events])
     finally:
         ExecutionLedger._apply_submitted = original  # type: ignore[method-assign]
     assert _state(ledger) == before
@@ -254,12 +268,12 @@ def test_batch_any_position_any_error_rolls_back(fail_index: int, error) -> None
     ExecutionLedger._apply_submitted = failing  # type: ignore[method-assign]
     try:
         with pytest.raises((RuntimeError, KeyboardInterrupt)):
-            ledger.submit_orders([(event, FEE_CAP) for event in events])
+            ledger.submit_orders([(event, _quote()) for event in events])
     finally:
         ExecutionLedger._apply_submitted = original  # type: ignore[method-assign]
     assert _state(ledger) == before
     # the batch stays fully retryable after rollback
-    ledger.submit_orders([(event, FEE_CAP) for event in events])
+    ledger.submit_orders([(event, _quote()) for event in events])
     assert all(
         order.status.value == "submitted" for order in ledger.orders
     )
@@ -276,7 +290,7 @@ def test_invariant_failure_after_mutation_leaves_state_untouched() -> None:
     ExecutionLedger._check_invariants = failing  # type: ignore[method-assign]
     try:
         with pytest.raises(LedgerAccountingError):
-            ledger.submit_orders([(events[0], FEE_CAP)])
+            ledger.submit_orders([(events[0], _quote())])
     finally:
         ExecutionLedger._check_invariants = original  # type: ignore[method-assign]
     assert _state(ledger) == before
@@ -284,7 +298,7 @@ def test_invariant_failure_after_mutation_leaves_state_untouched() -> None:
 
 def test_fill_after_reservation_injection_rolls_back() -> None:
     ledger, events = _prepared_batch_ledger(None)
-    ledger.submit_orders([(events[0], FEE_CAP)])
+    ledger.submit_orders([(events[0], _quote())])
     before = _state(ledger)
     fill = FillRecorded(
         event_id="txn-fill-1",
@@ -298,18 +312,19 @@ def test_fill_after_reservation_injection_rolls_back() -> None:
         fee_fen=500,
         buy_lot_sellable_from=MON,
     )
-    original = ExecutionLedger._release_reservation
+    original = ExecutionLedger._apply_fill
 
-    def failing(self, *args, **kwargs):
-        original(self, *args, **kwargs)
+    def failing(self, event):
+        original(self, event)
+        # inject after the reservation draw-down, before the event commits
         raise KeyboardInterrupt
 
-    ExecutionLedger._release_reservation = failing  # type: ignore[method-assign]
+    ExecutionLedger._apply_fill = failing  # type: ignore[method-assign]
     try:
         with pytest.raises(KeyboardInterrupt):
             ledger.append(fill)
     finally:
-        ExecutionLedger._release_reservation = original  # type: ignore[method-assign]
+        ExecutionLedger._apply_fill = original  # type: ignore[method-assign]
     assert _state(ledger) == before
 
 
@@ -332,7 +347,7 @@ def test_single_append_baseexception_rolls_back() -> None:
 
 def test_replay_and_idempotence_survive_transactions() -> None:
     ledger, events = _prepared_batch_ledger(None)
-    ledger.submit_orders([(event, FEE_CAP) for event in events])
+    ledger.submit_orders([(event, _quote()) for event in events])
     first = ledger.submit_orders  # keep reference alive
     assert first is not None
     replayed = ExecutionLedger.replay(
@@ -341,8 +356,9 @@ def test_replay_and_idempotence_survive_transactions() -> None:
     assert replayed.events == ledger.events
     assert replayed.reservations == ledger.reservations
     assert replayed.orders == ledger.orders
-    # duplicate submission events stay idempotent no-ops
-    duplicate = ledger.append(events[0])
+    # duplicate submission events stay idempotent no-ops (compare with
+    # the ledger-recorded event, which carries the quote binding)
+    duplicate = ledger.append(ledger.events[-3])
     assert duplicate is False
 
 

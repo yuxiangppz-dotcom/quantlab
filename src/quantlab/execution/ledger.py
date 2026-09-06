@@ -37,7 +37,7 @@ from quantlab.execution.models import (
     require_identifier,
     require_int,
 )
-from quantlab.execution.planning import ExecutionStateView
+from quantlab.execution.planning import ExecutionStateView, FeeCapQuote
 from quantlab.execution.rules import TradingCalendar
 
 
@@ -118,6 +118,7 @@ class OrderSubmitted:
     request: OrderRequest
     worst_case_fee_fen: int = 0
     execution_state_fingerprint: str | None = None
+    fee_quote_fingerprint: str | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.event_id, "event_id")
@@ -128,6 +129,14 @@ class OrderSubmitted:
                 self.execution_state_fingerprint,
                 "execution_state_fingerprint",
             )
+        if self.fee_quote_fingerprint is not None:
+            if len(self.fee_quote_fingerprint) != 64 or any(
+                char not in "0123456789abcdef"
+                for char in self.fee_quote_fingerprint
+            ):
+                raise ExecutionValidationError(
+                    "fee_quote_fingerprint must be SHA-256"
+                )
         if self.occurred_at != self.request.created_at:
             raise ExecutionValidationError("submit event time must equal request.created_at")
 
@@ -229,12 +238,23 @@ class OrderLedgerState:
 
 @dataclass(frozen=True)
 class ActiveReservation:
-    """One live reservation against the account's settled state."""
+    """One live reservation against the account's settled state.
+
+    For a buy, the reservation independently tracks the remaining
+    worst-case limit notional of the unfilled shares and the remaining fee
+    capacity of the order-lifetime cumulative fee cap; the identity
+    ``reserved_cash_fen == remaining_quantity * limit_price_fen +
+    (fee_cap_fen - fee_used_fen)`` holds after every event, so price
+    improvement releases the excess instead of hoarding it.
+    """
 
     order_id: str
     instrument_id: str
     reserved_cash_fen: int
     reserved_shares: int
+    limit_price_fen: int = 0
+    fee_cap_fen: int = 0
+    fee_used_fen: int = 0
 
 
 @dataclass(frozen=True)
@@ -600,6 +620,40 @@ class ExecutionLedger:
                     f"reserved sellable shares {reserved} exceed sellable "
                     f"{sellable} for {reservation.instrument_id}"
                 )
+            order_state = self._orders.get(reservation.order_id)
+            if order_state is None:
+                raise LedgerAccountingError(
+                    f"reservation for unknown order {reservation.order_id}"
+                )
+            remaining = order_state.remaining_quantity
+            if reservation.limit_price_fen:
+                needed = (
+                    remaining * reservation.limit_price_fen
+                    + (reservation.fee_cap_fen - reservation.fee_used_fen)
+                )
+                if reservation.reserved_cash_fen != needed:
+                    raise LedgerAccountingError(
+                        f"buy reservation identity violated for "
+                        f"{reservation.order_id}: reserved "
+                        f"{reservation.reserved_cash_fen} != worst-case "
+                        f"remaining need {needed} "
+                        f"({remaining} unfilled shares + "
+                        f"{reservation.fee_cap_fen - reservation.fee_used_fen} "
+                        "fen fee capacity)"
+                    )
+                if remaining <= 0:
+                    raise LedgerAccountingError(
+                        f"buy reservation survives a fully filled order: "
+                        f"{reservation.order_id}"
+                    )
+            else:
+                if reservation.reserved_shares != remaining:
+                    raise LedgerAccountingError(
+                        f"sell reservation identity violated for "
+                        f"{reservation.order_id}: reserved "
+                        f"{reservation.reserved_shares} shares != "
+                        f"{remaining} unfilled shares"
+                    )
             availability = self.availability(
                 reservation.instrument_id,
                 self._orders[reservation.order_id].intent.intended_trade_date,
@@ -618,15 +672,19 @@ class ExecutionLedger:
 
     def submit_orders(
         self,
-        submissions: list[tuple[OrderSubmitted, int]],
+        submissions: list[tuple[OrderSubmitted, FeeCapQuote]],
     ) -> None:
         """Atomically reserve and submit a batch (all-or-nothing).
 
         Every reservation is computed and validated against the current
         availability BEFORE any event mutates the ledger, so a batch that
         overdraws cash or shares fails without leaving a partial
-        reservation. The caller passes ``(event, worst_case_fee_fen)``; the
-        fee cap is copied into the event so replay stays deterministic.
+        reservation, and the whole batch is one transaction (strong
+        exception safety, including KeyboardInterrupt). The caller passes
+        ``(event, fee_quote)``; the fee quote is TYPED provenance - the
+        submission boundary never degrades it to a bare integer - and each
+        event records the quote's cap and evidence fingerprint so replay
+        stays deterministic.
         """
         staged: list[OrderSubmitted] = []
         staged_cash = 0
@@ -634,8 +692,13 @@ class ExecutionLedger:
         pre_batch_state = self.execution_state_fingerprint()
         batch_snapshot = self._begin()
         try:
-            for event, worst_case_fee_fen in submissions:
-                event = replace(event, worst_case_fee_fen=worst_case_fee_fen)
+            for event, fee_quote in submissions:
+                if not isinstance(fee_quote, FeeCapQuote):
+                    raise LedgerAccountingError(
+                        "submission fee cap must be a typed FeeCapQuote "
+                        "bound to account, instrument, trade date, and "
+                        "schedule evidence; a bare integer is not accepted"
+                    )
                 if (
                     event.execution_state_fingerprint is not None
                     and event.execution_state_fingerprint != pre_batch_state
@@ -652,8 +715,26 @@ class ExecutionLedger:
                         f"from {state.status.value}"
                     )
                 intent = state.intent
+                if (
+                    fee_quote.instrument_id != intent.instrument_id
+                    or fee_quote.account_id != self._initial.account_id
+                    or fee_quote.trade_date != intent.intended_trade_date
+                ):
+                    raise LedgerAccountingError(
+                        f"fee quote does not match the submission: quote is "
+                        f"for {fee_quote.instrument_id}/"
+                        f"{fee_quote.account_id}/{fee_quote.trade_date}, "
+                        f"order is {intent.instrument_id}/"
+                        f"{self._initial.account_id}/"
+                        f"{intent.intended_trade_date}"
+                    )
+                event = replace(
+                    event,
+                    worst_case_fee_fen=fee_quote.cap_fen,
+                    fee_quote_fingerprint=fee_quote.source_fingerprint,
+                )
                 if intent.side is Side.BUY:
-                    if worst_case_fee_fen <= 0:
+                    if fee_quote.cap_fen <= 0:
                         raise LedgerAccountingError(
                             "buy submission requires an explicit worst-case fee "
                             "cap for its cash reservation; production data "
@@ -661,7 +742,7 @@ class ExecutionLedger:
                             "assuming zero fees"
                         )
                     need = int(intent.limit_price * intent.quantity * 100) + (
-                        worst_case_fee_fen
+                        fee_quote.cap_fen
                     )
                     available_now = self.availability(
                         intent.instrument_id,
@@ -812,6 +893,9 @@ class ExecutionLedger:
                 instrument_id=intent.instrument_id,
                 reserved_cash_fen=need,
                 reserved_shares=0,
+                limit_price_fen=int(intent.limit_price * 100),
+                fee_cap_fen=event.worst_case_fee_fen,
+                fee_used_fen=0,
             )
         else:
             availability = self.availability(
@@ -873,8 +957,25 @@ class ExecutionLedger:
                 f"DAY fill trade_date {event.trade_date} does not match the "
                 f"intended trade date {state.intent.intended_trade_date}"
             )
+        # Limit protection BEFORE any mutation: a buy never fills above its
+        # limit and a sell never fills below it.
+        intent = state.intent
+        if (
+            intent.order_type is OrderType.LIMIT
+            and intent.limit_price is not None
+        ):
+            if intent.side is Side.BUY and event.price > intent.limit_price:
+                raise LedgerAccountingError(
+                    f"buy fill price {event.price} exceeds the limit "
+                    f"{intent.limit_price} for {event.order_id}"
+                )
+            if intent.side is Side.SELL and event.price < intent.limit_price:
+                raise LedgerAccountingError(
+                    f"sell fill price {event.price} is below the limit "
+                    f"{intent.limit_price} for {event.order_id}"
+                )
 
-        if state.intent.side is Side.BUY:
+        if intent.side is Side.BUY:
             expected = (
                 self.calendar.next_session(event.trade_date)
                 if self.calendar is not None
@@ -899,8 +1000,21 @@ class ExecutionLedger:
                 raise LedgerAccountingError(
                     "buy fill requires a sellable_from date after trade_date (T+1)"
                 )
-            debit = event.gross_notional_fen + event.fee_fen
             reservation = self._reservations.get(event.order_id)
+            if reservation is not None:
+                # cumulative order-lifetime fee cap
+                if (
+                    reservation.fee_cap_fen
+                    and reservation.fee_used_fen + event.fee_fen
+                    > reservation.fee_cap_fen
+                ):
+                    raise LedgerAccountingError(
+                        f"fill fee {event.fee_fen} fen exceeds the order "
+                        f"fee cap: cumulative "
+                        f"{reservation.fee_used_fen + event.fee_fen} > "
+                        f"{reservation.fee_cap_fen} for {event.order_id}"
+                    )
+            debit = event.gross_notional_fen + event.fee_fen
             reserved = reservation.reserved_cash_fen if reservation else 0
             if debit > reserved:
                 raise LedgerAccountingError(
@@ -909,11 +1023,33 @@ class ExecutionLedger:
                     "under-reserved"
                 )
             self._cash_fen -= debit
-            self._release_reservation(event.order_id, cash_used=debit)
+            if reservation is not None:
+                unfilled = intent.quantity - new_filled
+                fee_used = reservation.fee_used_fen + event.fee_fen
+                if unfilled > 0:
+                    # exact remaining need: worst-case notional of the
+                    # unfilled shares plus the remaining fee capacity;
+                    # price improvement releases the excess automatically
+                    needed = (
+                        unfilled * reservation.limit_price_fen
+                        + (reservation.fee_cap_fen - fee_used)
+                    )
+                    self._reservations[event.order_id] = ActiveReservation(
+                        order_id=reservation.order_id,
+                        instrument_id=reservation.instrument_id,
+                        reserved_cash_fen=needed,
+                        reserved_shares=0,
+                        limit_price_fen=reservation.limit_price_fen,
+                        fee_cap_fen=reservation.fee_cap_fen,
+                        fee_used_fen=fee_used,
+                    )
+                else:
+                    # fully filled: no residual reservation survives
+                    self._reservations.pop(event.order_id, None)
             self._lots.append(
                 PositionLot(
                     lot_id=event.fill_id,
-                    instrument_id=state.intent.instrument_id,
+                    instrument_id=intent.instrument_id,
                     quantity=event.quantity,
                     acquired_trade_date=event.trade_date,
                     sellable_from=event.buy_lot_sellable_from,
@@ -927,7 +1063,7 @@ class ExecutionLedger:
             if event.fee_fen > event.gross_notional_fen:
                 raise LedgerAccountingError("sell fee exceeds gross proceeds")
             self._consume_sellable_lots(
-                state.intent.instrument_id,
+                intent.instrument_id,
                 event.trade_date,
                 event.quantity,
             )
@@ -939,13 +1075,9 @@ class ExecutionLedger:
         self._fill_ids.add(event.fill_id)
         next_status = (
             OrderStatus.FILLED
-            if new_filled == state.intent.quantity
+            if new_filled == intent.quantity
             else OrderStatus.PARTIALLY_FILLED
         )
-        if next_status is OrderStatus.FILLED:
-            # a fully filled order keeps no reservation: the worst case was
-            # an upper bound, not a target
-            self._reservations.pop(event.order_id, None)
         self._orders[event.order_id] = replace(
             state,
             status=next_status,

@@ -248,8 +248,11 @@ def _order_price_evidence() -> OrderPriceEvidence:
 def _fee_cap() -> FeeCapQuote:
     return FeeCapQuote(
         instrument_id=SMOKE_INSTRUMENT,
+        account_id="smoke-account",
+        trade_date=SMOKE_MON,
         cap_fen=SMOKE_FEE_CAP_FEN,
         evidence_id="synthetic-fee-cap-test-only",
+        source_fingerprint="4" * 64,
         synthetic=True,
     )
 
