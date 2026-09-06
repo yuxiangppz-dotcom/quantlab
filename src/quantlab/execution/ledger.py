@@ -10,13 +10,15 @@ from quantlab.execution.models import (
     AccountSnapshot,
     ConstraintDecision,
     ConstraintDimension,
-    ConstraintStatus,
     ExecutionValidationError,
     OrderIntent,
     OrderRequest,
     OrderStatus,
+    OrderType,
     PositionLot,
+    PriceBasis,
     Side,
+    derive_order_status,
     exchange_date,
     require_aware,
     require_decimal,
@@ -308,31 +310,7 @@ class ExecutionLedger:
             raise LedgerTransitionError(
                 f"cannot assess order {event.order_id} from {state.status.value}"
             )
-        statuses = {decision.status for decision in event.decisions}
-        if ConstraintStatus.REJECTED in statuses:
-            next_status = OrderStatus.REJECTED
-        elif ConstraintStatus.UNKNOWN in statuses:
-            next_status = OrderStatus.UNKNOWN
-        else:
-            by_dimension = {
-                decision.dimension: decision.status for decision in event.decisions
-            }
-            required_allowed = {
-                ConstraintDimension.ORDER_ADMISSIBILITY,
-                ConstraintDimension.MARKET_ACCESSIBILITY,
-                ConstraintDimension.FILLABILITY,
-                ConstraintDimension.FEE_DETERMINABILITY,
-            }
-            if state.intent.side is Side.SELL:
-                required_allowed.add(ConstraintDimension.POSITION_SELLABILITY)
-            next_status = (
-                OrderStatus.VALIDATED
-                if all(
-                    by_dimension[dimension] is ConstraintStatus.ALLOWED
-                    for dimension in required_allowed
-                )
-                else OrderStatus.UNKNOWN
-            )
+        next_status = derive_order_status(state.intent.side, event.decisions)
         self._orders[event.order_id] = replace(state, status=next_status)
 
     def _apply_submitted(self, event: OrderSubmitted) -> None:
@@ -345,12 +323,22 @@ class ExecutionLedger:
         if request.request_id in self._request_ids:
             raise LedgerTransitionError(f"duplicate request_id: {request.request_id}")
         intent = state.intent
+        if (
+            intent.order_type is OrderType.LIMIT
+            and intent.limit_price_basis is not PriceBasis.RAW
+        ):
+            raise LedgerTransitionError(
+                "only raw unadjusted prices may reach order submission"
+            )
         request_terms = (
             request.instrument_id,
             request.side,
             request.quantity,
             request.order_type,
             request.limit_price,
+            request.session,
+            request.limit_price_basis,
+            request.limit_price_source_id,
         )
         intent_terms = (
             intent.instrument_id,
@@ -358,6 +346,9 @@ class ExecutionLedger:
             intent.quantity,
             intent.order_type,
             intent.limit_price,
+            intent.session,
+            intent.limit_price_basis,
+            intent.limit_price_source_id,
         )
         if request_terms != intent_terms:
             raise LedgerTransitionError("order request terms differ from validated intent")

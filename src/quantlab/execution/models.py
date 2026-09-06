@@ -32,6 +32,19 @@ class OrderType(StrEnum):
     LIMIT = "limit"
 
 
+class OrderSession(StrEnum):
+    OPENING_AUCTION = "opening_auction"
+    CONTINUOUS_AUCTION = "continuous_auction"
+    CLOSING_AUCTION = "closing_auction"
+    AFTER_HOURS_FIXED = "after_hours_fixed"
+
+
+class PriceBasis(StrEnum):
+    RAW = "raw_unadjusted"
+    ADJUSTED = "adjusted"
+    UNKNOWN = "unknown"
+
+
 class ConstraintStatus(StrEnum):
     ALLOWED = "allowed"
     REJECTED = "rejected"
@@ -190,6 +203,9 @@ class OrderIntent:
     limit_price: Decimal | None
     intended_trade_date: date
     created_at: datetime
+    session: OrderSession = OrderSession.CONTINUOUS_AUCTION
+    limit_price_basis: PriceBasis | None = None
+    limit_price_source_id: str | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.order_id, "order_id")
@@ -201,6 +217,8 @@ class OrderIntent:
             raise ExecutionValidationError("side must be a Side enum")
         if not isinstance(self.order_type, OrderType):
             raise ExecutionValidationError("order_type must be an OrderType enum")
+        if not isinstance(self.session, OrderSession):
+            raise ExecutionValidationError("session must be an OrderSession enum")
         if self.intended_trade_date < exchange_date(self.created_at):
             raise ExecutionValidationError(
                 "intended_trade_date precedes the Shanghai-local creation date"
@@ -209,8 +227,26 @@ class OrderIntent:
             if self.limit_price is None:
                 raise ExecutionValidationError("limit order requires limit_price")
             require_decimal(self.limit_price, "limit_price", positive=True)
-        elif self.limit_price is not None:
-            raise ExecutionValidationError("market order cannot carry limit_price")
+            if not isinstance(self.limit_price_basis, PriceBasis):
+                raise ExecutionValidationError(
+                    "limit order requires an explicit PriceBasis"
+                )
+            if self.limit_price_source_id is None:
+                raise ExecutionValidationError(
+                    "limit order requires limit_price_source_id"
+                )
+            require_identifier(self.limit_price_source_id, "limit_price_source_id")
+        elif any(
+            value is not None
+            for value in (
+                self.limit_price,
+                self.limit_price_basis,
+                self.limit_price_source_id,
+            )
+        ):
+            raise ExecutionValidationError(
+                "market order cannot carry limit-price fields"
+            )
 
 
 @dataclass(frozen=True)
@@ -225,6 +261,9 @@ class OrderRequest:
     order_type: OrderType
     limit_price: Decimal | None
     created_at: datetime
+    session: OrderSession = OrderSession.CONTINUOUS_AUCTION
+    limit_price_basis: PriceBasis | None = None
+    limit_price_source_id: str | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.request_id, "request_id")
@@ -236,12 +275,32 @@ class OrderRequest:
             raise ExecutionValidationError("side must be a Side enum")
         if not isinstance(self.order_type, OrderType):
             raise ExecutionValidationError("order_type must be an OrderType enum")
+        if not isinstance(self.session, OrderSession):
+            raise ExecutionValidationError("session must be an OrderSession enum")
         if self.order_type is OrderType.LIMIT:
             if self.limit_price is None:
                 raise ExecutionValidationError("limit request requires limit_price")
             require_decimal(self.limit_price, "limit_price", positive=True)
-        elif self.limit_price is not None:
-            raise ExecutionValidationError("market request cannot carry limit_price")
+            if not isinstance(self.limit_price_basis, PriceBasis):
+                raise ExecutionValidationError(
+                    "limit request requires an explicit PriceBasis"
+                )
+            if self.limit_price_source_id is None:
+                raise ExecutionValidationError(
+                    "limit request requires limit_price_source_id"
+                )
+            require_identifier(self.limit_price_source_id, "limit_price_source_id")
+        elif any(
+            value is not None
+            for value in (
+                self.limit_price,
+                self.limit_price_basis,
+                self.limit_price_source_id,
+            )
+        ):
+            raise ExecutionValidationError(
+                "market request cannot carry limit-price fields"
+            )
 
 
 @dataclass(frozen=True)
@@ -268,3 +327,34 @@ class ConstraintDecision:
             raise ExecutionValidationError("duplicate rule_id in constraint decision")
         for rule_id in self.rule_ids:
             require_identifier(rule_id, "rule_id")
+
+
+def derive_order_status(
+    side: Side,
+    decisions: tuple[ConstraintDecision, ...],
+) -> OrderStatus:
+    """Fail-closed aggregate of the five independent constraint dimensions."""
+    by_dimension = {decision.dimension: decision.status for decision in decisions}
+    if set(by_dimension) != set(ConstraintDimension):
+        raise ExecutionValidationError("cannot derive status without all dimensions")
+    statuses = set(by_dimension.values())
+    if ConstraintStatus.REJECTED in statuses:
+        return OrderStatus.REJECTED
+    if ConstraintStatus.UNKNOWN in statuses:
+        return OrderStatus.UNKNOWN
+    required_allowed = {
+        ConstraintDimension.ORDER_ADMISSIBILITY,
+        ConstraintDimension.MARKET_ACCESSIBILITY,
+        ConstraintDimension.FILLABILITY,
+        ConstraintDimension.FEE_DETERMINABILITY,
+    }
+    if side is Side.SELL:
+        required_allowed.add(ConstraintDimension.POSITION_SELLABILITY)
+    return (
+        OrderStatus.VALIDATED
+        if all(
+            by_dimension[dimension] is ConstraintStatus.ALLOWED
+            for dimension in required_allowed
+        )
+        else OrderStatus.UNKNOWN
+    )

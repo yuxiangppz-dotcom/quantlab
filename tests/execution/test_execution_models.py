@@ -14,6 +14,7 @@ from quantlab.execution import (
     OrderType,
     PositionLot,
     PositionTarget,
+    PriceBasis,
     RebalanceInstruction,
     Side,
     exchange_date,
@@ -72,6 +73,8 @@ def test_order_price_rejects_float_and_inconsistent_order_type() -> None:
             limit_price=10.0,  # type: ignore[arg-type]
             intended_trade_date=date(2026, 1, 9),
             created_at=created_at,
+            limit_price_basis=PriceBasis.RAW,
+            limit_price_source_id="raw-bar-close",
         )
     with pytest.raises(ExecutionValidationError, match="cannot carry"):
         OrderIntent(
@@ -84,6 +87,8 @@ def test_order_price_rejects_float_and_inconsistent_order_type() -> None:
             limit_price=Decimal("10.00"),
             intended_trade_date=date(2026, 1, 9),
             created_at=created_at,
+            limit_price_basis=PriceBasis.RAW,
+            limit_price_source_id="raw-bar-close",
         )
 
 

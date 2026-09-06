@@ -25,6 +25,7 @@ from quantlab.execution import (
     OrderSubmitted,
     OrderType,
     PositionLot,
+    PriceBasis,
     Side,
 )
 
@@ -60,6 +61,8 @@ def _intent(
         limit_price=Decimal("10.00"),
         intended_trade_date=trade_date,
         created_at=created_at,
+        limit_price_basis=PriceBasis.RAW,
+        limit_price_source_id="raw-bar-close",
     )
 
 
@@ -127,6 +130,8 @@ def _validated_order(
         order_type=intent.order_type,
         limit_price=intent.limit_price,
         created_at=submitted_at,
+        limit_price_basis=intent.limit_price_basis,
+        limit_price_source_id=intent.limit_price_source_id,
     )
     ledger.append(OrderSubmitted(f"event-{order_id}-submit", submitted_at, request))
     return intent, submitted_at
@@ -173,14 +178,16 @@ def test_unknown_constraint_can_never_be_submitted() -> None:
     )
     assert ledger.order(intent.order_id).status is OrderStatus.UNKNOWN
     request = OrderRequest(
-        "request-1",
-        intent.order_id,
-        intent.instrument_id,
-        intent.side,
-        intent.quantity,
-        intent.order_type,
-        intent.limit_price,
-        START + timedelta(minutes=2),
+        request_id="request-1",
+        order_id=intent.order_id,
+        instrument_id=intent.instrument_id,
+        side=intent.side,
+        quantity=intent.quantity,
+        order_type=intent.order_type,
+        limit_price=intent.limit_price,
+        created_at=START + timedelta(minutes=2),
+        limit_price_basis=intent.limit_price_basis,
+        limit_price_source_id=intent.limit_price_source_id,
     )
     with pytest.raises(LedgerTransitionError, match="from unknown"):
         ledger.append(OrderSubmitted("event-submit", request.created_at, request))
@@ -396,10 +403,42 @@ def test_illegal_transition_and_request_drift_fail() -> None:
         intent.order_type,
         intent.limit_price,
         START + timedelta(minutes=2),
+        limit_price_basis=intent.limit_price_basis,
+        limit_price_source_id=intent.limit_price_source_id,
     )
     with pytest.raises(LedgerTransitionError, match="differ"):
         ledger.append(OrderSubmitted("event-submit", bad_request.created_at, bad_request))
     assert ledger.order(intent.order_id).status is OrderStatus.VALIDATED
+
+
+def test_adjusted_price_cannot_bypass_constraint_engine_into_submission() -> None:
+    ledger = ExecutionLedger(_initial())
+    intent = replace(_intent("order-adjusted"), limit_price_basis=PriceBasis.ADJUSTED)
+    ledger.append(OrderIntended("event-intent", START, intent))
+    assessed_at = START + timedelta(minutes=1)
+    ledger.append(
+        ConstraintsAssessed(
+            "event-assessment",
+            assessed_at,
+            intent.order_id,
+            _decisions(assessed_at),
+        )
+    )
+    assert ledger.order(intent.order_id).status is OrderStatus.VALIDATED
+    request = OrderRequest(
+        request_id="request-adjusted",
+        order_id=intent.order_id,
+        instrument_id=intent.instrument_id,
+        side=intent.side,
+        quantity=intent.quantity,
+        order_type=intent.order_type,
+        limit_price=intent.limit_price,
+        created_at=START + timedelta(minutes=2),
+        limit_price_basis=intent.limit_price_basis,
+        limit_price_source_id=intent.limit_price_source_id,
+    )
+    with pytest.raises(LedgerTransitionError, match="raw unadjusted"):
+        ledger.append(OrderSubmitted("event-submit", request.created_at, request))
 
 
 @pytest.mark.parametrize(
