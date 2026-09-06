@@ -195,3 +195,152 @@ def test_execution_readiness_artifact_rederives_gates(tmp_path) -> None:
     staging = tmp_path / f"{RUN_ID}.incomplete"
     assert (staging / COMPLETION_MARKER).exists() is False
     assert (staging / INCOMPLETE_MARKER).exists()
+
+
+# ---------------------------------------------------------------------------
+# v0.2.1: composite READY re-binding and per-family audit semantics
+# ---------------------------------------------------------------------------
+
+FULL_SMOKE = {
+    "production_submission_path_reachable": True,
+    "submission_gate_matrix": {"fillability_unknown": "validated"},
+    "order_plan_deterministic": True,
+    "buy_limit_from_order_price_evidence": True,
+    "omitted_held_name_exits": True,
+    "non_conforming_delta_blocks": True,
+    "buys_funded_from_available_cash_only": True,
+    "aggregate_cash_contention_blocked": True,
+    "partial_fill_drawdown": True,
+    "full_fill_release": True,
+    "cancel_release": True,
+    "multi_partial_fee_reconciliation": True,
+    "batch_rollback_preserves_state": True,
+    "fault_injection_matrix": {
+        "all_passed": True,
+        "batch_first_submission_runtimeerror_restored": True,
+        "batch_middle_submission_keyboardinterrupt_restored": True,
+        "batch_last_submission_runtimeerror_restored": True,
+        "invariant_failure_after_mutation_restored": True,
+        "single_append_baseexception_restored": True,
+    },
+    "transactional_submission_committed": True,
+    "plan_to_order_lineage": True,
+    "external_broker_submission": False,
+    "weekend_t_plus_one_exact": True,
+    "holiday_t_plus_one_exact": True,
+    "missing_next_session_fail_closed": True,
+    "stale_assessment_rejected": True,
+    "wrong_trade_date_rejected": True,
+    "share_contention_blocked": True,
+    "atomic_share_reservation": True,
+    "atomic_cash_reservation": True,
+}
+
+
+def _v021_report(overrides: dict | None = None):
+    from quantlab.execution.readiness import EXECUTION_READINESS_SCHEMA_V0_2_1
+
+    evidence = _evidence()
+    smoke = dict(FULL_SMOKE)
+    for key, value in (overrides or {}).items():
+        if value is None:
+            smoke.pop(key, None)
+        else:
+            smoke[key] = value
+    return build_execution_readiness_report(
+        evidence,
+        period_start=date(2020, 1, 1),
+        period_end=date(2024, 12, 31),
+        handoff_smoke_valid=True,
+        schema=EXECUTION_READINESS_SCHEMA_V0_2_1,
+        order_path_smoke=smoke,
+    )[0]
+
+
+def _by_id(report, check_id):
+    return {check.check_id: check for check in report.checks}[check_id]
+
+
+def test_v021_framework_checks_all_ready_on_full_smoke() -> None:
+    report = _v021_report()
+    from quantlab.execution.readiness import (
+        EXECUTION_READINESS_SCHEMA_V0_2_1,
+        framework_check_ids,
+        readiness_check_ids,
+    )
+
+    assert len(report.checks) == len(readiness_check_ids(
+        EXECUTION_READINESS_SCHEMA_V0_2_1
+    ))
+    for check_id in sorted(framework_check_ids(EXECUTION_READINESS_SCHEMA_V0_2_1)):
+        assert _by_id(report, check_id).status in {
+            ReadinessStatus.READY, ReadinessStatus.PARTIAL,
+        }, check_id
+    assert report.framework_valid is True
+    # suspension raw integrity can no longer auto-upgrade to ready
+    assert _by_id(report, "suspension_partition_coverage").status is (
+        ReadinessStatus.PARTIAL
+    )
+
+
+@pytest.mark.parametrize(
+    ("flip", "expected_blocked"),
+    [
+        ({"holiday_t_plus_one_exact": False}, "calendar_derived_t_plus_one"),
+        ({"holiday_t_plus_one_exact": None}, "calendar_derived_t_plus_one"),
+        ({"missing_next_session_fail_closed": False}, "calendar_derived_t_plus_one"),
+        ({"omitted_held_name_exits": False}, "account_aware_order_planning"),
+        ({"buys_funded_from_available_cash_only": False}, "account_aware_order_planning"),
+        ({"full_fill_release": False}, "atomic_cash_reservation"),
+        ({"multi_partial_fee_reconciliation": False}, "atomic_cash_reservation"),
+        ({"batch_rollback_preserves_state": False}, "atomic_cash_reservation"),
+        ({"batch_rollback_preserves_state": False}, "transactional_submission_atomicity"),
+        ({"transactional_submission_committed": False}, "plan_to_order_lineage"),
+    ],
+)
+def test_v021_composite_ready_requires_every_disclosed_subcondition(
+    flip, expected_blocked
+) -> None:
+    report = _v021_report(flip)
+    assert _by_id(report, expected_blocked).status is ReadinessStatus.BLOCKED
+    assert report.framework_valid is False
+
+
+def test_v021_t_plus_one_stays_partial_without_holiday_binding() -> None:
+    report = _v021_report({"holiday_t_plus_one_exact": False})
+    assert _by_id(report, "t_plus_one_sellability").status is (
+        ReadinessStatus.PARTIAL
+    )
+
+
+def test_v021_fault_matrix_total_boolean_is_not_trusted() -> None:
+    """all_passed=true with a failing member must not yield READY."""
+    report = _v021_report({
+        "fault_injection_matrix": {
+            "all_passed": True,
+            "batch_middle_submission_keyboardinterrupt_restored": False,
+        },
+    })
+    assert _by_id(
+        report, "transactional_submission_atomicity"
+    ).status is ReadinessStatus.BLOCKED
+
+
+def test_v021_unknown_schema_is_rejected_everywhere() -> None:
+    from quantlab.execution.readiness import (
+        framework_check_ids,
+        readiness_check_ids,
+    )
+
+    with pytest.raises(ValueError, match="unknown execution readiness schema"):
+        readiness_check_ids("execution_readiness_v0_9")
+    with pytest.raises(ValueError, match="unknown execution readiness schema"):
+        framework_check_ids("execution_readiness_v0_9")
+    with pytest.raises(ValueError, match="unknown execution readiness schema"):
+        build_execution_readiness_report(
+            _evidence(),
+            period_start=date(2020, 1, 1),
+            period_end=date(2024, 12, 31),
+            handoff_smoke_valid=True,
+            schema="execution_readiness_v0_9",
+        )

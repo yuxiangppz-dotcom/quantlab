@@ -51,6 +51,10 @@ FRAMEWORK_CHECK_IDS = frozenset({
     "t_plus_one_sellability",
 })
 
+EXECUTION_READINESS_SCHEMA = "execution_readiness_v0_1"
+EXECUTION_READINESS_SCHEMA_V0_2 = "execution_readiness_v0_2"
+EXECUTION_READINESS_SCHEMA_V0_2_1 = "execution_readiness_v0_2_1"
+
 # v0.2 extends the canonical inventory with the audited order-path
 # capabilities; the v0.1 inventory stays frozen for the v0.1 artifacts.
 _SUBMISSION_CHECKS_V0_2 = (
@@ -71,18 +75,45 @@ READINESS_CHECK_IDS_V0_2 = (
 )
 FRAMEWORK_CHECK_IDS_V0_2 = FRAMEWORK_CHECK_IDS | set(_SUBMISSION_CHECKS_V0_2)
 
+# v0.2.1 adds the transaction, fee-budget, and lineage audits and
+# re-binds composite READY decisions to their disclosed sub-conditions.
+_TRANSACTION_CHECKS_V0_2_1 = (
+    "transactional_submission_atomicity",
+    "fee_budget_limit_protection",
+    "plan_to_order_lineage",
+)
+READINESS_CHECK_IDS_V0_2_1 = (
+    READINESS_CHECK_IDS_V0_2[:10]
+    + _TRANSACTION_CHECKS_V0_2_1
+    + READINESS_CHECK_IDS_V0_2[10:]
+)
+FRAMEWORK_CHECK_IDS_V0_2_1 = FRAMEWORK_CHECK_IDS_V0_2 | set(
+    _TRANSACTION_CHECKS_V0_2_1
+)
+
 
 def readiness_check_ids(schema: str) -> tuple[str, ...]:
-    """Canonical check inventory for one readiness schema version."""
-    if schema == "execution_readiness_v0_2":
+    """Canonical check inventory for one readiness schema version.
+
+    Unknown schemas are rejected; there is no fallback to v0.1.
+    """
+    if schema == EXECUTION_READINESS_SCHEMA_V0_2_1:
+        return READINESS_CHECK_IDS_V0_2_1
+    if schema == EXECUTION_READINESS_SCHEMA_V0_2:
         return READINESS_CHECK_IDS_V0_2
-    return READINESS_CHECK_IDS
+    if schema == EXECUTION_READINESS_SCHEMA:
+        return READINESS_CHECK_IDS
+    raise ValueError(f"unknown execution readiness schema: {schema!r}")
 
 
 def framework_check_ids(schema: str) -> frozenset[str]:
-    if schema == "execution_readiness_v0_2":
+    if schema == EXECUTION_READINESS_SCHEMA_V0_2_1:
+        return FRAMEWORK_CHECK_IDS_V0_2_1
+    if schema == EXECUTION_READINESS_SCHEMA_V0_2:
         return FRAMEWORK_CHECK_IDS_V0_2
-    return FRAMEWORK_CHECK_IDS
+    if schema == EXECUTION_READINESS_SCHEMA:
+        return FRAMEWORK_CHECK_IDS
+    raise ValueError(f"unknown execution readiness schema: {schema!r}")
 
 
 @dataclass(frozen=True)
@@ -234,6 +265,54 @@ def _content_snapshot(
     }
 
 
+@dataclass(frozen=True)
+class PartitionAuditSpec:
+    """Per-family row-audit contract from the canonical storage models.
+
+    ``primary_key`` is the storage-contract uniqueness key (NOT just the
+    instrument: context families carry multiple source records per
+    instrument and date). ``required_fields`` must be non-null;
+    ``nullable_fields`` are legitimate NULLs (e.g. ``suspend_timing``).
+    ``numeric_fields`` must be finite when non-null.
+    """
+
+    primary_key: tuple[str, ...]
+    required_fields: frozenset[str]
+    nullable_fields: frozenset[str]
+    numeric_fields: frozenset[str]
+
+
+def partition_audit_spec(family_kind: str) -> PartitionAuditSpec:
+    if family_kind == "daily":
+        return PartitionAuditSpec(
+            primary_key=("instrument_id", "trade_date"),
+            required_fields=frozenset(_RAW_BAR_FIELDS),
+            nullable_fields=frozenset(),
+            numeric_fields=frozenset({
+                "open", "high", "low", "close", "pre_close", "volume", "amount",
+            }),
+        )
+    if family_kind == "stock_st":
+        return PartitionAuditSpec(
+            primary_key=("instrument_id", "trade_date", "source_record_id"),
+            required_fields=frozenset({
+                "instrument_id", "trade_date", "source_record_id",
+            }),
+            nullable_fields=frozenset({"name", "status", "type_name"}),
+            numeric_fields=frozenset(),
+        )
+    if family_kind == "suspensions":
+        return PartitionAuditSpec(
+            primary_key=("instrument_id", "trade_date", "source_record_id"),
+            required_fields=frozenset({
+                "instrument_id", "trade_date", "suspend_type", "source_record_id",
+            }),
+            nullable_fields=frozenset({"suspend_timing"}),
+            numeric_fields=frozenset(),
+        )
+    raise ValueError(f"unknown partition family: {family_kind}")
+
+
 def audit_partition_rows(
     root: str | Path,
     family: str,
@@ -245,11 +324,13 @@ def audit_partition_rows(
     """Row-level audit of every declared partition in one family.
 
     Per partition: the partition path date must equal every row's
-    ``trade_date``; primary keys must be unique; required fields must be
-    non-null and finite; daily bars must satisfy valid OHLC relations and
-    non-negative volume/amount. Findings and anomaly samples are returned
-    for the evidence file.
+    ``trade_date``; the family's storage-contract primary key must be
+    unique; required fields must be non-null; numeric fields must be
+    finite; daily bars must satisfy valid OHLC relations and non-negative
+    volume/amount. Findings and anomaly samples are returned for the
+    evidence file.
     """
+    spec = partition_audit_spec(family_kind)
     root_path = Path(root)
     audited_partitions = 0
     audited_rows = 0
@@ -294,18 +375,27 @@ def audit_partition_rows(
         date_mismatches += int(date_mask.sum())
         _sample("trade_date_mismatch", path, date_mask)
 
-        key_series = (
-            path_frame["instrument_id"].astype(str)
-            + "|"
-            + normalized.astype(str)
-            if family_kind == "daily"
-            else path_frame["instrument_id"].astype(str)
-        )
+        key_series = path_frame[spec.primary_key[0]].astype(str)
+        for key_field in spec.primary_key[1:]:
+            if key_field == "trade_date":
+                key_series = key_series + "|" + normalized.astype(str)
+            else:
+                key_series = key_series + "|" + path_frame[key_field].astype(str)
         duplicate_mask = key_series.duplicated()
         duplicate_primary_keys += int(duplicate_mask.sum())
         _sample("duplicate_primary_key", path, duplicate_mask)
 
-        null_mask = path_frame[list(expected_fields)].isna().any(axis=1)
+        null_mask = path_frame[list(sorted(spec.required_fields))].isna().any(
+            axis=1
+        )
+        for numeric_field in sorted(spec.numeric_fields):
+            column = pd.to_numeric(path_frame[numeric_field], errors="coerce")
+            # required-numeric: non-null values must be finite (inf/-inf
+            # and coercion failures are anomalies; NULL stays flagged only
+            # if the field is required)
+            bad = column.isna() & path_frame[numeric_field].notna()
+            bad = bad | column.abs().ge(float("inf"))
+            null_mask = null_mask | bad
         null_or_nonfinite += int(null_mask.sum())
         _sample("null_required_field", path, null_mask)
 
@@ -331,6 +421,12 @@ def audit_partition_rows(
     )
     return {
         "row_level_audit": True,
+        "audit_spec": {
+            "primary_key": list(spec.primary_key),
+            "required_fields": sorted(spec.required_fields),
+            "nullable_fields": sorted(spec.nullable_fields),
+            "numeric_fields": sorted(spec.numeric_fields),
+        },
         "audited_partitions": audited_partitions,
         "audited_rows": audited_rows,
         "date_mismatches": date_mismatches,
@@ -525,6 +621,284 @@ def _rule_coverage(
     return result
 
 
+def _apply_v0_2_1_semantics(
+    checks: tuple[ReadinessCheck, ...],
+    smoke: dict[str, Any],
+    suspensions_raw_clean: bool,
+) -> tuple[ReadinessCheck, ...]:
+    """Re-bind composite READY decisions to their disclosed sub-conditions.
+
+    v0.2.1 forbids trusting a pre-computed total boolean: every composite
+    check re-derives its status from the exact smoke sub-conditions it
+    discloses, the suspension check separates raw file integrity from the
+    (unproven) negative market-access coverage and stays partial, and the
+    three new transaction/fee/lineage audits join the framework inventory.
+    """
+    def _flag(key: str) -> bool:
+        return smoke.get(key) is True
+
+    weekend = _flag("weekend_t_plus_one_exact")
+    holiday = _flag("holiday_t_plus_one_exact")
+    coverage = _flag("missing_next_session_fail_closed")
+    t_plus_one_complete = weekend and holiday and coverage
+
+    planning_ready = (
+        _flag("order_plan_deterministic")
+        and _flag("buy_limit_from_order_price_evidence")
+        and _flag("omitted_held_name_exits")
+        and _flag("non_conforming_delta_blocks")
+        and _flag("buys_funded_from_available_cash_only")
+    )
+    atomic_cash_ready = (
+        _flag("aggregate_cash_contention_blocked")
+        and _flag("partial_fill_drawdown")
+        and _flag("full_fill_release")
+        and _flag("cancel_release")
+        and _flag("multi_partial_fee_reconciliation")
+        and _flag("batch_rollback_preserves_state")
+    )
+    fault_matrix = smoke.get("fault_injection_matrix")
+    fault_required = (
+        "batch_first_submission_runtimeerror_restored",
+        "batch_middle_submission_keyboardinterrupt_restored",
+        "batch_last_submission_runtimeerror_restored",
+        "invariant_failure_after_mutation_restored",
+        "single_append_baseexception_restored",
+    )
+    fault_ok = (
+        isinstance(fault_matrix, dict)
+        and fault_matrix.get("all_passed") is True
+        and all(fault_matrix.get(key) is True for key in fault_required)
+    )
+    lineage_ready = (
+        _flag("plan_to_order_lineage")
+        and _flag("transactional_submission_committed")
+        and smoke.get("external_broker_submission") is False
+    )
+
+    replacements: dict[str, ReadinessCheck] = {
+        "calendar_derived_t_plus_one": ReadinessCheck(
+            "calendar_derived_t_plus_one", "framework",
+            (
+                ReadinessStatus.READY
+                if t_plus_one_complete
+                else ReadinessStatus.BLOCKED
+            ),
+            "Buy-lot sellable_from is derived and verified as exactly "
+            "calendar.next_session(trade_date) across weekend, holiday, "
+            "and coverage boundaries.",
+            {
+                "calendar_bound": True,
+                "weekend_exact": weekend,
+                "holiday_exact": holiday,
+                "incomplete_coverage_fail_closed": coverage,
+                "required_subconditions": (
+                    "weekend_exact", "holiday_exact",
+                    "incomplete_coverage_fail_closed",
+                ),
+            },
+            "T+1 is only as good as the calendar's coverage.",
+            ("framework",),
+        ),
+        "t_plus_one_sellability": ReadinessCheck(
+            "t_plus_one_sellability", "market_rules",
+            (
+                ReadinessStatus.READY
+                if t_plus_one_complete
+                else ReadinessStatus.PARTIAL
+            ),
+            "Lot state blocks same-day sale, and buy-lot sellable_from is "
+            "derived from and verified against the canonical calendar's "
+            "next session (weekend, holiday, and coverage boundaries all "
+            "bound).",
+            {
+                "model": "position_lot",
+                "same_day_sale_blocked": True,
+                "calendar_bound_next_session_derivation": True,
+                "weekend_exact": weekend,
+                "holiday_exact": holiday,
+                "incomplete_coverage_fail_closed": coverage,
+                "required_subconditions": (
+                    "weekend_exact", "holiday_exact",
+                    "incomplete_coverage_fail_closed",
+                ),
+            },
+            "A supplied later date is validated as later, not as exactly "
+            "the next session.",
+            ("framework", "historical"),
+        ),
+        "account_aware_order_planning": ReadinessCheck(
+            "account_aware_order_planning", "framework",
+            (
+                ReadinessStatus.READY
+                if planning_ready
+                else ReadinessStatus.BLOCKED
+            ),
+            "Account-aware planning turns instructions into audited, "
+            "lot-conforming order legs with independent raw limit-price "
+            "evidence, funded only from available cash.",
+            {
+                "plan_id_deterministic": _flag(
+                    "order_plan_deterministic"
+                ),
+                "independent_order_price_evidence": _flag(
+                    "buy_limit_from_order_price_evidence"
+                ),
+                "omitted_held_name_exits": _flag(
+                    "omitted_held_name_exits"
+                ),
+                "non_conforming_delta_blocks": _flag(
+                    "non_conforming_delta_blocks"
+                ),
+                "buys_funded_from_available_cash_only": _flag(
+                    "buys_funded_from_available_cash_only"
+                ),
+                "required_subconditions": (
+                    "order_plan_deterministic",
+                    "buy_limit_from_order_price_evidence",
+                    "omitted_held_name_exits",
+                    "non_conforming_delta_blocks",
+                    "buys_funded_from_available_cash_only",
+                ),
+            },
+            "A plan is never a submission.",
+            ("framework",),
+        ),
+        "atomic_cash_reservation": ReadinessCheck(
+            "atomic_cash_reservation", "framework",
+            (
+                ReadinessStatus.READY
+                if atomic_cash_ready
+                else ReadinessStatus.BLOCKED
+            ),
+            "Buy submissions reserve worst-case cash atomically; batches "
+            "roll back as one transaction, partial fills draw down under "
+            "the order-lifetime fee cap, and full fills and cancels "
+            "release the remainder.",
+            {
+                "contention_blocked": _flag(
+                    "aggregate_cash_contention_blocked"
+                ),
+                "partial_fill_drawdown": _flag("partial_fill_drawdown"),
+                "full_fill_release": _flag("full_fill_release"),
+                "cancel_release": _flag("cancel_release"),
+                "multi_partial_fee_reconciliation": _flag(
+                    "multi_partial_fee_reconciliation"
+                ),
+                "batch_rollback_preserves_state": _flag(
+                    "batch_rollback_preserves_state"
+                ),
+                "required_subconditions": (
+                    "aggregate_cash_contention_blocked",
+                    "partial_fill_drawdown",
+                    "full_fill_release",
+                    "cancel_release",
+                    "multi_partial_fee_reconciliation",
+                    "batch_rollback_preserves_state",
+                ),
+            },
+            "Production fee caps stay unknown without a real fee table.",
+            ("framework",),
+        ),
+        "suspension_partition_coverage": ReadinessCheck(
+            "suspension_partition_coverage", "historical_data",
+            ReadinessStatus.PARTIAL,
+            "Suspension raw partitions pass file and row integrity; this "
+            "is NOT negative-evidence coverage of market accessibility.",
+            {
+                "raw_partition_file_integrity": suspensions_raw_clean,
+                "negative_market_access_coverage_proven": False,
+                "absence_of_row_is_unknown": True,
+            },
+            "Verified-open market accessibility needs complete negative "
+            "coverage, which raw partitions alone cannot prove.",
+            ("historical",),
+        ),
+        "transactional_submission_atomicity": ReadinessCheck(
+            "transactional_submission_atomicity", "framework",
+            (
+                ReadinessStatus.READY
+                if fault_ok
+                and _flag("batch_rollback_preserves_state")
+                and _flag("transactional_submission_committed")
+                else ReadinessStatus.BLOCKED
+            ),
+            "Submissions are one transaction: Exceptions and "
+            "KeyboardInterrupt at any batch position restore cash, lots, "
+            "orders, reservations, and every id exactly.",
+            {
+                "fault_injection_matrix": fault_matrix,
+                "batch_rollback_preserves_state": _flag(
+                    "batch_rollback_preserves_state"
+                ),
+                "transactional_submission_committed": _flag(
+                    "transactional_submission_committed"
+                ),
+            },
+            "Strong exception safety is a ledger guarantee, not a happy "
+            "path assumption.",
+            ("framework",),
+        ),
+        "fee_budget_limit_protection": ReadinessCheck(
+            "fee_budget_limit_protection", "framework",
+            (
+                ReadinessStatus.READY
+                if _flag("multi_partial_fee_reconciliation")
+                and _flag("full_fill_release")
+                else ReadinessStatus.BLOCKED
+            ),
+            "Fee caps are typed, order-lifetime cumulative budgets; the "
+            "reservation equals unfilled worst-case notional plus "
+            "remaining fee capacity after every fill, and fills beyond "
+            "the limit price are rejected before mutation.",
+            {
+                "fee_cap_semantics": "cumulative_order_lifetime",
+                "typed_fee_quote_required": True,
+                "multi_partial_fee_reconciliation": _flag(
+                    "multi_partial_fee_reconciliation"
+                ),
+                "full_fill_release": _flag("full_fill_release"),
+            },
+            "Production fee quotes still require a real fee table.",
+            ("framework",),
+        ),
+        "plan_to_order_lineage": ReadinessCheck(
+            "plan_to_order_lineage", "framework",
+            (
+                ReadinessStatus.READY
+                if lineage_ready
+                else ReadinessStatus.BLOCKED
+            ),
+            "Orders materialize only through the pure lineage adapter "
+            "from a validated plan and a reservation-aware account state, "
+            "bound end to end; drift invalidates reuse.",
+            {
+                "plan_to_order_lineage": _flag("plan_to_order_lineage"),
+                "transactional_submission_committed": _flag(
+                    "transactional_submission_committed"
+                ),
+                "external_broker_submission": False,
+            },
+            "Internal ledger OrderSubmitted events are not external "
+            "broker submissions.",
+            ("framework",),
+        ),
+    }
+    result: list[ReadinessCheck] = []
+    inserted = False
+    for check in checks:
+        result.append(replacements.get(check.check_id, check))
+        if check.check_id == "calendar_derived_t_plus_one":
+            result.extend(
+                replacements[name]
+                for name in _TRANSACTION_CHECKS_V0_2_1
+            )
+            inserted = True
+    if not inserted:  # pragma: no cover - inventory is schema-validated
+        raise ValueError("v0.2.1 requires the v0.2 order-path inventory")
+    return tuple(result)
+
+
 def build_execution_readiness_report(
     evidence: dict[str, Any],
     *,
@@ -543,7 +917,8 @@ def build_execution_readiness_report(
     evidence in ``order_path_smoke``.
     """
     rule_book = rule_book or default_a_share_rule_book()
-    is_v0_2 = schema == "execution_readiness_v0_2"
+    is_v0_2 = schema == EXECUTION_READINESS_SCHEMA_V0_2
+    is_v0_2_1 = schema == EXECUTION_READINESS_SCHEMA_V0_2_1
     smoke = order_path_smoke or {}
     calendar = evidence["calendar"]
     calendar_ready = bool(
@@ -739,7 +1114,7 @@ def build_execution_readiness_report(
                     ("framework",),
                 ),
             )
-            if is_v0_2
+            if is_v0_2 or is_v0_2_1
             else ()
         ),
         ReadinessCheck(
@@ -863,6 +1238,18 @@ def build_execution_readiness_report(
             "Live trading is prohibited.", ("live",),
         ),
     )
+    if is_v0_2_1:
+        suspensions_snapshot = evidence["suspensions"]
+        suspensions_raw_clean = bool(
+            suspensions_snapshot["missing_files"] == 0
+            and suspensions_snapshot["all_schemas_valid"]
+            and suspensions_snapshot.get("row_audit", {}).get(
+                "all_rows_clean", False
+            )
+        )
+        checks = _apply_v0_2_1_semantics(
+            checks, smoke, suspensions_raw_clean=suspensions_raw_clean
+        )
     framework_ids = framework_check_ids(schema)
     framework_valid = all(
         check.status in {ReadinessStatus.READY, ReadinessStatus.PARTIAL}

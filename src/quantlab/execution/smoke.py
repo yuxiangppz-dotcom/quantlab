@@ -59,6 +59,9 @@ SMOKE_TUE = date(2024, 12, 3)
 SMOKE_FEE_CAP_FEN = 30_000
 SMOKE_PRICE = Decimal("10.00")
 
+# cumulative order-lifetime fee cap used by the reconciliation scenario
+RECON_FEE_CAP_FEN = 1_000
+
 
 def _instant(day: date, minute: int = 0) -> datetime:
     return datetime.combine(day, time(9, 30), EXCHANGE_TIMEZONE) + timedelta(
@@ -217,6 +220,7 @@ def _fill(
     quantity: int = 100,
     trade_date: date = SMOKE_FRI,
     sellable_from: date | None = SMOKE_MON,
+    fee_fen: int = 500,
 ) -> FillRecorded:
     return FillRecorded(
         event_id=f"smoke-event-{fill_id}",
@@ -227,7 +231,7 @@ def _fill(
         quantity=quantity,
         price=SMOKE_PRICE,
         gross_notional_fen=quantity * 1_000,
-        fee_fen=500,
+        fee_fen=fee_fen,
         buy_lot_sellable_from=sellable_from,
     )
 
@@ -812,4 +816,250 @@ def run_order_path_smoke() -> dict:
         replayed.events == cash_ledger.events
         and replayed.reservations == cash_ledger.reservations
     )
+
+    # 8. order-lifetime fee budget: multi-partial-fill reconciliation,
+    #    price-improvement release, full-fill release
+    recon_ledger = ExecutionLedger(account, calendar=calendar)
+    recon_intent = _intent("smoke-recon", quantity=100)
+    recon_ledger.append(
+        OrderIntended(
+            "smoke-event-recon-intent", _instant(SMOKE_FRI, 1), recon_intent
+        )
+    )
+    _assess_and_submit(
+        recon_ledger, engine, recon_intent, fee_cap_fen=RECON_FEE_CAP_FEN,
+        suspension=_open(SMOKE_FRI), fee_schedule=_smoke_fee(),
+    )
+    initial_reservation = recon_ledger.reserved_cash_fen()
+    recon_ledger.append(
+        _fill("smoke-recon", "smoke-recon-f1", _instant(SMOKE_FRI, 60),
+              quantity=40, fee_fen=500)
+    )
+    after_fill_one = recon_ledger.reserved_cash_fen()
+    recon_ledger.append(
+        FillRecorded(
+            event_id="smoke-event-recon-f2",
+            fill_id="smoke-recon-f2",
+            occurred_at=_instant(SMOKE_FRI, 61),
+            order_id="smoke-recon",
+            trade_date=SMOKE_FRI,
+            quantity=60,
+            price=Decimal("9.90"),
+            gross_notional_fen=59_400,
+            fee_fen=500,
+            buy_lot_sellable_from=SMOKE_MON,
+        )
+    )
+    fully_filled = recon_ledger.order("smoke-recon")
+    evidence["multi_partial_fee_reconciliation"] = (
+        initial_reservation == 100 * 1_000 + RECON_FEE_CAP_FEN
+        and after_fill_one == 60 * 1_000 + (RECON_FEE_CAP_FEN - 500)
+        and fully_filled.status.value == "filled"
+        and fully_filled.fee_fen == RECON_FEE_CAP_FEN
+        and recon_ledger.reserved_cash_fen() == 0
+    )
+    evidence["full_fill_release"] = (
+        fully_filled.status.value == "filled"
+        and recon_ledger.reserved_cash_fen() == 0
+    )
+    fault_report = run_transaction_fault_injection()
+    evidence["batch_rollback_preserves_state"] = (
+        fault_report["all_passed"]
+    )
+    evidence["fault_injection_matrix"] = fault_report
     return evidence
+
+
+def _ledger_snapshot(ledger: ExecutionLedger) -> tuple:
+    """White-box snapshot for before/after fault-injection comparison."""
+    return (
+        ledger.cash_fen,
+        ledger.lots,
+        tuple(ledger.orders),
+        ledger.reservations,
+        tuple(ledger.events),
+        dict(ledger._events_by_id),
+        set(ledger._fill_ids),
+        set(ledger._request_ids),
+    )
+
+
+def run_transaction_fault_injection() -> dict:
+    """Prove strong exception safety on the real ledger.
+
+    Injects Exceptions and KeyboardInterrupt at the first, middle, and last
+    batch submission, right after a reservation is drawn down, and around
+    the invariant check; the ledger state must be byte-for-byte identical
+    after each injection. No provider, no broker, no canonical write.
+    """
+    from quantlab.execution.models import (
+        AccountSnapshot,
+        OrderRequest,
+        OrderType,
+    )
+
+    calendar = _calendar()
+    engine = AShareConstraintEngine(
+        calendar=calendar,
+        identities=_identities(),
+        rules=default_a_share_rule_book(),
+    )
+    report: dict[str, object] = {
+        "synthetic": True,
+        "non_trading": True,
+        "external_broker_submission": False,
+    }
+
+    def snapshot(ledger):
+        return _ledger_snapshot(ledger)
+
+    def fresh(count: int = 3):
+        ledger = ExecutionLedger(
+            AccountSnapshot(
+                account_id="fault-account",
+                as_of=_instant(SMOKE_FRI, 0),
+                cash_fen=5_000_000,
+                lots=(),
+            ),
+            calendar=calendar,
+        )
+        events = []
+        for index in range(count):
+            order_id = f"fault-buy-{index}"
+            intent = _intent(order_id, minute=1 + index * 10)
+            ledger.append(
+                OrderIntended(
+                    f"fault-{order_id}-intended",
+                    _instant(SMOKE_FRI, 1 + index * 10),
+                    intent,
+                )
+            )
+            assess_at = _instant(SMOKE_FRI, 3 + index * 10)
+            result = engine.assess(
+                intent,
+                ledger.snapshot(assess_at),
+                assess_at,
+                suspension=_open(SMOKE_FRI),
+                fee_schedule=_smoke_fee(),
+                daily_bar_available=None,
+                execution_state_fingerprint=(
+                    ledger.execution_state_fingerprint()
+                ),
+            )
+            ledger.append(result.event)
+            request = OrderRequest(
+                request_id=f"fault-request-{order_id}",
+                order_id=order_id,
+                instrument_id=intent.instrument_id,
+                side=intent.side,
+                quantity=intent.quantity,
+                order_type=OrderType.LIMIT,
+                limit_price=intent.limit_price,
+                intended_trade_date=intent.intended_trade_date,
+                created_at=_instant(SMOKE_FRI, 40 + index),
+                limit_price_basis=intent.limit_price_basis,
+                limit_price_source_id=intent.limit_price_source_id,
+                time_in_force=intent.time_in_force,
+            )
+            events.append(
+                OrderSubmitted(
+                    f"fault-{order_id}-submitted",
+                    request.created_at,
+                    request,
+                    worst_case_fee_fen=SMOKE_FEE_CAP_FEN,
+                    execution_state_fingerprint=(
+                        ledger.execution_state_fingerprint()
+                    ),
+                )
+            )
+        return ledger, events
+
+    from quantlab.execution.planning import FeeCapQuote
+
+    fault_quote = FeeCapQuote(
+        instrument_id=SMOKE_INSTRUMENT,
+        account_id="fault-account",
+        trade_date=SMOKE_FRI,
+        cap_fen=SMOKE_FEE_CAP_FEN,
+        evidence_id="fault-fee-quote",
+        source_fingerprint="7" * 64,
+        synthetic=True,
+    )
+
+    def inject_batch(index: int, error: type[BaseException]) -> bool:
+        ledger, events = fresh()
+        before = snapshot(ledger)
+        original = ExecutionLedger._apply_submitted
+        calls = {"n": 0}
+
+        def failing(self, event):
+            if calls["n"] == index:
+                calls["n"] += 1
+                raise error(f"injected at {index}")
+            calls["n"] += 1
+            original(self, event)
+
+        ExecutionLedger._apply_submitted = failing  # type: ignore[method-assign]
+        try:
+            try:
+                ledger.submit_orders(
+                    [(event, fault_quote) for event in events]
+                )
+            except error:
+                return snapshot(ledger) == before
+            return False
+        finally:
+            ExecutionLedger._apply_submitted = original  # type: ignore[method-assign]
+
+    def inject_invariant() -> bool:
+        ledger, events = fresh()
+        before = snapshot(ledger)
+        original = ExecutionLedger._check_invariants
+
+        def failing(self):
+            raise LedgerAccountingError("injected invariant failure")
+
+        ExecutionLedger._check_invariants = failing  # type: ignore[method-assign]
+        try:
+            try:
+                ledger.submit_orders([(events[0], fault_quote)])
+            except LedgerAccountingError:
+                return snapshot(ledger) == before
+            return False
+        finally:
+            ExecutionLedger._check_invariants = original  # type: ignore[method-assign]
+
+    def inject_single_append() -> bool:
+        ledger, events = fresh()
+        before = snapshot(ledger)
+        original = ExecutionLedger._apply_submitted
+
+        def failing(self, event):
+            raise KeyboardInterrupt
+
+        ExecutionLedger._apply_submitted = failing  # type: ignore[method-assign]
+        try:
+            try:
+                ledger.append(events[0])
+            except KeyboardInterrupt:
+                return snapshot(ledger) == before
+            return False
+        finally:
+            ExecutionLedger._apply_submitted = original  # type: ignore[method-assign]
+
+    results = {
+        "batch_first_submission_runtimeerror_restored": inject_batch(
+            0, RuntimeError
+        ),
+        "batch_middle_submission_keyboardinterrupt_restored": inject_batch(
+            1, KeyboardInterrupt
+        ),
+        "batch_last_submission_runtimeerror_restored": inject_batch(
+            2, RuntimeError
+        ),
+        "invariant_failure_after_mutation_restored": inject_invariant(),
+        "single_append_baseexception_restored": inject_single_append(),
+    }
+    report.update(results)
+    report["all_passed"] = all(results.values())
+    return report
