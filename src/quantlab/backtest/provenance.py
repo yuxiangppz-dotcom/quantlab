@@ -50,3 +50,35 @@ def environment_info() -> dict:
         "python": sys.version.split()[0],
         "dependencies": versions,
     }
+
+
+def formal_reproducibility_evidence(
+    inputs_stable_during_run: bool,
+    git_clean_before: bool,
+    git_clean_after: bool,
+    head_unchanged: bool,
+    code_manifest_unchanged: bool,
+    data_manifest_unchanged: bool,
+) -> dict:
+    """Assemble the formal reproducibility evidence record.
+
+    Formal reproducibility is stronger than "inputs did not change while the
+    process ran": a run from a dirty workspace (or one whose HEAD moved, or
+    whose tracked code / canonical data manifests changed) can never publish
+    formally reproducible, performance-valid metrics, because the exact code
+    that produced the numbers cannot be reconstructed from a commit.
+
+    ``inputs_stable_during_run`` keeps the old within-run semantics (code and
+    data manifests identical before and after the backtests) for
+    transparency, but on its own it is not sufficient.
+    """
+    evidence = {
+        "inputs_stable_during_run": inputs_stable_during_run,
+        "git_clean_before": git_clean_before,
+        "git_clean_after": git_clean_after,
+        "head_unchanged": head_unchanged,
+        "code_manifest_unchanged": code_manifest_unchanged,
+        "data_manifest_unchanged": data_manifest_unchanged,
+    }
+    evidence["formal_reproducible"] = all(evidence.values())
+    return evidence

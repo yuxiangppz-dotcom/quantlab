@@ -257,6 +257,57 @@ is `complete_for_2020_2024` (1,212/1,212 open sessions for both `stock_st` and
 `suspend_d`) — tracked separately from the announcement-source block.
 ST/suspension absence is unknown context, never evidence of tradability.
 
+### Performance Baseline & Benchmark Correctness v0.1.1
+
+The formal 2020–2024 baseline (`performance_baseline_benchmark_correctness_v0_1_1`)
+answers "does stock selection add value over the same universe held
+equal-weight under identical execution/risk/settlement?":
+
+- **Risk policy first; settlement second.** The primary path runs
+  `exit_after_termination_decision_v1` over a validated, fingerprinted fact
+  snapshot. Delisting settlement is an **explicit scenario** applied only to
+  *held* instruments that cross a `delist` boundary (settlement is
+  delist-only; code_change/conflict still strictly block). The scenario
+  models recovery as an assumption over `[0, last_mark]`
+  (`recovery_assumption_1` / `recovery_assumption_0`) — it is never a claim
+  of actual fills, actual liquidation economics, or guaranteed recovery.
+- **The true equal-weight control is the primary benchmark.**
+  `equal_weight_v1_control` is a real self-financing portfolio whose
+  eligibility is built from the PIT security master (`list_date`, frozen
+  delist/code-change boundary semantics, the V1 SH/SZ A-share predicate) —
+  never from the price-backed research universe and never from current
+  `list_status`. A signal-date-eligible but unpriced instrument stays in the
+  1/N denominator; the engine leaves the unfilled weight in cash and keeps
+  held suspended names frozen at their stale mark. The control receives its
+  own formal report (validity gates, full metrics, settlement disclosure),
+  and a control that fails any gate blocks the primary comparison.
+- **Index attribution is implemented** as a secondary layer vs
+  000300.SH / 000905.SH / 000852.SH on raw price-index closes
+  (`index_return_basis = price_index_close`), with per-instrument
+  session-coverage audits that fail the attribution on missing sessions.
+- **Active metrics share one relative-wealth path**: cumulative active
+  return, active CAGR and active MDD are all derived from strategy NAV /
+  control NAV. `prod(1 + s - b)` is retained only as
+  `arithmetic_active_nav_diagnostic` (it is not even a valid wealth process
+  under large benchmark moves).
+- **Formal reproducibility requires a clean git workspace** before and after
+  the run, an unchanged HEAD, and stable code/data content manifests. Dirty
+  or moved-HEAD runs can never publish formally reproducible,
+  performance-valid metrics; `data/experiments/` output is git-ignored and
+  never counts as workspace dirt.
+- **Strategy/control symmetry is audited on the full run specification**
+  (calendar, signal schedule, execution lag, cost, missing-price policy, run
+  mode, lifecycle boundary mode, lifecycle monitor snapshot, risk policy id,
+  fact snapshot, settlement recovery and fee, initial NAV, requested period,
+  annualization); only target construction may differ.
+- **Lifecycle date semantics remain frozen**: the formal baseline runs the
+  disclosed `legacy_delist_date_inclusive` boundary for both strategy and
+  control (chosen, disclosed baseline mode — not re-selected from results);
+  `delist_date_is_first_invalid_v1` remains a candidate. Forced-exit
+  reporting uses deduplicated `risk_policy_statistics` (unique instruments,
+  decision occurrences, executed exits, pending exits, prevented entries)
+  instead of raw audit-row counts.
+
 ### Known limitations and deferred work
 
 - **Lifecycle fact coverage is incomplete.** Trusted termination-decision facts
@@ -269,18 +320,20 @@ ST/suspension absence is unknown context, never evidence of tradability.
   systematic historical announcement ingestion and risk-policy source-mode
   comparison. This is a capability limitation, not evidence that missing events
   are safe.
-- **Terminal settlement and corporate actions are unsupported.** If an exit is
-  required but no valid execution price appears before lifecycle invalidation,
-  strict mode remains `blocked_by_unsupported_event`. The engine does not cash
-  out at the last mark, set value to zero, assume a recovery rate, join a
-  successor, or fabricate delisting settlement.
+- **Delisting settlement is a scenario, not actual economics.** The explicit
+  held-delist settlement scenario models recovery as an assumption over
+  `[0, last_mark]` (`recovery_assumption_1` / `recovery_assumption_0`). It is
+  never a claim of actual fills, actual liquidation proceeds, or guaranteed
+  coverage of real economic recovery; corporate actions beyond delist
+  settlement (mergers, cash buyouts, successor joins) remain unsupported.
 - **The v1 delist boundary remains a candidate.** The date-semantics experiment
   is frozen; `delist_date_is_first_invalid_v1` is not a Canonical universal
-  truth and this phase does not reopen `>` / `>=` interpretation work.
-- **Benchmark and attribution have not started.** Accounting correctness is not
-  the blocker. Lifecycle risk and event coverage must first make the long-run
-  strict path explainable; readiness for Benchmark + Attribution is reviewed
-  after Risk Policy validation.
+  truth and this phase does not reopen `>` / `>=` interpretation work. The
+  formal baseline runs the disclosed `legacy_delist_date_inclusive` mode for
+  both strategy and control.
+- **Termination announcement coverage is still source-blocked.** The
+  `anns_d` permission gap stands; `unknown` facts are never treated as safe,
+  and the risk policy cannot exit on events it did not know about.
 
 ## Future Concepts
 

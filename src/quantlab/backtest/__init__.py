@@ -1,5 +1,10 @@
 """Research backtest."""
 
+from quantlab.backtest.audit import (
+    fingerprint_frame,
+    fingerprint_security_master,
+    fingerprint_targets,
+)
 from quantlab.backtest.benchmark import (
     BenchmarkComparison,
     IndexBenchmarkCoverage,
@@ -21,6 +26,8 @@ from quantlab.backtest.lifecycle import (
     LifecycleMonitor,
     first_invalid_open_session,
     is_instrument_invalid_on_delist_boundary,
+    pit_eligibility_frame,
+    pit_eligible_instrument_ids,
 )
 from quantlab.backtest.metrics import compute_metrics
 from quantlab.backtest.models import (
@@ -44,6 +51,11 @@ from quantlab.backtest.models import (
     SettlementRecord,
     SkippedExecution,
     TradeRecord,
+)
+from quantlab.backtest.provenance import (
+    content_manifest,
+    environment_info,
+    formal_reproducibility_evidence,
 )
 from quantlab.backtest.report import build_report
 from quantlab.backtest.risk_policy import (
@@ -88,10 +100,18 @@ __all__ = [
     "build_report",
     "compare_benchmark",
     "compute_metrics",
+    "content_manifest",
     "cross_sectional_equal_weight_return_diagnostic",
+    "environment_info",
     "first_invalid_open_session",
+    "formal_reproducibility_evidence",
+    "fingerprint_frame",
+    "fingerprint_security_master",
+    "fingerprint_targets",
     "index_benchmark_coverage",
     "is_instrument_invalid_on_delist_boundary",
+    "pit_eligibility_frame",
+    "pit_eligible_instrument_ids",
     "returns_from_closes",
     "run_backtest",
     "risk_policy_statistics",

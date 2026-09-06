@@ -5,6 +5,16 @@ from __future__ import annotations
 import pandas as pd
 
 
+def is_v1_a_share(instrument_id: str) -> bool:
+    """True for Shanghai/Shenzhen A-shares; False for BJ and B-shares.
+
+    Public form of the historical universe predicate so other layers (e.g. the
+    benchmark control portfolio) reuse the exact same V1 definition instead of
+    re-implementing it.
+    """
+    return _is_v1_a_share(instrument_id)
+
+
 def _is_v1_a_share(instrument_id: str) -> bool:
     """True for Shanghai/Shenzhen A-shares; False for BJ and B-shares."""
     if instrument_id.endswith(".BJ"):

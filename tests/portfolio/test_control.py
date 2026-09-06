@@ -7,8 +7,10 @@ import pytest
 
 from quantlab.backtest import (
     DELIST_DATE_IS_FIRST_INVALID_V1,
+    LEGACY_DELIST_DATE_INCLUSIVE,
     BacktestConfig,
     LifecycleMonitor,
+    pit_eligibility_frame,
     run_backtest,
 )
 from quantlab.backtest.benchmark import compare_benchmark
@@ -18,6 +20,7 @@ from quantlab.portfolio.control import (
     build_equal_weight_control_targets,
     strategy_control_symmetry_audit,
 )
+from quantlab.research.universe import is_v1_a_share
 
 D0 = date(2026, 1, 5)
 D1 = date(2026, 1, 6)
@@ -41,7 +44,7 @@ def _prices(rows) -> pd.DataFrame:
     )
 
 
-def _security(instrument_id, delist_date=None) -> Security:
+def _security(instrument_id, delist_date=None, list_date=date(2000, 1, 1)) -> Security:
     market = instrument_id.split(".")[1] if "." in instrument_id else "SH"
     return Security(
         instrument_id=instrument_id,
@@ -51,7 +54,7 @@ def _security(instrument_id, delist_date=None) -> Security:
         market=market,
         board="主板",
         list_status="D" if delist_date is not None else "L",
-        list_date=date(2000, 1, 1),
+        list_date=list_date,
         delist_date=delist_date,
     )
 
@@ -215,38 +218,128 @@ def test_control_unavailable_new_target_stays_cash() -> None:
 # ---------------------------------------------------------------- symmetry --
 
 
-def test_symmetry_audit_passes_for_matched_runs() -> None:
-    common = {
-        "open_dates": [D0, D1],
-        "signal_dates": [D0],
-        "cost_rate": 0.001,
-        "mode": "strict",
-        "risk_policy": "exit_after_termination_decision_v1",
-        "risk_facts": {"A": []},
-        "recovery_rate": 1.0,
+def _run_spec(**overrides) -> dict:
+    """A complete strategy/control run spec taken from a formal invocation."""
+    spec = {
+        "open_dates": [D0, D1, D2],
+        "signal_dates": [D0, D2],
         "execution_lag_sessions": 1,
+        "cost_bps": 10.0,
         "missing_price_policy": "freeze_held_no_price",
+        "run_mode": "strict",
+        "lifecycle_boundary_mode": "legacy_delist_date_inclusive",
+        "lifecycle_monitor_snapshot": "sha256:monitor",
+        "risk_policy_id": "exit_after_termination_decision_v1",
+        "risk_fact_snapshot": "sha256:facts",
+        "settlement_recovery_rate": 1.0,
+        "settlement_fee_bps": 10.0,
+        "initial_nav": 1.0,
+        "requested_period": ("2020-01-01", "2024-12-31"),
+        "annualization": 252,
     }
-    checks = strategy_control_symmetry_audit(common, dict(common))
+    spec.update(overrides)
+    return spec
+
+
+def test_symmetry_audit_passes_for_matched_run_specs() -> None:
+    checks = strategy_control_symmetry_audit(_run_spec(), _run_spec())
+    assert checks, "audit must return per-field checks"
     assert all(checks.values())
 
 
-def test_symmetry_audit_flags_mismatched_run_spec() -> None:
-    strategy = {
-        "open_dates": [D0, D1],
-        "signal_dates": [D0],
-        "cost_rate": 0.001,
-        "mode": "strict",
-        "risk_policy": "exit_after_termination_decision_v1",
-        "risk_facts": {"A": []},
-        "recovery_rate": 1.0,
-        "execution_lag_sessions": 1,
-        "missing_price_policy": "freeze_held_no_price",
-    }
-    control = dict(strategy, cost_rate=0.0)
-    checks = strategy_control_symmetry_audit(strategy, control)
-    assert checks["same_cost"] is False
+def test_symmetry_audit_flags_tampered_lifecycle_boundary() -> None:
+    checks = strategy_control_symmetry_audit(
+        _run_spec(),
+        _run_spec(lifecycle_boundary_mode="delist_date_is_first_invalid_v1"),
+    )
+    assert checks["same_lifecycle_boundary_mode"] is False
     assert any(value is False for value in checks.values())
+
+
+def test_symmetry_audit_flags_tampered_settlement_fee() -> None:
+    checks = strategy_control_symmetry_audit(
+        _run_spec(), _run_spec(settlement_fee_bps=0.0)
+    )
+    assert checks["same_settlement_fee_bps"] is False
+    assert checks["same_cost_bps"] is True  # only the tampered field flips
+
+
+def test_symmetry_audit_flags_tampered_run_mode_and_lifecycle_snapshot() -> None:
+    checks = strategy_control_symmetry_audit(
+        _run_spec(run_mode="diagnostic"),
+        _run_spec(lifecycle_monitor_snapshot="sha256:other"),
+    )
+    assert checks["same_run_mode"] is False
+    assert checks["same_lifecycle_monitor_snapshot"] is False
+
+
+def test_symmetry_audit_rejects_incomplete_run_spec() -> None:
+    partial = {
+        "open_dates": [D0],
+        "signal_dates": [D0],
+    }
+    with pytest.raises(ValueError, match="missing symmetry fields"):
+        strategy_control_symmetry_audit(partial, _run_spec())
+    with pytest.raises(ValueError, match="missing symmetry fields"):
+        strategy_control_symmetry_audit(_run_spec(), partial)
+
+
+# ---------------------------------------------- production integration path --
+
+
+def test_control_universe_from_security_master_overrides_price_backing() -> None:
+    """Production wiring: eligibility comes from the PIT security master.
+
+    An instrument listed and PIT-eligible on the signal date but with NO bar
+    that day (or ever) still enters the control target and keeps its 1/N
+    weight; the engine leaves the unfilled weight in cash instead of
+    redistributing it. B-shares are excluded by the V1 predicate, and an
+    instrument listed after the signal date never appears.
+    """
+    securities = [
+        _security("A.SZ", list_date=date(2019, 1, 1)),
+        _security("B.SZ", list_date=date(2019, 1, 1)),  # eligible, never priced
+        _security("200001.SZ", list_date=date(2019, 1, 1)),  # B-share: excluded
+        _security("D.SZ", list_date=D2),  # listed after the first signal
+    ]
+    code_changes: list = []
+    eligibility = pit_eligibility_frame(
+        securities, code_changes, [D0], LEGACY_DELIST_DATE_INCLUSIVE,
+        universe_predicate=is_v1_a_share,
+    )
+    targets = build_equal_weight_control_targets(eligibility, [D0])
+    first = targets[D0]
+    ids = {p.instrument_id for p in first.positions}
+    # B keeps its row without a price; 200001.SZ fails the V1 predicate; D is
+    # not yet listed — the denominator is exactly the PIT-eligible V1 set
+    assert ids == {"A.SZ", "B.SZ"}
+    assert all(p.target_weight == pytest.approx(0.5) for p in first.positions)
+
+    dates = [D0, D1, D2]
+    prices = _prices({d: {"A.SZ": 100.0} for d in dates})
+    result = run_backtest(
+        prices, dates, targets, _cfg(),
+        execution_lag_sessions=1, mode="strict",
+        lifecycle=LifecycleMonitor(
+            securities, code_changes, mode=LEGACY_DELIST_DATE_INCLUSIVE
+        ),
+        requested_period_start=D0, requested_period_end=D2,
+    )
+    assert result.status == "completed"
+    # B's unavailable weight stays cash on the execution date...
+    rebalance = next(r for r in result.rebalances if r.execution_date == D1)
+    assert rebalance.unavailable_target_count == 1
+    snap_d1 = _snap(result, D1)
+    a_d1 = next(p for p in snap_d1.positions if p.instrument_id == "A.SZ")
+    assert a_d1.value <= 0.5 + 1e-9  # A never absorbs B's share
+    assert snap_d1.cash_weight >= 0.5 - 1e-9
+    # ...and forever after, since B never becomes tradable
+    snap_d2 = _snap(result, D2)
+    assert next(
+        (p for p in snap_d2.positions if p.instrument_id == "B.SZ"), None
+    ) is None
+    assert snap_d2.cash_weight >= 0.5 - 1e-9
+    _assert_all_checks_pass(result)
 
 
 # ------------------------------------------------ strategy-vs-control bench --

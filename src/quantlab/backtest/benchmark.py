@@ -65,8 +65,9 @@ class BenchmarkComparison:
     correlation: float
     cumulative_strategy_nav: float  # prod(1 + s_t) over aligned dates
     cumulative_benchmark_nav: float  # prod(1 + b_t) over aligned dates
-    cumulative_active_nav: float  # prod(1 + s_t - b_t) over aligned dates
-    active_max_drawdown: float  # max drawdown of the cumulative active NAV path
+    relative_active_nav_final: float  # strategy NAV / benchmark NAV
+    arithmetic_active_nav_diagnostic: float  # prod(1 + s_t - b_t), diagnostic only
+    active_max_drawdown: float  # max drawdown of the RELATIVE wealth path
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -268,7 +269,8 @@ def compare_benchmark(
             correlation=float("nan"),
             cumulative_strategy_nav=float("nan"),
             cumulative_benchmark_nav=float("nan"),
-            cumulative_active_nav=float("nan"),
+            relative_active_nav_final=float("nan"),
+            arithmetic_active_nav_diagnostic=float("nan"),
             active_max_drawdown=float("nan"),
         )
 
@@ -279,7 +281,7 @@ def compare_benchmark(
 
     cum_strategy = math.prod(1.0 + value for value in s)
     cum_benchmark = math.prod(1.0 + value for value in b)
-    cum_active_nav = math.prod(1.0 + value for value in active)
+    arithmetic_active_nav = math.prod(1.0 + value for value in active)
     strategy_total = cum_strategy - 1.0
     benchmark_total = cum_benchmark - 1.0
     cumulative_active = cum_strategy / cum_benchmark - 1.0
@@ -287,15 +289,19 @@ def compare_benchmark(
     benchmark_cagr = cum_benchmark ** (annualization / n) - 1.0
     active_cagr = (cum_strategy / cum_benchmark) ** (annualization / n) - 1.0
 
-    # active NAV path drawdown: peak-to-trough on prod(1 + s_t - b_t)
-    active_nav = 1.0
-    active_peak = 1.0
+    # Formal active wealth path is RELATIVE wealth: strategy NAV / benchmark
+    # NAV, the same ratio that defines cumulative_active_return and
+    # active_cagr. prod(1 + s - b) is kept only as a clearly-named
+    # arithmetic-active diagnostic because the two paths diverge materially
+    # when benchmark moves are large.
+    relative_nav = 1.0
+    relative_peak = 1.0
     active_max_drawdown = 0.0
-    for a in active:
-        active_nav *= 1.0 + a
-        active_peak = max(active_peak, active_nav)
+    for s_value, b_value in zip(s, b, strict=True):
+        relative_nav *= (1.0 + s_value) / (1.0 + b_value)
+        relative_peak = max(relative_peak, relative_nav)
         active_max_drawdown = min(
-            active_max_drawdown, active_nav / active_peak - 1.0
+            active_max_drawdown, relative_nav / relative_peak - 1.0
         )
 
     mean_active = _mean(active)
@@ -346,6 +352,7 @@ def compare_benchmark(
         correlation=correlation,
         cumulative_strategy_nav=cum_strategy,
         cumulative_benchmark_nav=cum_benchmark,
-        cumulative_active_nav=cum_active_nav,
+        relative_active_nav_final=cum_strategy / cum_benchmark,
+        arithmetic_active_nav_diagnostic=arithmetic_active_nav,
         active_max_drawdown=active_max_drawdown,
     )

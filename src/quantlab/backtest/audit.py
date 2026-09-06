@@ -145,6 +145,33 @@ def fingerprint_frame(frame: pd.DataFrame) -> str:
     return _canonical_hash(frame)
 
 
+def fingerprint_security_master(
+    securities: list,
+    code_changes: list,
+    mode: str,
+) -> str:
+    """Deterministic fingerprint of a LifecycleMonitor construction.
+
+    Hashes exactly the fields ``LifecycleMonitor`` reads (instrument id,
+    delist dates, code-change effective dates) plus the boundary mode, so a
+    strategy/control symmetry audit can prove both portfolios ran on the
+    same lifecycle inputs and semantics — not just the same mode string.
+    """
+    payload = {
+        "mode": mode,
+        "delist_dates": sorted(
+            (s.instrument_id, s.delist_date.isoformat())
+            for s in securities
+            if s.delist_date is not None
+        ),
+        "code_changes": sorted(
+            (c.old_instrument_id, c.new_instrument_id, c.effective_date.isoformat())
+            for c in code_changes
+        ),
+    }
+    return _canonical_hash(payload)
+
+
 def fingerprint_targets(targets: dict) -> str:
     """Deterministic content fingerprint of a target sequence."""
     canon: dict = {}

@@ -1,18 +1,32 @@
 #!/usr/bin/env python3
-"""Run the lifecycle date-semantics comparison experiment.
+"""Run the performance-baseline & benchmark-correctness experiment (v0.1.1).
 
-Runs baseline and admission paths under both the legacy delist_date boundary
-(``legacy_delist_date_inclusive``) and the candidate ``delist_date_is_first_invalid_v1``
-interpretation, each in strict and diagnostic mode, with full provenance.
+Corrective closure of the v0.1 review: the equal-weight control universe is
+built from the PIT security master (historical list_date + frozen delist /
+code-change boundary semantics + V1 SH/SZ A-share definition), never from the
+price-backed research universe, so suspended-but-eligible instruments keep
+their 1/N weight (unfilled weights stay cash; held names stay stale-marked).
+Active MDD uses the relative wealth path (strategy NAV / benchmark NAV),
+consistent with cumulative active return and active CAGR; prod(1 + s - b)
+survives only as a clearly-named arithmetic diagnostic. Formal
+reproducibility requires a clean git workspace before AND after the run plus
+an unchanged HEAD and stable code/data manifests; dirty runs cannot publish
+performance-valid metrics. Control portfolios get independent formal reports
+(full metrics + settlement disclosure) and a failing control blocks the
+primary comparison. The strategy/control symmetry audit compares the full
+run specification. Forced-exit reporting uses deduplicated
+risk_policy_statistics instead of raw audit-row counts.
 
-Performance baseline hierarchy (v0.1 correctness closure):
+Performance baseline hierarchy:
 
 - PRIMARY: strategy vs ``equal_weight_v1_control`` — a real self-financing
   equal-weight portfolio over the full PIT-eligible V1 cross-section, run
   through the same engine with the same schedule, cost, lifecycle monitor,
   risk policy and settlement scenario. Risk policy first, settlement only as
   the residual fallback (``exit_after_termination_decision_v1`` + validated
-  fact snapshot; only ``delist`` events settle).
+  fact snapshot; only ``delist`` events settle). Lifecycle boundary mode is
+  the disclosed frozen baseline ``legacy_delist_date_inclusive`` (identical
+  for strategy and control; not re-chosen this round).
 - SECONDARY: market price-index attribution vs 000300.SH / 000905.SH /
   000852.SH raw closes (``index_return_basis = price_index_close``). Raw
   index closes are NOT dividend-adjusted and are not equivalent to the
@@ -25,7 +39,8 @@ Performance baseline hierarchy (v0.1 correctness closure):
 Settlement sensitivity stays a two-scenario assumption study
 (``recovery_assumption_1`` / ``recovery_assumption_0``): scenario bounds over
 the assumed [0, last_mark] recovery model. Actual economic recovery may
-differ; the scenarios are not mathematically guaranteed economic bounds.
+differ; the scenarios are not mathematically guaranteed economic bounds and
+are never described as actual fills or guaranteed recovery.
 
 Fixed engineering configuration: momentum_20d (lower_is_better), weekly
 rebalance, V1 universe, 20% selection, 10 bps transaction cost.
@@ -55,7 +70,11 @@ from quantlab.backtest import (
     LifecycleMonitor,
     build_report,
     compute_metrics,
+    fingerprint_security_master,
     first_invalid_open_session,
+    formal_reproducibility_evidence,
+    pit_eligibility_frame,
+    risk_policy_statistics,
     run_backtest,
     weekly_signal_dates,
 )
@@ -98,10 +117,12 @@ from quantlab.portfolio.control import (
     strategy_control_symmetry_audit,
 )
 from quantlab.research import build_research_dataset, filter_v1_universe
+from quantlab.research.universe import is_v1_a_share
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ENGINE_SCHEMA_VERSION = "v0.3.0"
-EXPERIMENT_SCHEMA = "lifecycle_date_semantics_v0_1_1"
+EXPERIMENT_SCHEMA = "performance_baseline_benchmark_correctness_v0_1_1"
+ANALYSIS_TYPE = "performance_baseline_benchmark_correctness_v0_1_1"
 
 PERIOD_START = date(2020, 1, 1)
 PERIOD_END = date(2024, 12, 31)
@@ -512,6 +533,8 @@ def _benchmark_comparison_section(
     diagnostic_returns: dict[date, float],
     symmetry: dict[str, bool],
     annualization: int,
+    control_reports: dict[str, dict] | None = None,
+    bound_configs: dict | None = None,
 ) -> dict:
     """Three-layer attribution for the two settlement bounds.
 
@@ -519,12 +542,18 @@ def _benchmark_comparison_section(
     SECONDARY: market price-index attribution vs 000300/000905/000852.
     DIAGNOSTIC: legacy blocked path, no-risk-policy settlement paths, and the
     cross-sectional equal-weight return diagnostic (not a portfolio).
+
+    The primary table additionally carries the full strategy and control
+    metric blocks (CAGR / total return / MDD / turnover / fees) plus the
+    active block; the control must have passed its own formal gates before
+    any of this is published (fail hard here as well, not only in _main).
     """
     from quantlab.backtest.benchmark import strategy_daily_returns
 
     primary: dict[str, dict] = {}
     secondary: dict[str, dict] = {}
     diagnostic_paths: dict[str, dict] = {}
+    strategy_vs_control: dict[str, dict] = {}
     for bound_key in BOUND_KEYS:
         strategy_result = runs[bound_key]["strategy"]
         control_result = runs[bound_key]["control"]
@@ -549,6 +578,61 @@ def _benchmark_comparison_section(
                 "engineering diagnostic; NOT a performance-valid baseline"
             ),
         }
+
+    if control_reports is not None and bound_configs is not None:
+        def _metric_table(metrics: dict) -> dict:
+            return {
+                "total_return_net": metrics["total_return_net"],
+                "cagr_net": metrics["cagr_net"],
+                "max_drawdown_net": metrics["max_drawdown_net"],
+                "total_turnover": metrics["total_turnover"],
+                "annualized_turnover": metrics["annualized_turnover"],
+                "total_transaction_cost": metrics["total_transaction_cost"],
+                "average_holdings": metrics["average_holdings"],
+                "average_cash_weight": metrics["average_cash_weight"],
+            }
+
+        for bound_key in BOUND_KEYS:
+            control_report = control_reports[bound_key]
+            if not control_report["performance_valid"]:
+                raise RuntimeError(
+                    f"refusing to publish the primary comparison for "
+                    f"{bound_key}: equal_weight_v1_control failed its formal "
+                    f"gates ({control_report['invalid_reasons']}); identical "
+                    "n_obs alone is not sufficient"
+                )
+            strategy_result = runs[bound_key]["strategy"]
+            strategy_metrics = compute_metrics(
+                strategy_result.records, strategy_result.rebalances,
+                bound_configs[bound_key],
+            )
+            attribution = primary[bound_key]
+            strategy_vs_control[bound_key] = {
+                "strategy": _metric_table(strategy_metrics),
+                "control": _metric_table(control_report["metrics"]),
+                "active": {
+                    "cumulative_active_return": attribution[
+                        "cumulative_active_return"
+                    ],
+                    "active_cagr": attribution["active_cagr"],
+                    "tracking_error": attribution["tracking_error"],
+                    "information_ratio": attribution["information_ratio"],
+                    "beta": attribution["beta"],
+                    "alpha_daily": attribution["alpha_daily"],
+                    "alpha_annualized": attribution["alpha_annualized"],
+                    "active_max_drawdown": attribution["active_max_drawdown"],
+                    "active_mdd_basis": (
+                        "relative wealth path: strategy cumulative NAV / "
+                        "control cumulative NAV (consistent with cumulative "
+                        "active return and active CAGR); "
+                        "arithmetic_active_nav_diagnostic = prod(1 + s - b) "
+                        "is reported separately and is NOT the formal path"
+                    ),
+                    "arithmetic_active_nav_diagnostic": attribution[
+                        "arithmetic_active_nav_diagnostic"
+                    ],
+                },
+            }
     beta_vs_control = {bound_key: primary[bound_key]["beta"] for bound_key in BOUND_KEYS}
     return {
         "note": (
@@ -583,6 +667,7 @@ def _benchmark_comparison_section(
             ),
             "benchmark": CONTROL_PORTFOLIO_NAME,
             "result": primary,
+            "strategy_vs_control": strategy_vs_control,
             "beta_vs_control": {
                 **beta_vs_control,
                 "interpretation_note": (
@@ -688,6 +773,106 @@ def _settlement_bound(result, config) -> dict:
         "settled_instrument_average_weight_at_settlement": (
             sum(weights.values()) / len(weights) if weights else 0.0
         ),
+    }
+
+
+def _control_universe_audit(
+    eligibility: pd.DataFrame,
+    price_frame: pd.DataFrame,
+    control_targets,
+    control_result,
+    signal_dates: list[date],
+    open_dates: list[date],
+) -> dict:
+    """Audit control-universe coverage on the first signal date.
+
+    Proves the control denominator is the PIT security-master cross-section,
+    not the price-backed research one: instruments eligible on the signal
+    date stay in the 1/N target even without a bar that day, and their
+    unfilled weights stay cash on the execution date instead of being
+    silently redistributed.
+    """
+    first_signal = min(signal_dates)
+    eligibility_dates = pd.to_datetime(eligibility["trade_date"]).dt.date
+    eligible = set(
+        eligibility.loc[eligibility_dates == first_signal, "instrument_id"]
+    )
+    priced_all = price_frame[["instrument_id", "trade_date"]].copy()
+    priced_all["trade_date"] = pd.to_datetime(priced_all["trade_date"]).dt.date
+    priced = set(
+        priced_all.loc[priced_all["trade_date"] == first_signal, "instrument_id"]
+    )
+    priced_eligible = eligible & priced
+    target = control_targets.get(first_signal)
+    first_exec = _next_open_session(open_dates, first_signal)
+    first_unavailable = next(
+        (
+            reb.unavailable_target_count
+            for reb in control_result.rebalances
+            if reb.execution_date == first_exec
+        ),
+        None,
+    )
+    return {
+        "first_signal_date": first_signal.isoformat(),
+        "first_execution_date": (
+            first_exec.isoformat() if first_exec is not None else None
+        ),
+        "pit_eligible_count": len(eligible),
+        "priced_count": len(priced_eligible),
+        "unpriced_eligible_count": len(eligible - priced),
+        "control_target_count": len(target.positions) if target else 0,
+        "target_count_equals_eligible": (
+            len(target.positions) == len(eligible) if target else False
+        ),
+        "first_signal_unavailable_execution_count": first_unavailable,
+        "run_total_unavailable_execution_count": sum(
+            reb.unavailable_target_count for reb in control_result.rebalances
+        ),
+        "note": (
+            "eligibility from the security master (historical list_date, "
+            "frozen delist/code-change boundary semantics, V1 SH/SZ A-share "
+            "definition); instruments without a signal-date bar stay in the "
+            "denominator and their unfilled weights stay cash on the "
+            "execution date"
+        ),
+    }
+
+
+def _control_report_section(result, config, report, expected_sessions) -> dict:
+    """Full validity + metrics section for one control run.
+
+    Metrics are computed unconditionally so an invalid control can still be
+    diagnosed; ``performance_valid`` decides whether the numbers may be
+    published as formal results. The caller must fail hard when the control
+    does not pass the formal gates before publishing the primary comparison.
+    """
+    metrics = compute_metrics(result.records, result.rebalances, config)
+    expected = sorted(set(expected_sessions))
+    actual = [r.trade_date for r in result.records]
+    net_settlements = [e for e in result.settlement_events if e.book == "net"]
+    return {
+        "status": result.status,
+        "performance_valid": report["performance_valid"],
+        "invalid_reasons": report["invalid_reasons"],
+        "full_session_coverage": actual == expected,
+        "record_count": len(actual),
+        "expected_session_count": len(expected),
+        "accounting_error": result.accounting_error,
+        "accounting_checks": [
+            {"check": c.check, "max_abs": c.max_abs, "max_rel": c.max_rel}
+            for c in result.accounting_checks
+        ],
+        "settlement_disclosure": report["settlement_disclosure"],
+        "residual_settlement_events": len(net_settlements),
+        "residual_settlement_instruments": len(
+            {e.instrument_id for e in net_settlements}
+        ),
+        "risk_policy_statistics": risk_policy_statistics(
+            result.risk_policy_audit
+        ),
+        "risk_policy_audit_row_count": len(result.risk_policy_audit),
+        "metrics": metrics,
     }
 
 
@@ -935,8 +1120,22 @@ def _main() -> None:
     )
 
     # formal equal_weight_v1_control: real portfolio, same schedule/cost/
-    # lifecycle/risk/settlement, only the target construction differs
-    control_targets = build_equal_weight_control_targets(universe, signal_dates)
+    # lifecycle/risk/settlement, only the target construction differs.
+    # Control eligibility is built from the PIT security master (historical
+    # list_date, frozen delist/code-change boundary semantics, V1 SH/SZ
+    # A-share definition) — NOT from the price-backed research universe — so
+    # an instrument eligible but suspended on the signal date keeps its 1/N
+    # weight instead of silently shrinking the denominator; the engine then
+    # leaves unfilled weights in cash and keeps held suspended names frozen
+    # at their stale mark. Current list_status is never used as a historical
+    # filter.
+    control_eligibility = pit_eligibility_frame(
+        securities, code_changes, signal_dates, LEGACY_DELIST_DATE_INCLUSIVE,
+        universe_predicate=is_v1_a_share,
+    )
+    control_targets = build_equal_weight_control_targets(
+        control_eligibility, signal_dates
+    )
     control_recovery_1 = run_backtest(
         price_frame, bt_open_dates, control_targets, settlement_config,
         execution_lag_sessions=1, mode=RUN_MODE_STRICT, lifecycle=monitor,
@@ -956,34 +1155,50 @@ def _main() -> None:
         storage, padded_dates, universe
     )
 
+    # strategy/control symmetry: every field that can move performance is
+    # compared from the actual invocation values; only target construction
+    # (and its fingerprint) is allowed to differ
+    lifecycle_monitor_snapshot = fingerprint_security_master(
+        securities, code_changes, LEGACY_DELIST_DATE_INCLUSIVE
+    )
+
+    def _primary_run_spec(bound_config) -> dict:
+        return {
+            "open_dates": bt_open_dates,
+            "signal_dates": signal_dates,
+            "execution_lag_sessions": 1,
+            "cost_bps": bound_config.transaction_cost_bps,
+            "missing_price_policy": MISSING_PRICE_POLICY,
+            "run_mode": RUN_MODE_STRICT,
+            "lifecycle_boundary_mode": LEGACY_DELIST_DATE_INCLUSIVE,
+            "lifecycle_monitor_snapshot": lifecycle_monitor_snapshot,
+            "risk_policy_id": EXIT_POLICY_ID,
+            "risk_fact_snapshot": fact_sha,
+            "settlement_recovery_rate": (
+                bound_config.delisting_settlement.recovery_rate
+            ),
+            "settlement_fee_bps": (
+                bound_config.delisting_settlement.settlement_fee_bps
+            ),
+            "initial_nav": bound_config.initial_nav,
+            "requested_period": (
+                PERIOD_START.isoformat(), PERIOD_END.isoformat(),
+            ),
+            "annualization": bound_config.annualization,
+        }
+
     control_symmetry = {}
-    for bound_key, recovery in (
-        ("recovery_assumption_1", settlement_config.delisting_settlement.recovery_rate),
-        ("recovery_assumption_0", settlement_zero_config.delisting_settlement.recovery_rate),
+    for bound_key, bound_config in (
+        ("recovery_assumption_1", settlement_config),
+        ("recovery_assumption_0", settlement_zero_config),
     ):
+        strategy_spec = _primary_run_spec(bound_config)
+        control_spec = _primary_run_spec(bound_config)
         control_symmetry[bound_key] = strategy_control_symmetry_audit(
-            {
-                "open_dates": bt_open_dates,
-                "signal_dates": sorted(targets),
-                "cost_rate": bt_config.transaction_cost_bps,
-                "mode": RUN_MODE_STRICT,
-                "risk_policy": EXIT_POLICY_ID,
-                "risk_facts": fact_sha,
-                "recovery_rate": recovery,
-                "execution_lag_sessions": 1,
-                "missing_price_policy": MISSING_PRICE_POLICY,
-            },
-            {
-                "open_dates": bt_open_dates,
-                "signal_dates": sorted(control_targets),
-                "cost_rate": bt_config.transaction_cost_bps,
-                "mode": RUN_MODE_STRICT,
-                "risk_policy": EXIT_POLICY_ID,
-                "risk_facts": fact_sha,
-                "recovery_rate": recovery,
-                "execution_lag_sessions": 1,
-                "missing_price_policy": MISSING_PRICE_POLICY,
-            },
+            strategy_spec, control_spec
+        )
+        control_symmetry[bound_key]["same_effective_target_dates"] = (
+            sorted(targets) == sorted(control_targets)
         )
     control_symmetry["same_target_construction_allowed_to_differ"] = (
         fingerprint_targets(targets) != fingerprint_targets(control_targets)
@@ -1001,10 +1216,6 @@ def _main() -> None:
         "recovery_assumption_1": settlement_strict,
         "recovery_assumption_0": settlement_zero_strict,
     }
-    benchmark_section = _benchmark_comparison_section(
-        runs, legacy_settlement, strict_result, index_returns, index_coverage,
-        diagnostic_returns, control_symmetry, bt_config.annualization,
-    )
     runtime = time.perf_counter() - t0
 
     # re-discover code files so added/removed files are detected
@@ -1020,7 +1231,66 @@ def _main() -> None:
         provenance_before["data"]["combined_sha256"]
         == provenance_after["data"]["combined_sha256"]
     )
-    reproducible = code_unchanged and data_unchanged
+    # formal reproducibility: a dirty workspace (before or after) or a moved
+    # HEAD can never publish formally reproducible, performance-valid
+    # metrics even when the inputs happened to be stable during the run;
+    # experiment outputs under data/experiments are git-ignored and never
+    # make the workspace dirty by themselves
+    git_sha_after = _git_sha()
+    git_dirty_after = _git_dirty()
+    reproducibility_evidence = formal_reproducibility_evidence(
+        inputs_stable_during_run=code_unchanged and data_unchanged,
+        git_clean_before=not git_dirty_before,
+        git_clean_after=not git_dirty_after,
+        head_unchanged=(
+            git_sha_before is not None
+            and git_sha_after is not None
+            and git_sha_before == git_sha_after
+        ),
+        code_manifest_unchanged=code_unchanged,
+        data_manifest_unchanged=data_unchanged,
+    )
+    reproducible = reproducibility_evidence["formal_reproducible"]
+
+    # control portfolios get independent formal validation with full
+    # metrics; a control that fails any gate blocks the primary comparison
+    control_reports = {}
+    for bound_key, control_result, bound_config in (
+        ("recovery_assumption_1", control_recovery_1, settlement_config),
+        ("recovery_assumption_0", control_recovery_0, settlement_zero_config),
+    ):
+        control_reports[bound_key] = _control_report_section(
+            control_result,
+            bound_config,
+            build_report(
+                control_result, None, reproducible, bound_config,
+                expected_sessions=bt_open_dates,
+            ),
+            bt_open_dates,
+        )
+        if not control_reports[bound_key]["performance_valid"]:
+            raise RuntimeError(
+                f"equal_weight_v1_control failed the formal gates for "
+                f"{bound_key}: "
+                f"{control_reports[bound_key]['invalid_reasons']}; the "
+                "primary strategy-vs-control comparison cannot be published "
+                "from an invalid control"
+            )
+
+    control_universe_audit = _control_universe_audit(
+        control_eligibility, price_frame, control_targets, control_recovery_1,
+        signal_dates, bt_open_dates,
+    )
+
+    benchmark_section = _benchmark_comparison_section(
+        runs, legacy_settlement, strict_result, index_returns, index_coverage,
+        diagnostic_returns, control_symmetry, bt_config.annualization,
+        control_reports=control_reports,
+        bound_configs={
+            "recovery_assumption_1": settlement_config,
+            "recovery_assumption_0": settlement_zero_config,
+        },
+    )
 
     report = build_report(
         strict_result, diagnostic_result, reproducible, bt_config,
@@ -1162,10 +1432,12 @@ def _main() -> None:
     summary = {
         "engine_schema_version": ENGINE_SCHEMA_VERSION,
         "experiment_schema": EXPERIMENT_SCHEMA,
-        "analysis_type": "lifecycle_date_semantics_comparison",
+        "analysis_type": ANALYSIS_TYPE,
         "code_version": git_sha_before,
+        "code_version_after": git_sha_after,
         "workspace_dirty": git_dirty_before,
         "reproducible": reproducible,
+        "reproducibility_evidence": reproducibility_evidence,
         "invalid_reasons": invalid_reasons,
         "run_time": datetime.now().isoformat(),
         "run_id": run_id,
@@ -1275,6 +1547,7 @@ def _main() -> None:
             ),
         },
         "index_return_basis": "price_index_close",
+        "control_universe_audit": control_universe_audit,
         "control_target_fingerprint": fingerprint_targets(control_targets),
         "strategy_target_fingerprint": fingerprint_targets(targets),
         "code_manifest": provenance_before["code"],
@@ -1350,8 +1623,29 @@ def _main() -> None:
                 settlement_risk_strict.first_blocking_event.__dict__
                 if settlement_risk_strict.first_blocking_event else None
             ),
-            "risk_forced_exit_count": len(settlement_risk_strict.risk_policy_audit),
+            "risk_policy_statistics": risk_policy_statistics(
+                settlement_risk_strict.risk_policy_audit
+            ),
+            "risk_policy_audit_row_count": len(
+                settlement_risk_strict.risk_policy_audit
+            ),
+            "risk_forced_exit_supersession_note": (
+                "v0.1 reported risk_forced_exit_count = len(risk_policy_audit), "
+                "i.e. raw per-book audit rows (gross+net books x decision "
+                "occurrences), NOT unique instruments and NOT executed "
+                "exits. Superseded by risk_policy_statistics, which separates "
+                "unique exit-required instruments, decision occurrences, "
+                "successful forced exits, pending-no-price occurrences, "
+                "prevented new entries, prevented refills and "
+                "blocked-before-exit rows per book."
+            ),
             "residual_settlement_count": len(settlement_risk_strict.settlement_events),
+            "residual_settlement_instruments": len(
+                {
+                    e.instrument_id
+                    for e in settlement_risk_strict.settlement_events
+                }
+            ),
             "metrics": settlement_report["metrics"],
             "settlement_disclosure": settlement_report["settlement_disclosure"],
             "statistics": _statistics(settlement_risk_strict),
@@ -1378,6 +1672,7 @@ def _main() -> None:
             ),
         },
         "settlement_sensitivity": settlement_sensitivity,
+        "control_reports": control_reports,
         "benchmark_comparison": benchmark_section,
         "diagnostic": {
             "run_mode": diagnostic_result.run_mode,
@@ -1549,22 +1844,54 @@ def _main() -> None:
     print(f"rejection evaluations: {comparison['rejection_evaluations']}")
     print(f"legacy settlement (diagnostic) status: {settlement_strict.status} "
           f"settlements={len(settlement_strict.settlement_events)}")
+    strategy_risk_stats = risk_policy_statistics(
+        settlement_risk_strict.risk_policy_audit
+    )
+    strategy_net_risk = strategy_risk_stats["per_book"]["net"]
     print(f"PRIMARY baseline status: {settlement_risk_strict.status} "
           f"performance_valid={settlement_report['performance_valid']} "
-          f"risk_forced_exits={len(settlement_risk_strict.risk_policy_audit)} "
+          f"risk_audit_rows={len(settlement_risk_strict.risk_policy_audit)} "
+          f"unique_exit_required="
+          f"{strategy_net_risk['unique_exit_required_instruments']} "
+          f"successful_exits="
+          f"{strategy_net_risk['successful_forced_exits']} "
+          f"pending_no_price="
+          f"{strategy_net_risk['pending_no_price_occurrences']} "
+          f"prevented_new_entries="
+          f"{strategy_net_risk['prevented_new_entries']} "
           f"residual_settlements={len(settlement_risk_strict.settlement_events)}")
     if settlement_report["metrics"] is not None:
         sm = settlement_report["metrics"]
         print(f"PRIMARY baseline: total_return_net={sm['total_return_net']:.4f} "
               f"cagr_net={sm['cagr_net']:.4f} sharpe_net={sm['sharpe_net']:.4f} "
               f"max_drawdown_net={sm['max_drawdown_net']:.4f}")
+    first_target_size = len(next(iter(control_targets.values())).positions)
     print(f"control status: {control_recovery_1.status} "
-          f"n_holdings_first_target="
-          f"{len(next(iter(control_targets.values())).positions)}")
+          f"performance_valid="
+          f"{control_reports['recovery_assumption_1']['performance_valid']} "
+          f"n_holdings_first_target={first_target_size}")
+    print(
+        f"control universe audit (first signal "
+        f"{control_universe_audit['first_signal_date']}): "
+        f"pit_eligible={control_universe_audit['pit_eligible_count']} "
+        f"priced={control_universe_audit['priced_count']} "
+        f"unpriced_eligible={control_universe_audit['unpriced_eligible_count']} "
+        f"target={control_universe_audit['control_target_count']} "
+        f"first_exec_unavailable="
+        f"{control_universe_audit['first_signal_unavailable_execution_count']}"
+    )
     print(f"settlement bounds cagr_net: "
           f"recovery_assumption_1={bound_full['cagr_net']:.4f} "
           f"recovery_assumption_0={bound_zero['cagr_net']:.4f} "
           f"delta={settlement_sensitivity['cagr_net_delta']:.4f}")
+    print(
+        "formal reproducibility: "
+        f"inputs_stable={reproducibility_evidence['inputs_stable_during_run']} "
+        f"git_clean_before={reproducibility_evidence['git_clean_before']} "
+        f"git_clean_after={reproducibility_evidence['git_clean_after']} "
+        f"head_unchanged={reproducibility_evidence['head_unchanged']} "
+        f"-> reproducible={reproducible}"
+    )
     _print_benchmark_table(benchmark_section)
     print(f"output dir: {out_dir}")
     print(f"runtime: {runtime:.1f}s")

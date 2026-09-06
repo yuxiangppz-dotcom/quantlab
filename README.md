@@ -54,6 +54,10 @@ trading step reproducible and free of look-ahead bias.
 - [x] Lifecycle Risk Policy v0 (implemented / engineering validation)
 - [x] Systematic Lifecycle Event Data v0 foundation (raw/canonical/PIT/audit)
 - [x] Systematic Lifecycle Context Data (v0.1.1: `stock_st` + `suspend_d` complete for 2020-01-01 ~ 2024-12-31)
+- [x] Delisting settlement as an explicit held-delist scenario (recovery assumptions, delist-only)
+- [x] True equal-weight control as primary benchmark (PIT security-master eligibility)
+- [x] Index attribution + benchmark coverage audit (price-index close basis)
+- [x] Performance baseline v0.1.1 correctness closure (relative-wealth active metrics, formal clean-git reproducibility, full run-spec symmetry audit)
 - [ ] Systematic termination announcement coverage (BLOCKED: current Tushare account lacks `anns_d`)
 - [ ] A-share execution constraints
 
@@ -278,7 +282,9 @@ weekly rebalance, 20% selection, 10 bps cost):
 uv run python scripts/run_research_backtest.py
 ```
 
-Results are written under `data/experiments/research_backtest_v0_2_4/`, including
+Results are written under
+`data/experiments/performance_baseline_benchmark_correctness_v0_1_1/<run_id>/`,
+including
 `summary.json` (metadata + status + provenance + metrics), `manifest.json`
 (input data content fingerprint), `strict_daily_records.csv`,
 `strict_daily_books.csv`, `strict_daily_positions.csv`,
@@ -364,6 +370,54 @@ Fact coverage remains incomplete—`unknown` is not safe—and an unpriced posit
 that reaches lifecycle invalidation still blocks strict mode. Risk Policy is
 therefore not a complete Corporate Action Engine and does not invent terminal
 settlement.
+
+## Performance Baseline & Benchmark Correctness v0.1.1
+
+Current facts of the formal 2020–2024 baseline
+(`performance_baseline_benchmark_correctness_v0_1_1`):
+
+- **Risk policy first, settlement second.** The primary path runs
+  `exit_after_termination_decision_v1` on a validated fact snapshot;
+  delisting settlement is implemented as an **explicit scenario** that only
+  handles *held* instruments crossing a `delist` boundary (settlement is
+  delist-only). It is a recovery-assumption scenario over `[0, last_mark]` —
+  never a claim of actual fills, actual liquidation, or guaranteed economic
+  recovery (`recovery_assumption_1` / `recovery_assumption_0`).
+- **True equal-weight control is the primary benchmark.**
+  `equal_weight_v1_control` is a real self-financing portfolio over the full
+  PIT-eligible V1 cross-section — eligibility built from the security master
+  (historical `list_date`, frozen delist/code-change boundary semantics,
+  `is_v1_a_share`), never from the price-backed research universe. An
+  instrument eligible but suspended on the signal date keeps its 1/N weight;
+  the engine leaves unfilled weights in cash and keeps held suspended names
+  frozen at their stale mark. The control gets its own formal report
+  (validity gates + full metrics) and a failing control blocks the primary
+  comparison.
+- **Index attribution is implemented** as a secondary layer vs
+  000300.SH / 000905.SH / 000852.SH on **raw price-index closes**
+  (`index_return_basis = price_index_close`); per-instrument session
+  coverage is audited and incomplete coverage fails the attribution. Raw
+  index closes are not dividend-adjusted total returns.
+- **Active metrics use one consistent relative-wealth path**: cumulative
+  active return, active CAGR and active MDD are all computed from
+  strategy NAV / control NAV. `prod(1 + s - b)` is reported only as
+  `arithmetic_active_nav_diagnostic`.
+- **Formal reproducibility requires a clean git workspace** before and after
+  the run, an unchanged HEAD, and stable code/data content manifests. A dirty
+  workspace can never publish formally reproducible, performance-valid
+  metrics (experiment outputs under `data/experiments/` are git-ignored and
+  never count as dirt).
+- **Symmetry is audited on the full run specification** — calendar, signal
+  schedule, execution lag, cost, missing-price policy, run mode, lifecycle
+  boundary mode, lifecycle monitor snapshot, risk policy, fact snapshot,
+  settlement recovery/fee, initial NAV, period, annualization. Only target
+  construction may differ.
+- **Lifecycle date semantics remain frozen**: the formal baseline runs the
+  disclosed `legacy_delist_date_inclusive` boundary for BOTH strategy and
+  control (chosen baseline mode, not re-selected this round);
+  `delist_date_is_first_invalid_v1` remains a candidate. Termination
+  announcement coverage is still
+  `blocked_by_missing_anns_d_permission`.
 
 ## Research Philosophy
 

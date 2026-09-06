@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from quantlab.backtest.provenance import content_manifest, sha256_bytes, sha256_file
+from quantlab.backtest.provenance import (
+    content_manifest,
+    formal_reproducibility_evidence,
+    sha256_bytes,
+    sha256_file,
+)
 
 
 def _write(path: Path, text: str) -> None:
@@ -51,3 +56,69 @@ def test_sha256_helpers(tmp_path: Path) -> None:
     _write(f, "abc")
     assert sha256_bytes(b"abc") == sha256_file(f)
     assert len(sha256_bytes(b"abc")) == 64
+
+
+# ---------------------------------------------- formal reproducibility gate --
+
+
+def _evidence(**overrides) -> dict:
+    flags = {
+        "inputs_stable_during_run": True,
+        "git_clean_before": True,
+        "git_clean_after": True,
+        "head_unchanged": True,
+        "code_manifest_unchanged": True,
+        "data_manifest_unchanged": True,
+    }
+    flags.update(overrides)
+    return formal_reproducibility_evidence(**flags)
+
+
+def test_clean_stable_run_is_formally_reproducible() -> None:
+    evidence = _evidence()
+    assert evidence["formal_reproducible"] is True
+    assert set(evidence) == {
+        "inputs_stable_during_run",
+        "git_clean_before",
+        "git_clean_after",
+        "head_unchanged",
+        "code_manifest_unchanged",
+        "data_manifest_unchanged",
+        "formal_reproducible",
+    }
+
+
+def test_dirty_workspace_is_never_formally_reproducible() -> None:
+    # inputs were stable during the run, but the workspace was dirty before
+    # and after: the producing commit cannot be reconstructed -> the run
+    # must NOT be marked formally reproducible
+    evidence = _evidence(git_clean_before=False, git_clean_after=False)
+    assert evidence["inputs_stable_during_run"] is True
+    assert evidence["formal_reproducible"] is False
+
+
+def test_dirty_after_run_blocks_formal_reproducibility() -> None:
+    evidence = _evidence(git_clean_after=False)
+    assert evidence["formal_reproducible"] is False
+
+
+def test_moved_head_blocks_formal_reproducibility() -> None:
+    evidence = _evidence(head_unchanged=False)
+    assert evidence["formal_reproducible"] is False
+
+
+def test_changed_code_manifest_blocks_formal_reproducibility() -> None:
+    evidence = _evidence(code_manifest_unchanged=False)
+    assert evidence["formal_reproducible"] is False
+
+
+def test_changed_data_manifest_blocks_formal_reproducibility() -> None:
+    evidence = _evidence(data_manifest_unchanged=False)
+    assert evidence["formal_reproducible"] is False
+
+
+def test_unavailable_git_state_blocks_formal_reproducibility() -> None:
+    # git unavailable / command failed: the runner passes False flags, never
+    # silently promoting the run to formal reproducibility
+    evidence = _evidence(head_unchanged=False, git_clean_before=False)
+    assert evidence["formal_reproducible"] is False

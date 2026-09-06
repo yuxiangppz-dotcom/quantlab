@@ -339,8 +339,16 @@ def test_active_max_drawdown_known_value() -> None:
         START + timedelta(days=i + 1): value for i, value in enumerate(b)
     }
     stats = compare_benchmark(_records(s), "test_bm", benchmark)
-    assert stats.active_max_drawdown == pytest.approx(-0.2, rel=1e-12)
-    assert stats.cumulative_active_nav == pytest.approx(0.88, rel=1e-12)
+    # formal active MDD uses the RELATIVE wealth path:
+    #   r1 = 1.11 / 1.01, r2 = (1.11 * 0.79) / (1.01 * 0.99)
+    #   dd = r2 / r1 - 1  (documented formula, not re-running the impl)
+    expected = ((1.11 * 0.79) / (1.01 * 0.99)) / (1.11 / 1.01) - 1.0
+    assert stats.active_max_drawdown == pytest.approx(expected, rel=1e-12)
+    # arithmetic path prod(1 + s - b) is a separate diagnostic
+    assert stats.arithmetic_active_nav_diagnostic == pytest.approx(0.88, rel=1e-12)
+    assert stats.relative_active_nav_final == pytest.approx(
+        (1.11 * 0.79) / (1.01 * 0.99), rel=1e-12
+    )
 
 
 def test_active_max_drawdown_zero_when_active_never_dips() -> None:
@@ -351,6 +359,30 @@ def test_active_max_drawdown_zero_when_active_never_dips() -> None:
     }
     stats = compare_benchmark(_records(s), "test_bm", benchmark)
     assert stats.active_max_drawdown == 0.0
+
+
+def test_active_mdd_relative_and_arithmetic_paths_diverge_materially() -> None:
+    # strategy flat, benchmark -50% then +150% then flat: large moves, NOT a
+    # near-zero benchmark degenerate case. Relative wealth goes 2.0 -> 0.8 ->
+    # 0.8, so the formal active MDD is -0.6, consistent with the -20%
+    # cumulative active return. The arithmetic path prod(1 + s - b) goes
+    # 1.5 -> -0.75 -> -0.75: it is not even a valid wealth process (negative
+    # NAV), which is exactly why prod(1 + s - b) may only ever be a named
+    # diagnostic, never the formal active NAV/MDD.
+    b = [-0.5, 1.5, 0.0]
+    s = [0.0, 0.0, 0.0]
+    benchmark = {
+        START + timedelta(days=i + 1): value for i, value in enumerate(b)
+    }
+    stats = compare_benchmark(_records(s), "test_bm", benchmark)
+    assert stats.active_max_drawdown == pytest.approx(-0.6, rel=1e-12)
+    assert stats.relative_active_nav_final == pytest.approx(0.8, rel=1e-12)
+    assert stats.cumulative_active_return == pytest.approx(-0.2, rel=1e-12)
+    # consistency: cumulative active return is exactly final relative NAV - 1
+    assert stats.cumulative_active_return == pytest.approx(
+        stats.relative_active_nav_final - 1.0, rel=1e-12
+    )
+    assert stats.arithmetic_active_nav_diagnostic == pytest.approx(-0.75, rel=1e-12)
 
 
 # ---------------------------------------------------------------- coverage --

@@ -10,10 +10,13 @@ from quantlab.backtest import (
     LifecycleMonitor,
     first_invalid_open_session,
     is_instrument_invalid_on_delist_boundary,
+    pit_eligibility_frame,
+    pit_eligible_instrument_ids,
     run_backtest,
 )
 from quantlab.data.models import Security, SecurityCodeChange
 from quantlab.portfolio import TargetPortfolio, TargetWeight
+from quantlab.research.universe import is_v1_a_share
 
 D0 = date(2026, 1, 5)
 D1 = date(2026, 1, 6)
@@ -21,7 +24,7 @@ D2 = date(2026, 1, 7)
 D3 = date(2026, 1, 8)
 
 
-def _security(instrument_id, delist_date=None) -> Security:
+def _security(instrument_id, delist_date=None, list_date=date(2000, 1, 1)) -> Security:
     market = instrument_id.split(".")[1] if "." in instrument_id else "SH"
     return Security(
         instrument_id=instrument_id,
@@ -31,7 +34,7 @@ def _security(instrument_id, delist_date=None) -> Security:
         market=market,
         board="主板",
         list_status="D" if delist_date is not None else "L",
-        list_date=date(2000, 1, 1),
+        list_date=list_date,
         delist_date=delist_date,
     )
 
@@ -452,3 +455,95 @@ def test_delist_after_period_none() -> None:
     v1 = first_invalid_open_session(D3, period_open_dates, DELIST_DATE_IS_FIRST_INVALID_V1)
     assert legacy is None
     assert v1 is None
+
+
+# ------------------------------------------------------ PIT eligibility set --
+
+
+def test_pit_eligible_instrument_ids_listing_window_and_predicate() -> None:
+    securities = [
+        _security("A.SZ"),                                   # plain eligible
+        _security("B.SZ", list_date=D0),                     # listed exactly on D0
+        _security("C.SZ", list_date=D1),                     # not yet listed on D0
+        _security("200001.SZ"),                              # B-share (predicate)
+        _security("830001.BJ"),                              # BJ (predicate)
+    ]
+    eligible = pit_eligible_instrument_ids(
+        securities, [], D0, LEGACY_DELIST_DATE_INCLUSIVE, is_v1_a_share
+    )
+    # C is excluded (list_date > D0); B-share/BJ fail the V1 predicate; an
+    # instrument listed exactly on D0 IS eligible on its list date
+    assert eligible == ["A.SZ", "B.SZ"]
+
+
+def test_pit_eligible_instrument_ids_respects_frozen_delist_boundary() -> None:
+    securities = [
+        _security("A.SZ", delist_date=D1),
+        _security("B.SZ"),
+    ]
+    # legacy: D1 (the delist date itself) is still valid
+    legacy = pit_eligible_instrument_ids(
+        securities, [], D1, LEGACY_DELIST_DATE_INCLUSIVE
+    )
+    assert legacy == ["A.SZ", "B.SZ"]
+    # v1: D1 is the first invalid day
+    v1 = pit_eligible_instrument_ids(
+        securities, [], D1, DELIST_DATE_IS_FIRST_INVALID_V1
+    )
+    assert v1 == ["B.SZ"]
+    # both modes agree the day after the delist date is invalid
+    after = pit_eligible_instrument_ids(
+        securities, [], D2, LEGACY_DELIST_DATE_INCLUSIVE
+    )
+    assert after == ["B.SZ"]
+
+
+def test_pit_eligible_instrument_ids_code_change_boundary() -> None:
+    securities = [
+        _security("A.SZ"),
+        _security("A.NEW.SZ", list_date=D2),
+        _security("B.SZ"),
+    ]
+    changes = [_code_change("A.SZ", "A.NEW.SZ", effective=D1)]
+    # before the effective date the old code is eligible
+    before = pit_eligible_instrument_ids(securities, changes, D0, LEGACY_DELIST_DATE_INCLUSIVE)
+    assert before == ["A.SZ", "B.SZ"]
+    # from the effective date the old code is gone; the new code needs its
+    # own master row with list_date <= as_of to appear
+    on_effective = pit_eligible_instrument_ids(
+        securities, changes, D1, LEGACY_DELIST_DATE_INCLUSIVE
+    )
+    assert on_effective == ["B.SZ"]
+    with_new = pit_eligible_instrument_ids(
+        securities, changes, D2, LEGACY_DELIST_DATE_INCLUSIVE
+    )
+    assert with_new == ["A.NEW.SZ", "B.SZ"]
+
+
+def test_pit_eligible_instrument_ids_never_uses_list_status() -> None:
+    # list_status is a CURRENT attribute; historical eligibility must not
+    # consult it (a delisted-in-2026 security was listed in 2020)
+    securities = [
+        _security("A.SZ", delist_date=date(2026, 6, 1)),
+        _security("B.SZ"),
+    ]
+    eligible = pit_eligible_instrument_ids(
+        securities, [], date(2020, 6, 1), LEGACY_DELIST_DATE_INCLUSIVE
+    )
+    assert eligible == ["A.SZ", "B.SZ"]
+
+
+def test_pit_eligibility_frame_covers_every_signal_date_independently() -> None:
+    securities = [
+        _security("A.SZ"),
+        _security("B.SZ", list_date=D2),   # newly listed by the second signal
+    ]
+    frame = pit_eligibility_frame(
+        securities, [], [D0, D2], LEGACY_DELIST_DATE_INCLUSIVE
+    )
+    d0_rows = frame[frame["trade_date"] == D0]["instrument_id"].tolist()
+    d2_rows = frame[frame["trade_date"] == D2]["instrument_id"].tolist()
+    assert d0_rows == ["A.SZ"]
+    assert d2_rows == ["A.SZ", "B.SZ"]
+    # frame shape matches the (instrument_id, trade_date) cross-section contract
+    assert list(frame.columns) == ["instrument_id", "trade_date"]
