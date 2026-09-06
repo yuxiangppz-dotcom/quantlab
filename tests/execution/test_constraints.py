@@ -9,6 +9,7 @@ from quantlab.execution import (
     ConstraintDimension,
     ConstraintStatus,
     ExecutionLedger,
+    FeeScheduleEvidence,
     InstrumentIdentity,
     OrderIntended,
     OrderIntent,
@@ -109,6 +110,54 @@ def _by_dimension(result):
     return {decision.dimension: decision for decision in result.event.decisions}
 
 
+def test_production_engine_reaches_submission_eligible_with_unknown_fillability() -> None:
+    """The REAL AShareConstraintEngine (not hand-built decisions) reaches
+    VALIDATED when admissibility/access/fees are verified, even though fill
+    probability stays unknown: submission eligibility and eventual
+    fillability are different things, and the uncertainty stays on the
+    fillability audit row."""
+    synthetic_fee = FeeScheduleEvidence(
+        schedule_id="synthetic-fee-schedule-test-only",
+        effective_from=date(2020, 1, 1),
+        effective_to=date(2027, 12, 31),
+        broker_commission_exact=True,
+        statutory_fees_exact=True,
+        source_sha256="f" * 64,
+    )
+    result = _engine().assess(
+        _intent(),
+        _account(),
+        ASSESSED,
+        suspension=_open_evidence(),
+        fee_schedule=synthetic_fee,
+        daily_bar_available=None,
+    )
+    decisions = _by_dimension(result)
+    assert decisions[ConstraintDimension.ORDER_ADMISSIBILITY].status is (
+        ConstraintStatus.ALLOWED
+    )
+    assert decisions[ConstraintDimension.MARKET_ACCESSIBILITY].status is (
+        ConstraintStatus.ALLOWED
+    )
+    assert decisions[ConstraintDimension.FEE_DETERMINABILITY].status is (
+        ConstraintStatus.ALLOWED
+    )
+    assert decisions[ConstraintDimension.FILLABILITY].status is (
+        ConstraintStatus.UNKNOWN
+    )
+    assert decisions[ConstraintDimension.FILLABILITY].reason_code == (
+        "daily_bar_availability_unknown"
+    )
+    assert result.derived_status is OrderStatus.VALIDATED
+
+    # the production path is reachable end to end: the ledger accepts the
+    # engine's assessment and the order becomes submittable
+    ledger = ExecutionLedger(_account())
+    ledger.append(OrderIntended("event-intent", CREATED, intent := _intent()))
+    ledger.append(result.event)
+    assert ledger.order(intent.order_id).status is OrderStatus.VALIDATED
+
+
 def test_daily_bar_never_becomes_fill_evidence() -> None:
     intent = _intent()
     result = _engine().assess(
@@ -127,6 +176,7 @@ def test_daily_bar_never_becomes_fill_evidence() -> None:
     assert decisions[ConstraintDimension.FILLABILITY].reason_code == (
         "daily_bar_not_fill_evidence"
     )
+    # fee determinability unknown still gates submission eligibility
     assert result.derived_status is OrderStatus.UNKNOWN
 
     ledger = ExecutionLedger(_account())

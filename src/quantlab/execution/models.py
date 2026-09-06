@@ -32,6 +32,17 @@ class OrderType(StrEnum):
     LIMIT = "limit"
 
 
+class TimeInForce(StrEnum):
+    """Explicit time-in-force. A-share equity orders in scope are DAY only.
+
+    DAY is declared explicitly rather than implied: an order without an
+    intended trade date can never bind a fill's exchange-local trade date,
+    and no silent GTC default exists in this layer.
+    """
+
+    DAY = "day"
+
+
 class OrderSession(StrEnum):
     OPENING_AUCTION = "opening_auction"
     CONTINUOUS_AUCTION = "continuous_auction"
@@ -265,6 +276,7 @@ class OrderIntent:
     session: OrderSession = OrderSession.CONTINUOUS_AUCTION
     limit_price_basis: PriceBasis | None = None
     limit_price_source_id: str | None = None
+    time_in_force: TimeInForce = TimeInForce.DAY
 
     def __post_init__(self) -> None:
         require_identifier(self.order_id, "order_id")
@@ -272,6 +284,12 @@ class OrderIntent:
         require_identifier(self.instrument_id, "instrument_id")
         require_int(self.quantity, "quantity", minimum=1)
         require_aware(self.created_at, "created_at")
+        if not isinstance(self.time_in_force, TimeInForce):
+            raise ExecutionValidationError("time_in_force must be a TimeInForce enum")
+        if self.time_in_force is not TimeInForce.DAY:
+            raise ExecutionValidationError(
+                "only DAY orders are modeled in this layer"
+            )
         if not isinstance(self.side, Side):
             raise ExecutionValidationError("side must be a Side enum")
         if not isinstance(self.order_type, OrderType):
@@ -310,7 +328,12 @@ class OrderIntent:
 
 @dataclass(frozen=True)
 class OrderRequest:
-    """Immutable broker-facing request; it must exactly match its intent."""
+    """Immutable broker-facing request; it must exactly match its intent.
+
+    ``intended_trade_date`` is carried on the request itself so the DAY
+    order's economic trade date is bound end to end: a broker report may
+    arrive later, but its trade date can never drift from the intent.
+    """
 
     request_id: str
     order_id: str
@@ -319,10 +342,12 @@ class OrderRequest:
     quantity: int
     order_type: OrderType
     limit_price: Decimal | None
+    intended_trade_date: date
     created_at: datetime
     session: OrderSession = OrderSession.CONTINUOUS_AUCTION
     limit_price_basis: PriceBasis | None = None
     limit_price_source_id: str | None = None
+    time_in_force: TimeInForce = TimeInForce.DAY
 
     def __post_init__(self) -> None:
         require_identifier(self.request_id, "request_id")
@@ -330,6 +355,12 @@ class OrderRequest:
         require_identifier(self.instrument_id, "instrument_id")
         require_int(self.quantity, "quantity", minimum=1)
         require_aware(self.created_at, "created_at")
+        if not isinstance(self.time_in_force, TimeInForce):
+            raise ExecutionValidationError("time_in_force must be a TimeInForce enum")
+        if self.time_in_force is not TimeInForce.DAY:
+            raise ExecutionValidationError(
+                "only DAY orders are modeled in this layer"
+            )
         if not isinstance(self.side, Side):
             raise ExecutionValidationError("side must be a Side enum")
         if not isinstance(self.order_type, OrderType):
@@ -392,23 +423,41 @@ def derive_order_status(
     side: Side,
     decisions: tuple[ConstraintDecision, ...],
 ) -> OrderStatus:
-    """Fail-closed aggregate of the five independent constraint dimensions."""
+    """Fail-closed aggregate of the five independent constraint dimensions.
+
+    Submission eligibility (``VALIDATED``) and eventual fillability are
+    deliberately distinct: unknown fill probability or queue position is an
+    auditable residual risk, never a reason to block an otherwise fully
+    qualified limit order. What MUST gate submission is anything that makes
+    the order terms or the market itself unverifiable:
+
+    - order admissibility unknown/rejected;
+    - market accessibility unknown/rejected;
+    - fee determinability unknown/rejected;
+    - position sellability unknown/rejected (sell orders only).
+
+    Fillability unknown keeps the order submittable with the uncertainty
+    recorded in its audit trail; a fillability REJECTION still blocks.
+    """
     by_dimension = {decision.dimension: decision.status for decision in decisions}
     if set(by_dimension) != set(ConstraintDimension):
         raise ExecutionValidationError("cannot derive status without all dimensions")
-    statuses = set(by_dimension.values())
-    if ConstraintStatus.REJECTED in statuses:
+    if by_dimension[ConstraintDimension.FILLABILITY] is ConstraintStatus.REJECTED:
         return OrderStatus.REJECTED
-    if ConstraintStatus.UNKNOWN in statuses:
-        return OrderStatus.UNKNOWN
+    if ConstraintStatus.REJECTED in set(by_dimension.values()):
+        return OrderStatus.REJECTED
     required_allowed = {
         ConstraintDimension.ORDER_ADMISSIBILITY,
         ConstraintDimension.MARKET_ACCESSIBILITY,
-        ConstraintDimension.FILLABILITY,
         ConstraintDimension.FEE_DETERMINABILITY,
     }
     if side is Side.SELL:
         required_allowed.add(ConstraintDimension.POSITION_SELLABILITY)
+    if any(
+        by_dimension[dimension] is ConstraintStatus.UNKNOWN
+        for dimension in required_allowed
+    ):
+        return OrderStatus.UNKNOWN
     return (
         OrderStatus.VALIDATED
         if all(

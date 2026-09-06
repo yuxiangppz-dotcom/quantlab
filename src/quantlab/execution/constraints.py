@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
 
-from quantlab.execution.ledger import ConstraintsAssessed
+from quantlab.execution.ledger import ConstraintsAssessed, account_state_fingerprint
 from quantlab.execution.models import (
     AccountSnapshot,
     ConstraintDecision,
@@ -174,6 +174,7 @@ class AShareConstraintEngine:
                 occurred_at=assessed_at,
                 order_id=intent.order_id,
                 decisions=decisions,
+                account_fingerprint=account_state_fingerprint(account),
             ),
             derived_status=derived,
         )
