@@ -1,6 +1,65 @@
 # Execution Framework and Readiness
 
-## v0.2 — Executable Order Path
+## v0.2.1 — Transaction, Evidence, and Lineage Closure (current)
+
+v0.2.1 fixes the correctness gaps found in v0.2 (marked below as a
+superseded candidate). Its formal artifacts publish under
+`data/experiments/execution_readiness_v0_2_1/<run_id>/` with schema
+`execution_readiness_v0_2_1`; the v0.1 and v0.2 artifacts and verifiers
+remain valid and unchanged.
+
+- **Transactional ledger.** Every `append` and `submit_orders` call is one
+  transaction with strong exception safety: any Exception or
+  BaseException — at the first, middle, or last batch submission, after a
+  reservation, after an order-status change, around the event index, or
+  inside the invariant check — restores cash, lots, orders, reservations,
+  events, event ids, fill ids, and request ids exactly. Replay
+  determinism and duplicate-event idempotence are unchanged.
+- **Reservation-aware execution state (TOCTOU).** The unique
+  execution-state fingerprint binds account id, settled cash, position
+  lots, every active cash/share reservation, and the live order states.
+  Assessments and submissions bind it; stale ones are rejected before
+  mutation, and every batch member must bind the same explicit pre-batch
+  state. Planning consumes available (unreserved) cash and available
+  sellable shares via `ExecutionStateView`, never the settled snapshot
+  alone.
+- **Order-lifetime fee budget.** The fee cap is frozen as the cumulative
+  fee ceiling over one order's whole lifetime. Quotes are typed
+  provenance (instrument, account, trade date, schedule evidence id,
+  SHA-256 fingerprint, synthetic flag) and never degrade to a bare
+  integer at the submission boundary. Reservations independently track
+  remaining worst-case limit notional and remaining fee capacity; after
+  every partial fill the reservation equals unfilled shares × limit +
+  remaining fee capacity, price improvement releases the excess, full
+  fills leave no residual, and cancel/expire releases the rest.
+- **Limit-price protection.** A BUY fill above its limit (a SELL below
+  its limit) is rejected before any ledger mutation.
+- **Plan → Intent → Assessment → Submission lineage.** A pure adapter
+  materializes only ORDERABLE legs of a SUBMIT_READY plan into
+  deterministic intents and requests bound to instruction fingerprint,
+  plan id, leg id, execution-state fingerprint, price-source
+  fingerprint, fee-quote fingerprint, intended trade date, and DAY TIF;
+  `verify_lineage` invalidates reuse after any drift. The planner
+  rejects cross-instrument price evidence, mismatched fee quotes, and
+  pre-dated price evidence. The formal smoke walks the REAL chain from a
+  positive TargetPortfolio through the handoff, planner, adapter,
+  execution-state-bound assessments, and a transactional submission;
+  `external_broker_submission = false` is stated explicitly.
+- **Canonical row audits.** Daily, stock_st, and suspensions each get
+  their own storage-contract primary key, required non-null fields, and
+  finite numeric fields; `suspend_timing` is nullable and multi-event
+  rows are never duplicates. Raw file integrity and negative
+  market-access coverage are disclosed separately, and the suspension
+  check is capped at partial.
+- **Composite READY re-binding.** Every composite readiness decision is
+  re-derived from its exact disclosed sub-conditions (never a
+  pre-computed boolean) at preflight, post-promotion verification, and
+  in the independent verifier; the performance-field scan covers every
+  JSON file; and any flipped, removed, extended, or retyped smoke
+  condition, or a smoke/CSV/summary contradiction, can never reach a
+  COMPLETED marker.
+
+## v0.2 — Executable Order Path (superseded candidate)
 
 v0.2 closes the engineering-correctness chain from an instruction to a
 reservable, broker-facing order, without simulating fills or connecting to a

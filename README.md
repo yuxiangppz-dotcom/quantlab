@@ -233,14 +233,15 @@ uv run python scripts/run_execution_readiness.py
 ```
 
 It publishes only evidence and readiness gates under
-`data/experiments/execution_readiness_v0_2/<run_id>/` (schema
-`execution_readiness_v0_2`; the v0.1 artifact and verifier remain valid).
-The audit includes a synthetic, non-trading order-path smoke suite (account-
-aware planning, submission eligibility, atomic reservations, DAY/T+1
-binding, stale-account rejection), row-level daily/ST/suspension partition
-audits, and the fail-closed readiness gates. It computes no strategy
-performance, invents no fills, calls no provider, writes no canonical data,
-and submits no orders.
+`data/experiments/execution_readiness_v0_2_1/<run_id>/` (schema
+`execution_readiness_v0_2_1`; the v0.1 and superseded-candidate v0.2
+artifacts and verifiers remain valid). The audit includes the synthetic,
+non-trading order-path smoke suite, transactional fault-injection
+evidence, fee/reservation reconciliation, row-level daily/ST/suspension
+partition audits, and fail-closed readiness gates whose composite READY
+decisions are re-derived from disclosed sub-conditions at every
+enforcement point. It computes no strategy performance, invents no fills,
+calls no provider, writes no canonical data, and submits no orders.
 See [docs/execution_readiness.md](docs/execution_readiness.md).
 
 The `data/` directory is git-ignored; canonical data is never committed.

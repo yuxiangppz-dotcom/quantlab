@@ -454,7 +454,7 @@ An append-only record of intended vs. executed orders and fills. The ledger is
 the boundary between research simulation and real trading — it makes execution
 attributable and audit-able.
 
-### Executable Order Path and Reservations v0.2
+### Executable Order Path and Reservations v0.2.1
 
 The execution chain is instruction → account-aware `OrderPlan` → constraint
 assessment → atomic reservation → broker-facing `OrderRequest` →
@@ -475,6 +475,20 @@ an account-state fingerprint so stale ones are rejected. `TimeInForce.DAY`
 is explicit; `OrderRequest` binds the intended trade date; buy-lot
 `sellable_from` must equal `calendar.next_session(trade_date)`, and
 incomplete calendar coverage is fail-closed.
+
+v0.2.1 closes the correctness gaps: the ledger is transactional with
+strong exception safety (any Exception or BaseException anywhere in a
+batch restores every container exactly); constraint assessments and
+submissions bind a unique execution-state fingerprint that covers
+reservations and live order states (closing the reservation TOCTOU);
+fee caps are typed, order-lifetime cumulative budgets whose remaining
+capacity the reservation tracks explicitly (BUY fills above limit and
+SELL fills below are rejected before mutation); a pure adapter
+materializes only ORDERABLE plan legs into lineage-bound intents and
+requests; and readiness schema v0.2.1 re-derives every composite gate
+from its disclosed sub-conditions at preflight, promotion, and
+independent verification, with the v0.2 artifact marked as a superseded
+candidate but still verifiable.
 
 ### Research vs Execution Separation
 
