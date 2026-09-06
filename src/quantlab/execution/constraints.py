@@ -119,11 +119,16 @@ class AShareConstraintEngine:
         fee_schedule: FeeScheduleEvidence | None,
         daily_bar_available: bool | None,
         st_status: str | None = None,
+        execution_state_fingerprint: str | None = None,
     ) -> AssessmentResult:
         """Return an auditable event; no side effect and no order submission.
 
         ``st_status`` is accepted only as disclosed context. It never rejects
         an order, forces an exit, or changes a target in this execution layer.
+        ``execution_state_fingerprint`` binds the assessment to the full
+        reservation-aware ledger state; the production path always supplies
+        it (``ExecutionLedger.execution_state_fingerprint``), and the ledger
+        rejects the assessment if that state has moved by append time.
         """
         require_aware(assessed_at, "assessed_at")
         if daily_bar_available is not None and not isinstance(
@@ -175,6 +180,7 @@ class AShareConstraintEngine:
                 order_id=intent.order_id,
                 decisions=decisions,
                 account_fingerprint=account_state_fingerprint(account),
+                execution_state_fingerprint=execution_state_fingerprint,
             ),
             derived_status=derived,
         )

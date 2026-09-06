@@ -40,7 +40,35 @@ from quantlab.execution.models import (
 )
 from quantlab.execution.rules import PITIdentityBook, PITRuleBook, TradingCalendar
 
-PLANNER_VERSION = "account_aware_order_plan_v0_2"
+PLANNER_VERSION = "account_aware_order_plan_v0_2_1"
+
+
+@dataclass(frozen=True)
+class ExecutionStateView:
+    """Reservation-aware account view used for planning and lineage.
+
+    ``account`` is the settled snapshot; ``available_cash_fen`` and
+    ``available_sellable_shares`` are what remains AFTER every active
+    cash/share reservation. ``fingerprint`` is the unique execution-state
+    fingerprint of that full state (settled plus reservations plus live
+    order states); plans bind it so drift invalidates reuse.
+    """
+
+    account: AccountSnapshot
+    available_cash_fen: int
+    available_sellable_shares: Mapping[str, int]
+    fingerprint: str
+
+    def __post_init__(self) -> None:
+        require_identifier(self.fingerprint, "execution_state_fingerprint")
+        if self.available_cash_fen < 0:
+            raise ExecutionValidationError(
+                "available_cash_fen must be non-negative"
+            )
+        if any(value < 0 for value in self.available_sellable_shares.values()):
+            raise ExecutionValidationError(
+                "available_sellable_shares must be non-negative"
+            )
 
 
 class OrderPlanStatus(StrEnum):
@@ -147,6 +175,7 @@ class OrderPlan:
     reason_codes: tuple[str, ...]
     legs: tuple[OrderPlanLeg, ...]
     worst_case_cash_fen_required: int
+    execution_state_fingerprint: str | None = None
 
 
 def fingerprint_rebalance_instruction(instruction: RebalanceInstruction) -> str:
@@ -208,12 +237,19 @@ def build_order_plan(
     calendar: TradingCalendar,
     identities: PITIdentityBook,
     rules: PITRuleBook,
+    execution_state: ExecutionStateView | None = None,
 ) -> OrderPlan:
     """Plan one instruction against one account snapshot, fully audited.
 
     ``created_at`` is the aware planning instant: order-price evidence must
     be available no later than it, and the plan's DAY orders bind the
     instruction's ``execution_date`` as their intended trade date.
+
+    ``execution_state`` is the reservation-aware view: buys are funded only
+    from ``available_cash_fen`` (settled minus active reservations) and sell
+    legs are limited by ``available_sellable_shares``. Passing the settled
+    snapshot alone (``execution_state=None``) is the legacy low-level path
+    and never appears in production readiness evidence.
     """
     require_aware(created_at, "created_at")
     if account.account_id.strip() == "":
@@ -221,6 +257,10 @@ def build_order_plan(
     if exchange_date(created_at) > instruction.execution_date:
         raise ExecutionValidationError(
             "plan created after the intended execution date"
+        )
+    if execution_state is not None and execution_state.account != account:
+        raise ExecutionValidationError(
+            "execution-state view does not match the account snapshot"
         )
 
     instruction_fingerprint = fingerprint_rebalance_instruction(instruction)
@@ -235,6 +275,15 @@ def build_order_plan(
         if lot.sellable_from <= instruction.execution_date:
             sellable[lot.instrument_id] = (
                 sellable.get(lot.instrument_id, 0) + lot.quantity
+            )
+    if execution_state is not None:
+        # T+1 sellable is further reduced by active share reservations
+        for instrument_id in set(sellable) | set(
+            execution_state.available_sellable_shares
+        ):
+            sellable[instrument_id] = min(
+                sellable.get(instrument_id, 0),
+                execution_state.available_sellable_shares.get(instrument_id, 0),
             )
 
     target_map: dict[str, int] = {
@@ -487,7 +536,11 @@ def build_order_plan(
         status = OrderPlanStatus.BLOCKED
     else:
         status = OrderPlanStatus.SUBMIT_READY
-    available_cash_fen = account.cash_fen
+    available_cash_fen = (
+        execution_state.available_cash_fen
+        if execution_state is not None
+        else account.cash_fen
+    )
     if (
         status is OrderPlanStatus.SUBMIT_READY
         and worst_case_cash > available_cash_fen
@@ -537,4 +590,7 @@ def build_order_plan(
         reason_codes=tuple(sorted(reasons)),
         legs=tuple(legs),
         worst_case_cash_fen_required=worst_case_cash,
+        execution_state_fingerprint=(
+            execution_state.fingerprint if execution_state is not None else None
+        ),
     )

@@ -37,6 +37,7 @@ from quantlab.execution.models import (
     require_identifier,
     require_int,
 )
+from quantlab.execution.planning import ExecutionStateView
 from quantlab.execution.rules import TradingCalendar
 
 
@@ -72,6 +73,7 @@ class ConstraintsAssessed:
     order_id: str
     decisions: tuple[ConstraintDecision, ...]
     account_fingerprint: str | None = None
+    execution_state_fingerprint: str | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.event_id, "event_id")
@@ -80,6 +82,11 @@ class ConstraintsAssessed:
         if self.account_fingerprint is not None:
             require_identifier(
                 self.account_fingerprint, "account_fingerprint"
+            )
+        if self.execution_state_fingerprint is not None:
+            require_identifier(
+                self.execution_state_fingerprint,
+                "execution_state_fingerprint",
             )
         dimensions = [decision.dimension for decision in self.decisions]
         if len(dimensions) != len(set(dimensions)):
@@ -110,11 +117,17 @@ class OrderSubmitted:
     occurred_at: datetime
     request: OrderRequest
     worst_case_fee_fen: int = 0
+    execution_state_fingerprint: str | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.event_id, "event_id")
         require_aware(self.occurred_at, "occurred_at")
         require_int(self.worst_case_fee_fen, "worst_case_fee_fen")
+        if self.execution_state_fingerprint is not None:
+            require_identifier(
+                self.execution_state_fingerprint,
+                "execution_state_fingerprint",
+            )
         if self.occurred_at != self.request.created_at:
             raise ExecutionValidationError("submit event time must equal request.created_at")
 
@@ -272,6 +285,30 @@ def account_state_fingerprint(snapshot: AccountSnapshot) -> str:
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
+_OPEN_ORDER_STATUSES = frozenset({OrderStatus.SUBMITTED, OrderStatus.PARTIALLY_FILLED})
+
+
+def _fingerprint_lots(lots) -> list[dict[str, str]]:
+    return [
+        {
+            "lot_id": lot.lot_id,
+            "instrument_id": lot.instrument_id,
+            "quantity": str(lot.quantity),
+            "acquired_trade_date": lot.acquired_trade_date.isoformat(),
+            "sellable_from": lot.sellable_from.isoformat(),
+        }
+        for lot in sorted(
+            lots,
+            key=lambda lot: (
+                lot.instrument_id,
+                lot.sellable_from,
+                lot.acquired_trade_date,
+                lot.lot_id,
+            ),
+        )
+    ]
+
+
 class ExecutionLedger:
     """Append-only event ledger with atomic validation-before-mutation."""
 
@@ -388,6 +425,46 @@ class ExecutionLedger:
             available_sellable_shares=available_shares,
         )
 
+    def execution_state_fingerprint(self) -> str:
+        """Unique fingerprint of the FULL execution state.
+
+        Binds account id, settled cash, position lots, every active cash/
+        share reservation, and the live order states that can still change
+        availability (submitted / partially filled, with their remaining
+        quantities). Constraint assessments and submissions bind this
+        fingerprint; any reservation, fill, cancel, or expiry moves it and
+        stale bindings are rejected before they can mutate the ledger.
+        """
+        reservations = [
+            {
+                "order_id": reservation.order_id,
+                "instrument_id": reservation.instrument_id,
+                "reserved_cash_fen": reservation.reserved_cash_fen,
+                "reserved_shares": reservation.reserved_shares,
+            }
+            for reservation in sorted(
+                self._reservations.values(), key=lambda item: item.order_id
+            )
+        ]
+        open_orders = [
+            {
+                "order_id": order_id,
+                "status": state.status.value,
+                "remaining_quantity": state.remaining_quantity,
+            }
+            for order_id, state in sorted(self._orders.items())
+            if state.status in _OPEN_ORDER_STATUSES
+        ]
+        payload = {
+            "account_id": self._initial.account_id,
+            "settled_cash_fen": self._cash_fen,
+            "lots": _fingerprint_lots(self._lots),
+            "reservations": reservations,
+            "open_orders": open_orders,
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
     def snapshot(self, as_of: datetime) -> AccountSnapshot:
         require_aware(as_of, "as_of")
         if self._events and as_of < self._events[-1].occurred_at:
@@ -397,6 +474,26 @@ class ExecutionLedger:
             as_of=as_of,
             cash_fen=self._cash_fen,
             lots=self.lots,
+        )
+
+    def execution_state_view(self, as_of: datetime) -> ExecutionStateView:
+        """Reservation-aware planning view at ``as_of``.
+
+        Buys must be funded from available (unreserved) cash and sells from
+        available (unreserved) sellable shares; the view carries the
+        execution-state fingerprint so plans and orders bind the exact
+        state they were derived from.
+        """
+        settled = self.snapshot(as_of)
+        available: dict[str, int] = {}
+        for instrument_id in {lot.instrument_id for lot in self._lots}:
+            availability = self.availability(instrument_id, exchange_date(as_of))
+            available[instrument_id] = availability.available_sellable_shares
+        return ExecutionStateView(
+            account=settled,
+            available_cash_fen=self._cash_fen - self.reserved_cash_fen(),
+            available_sellable_shares=available,
+            fingerprint=self.execution_state_fingerprint(),
         )
 
     def append(self, event: LedgerEvent) -> bool:
@@ -481,8 +578,18 @@ class ExecutionLedger:
         staged: list[OrderSubmitted] = []
         staged_cash = 0
         staged_shares: dict[str, int] = {}
+        pre_batch_state = self.execution_state_fingerprint()
         for event, worst_case_fee_fen in submissions:
             event = replace(event, worst_case_fee_fen=worst_case_fee_fen)
+            if (
+                event.execution_state_fingerprint is not None
+                and event.execution_state_fingerprint != pre_batch_state
+            ):
+                raise LedgerTransitionError(
+                    "batch submission rejected: assessment execution state "
+                    f"{event.execution_state_fingerprint} is not the current "
+                    f"pre-batch state {pre_batch_state}"
+                )
             state = self.order(event.request.order_id)
             if state.status is not OrderStatus.VALIDATED:
                 raise LedgerTransitionError(
@@ -554,6 +661,15 @@ class ExecutionLedger:
                     f"fingerprint drifted (assessment bound "
                     f"{event.account_fingerprint}, current {current})"
                 )
+        if event.execution_state_fingerprint is not None:
+            current_state = self.execution_state_fingerprint()
+            if current_state != event.execution_state_fingerprint:
+                raise LedgerTransitionError(
+                    "stale constraint assessment rejected: execution state "
+                    f"fingerprint drifted (assessment bound "
+                    f"{event.execution_state_fingerprint}, current "
+                    f"{current_state})"
+                )
         next_status = derive_order_status(state.intent.side, event.decisions)
         self._orders[event.order_id] = replace(state, status=next_status)
 
@@ -564,6 +680,15 @@ class ExecutionLedger:
             raise LedgerTransitionError(
                 f"cannot submit order {request.order_id} from {state.status.value}"
             )
+        if event.execution_state_fingerprint is not None:
+            current_state = self.execution_state_fingerprint()
+            if current_state != event.execution_state_fingerprint:
+                raise LedgerTransitionError(
+                    "stale submission rejected: execution state drifted "
+                    f"since assessment (submission bound "
+                    f"{event.execution_state_fingerprint}, current "
+                    f"{current_state})"
+                )
         if request.request_id in self._request_ids:
             raise LedgerTransitionError(f"duplicate request_id: {request.request_id}")
         intent = state.intent
