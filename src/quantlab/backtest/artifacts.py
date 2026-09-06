@@ -25,9 +25,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import pandas as pd
@@ -55,6 +57,153 @@ STANDARD_GROUP_FAMILY: tuple[str, ...] = (
     "blocked_before_exit.csv",
     "failed_attempts.json",
 )
+
+ArtifactSemanticValidator = Callable[["ArtifactContract"], tuple[str, ...]]
+
+
+@dataclass(frozen=True)
+class ArtifactContract:
+    """Immutable declaration of one formal artifact schema.
+
+    The publication protocol is deliberately domain-neutral. A contract
+    supplies the exact inventory plus optional domain semantic validators;
+    the core verifier owns only staging/final state, byte integrity, and
+    cross-document metadata binding.
+    """
+
+    name: str
+    schema: str | None
+    groups: Mapping[str, tuple[str, ...]]
+    top_level: tuple[str, ...]
+    semantic_validators: tuple[ArtifactSemanticValidator, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.name.strip():
+            raise ValueError("artifact contract name must be non-empty")
+        if self.schema is not None and not self.schema.strip():
+            raise ValueError("artifact contract schema must be non-empty when set")
+
+        def valid_local_name(value: str) -> bool:
+            return (
+                bool(value)
+                and value not in {".", ".."}
+                and "/" not in value
+                and "\\" not in value
+                and Path(value).name == value
+            )
+
+        normalized_groups: dict[str, tuple[str, ...]] = {}
+        for group, family in self.groups.items():
+            if not valid_local_name(group):
+                raise ValueError(f"invalid artifact group name: {group!r}")
+            normalized_family = tuple(family)
+            if len(set(normalized_family)) != len(normalized_family):
+                raise ValueError(f"duplicate file kind in artifact group {group!r}")
+            if any(not valid_local_name(kind) for kind in normalized_family):
+                raise ValueError(f"invalid file kind in artifact group {group!r}")
+            normalized_groups[group] = normalized_family
+        normalized_top_level = tuple(self.top_level)
+        if len(set(normalized_top_level)) != len(normalized_top_level):
+            raise ValueError("duplicate top-level artifact name")
+        if any(not valid_local_name(name) for name in normalized_top_level):
+            raise ValueError("invalid top-level artifact name")
+        if "summary.json" not in normalized_top_level:
+            raise ValueError("artifact contract must declare summary.json")
+        group_files = {
+            f"{group}_{kind}"
+            for group, family in normalized_groups.items()
+            for kind in family
+        }
+        overlap = group_files & set(normalized_top_level)
+        if overlap:
+            raise ValueError(f"artifact inventory names overlap: {sorted(overlap)}")
+        object.__setattr__(self, "groups", MappingProxyType(normalized_groups))
+        object.__setattr__(self, "top_level", normalized_top_level)
+        object.__setattr__(self, "semantic_validators", tuple(self.semantic_validators))
+
+    @classmethod
+    def from_registry(
+        cls,
+        *,
+        name: str,
+        schema: str | None,
+        registry: Mapping,
+        semantic_validators: tuple[ArtifactSemanticValidator, ...] = (),
+    ) -> ArtifactContract:
+        return cls(
+            name=name,
+            schema=schema,
+            groups=registry["groups"],
+            top_level=tuple(registry["top_level"]),
+            semantic_validators=semantic_validators,
+        )
+
+    def registry(self) -> dict[str, object]:
+        """Return the stable JSON representation recorded in manifests."""
+        return {
+            "groups": {
+                group: list(family) for group, family in self.groups.items()
+            },
+            "top_level": list(self.top_level),
+        }
+
+    def semantic_failures(self) -> tuple[str, ...]:
+        return tuple(
+            failure
+            for validator in self.semantic_validators
+            for failure in validator(self)
+        )
+
+
+def validate_backtest_recovery_bounds(
+    contract: ArtifactContract,
+) -> tuple[str, ...]:
+    """Backtest-only completeness rule for primary/control scenarios."""
+    failures: list[str] = []
+    for bound in ("recovery_assumption_1", "recovery_assumption_0"):
+        for portfolio in ("primary_strategy", "equal_weight_v1_control"):
+            group = f"{portfolio}_{bound}"
+            if group not in contract.groups:
+                failures.append(f"registry missing {group}")
+    return tuple(failures)
+
+
+def backtest_artifact_contract(
+    *,
+    schema: str,
+    groups: Mapping[str, tuple[str, ...] | list[str]],
+    top_level: tuple[str, ...] | list[str],
+) -> ArtifactContract:
+    """Build the research-backtest contract on top of the generic core."""
+    return ArtifactContract(
+        name="research_backtest",
+        schema=schema,
+        groups={group: tuple(family) for group, family in groups.items()},
+        top_level=tuple(top_level),
+        semantic_validators=(validate_backtest_recovery_bounds,),
+    )
+
+
+def _coerce_contract(
+    contract_or_registry: ArtifactContract | Mapping,
+    expected_schema: str | None,
+) -> ArtifactContract:
+    if isinstance(contract_or_registry, ArtifactContract):
+        if (
+            expected_schema is not None
+            and contract_or_registry.schema is not None
+            and contract_or_registry.schema != expected_schema
+        ):
+            raise RuntimeError(
+                "artifact contract schema "
+                f"{contract_or_registry.schema!r} != expected {expected_schema!r}"
+            )
+        return contract_or_registry
+    return ArtifactContract.from_registry(
+        name="generic_registry",
+        schema=expected_schema,
+        registry=contract_or_registry,
+    )
 
 
 def sha256_file(path: Path) -> str:
@@ -142,7 +291,7 @@ def _parse_json_file(path: Path, failures: list[str], label: str) -> dict | None
 
 def verify_formal_artifact(
     run_dir: str | Path,
-    expected_registry: Mapping,
+    expected_registry: ArtifactContract | Mapping,
     expected_run_id: str | None = None,
     expected_head: str | None = None,
     expected_schema: str | None = None,
@@ -161,8 +310,8 @@ def verify_formal_artifact(
     Checks (never trusting any recorded boolean — everything is re-derived
     from the bytes on disk):
 
-    - registry: both settlement bounds of the primary strategy AND the
-      control are present;
+    - contract: its exact inventory and any schema-specific semantic
+      validators pass;
     - manifest: ``run_id``/``head``/``schema``/``summary_head`` match the
       directory, the summary, and the external expectations; the manifest's
       ``groups``/``top_level`` equal the canonical registry exactly and its
@@ -181,15 +330,14 @@ def verify_formal_artifact(
     """
     run_dir = Path(run_dir)
     failures: list[str] = []
+    contract = _coerce_contract(expected_registry, expected_schema)
+    registry = contract.registry()
+    expected_schema = expected_schema or contract.schema
+    semantic_failures = contract.semantic_failures()
+    if semantic_failures:
+        raise RuntimeError("artifact contract invalid: " + "; ".join(semantic_failures))
 
-    groups: Mapping[str, list[str]] = expected_registry["groups"]
-    for bound in ("recovery_assumption_1", "recovery_assumption_0"):
-        if f"primary_strategy_{bound}" not in groups:
-            failures.append(f"registry missing primary_strategy_{bound}")
-        if f"equal_weight_v1_control_{bound}" not in groups:
-            failures.append(f"registry missing equal_weight_v1_control_{bound}")
-    if failures:
-        raise RuntimeError("registry incomplete: " + "; ".join(failures))
+    groups: Mapping[str, list[str]] = registry["groups"]  # type: ignore[assignment]
 
     is_staging = run_dir.name.endswith(".incomplete")
     dir_run_id = run_dir.name[: -len(".incomplete")] if is_staging else run_dir.name
@@ -219,7 +367,7 @@ def verify_formal_artifact(
         f"{group}_{kind}"
         for group, family in groups.items()
         for kind in family
-    } | set(expected_registry["top_level"])
+    } | set(registry["top_level"])
 
     # -- manifest metadata binding -----------------------------------------
     for field, expected in (
@@ -233,7 +381,7 @@ def verify_formal_artifact(
             )
     if manifest.get("groups") != dict(groups):
         failures.append("manifest groups/top_level registry differs from canonical")
-    if set(manifest.get("top_level") or ()) != set(expected_registry["top_level"]):
+    if set(manifest.get("top_level") or ()) != set(registry["top_level"]):
         failures.append("manifest top_level registry differs from canonical")
     if set(manifest_files) != declared_inventory:
         missing_in_manifest = sorted(declared_inventory - set(manifest_files))
@@ -364,7 +512,7 @@ class ArtifactPublisher:
         self,
         out_root: str | Path,
         run_id: str,
-        expected_registry: Mapping,
+        expected_registry: ArtifactContract | Mapping,
         head: str | None,
         schema: str | None = None,
     ) -> None:
@@ -372,9 +520,10 @@ class ArtifactPublisher:
         self.run_id = run_id
         self.staging = self.out_root / f"{run_id}.incomplete"
         self.final = self.out_root / run_id
-        self.expected_registry = expected_registry
+        self.contract = _coerce_contract(expected_registry, schema)
+        self.expected_registry = self.contract.registry()
         self.head = head
-        self.schema = schema
+        self.schema = schema or self.contract.schema
         self.staging.mkdir(parents=True, exist_ok=True)
         if self.final.exists():
             raise RuntimeError(
@@ -442,7 +591,7 @@ class ArtifactPublisher:
         try:
             preflight = verify_formal_artifact(
                 self.staging,
-                self.expected_registry,
+                self.contract,
                 expected_run_id=self.run_id,
                 expected_head=self.head,
                 expected_schema=self.schema,
@@ -476,7 +625,7 @@ class ArtifactPublisher:
             )
             verify_formal_artifact(
                 self.final,
-                self.expected_registry,
+                self.contract,
                 expected_run_id=self.run_id,
                 expected_head=self.head,
                 expected_schema=self.schema,

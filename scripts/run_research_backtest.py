@@ -95,6 +95,7 @@ from quantlab.backtest.artifacts import (
     ArtifactPublisher,
     atomic_write_json,
     atomic_write_text,
+    backtest_artifact_contract,
 )
 from quantlab.backtest.audit import (
     consumer_impact_audit,
@@ -1486,8 +1487,13 @@ def _main() -> None:
             "code_lineage_audit.json",
         ],
     }
+    artifact_contract = backtest_artifact_contract(
+        schema=EXPERIMENT_SCHEMA,
+        groups=expected_registry["groups"],
+        top_level=expected_registry["top_level"],
+    )
     publisher = ArtifactPublisher(
-        out_root, run_id, expected_registry=expected_registry,
+        out_root, run_id, expected_registry=artifact_contract,
         head=git_sha_before, schema=EXPERIMENT_SCHEMA,
     )
     out_dir = publisher.staging

@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from quantlab.backtest.artifacts import (  # noqa: E402
     STANDARD_GROUP_FAMILY,
+    backtest_artifact_contract,
     verify_formal_artifact,
 )
 
@@ -96,15 +97,16 @@ def main() -> int:
         print(f"FAIL: {run_dir} is not a directory")
         return 1
 
-    registry = {
-        "groups": {g: list(STANDARD_GROUP_FAMILY) for g in EXPORT_GROUPS},
-        "top_level": list(TOP_LEVEL),
-    }
+    contract = backtest_artifact_contract(
+        schema=args.expected_schema,
+        groups={g: list(STANDARD_GROUP_FAMILY) for g in EXPORT_GROUPS},
+        top_level=TOP_LEVEL,
+    )
 
     try:
         result = verify_formal_artifact(
             run_dir,
-            registry,
+            contract,
             expected_run_id=args.expected_run_id,
             expected_head=args.expected_head,
             expected_schema=args.expected_schema,
