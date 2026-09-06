@@ -1,7 +1,19 @@
-"""Benchmark alignment and active-return attribution (v0).
+"""Benchmark alignment and active-return attribution (v0.1).
 
 Answers "how much of the strategy is beta and how much is active return" for
 one strategy return series against one benchmark return series.
+
+Benchmark layers (kept distinct by the runner):
+
+- ``equal_weight_v1_control``: a real self-financing portfolio run through
+  the same engine (see :mod:`quantlab.portfolio.control`) — the PRIMARY
+  stock-selection control.
+- index benchmarks (000300.SH / 000905.SH / 000852.SH): market attribution
+  on the raw price-index close (``index_return_basis = price_index_close``);
+  raw index closes are NOT dividend-adjusted and are not claimed to be
+  equivalent to adjusted-stock total returns.
+- ``cross_sectional_equal_weight_return_diagnostic``: a cross-sectional mean
+  of per-instrument consecutive returns. Useful diagnostic; NOT a portfolio.
 
 Conventions (kept identical to :mod:`quantlab.backtest.metrics`):
 
@@ -21,6 +33,7 @@ Conventions (kept identical to :mod:`quantlab.backtest.metrics`):
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import date
 
@@ -50,9 +63,69 @@ class BenchmarkComparison:
     alpha_daily: float  # daily OLS intercept
     alpha_annualized: float  # alpha_daily * annualization (arithmetic)
     correlation: float
+    cumulative_strategy_nav: float  # prod(1 + s_t) over aligned dates
+    cumulative_benchmark_nav: float  # prod(1 + b_t) over aligned dates
+    cumulative_active_nav: float  # prod(1 + s_t - b_t) over aligned dates
+    active_max_drawdown: float  # max drawdown of the cumulative active NAV path
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class IndexBenchmarkCoverage:
+    """Per-instrument completeness audit of an index benchmark series.
+
+    A formal attribution is only allowed when ``complete`` is true: every
+    expected market session must carry a valid close for the instrument.
+    Missing rows are never lumped into later returns by silent alignment.
+    """
+
+    benchmark: str
+    expected_sessions: int
+    available_sessions: int
+    missing_sessions: tuple[date, ...]
+
+    @property
+    def complete(self) -> bool:
+        return not self.missing_sessions
+
+    def to_dict(self) -> dict:
+        return {
+            "benchmark": self.benchmark,
+            "expected_sessions": self.expected_sessions,
+            "available_sessions": self.available_sessions,
+            "missing_sessions": [d.isoformat() for d in self.missing_sessions],
+            "complete": self.complete,
+        }
+
+
+def index_benchmark_coverage(
+    benchmark: str,
+    closes: Mapping[date, float],
+    expected_sessions: Sequence[date],
+) -> IndexBenchmarkCoverage:
+    """Audit close availability per expected session for one index.
+
+    A close counts as available only when it is finite and positive; a
+    non-finite or non-positive value is reported as a missing session rather
+    than silently entering a return computation.
+    """
+    missing = tuple(
+        day
+        for day in sorted(set(expected_sessions))
+        if not _valid_close(closes.get(day))
+    )
+    return IndexBenchmarkCoverage(
+        benchmark=benchmark,
+        expected_sessions=len(set(expected_sessions)),
+        available_sessions=len(set(expected_sessions)) - len(missing),
+        missing_sessions=missing,
+    )
+
+
+def _valid_close(value: float | None) -> bool:
+    return value is not None and math.isfinite(value) and value > 0
 
 
 def strategy_daily_returns(
@@ -94,8 +167,10 @@ def returns_from_closes(closes: list[tuple[date, float]]) -> dict[date, float]:
     return returns
 
 
-def equal_weight_returns_from_frame(frame: pd.DataFrame) -> dict[date, float]:
-    """Cross-sectional equal-weight daily returns of a universe frame.
+def cross_sectional_equal_weight_return_diagnostic(
+    frame: pd.DataFrame,
+) -> dict[date, float]:
+    """Cross-sectional equal-weight daily return DIAGNOSTIC of a universe.
 
     ``frame`` must have ``instrument_id``, ``trade_date``, ``adj_close`` and be
     already point-in-time filtered (rows restricted to each instrument's
@@ -103,8 +178,14 @@ def equal_weight_returns_from_frame(frame: pd.DataFrame) -> dict[date, float]:
     return between its own consecutive available rows (a suspension therefore
     accumulates into the next available return; nothing is filled). A delisted
     instrument simply stops contributing after its last available row. The
-    daily benchmark return is the mean of the contributing instruments'
-    returns on that date.
+    daily value is the mean of the contributing instruments' returns.
+
+    This is NOT a self-financing equal-weight portfolio: suspended names
+    vanish from the daily denominator and resume with a multi-day lump return,
+    and no turnover or cost is ever charged. It is retained only as a
+    cross-sectional diagnostic; the formal control portfolio is
+    ``quantlab.portfolio.control.build_equal_weight_control_targets`` run
+    through the backtest engine.
     """
     if frame.empty:
         return {}
@@ -185,6 +266,10 @@ def compare_benchmark(
             alpha_daily=float("nan"),
             alpha_annualized=float("nan"),
             correlation=float("nan"),
+            cumulative_strategy_nav=float("nan"),
+            cumulative_benchmark_nav=float("nan"),
+            cumulative_active_nav=float("nan"),
+            active_max_drawdown=float("nan"),
         )
 
     dates = [d for d, _, _ in aligned]
@@ -194,12 +279,24 @@ def compare_benchmark(
 
     cum_strategy = math.prod(1.0 + value for value in s)
     cum_benchmark = math.prod(1.0 + value for value in b)
+    cum_active_nav = math.prod(1.0 + value for value in active)
     strategy_total = cum_strategy - 1.0
     benchmark_total = cum_benchmark - 1.0
     cumulative_active = cum_strategy / cum_benchmark - 1.0
     strategy_cagr = cum_strategy ** (annualization / n) - 1.0
     benchmark_cagr = cum_benchmark ** (annualization / n) - 1.0
     active_cagr = (cum_strategy / cum_benchmark) ** (annualization / n) - 1.0
+
+    # active NAV path drawdown: peak-to-trough on prod(1 + s_t - b_t)
+    active_nav = 1.0
+    active_peak = 1.0
+    active_max_drawdown = 0.0
+    for a in active:
+        active_nav *= 1.0 + a
+        active_peak = max(active_peak, active_nav)
+        active_max_drawdown = min(
+            active_max_drawdown, active_nav / active_peak - 1.0
+        )
 
     mean_active = _mean(active)
     var_active = _mean([value * value for value in _centered(active, mean_active)])
@@ -247,4 +344,8 @@ def compare_benchmark(
             alpha_daily * annualization if math.isfinite(alpha_daily) else float("nan")
         ),
         correlation=correlation,
+        cumulative_strategy_nav=cum_strategy,
+        cumulative_benchmark_nav=cum_benchmark,
+        cumulative_active_nav=cum_active_nav,
+        active_max_drawdown=active_max_drawdown,
     )

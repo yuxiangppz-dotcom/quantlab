@@ -15,7 +15,7 @@ from quantlab.backtest import (
     build_report,
     run_backtest,
 )
-from quantlab.data.models import Security
+from quantlab.data.models import Security, SecurityCodeChange
 from quantlab.portfolio import TargetPortfolio, TargetWeight
 
 D0 = date(2026, 1, 5)
@@ -99,6 +99,16 @@ def _monitor(instrument_id, delist_date) -> LifecycleMonitor:
         [_security(instrument_id, delist_date)],
         [],
         mode=DELIST_DATE_IS_FIRST_INVALID_V1,
+    )
+
+
+def _code_change(old, new, effective) -> SecurityCodeChange:
+    return SecurityCodeChange(
+        old_instrument_id=old,
+        new_instrument_id=new,
+        effective_date=effective,
+        old_name="x",
+        original_list_date=date(2000, 1, 1),
     )
 
 
@@ -456,4 +466,187 @@ def test_settlement_scale_and_input_order_invariance() -> None:
     scaled_row = next(e for e in scaled.settlement_events if e.book == "net")
     assert scaled_row.last_mark_value == pytest.approx(10 * base_row.last_mark_value)
     assert scaled_row.settled_value == pytest.approx(10 * base_row.settled_value)
+
+
+def test_delist_held_settles_but_code_change_held_cannot() -> None:
+    dates = [D0, D1, D2, D3]
+    prices = _prices({d: {"A": 100.0} for d in dates})
+    # code_change with settlement enabled must NOT be cashed out
+    monitor = LifecycleMonitor(
+        [_security("A", delist_date=D3)],
+        [_code_change("A", "A.NEW", effective=D2)],
+        mode=DELIST_DATE_IS_FIRST_INVALID_V1,
+    )
+    result = run_backtest(
+        prices, dates, {D0: _target(D0, {"A": 1.0})}, _cfg(bps=10.0),
+        execution_lag_sessions=1, mode="strict", lifecycle=monitor,
+        requested_period_start=D0, requested_period_end=D3,
+    )
+    assert result.status == "blocked_by_unsupported_event"
+    # delist + code_change on the same instrument is a conflict, which is
+    # even more strongly unsupported than a lone code_change
+    assert result.first_blocking_event.event_type == "conflict"
+    assert result.settlement_events == []
+
+
+def test_conflict_held_cannot_settle() -> None:
+    dates = [D0, D1, D2, D3]
+    prices = _prices({d: {"A": 100.0} for d in dates})
+    # delist + code_change on the same instrument -> conflict, no settlement
+    monitor = LifecycleMonitor(
+        [_security("A", delist_date=D2)],
+        [_code_change("A", "A.NEW", effective=D3)],
+        mode=DELIST_DATE_IS_FIRST_INVALID_V1,
+    )
+    result = run_backtest(
+        prices, dates, {D0: _target(D0, {"A": 1.0})}, _cfg(bps=10.0),
+        execution_lag_sessions=1, mode="strict", lifecycle=monitor,
+        requested_period_start=D0, requested_period_end=D3,
+    )
+    assert result.status == "blocked_by_unsupported_event"
+    assert result.first_blocking_event.event_type == "conflict"
+    assert result.settlement_events == []
+
+
+def test_mixed_session_delist_plus_code_change_blocks_strict() -> None:
+    dates = [D0, D1, D2, D3]
+    prices = _prices(
+        {
+            D0: {"A": 100.0, "B": 100.0},
+            D1: {"A": 100.0, "B": 100.0},
+            D2: {"A": 100.0, "B": 100.0},
+            D3: {"B": 100.0},
+        }
+    )
+    # A delists at D2 (settleable), B has a code_change at D2 (not settleable):
+    # the mixed session must still block strict — a pure delist settlement
+    # must not swallow the unsupported event
+    monitor = LifecycleMonitor(
+        [_security("A", delist_date=D2)],
+        [_code_change("B", "B.NEW", effective=D2)],
+        mode=DELIST_DATE_IS_FIRST_INVALID_V1,
+    )
+    result = run_backtest(
+        prices, dates, {D0: _target(D0, {"A": 0.5, "B": 0.5})}, _cfg(bps=10.0),
+        execution_lag_sessions=1, mode="strict", lifecycle=monitor,
+        requested_period_start=D0, requested_period_end=D3,
+    )
+    assert result.status == "blocked_by_unsupported_event"
+    assert result.first_blocking_event.event_type == "code_change"
+    assert result.first_blocking_event.instrument_id == "B"
+    assert result.settlement_events == []
+
+
+def test_target_only_code_change_never_produces_settlement() -> None:
+    dates = [D0, D1, D2, D3]
+    prices = _prices(
+        {
+            D0: {"A": 100.0, "B": 100.0},
+            D1: {"A": 100.0, "B": 100.0},
+            D2: {"A": 100.0, "B": 100.0},
+            D3: {"A": 100.0},
+        }
+    )
+    # B has a code_change and is only ever a TARGET (never held on D2):
+    # the settlement assumption must not touch it, and the prevented entry
+    # stays audit-only so the run completes
+    monitor = LifecycleMonitor(
+        [],
+        [_code_change("B", "B.NEW", effective=D2)],
+        mode=DELIST_DATE_IS_FIRST_INVALID_V1,
+    )
+    result = run_backtest(
+        prices, dates, {D1: _target(D1, {"A": 0.5, "B": 0.5})}, _cfg(bps=10.0),
+        execution_lag_sessions=1, mode="strict", lifecycle=monitor,
+        requested_period_start=D0, requested_period_end=D3,
+    )
+    assert result.status == "completed"
+    assert result.settlement_events == []
+    assert any(
+        e.book == "target" and e.instrument_id == "B" for e in result.lifecycle_events
+    )
+    _assert_all_checks_pass(result)
+
+
+def test_risk_policy_exits_before_residual_settlement() -> None:
+    # fact available at D1 while A is still tradable: the buy would execute at
+    # D1, so the policy prevents the entry outright (and would force-exit any
+    # pre-existing position) — the later delist boundary has nothing residual
+    # to settle either way
+    dates = [D0, D1, D2, D3]
+    prices = _prices({d: {"A": 100.0} for d in dates})
+    result = run_backtest(
+        prices, dates, {D0: _target(D0, {"A": 1.0})}, _cfg(bps=10.0),
+        execution_lag_sessions=1, mode="strict", lifecycle=_monitor("A", D3),
+        requested_period_start=D0, requested_period_end=D3,
+        risk_facts=_facts(available_from=D1), risk_policy=EXIT_POLICY_ID,
+    )
+    assert result.status == "completed"
+    assert result.settlement_events == []
+    decisions = [
+        r for r in result.risk_policy_audit if r.book == "net"
+    ]
+    assert decisions and decisions[0].risk_state == "exit_required"
+    assert decisions[0].prevented_new_entry is True
+    assert _position(result, D3) is None
+    _assert_all_checks_pass(result)
+
+
+def test_nonzero_settlement_fee_fully_reflected_in_daily_fields() -> None:
+    dates = [D0, D1, D2, D3]
+    result = _settle_run(
+        _prices(A_DELIST_PRICES), dates, _cfg(bps=10.0, settle_fee_bps=50.0)
+    )
+    net_row = next(e for e in result.settlement_events if e.book == "net")
+    assert net_row.settlement_fee > 0.0
+
+    d2 = next(r for r in result.records if r.trade_date == D2)
+    d2_gross = next(r for r in result.records if r.trade_date == D2)
+    # option A: transaction_cost = session total cost = market + settlement;
+    # D2 has no market trades, so the daily field must equal the settle fee
+    assert d2.transaction_cost == pytest.approx(net_row.settlement_fee, abs=1e-15)
+    snapshot = _snap(result, D2, "net")
+    assert snapshot.fee == pytest.approx(net_row.settlement_fee, abs=1e-15)
+    # the gross book never pays the settlement fee
+    gross_snapshot = _snap(result, D2, "gross")
+    assert gross_snapshot.fee == pytest.approx(0.0, abs=1e-15)
+    assert d2_gross.nav_gross is not None
+
+
+def test_settlement_scale_invariance_across_extreme_navs() -> None:
+    dates = [D0, D1, D2, D3]
+    prices = _prices(A_DELIST_PRICES)
+    base_returns = None
+    for initial_nav in (1e-10, 1e-6, 1.0, 1e6):
+        config = BacktestConfig(
+            initial_nav=initial_nav,
+            transaction_cost_bps=10.0,
+            annualization=252,
+            delisting_settlement=DelistingSettlementConfig(
+                recovery_rate=0.0, settlement_fee_bps=0.0
+            ),
+        )
+        result = run_backtest(
+            prices, dates, {D0: _target(D0, {"A": 1.0})}, config,
+            execution_lag_sessions=1, mode="strict", lifecycle=_monitor("A", D2),
+            requested_period_start=D0, requested_period_end=D3,
+        )
+        assert result.status == "completed_with_settlement_assumptions"
+        assert result.accounting_error is None
+        for check in result.accounting_checks:
+            assert check.max_rel < 1e-9, (initial_nav, check.check, check.max_rel)
+        returns = [r.daily_return_net for r in result.records]
+        navs = [r.nav_net for r in result.records]
+        # nav path: D0 all cash; D1 fully invested at initial/1.001; the D2
+        # zero-recovery settlement zeroes the position, leaving cash at zero
+        # up to float dust bounded by the book's own scale
+        post_nav_dust = 1e-12 * initial_nav
+        assert navs[0] == pytest.approx(initial_nav, rel=1e-12)
+        assert navs[1] == pytest.approx(initial_nav / 1.001, rel=1e-12)
+        assert navs[2] == pytest.approx(0.0, abs=post_nav_dust)
+        assert navs[3] == pytest.approx(0.0, abs=post_nav_dust)
+        if base_returns is None:
+            base_returns = returns
+        else:
+            assert returns == pytest.approx(base_returns, rel=1e-12)
 

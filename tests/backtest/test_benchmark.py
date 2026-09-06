@@ -1,7 +1,10 @@
 """Synthetic-data tests for benchmark alignment and attribution (v0)."""
 
+import importlib.util
 import math
 from datetime import date, timedelta
+from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -9,13 +12,22 @@ import pytest
 from quantlab.backtest.benchmark import (
     align_returns,
     compare_benchmark,
-    equal_weight_returns_from_frame,
+    cross_sectional_equal_weight_return_diagnostic,
+    index_benchmark_coverage,
     returns_from_closes,
     strategy_daily_returns,
 )
 from quantlab.backtest.models import DailyBacktestRecord
 
 START = date(2024, 1, 1)
+
+
+def _load_research_runner():
+    path = Path(__file__).parents[2] / "scripts" / "run_research_backtest.py"
+    spec = importlib.util.spec_from_file_location("research_backtest_runner", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _record(trade_date, ret_net, ret_gross=None) -> DailyBacktestRecord:
@@ -117,7 +129,7 @@ def test_equal_weight_returns_basic_mean() -> None:
             ("B", day0, 50.0), ("B", day1, 55.0), ("B", day2, 60.5),
         ]
     )
-    returns = equal_weight_returns_from_frame(frame)
+    returns = cross_sectional_equal_weight_return_diagnostic(frame)
     # day1: A +10%, B +10% -> 10%; day2: A -10%, B +10% -> 0%
     assert math.isclose(returns[day1], 0.10, rel_tol=1e-12)
     assert math.isclose(returns[day2], 0.0, abs_tol=1e-12)
@@ -134,7 +146,7 @@ def test_equal_weight_pit_delisting_stops_contribution() -> None:
             ("B", day0, 50.0), ("B", day1, 55.0),
         ]
     )
-    returns = equal_weight_returns_from_frame(frame)
+    returns = cross_sectional_equal_weight_return_diagnostic(frame)
     assert math.isclose(returns[day1], 0.10)  # both contribute on day1
     assert math.isclose(returns[day2], 0.0)  # A flat; B does not drag or boost
     # explicitly: day2 mean is over {A} only, not {A, B-with-filled-price}
@@ -151,7 +163,7 @@ def test_equal_weight_no_fill_across_suspension() -> None:
             ("B", day0, 50.0), ("B", day2, 52.5),
         ]
     )
-    returns = equal_weight_returns_from_frame(frame)
+    returns = cross_sectional_equal_weight_return_diagnostic(frame)
     assert date(2024, 1, 2) not in returns
     # the two-session return of B (5%) is averaged with A's (0%) on day2
     assert math.isclose(returns[day2], 0.025)
@@ -163,9 +175,11 @@ def test_equal_weight_rejects_duplicate_and_missing_columns() -> None:
         [("A", day0, 100.0), ("A", day0, 101.0)]
     )
     with pytest.raises(ValueError, match="duplicate"):
-        equal_weight_returns_from_frame(frame)
+        cross_sectional_equal_weight_return_diagnostic(frame)
     with pytest.raises(ValueError, match="missing columns"):
-        equal_weight_returns_from_frame(pd.DataFrame([{"instrument_id": "A"}]))
+        cross_sectional_equal_weight_return_diagnostic(
+            pd.DataFrame([{"instrument_id": "A"}])
+        )
 
 
 # ------------------------------------------------------------------ align --
@@ -313,3 +327,72 @@ def test_compare_to_dict_is_json_ready() -> None:
     assert payload["benchmark"] == "test_bm"
     assert payload["book"] == "net"
     assert payload["n_obs"] == 2
+
+
+def test_active_max_drawdown_known_value() -> None:
+    # active = [0.1, -0.2]: active NAV 1.0 -> 1.1 -> 0.88, so the active
+    # drawdown is 0.88/1.1 - 1 = -0.2 exactly, regardless of the benchmark
+    b = [0.01, -0.01]
+    a = [0.1, -0.2]
+    s = [b_value + a_value for b_value, a_value in zip(b, a, strict=True)]
+    benchmark = {
+        START + timedelta(days=i + 1): value for i, value in enumerate(b)
+    }
+    stats = compare_benchmark(_records(s), "test_bm", benchmark)
+    assert stats.active_max_drawdown == pytest.approx(-0.2, rel=1e-12)
+    assert stats.cumulative_active_nav == pytest.approx(0.88, rel=1e-12)
+
+
+def test_active_max_drawdown_zero_when_active_never_dips() -> None:
+    b = [0.01, -0.01, 0.02]
+    s = [value + 0.001 for value in b]  # strictly positive active returns
+    benchmark = {
+        START + timedelta(days=i + 1): value for i, value in enumerate(b)
+    }
+    stats = compare_benchmark(_records(s), "test_bm", benchmark)
+    assert stats.active_max_drawdown == 0.0
+
+
+# ---------------------------------------------------------------- coverage --
+
+
+def test_index_benchmark_coverage_complete_series() -> None:
+    sessions = [date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 4)]
+    closes = {day: 100.0 + i for i, day in enumerate(sessions)}
+    coverage = index_benchmark_coverage("000300.SH", closes, sessions)
+    assert coverage.complete is True
+    assert coverage.expected_sessions == 3
+    assert coverage.available_sessions == 3
+    assert coverage.missing_sessions == ()
+
+
+def test_index_benchmark_coverage_reports_missing_and_invalid_closes() -> None:
+    sessions = [date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 4)]
+    closes = {sessions[0]: 100.0, sessions[2]: float("nan")}
+    coverage = index_benchmark_coverage("000300.SH", closes, sessions)
+    assert coverage.complete is False
+    assert coverage.available_sessions == 1
+    assert coverage.missing_sessions == (sessions[1], sessions[2])
+
+
+def test_attribution_fail_hard_on_incomplete_n_obs() -> None:
+    # a missing benchmark session must raise, never silently shrink the
+    # observation set of a formal attribution
+    runner = _load_research_runner()
+    s = [0.01, 0.02, -0.01]
+    b = [0.005, 0.01, 0.0]
+    benchmark = {
+        START + timedelta(days=i + 1): value for i, value in enumerate(b)
+    }
+    run = SimpleNamespace(records=_records(s))
+    # full series: passes
+    result = runner._attribution_or_fail(
+        run, "000300.SH", benchmark, annualization=252
+    )
+    assert result["n_obs"] == 3
+    # one benchmark session missing: n_obs drops to 2 -> hard failure
+    partial = {k: v for k, v in benchmark.items() if k != START + timedelta(days=2)}
+    with pytest.raises(RuntimeError, match="n_obs"):
+        runner._attribution_or_fail(
+            run, "000300.SH", partial, annualization=252
+        )

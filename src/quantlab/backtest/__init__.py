@@ -2,9 +2,11 @@
 
 from quantlab.backtest.benchmark import (
     BenchmarkComparison,
+    IndexBenchmarkCoverage,
     align_returns,
     compare_benchmark,
-    equal_weight_returns_from_frame,
+    cross_sectional_equal_weight_return_diagnostic,
+    index_benchmark_coverage,
     returns_from_closes,
     strategy_daily_returns,
 )
@@ -59,6 +61,7 @@ __all__ = [
     "BenchmarkComparison",
     "BookSnapshot",
     "DELIST_DATE_IS_FIRST_INVALID_V1",
+    "IndexBenchmarkCoverage",
     "DailyBacktestRecord",
     "DelistingSettlementConfig",
     "FailedAttempt",
@@ -85,8 +88,9 @@ __all__ = [
     "build_report",
     "compare_benchmark",
     "compute_metrics",
-    "equal_weight_returns_from_frame",
+    "cross_sectional_equal_weight_return_diagnostic",
     "first_invalid_open_session",
+    "index_benchmark_coverage",
     "is_instrument_invalid_on_delist_boundary",
     "returns_from_closes",
     "run_backtest",

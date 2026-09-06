@@ -5,18 +5,27 @@ Runs baseline and admission paths under both the legacy delist_date boundary
 (``legacy_delist_date_inclusive``) and the candidate ``delist_date_is_first_invalid_v1``
 interpretation, each in strict and diagnostic mode, with full provenance.
 
-Additionally runs the delisting settlement policy v0 on the same legacy
-baseline configuration: an explicit settlement assumption at ``recovery_rate``
-1.0 and a zero-recovery sensitivity bound at 0.0. The recovery-1.0 path is the
-first performance-valid strict full-period baseline; the recovery-0.0 path
-brackets the assumption from below. Settlement is an explicit accounting
-assumption, not a verified delisting fact.
+Performance baseline hierarchy (v0.1 correctness closure):
 
-The two settlement bounds are attributed against four benchmarks (000300.SH,
-000905.SH, 000852.SH index daily closes and a V1-universe equal-weight
-benchmark computed from canonical data) via a strict date inner join. The
-legacy blocked strict path carries a footnote only (no benchmark attribution
-for a blocked path). Risk-free rate stays at 0.0.
+- PRIMARY: strategy vs ``equal_weight_v1_control`` — a real self-financing
+  equal-weight portfolio over the full PIT-eligible V1 cross-section, run
+  through the same engine with the same schedule, cost, lifecycle monitor,
+  risk policy and settlement scenario. Risk policy first, settlement only as
+  the residual fallback (``exit_after_termination_decision_v1`` + validated
+  fact snapshot; only ``delist`` events settle).
+- SECONDARY: market price-index attribution vs 000300.SH / 000905.SH /
+  000852.SH raw closes (``index_return_basis = price_index_close``). Raw
+  index closes are NOT dividend-adjusted and are not equivalent to the
+  adjusted-stock total-return basis of the strategy. Per-instrument session
+  coverage is audited; incomplete coverage invalidates the attribution.
+- DIAGNOSTIC: legacy blocked strict path (footnote only), the old
+  no-risk-policy settlement paths, and the cross-sectional equal-weight
+  return diagnostic (NOT a portfolio).
+
+Settlement sensitivity stays a two-scenario assumption study
+(``recovery_assumption_1`` / ``recovery_assumption_0``): scenario bounds over
+the assumed [0, last_mark] recovery model. Actual economic recovery may
+differ; the scenarios are not mathematically guaranteed economic bounds.
 
 Fixed engineering configuration: momentum_20d (lower_is_better), weekly
 rebalance, V1 universe, 20% selection, 10 bps transaction cost.
@@ -36,6 +45,7 @@ import pandas as pd
 from quantlab.alpha import calculate_momentum_alpha
 from quantlab.backtest import (
     DELIST_DATE_IS_FIRST_INVALID_V1,
+    EXIT_POLICY_ID,
     LEGACY_DELIST_DATE_INCLUSIVE,
     MISSING_PRICE_POLICY,
     RUN_MODE_DIAGNOSTIC,
@@ -67,7 +77,8 @@ from quantlab.backtest.audit import (
 )
 from quantlab.backtest.benchmark import (
     compare_benchmark,
-    equal_weight_returns_from_frame,
+    cross_sectional_equal_weight_return_diagnostic,
+    index_benchmark_coverage,
     returns_from_closes,
 )
 from quantlab.backtest.delisting_facts import (
@@ -81,6 +92,11 @@ from quantlab.backtest.provenance import content_manifest, environment_info
 from quantlab.data import ParquetStorage
 from quantlab.data.security_history import load_security_code_changes
 from quantlab.portfolio import RankPortfolioConfig, construct_rank_portfolio
+from quantlab.portfolio.control import (
+    CONTROL_PORTFOLIO_NAME,
+    build_equal_weight_control_targets,
+    strategy_control_symmetry_audit,
+)
 from quantlab.research import build_research_dataset, filter_v1_universe
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -91,8 +107,8 @@ PERIOD_START = date(2020, 1, 1)
 PERIOD_END = date(2024, 12, 31)
 LOOKBACK = 20
 INDEX_BENCHMARKS = ("000300.SH", "000905.SH", "000852.SH")
-EQUAL_WEIGHT_BENCHMARK = "equal_weight_v1"
-BENCHMARK_ORDER = (*INDEX_BENCHMARKS, EQUAL_WEIGHT_BENCHMARK)
+EQUAL_WEIGHT_DIAGNOSTIC = "equal_weight_v1_cross_sectional_diagnostic"
+BOUND_KEYS = ("recovery_assumption_1", "recovery_assumption_0")
 
 
 def _git_sha() -> str | None:
@@ -135,6 +151,9 @@ def _data_paths(storage: ParquetStorage, padded_dates: list[date]) -> list[Path]
     for d in padded_dates:
         paths.append(storage.daily_bars_path(d))
         paths.append(storage.adj_factor_path(d))
+        # index benchmark inputs are part of the reproducibility surface:
+        # if an index partition changes mid-run, the run is not reproducible
+        paths.append(storage.index_daily_path(d))
     return paths
 
 
@@ -394,10 +413,10 @@ def _date_semantics_table(open_dates: list, delist_map: dict) -> list[dict]:
     return rows
 
 
-def _index_benchmark_returns(
+def _index_closes(
     storage: ParquetStorage, coverage_dates: list[date], instrument_id: str
 ) -> dict[date, float]:
-    """Load one index's per-session returns from canonical index_daily.
+    """Load one index's per-session closes from canonical index_daily.
 
     Every open session in ``coverage_dates`` must have a stored file (synced
     by ``sync_index_daily_history``); a missing file is an error, never a
@@ -410,134 +429,242 @@ def _index_benchmark_returns(
             f"index_daily data missing for {instrument_id} on {len(missing)} "
             f"sessions ({first} .. {last}); run sync_index_daily_history first"
         )
-    closes: list[tuple[date, float]] = []
+    closes: dict[date, float] = {}
     for d in sorted(coverage_dates):
         for bar in storage.load_index_daily_by_date(d):
             if bar.instrument_id == instrument_id:
-                closes.append((bar.trade_date, bar.close))
+                closes[bar.trade_date] = bar.close
     if not closes:
         raise RuntimeError(
             f"no index_daily rows found for {instrument_id} "
             f"({coverage_dates[0]} .. {coverage_dates[-1]})"
         )
-    return returns_from_closes(closes)
+    return closes
 
 
-def _build_benchmark_returns(
+def _build_benchmark_inputs(
     storage: ParquetStorage, coverage_dates: list[date], universe: pd.DataFrame
-) -> dict[str, dict[date, float]]:
-    """All benchmark return series keyed by benchmark name (strict PIT)."""
-    benchmarks: dict[str, dict[date, float]] = {}
+) -> tuple[
+    dict[str, dict[date, float]],
+    dict[str, dict[str, object]],
+    dict[date, float],
+]:
+    """Index closes + coverage audit + diagnostic return series.
+
+    Returns ``(index_returns, index_coverage, diagnostic_returns)``. The
+    coverage audit is per index instrument over every expected market
+    session; formal attribution is only allowed when every index is
+    ``complete`` (2020-2024 has no pre-inception excuse). The diagnostic is
+    the cross-sectional equal-weight return mean of the V1 universe — NOT a
+    portfolio.
+    """
+    index_returns: dict[str, dict[date, float]] = {}
+    coverage: dict[str, object] = {}
     for instrument_id in INDEX_BENCHMARKS:
-        benchmarks[instrument_id] = _index_benchmark_returns(
-            storage, coverage_dates, instrument_id
+        closes = _index_closes(storage, coverage_dates, instrument_id)
+        audit = index_benchmark_coverage(instrument_id, closes, coverage_dates)
+        coverage[instrument_id] = audit.to_dict()
+        if not audit.complete:
+            raise RuntimeError(
+                f"index benchmark coverage incomplete for {instrument_id}: "
+                f"{len(audit.missing_sessions)} missing sessions "
+                f"({audit.missing_sessions[0]} .. {audit.missing_sessions[-1]}); "
+                "formal attribution requires complete per-session closes"
+            )
+        index_returns[instrument_id] = returns_from_closes(
+            sorted(closes.items())
         )
-    benchmarks[EQUAL_WEIGHT_BENCHMARK] = equal_weight_returns_from_frame(
+    diagnostic = cross_sectional_equal_weight_return_diagnostic(
         universe[["instrument_id", "trade_date", "adj_close"]]
     )
-    return benchmarks
+    return index_returns, coverage, diagnostic
+
+
+def _attribution_or_fail(
+    result, benchmark_name: str, series: dict[date, float], annualization: int
+) -> dict:
+    """Compare one run against one benchmark; enforce complete n_obs.
+
+    With complete benchmark coverage the observation count must equal the
+    full strategy return intervals (``len(records) - 1``); anything else
+    invalidates the attribution instead of silently shrinking it.
+    """
+    stats = compare_benchmark(
+        result.records, benchmark_name, series, annualization=annualization,
+        book="net",
+    ).to_dict()
+    expected_intervals = len(result.records) - 1
+    if stats["n_obs"] != expected_intervals:
+        raise RuntimeError(
+            f"attribution invalid for {benchmark_name}: n_obs="
+            f"{stats['n_obs']} != expected return intervals "
+            f"{expected_intervals}"
+        )
+    return stats
 
 
 def _benchmark_comparison_section(
-    settlement_strict,
-    settlement_zero_strict,
+    runs: dict[str, dict[str, object]],
+    legacy_settlement: dict[str, object],
     legacy_strict,
-    benchmark_returns: dict[str, dict[date, float]],
+    index_returns: dict[str, dict[date, float]],
+    index_coverage: dict[str, object],
+    diagnostic_returns: dict[date, float],
+    symmetry: dict[str, bool],
     annualization: int,
 ) -> dict:
-    """2 bounds x 4 benchmarks attribution for the primary valid result.
+    """Three-layer attribution for the two settlement bounds.
 
-    The settlement bounds are the primary performance-valid strict baselines;
-    the legacy strict path is blocked and only carries a footnote (benchmark
-    attribution for a blocked path would be meaningless beyond its
-    ``valid_through`` prefix).
+    PRIMARY: strategy vs the real equal_weight_v1_control portfolio.
+    SECONDARY: market price-index attribution vs 000300/000905/000852.
+    DIAGNOSTIC: legacy blocked path, no-risk-policy settlement paths, and the
+    cross-sectional equal-weight return diagnostic (not a portfolio).
     """
-    comparisons: dict[str, dict] = {}
-    for bound_key, result in (
-        ("recovery_1", settlement_strict),
-        ("recovery_0", settlement_zero_strict),
-    ):
-        rows = {}
-        for name in BENCHMARK_ORDER:
-            stats = compare_benchmark(
-                result.records, name, benchmark_returns[name],
-                annualization=annualization, book="net",
+    from quantlab.backtest.benchmark import strategy_daily_returns
+
+    primary: dict[str, dict] = {}
+    secondary: dict[str, dict] = {}
+    diagnostic_paths: dict[str, dict] = {}
+    for bound_key in BOUND_KEYS:
+        strategy_result = runs[bound_key]["strategy"]
+        control_result = runs[bound_key]["control"]
+        control_series = strategy_daily_returns(control_result.records, book="net")
+        primary[bound_key] = _attribution_or_fail(
+            strategy_result, CONTROL_PORTFOLIO_NAME, control_series, annualization
+        )
+        secondary[bound_key] = {
+            instrument_id: _attribution_or_fail(
+                strategy_result, instrument_id, index_returns[instrument_id],
+                annualization,
             )
-            rows[name] = stats.to_dict()
-        comparisons[bound_key] = rows
-
-    equal_weight_v1_note = (
-        "cross-sectional equal-weight daily returns of the V1 universe from "
-        "canonical adjusted closes; rows are restricted to each instrument's "
-        "[list_date, delist_date] window so delisted names stop contributing "
-        "after their last available bar (no fill); a suspended name "
-        "accumulates its return into the next available session"
-    )
-
-    def _beta_vs_equal_weight(rows: dict) -> float:
-        return rows[EQUAL_WEIGHT_BENCHMARK]["beta"]
-
+            for instrument_id in INDEX_BENCHMARKS
+        }
+        legacy = legacy_settlement[bound_key]
+        diagnostic_paths[bound_key] = {
+            "status": legacy.status,
+            "risk_policy": "none (legacy engineering diagnostic)",
+            "settled_instruments": len(legacy.settlement_events),
+            "note": (
+                "no-risk-policy settlement path retained as a legacy "
+                "engineering diagnostic; NOT a performance-valid baseline"
+            ),
+        }
+    beta_vs_control = {bound_key: primary[bound_key]["beta"] for bound_key in BOUND_KEYS}
     return {
         "note": (
-            "attribution of the primary valid strict result (delisting "
-            "settlement bounds) against 4 benchmarks; strict inner join on "
-            "actual record dates (missing benchmark dates are dropped, never "
-            "filled); risk-free rate = 0.0; alpha is daily OLS, "
-            "alpha_annualized = alpha_daily * annualization (arithmetic)"
+            "three-layer attribution of the settlement bounds; strict inner "
+            "join on actual record dates (missing benchmark dates are "
+            "dropped, never filled); risk-free rate = 0.0; alpha is daily "
+            "OLS, alpha_annualized = alpha_daily * annualization (arithmetic)"
         ),
         "risk_free_rate": 0.0,
         "annualization": annualization,
         "book": "net",
         "benchmark_definitions": {
+            CONTROL_PORTFOLIO_NAME: (
+                "real self-financing equal-weight portfolio over the full "
+                "PIT-eligible V1 cross-section, built per weekly signal date "
+                "and executed by the same engine with the same cost, "
+                "lifecycle monitor, risk policy and settlement scenario as "
+                "the strategy"
+            ),
             "000300.SH": "tushare index_daily, canonical index_daily partition",
             "000905.SH": "tushare index_daily, canonical index_daily partition",
             "000852.SH": "tushare index_daily, canonical index_daily partition",
-            EQUAL_WEIGHT_BENCHMARK: equal_weight_v1_note,
+            EQUAL_WEIGHT_DIAGNOSTIC: (
+                "cross-sectional diagnostic only: daily mean of per-instrument "
+                "consecutive available returns; not a portfolio"
+            ),
         },
-        "primary_valid_result": {
-            "policy": "delisting_settlement_v0 (recovery bounds 1.0 / 0.0)",
-            **comparisons,
-            "beta_vs_equal_weight_v1": {
-                "recovery_1": _beta_vs_equal_weight(comparisons["recovery_1"]),
-                "recovery_0": _beta_vs_equal_weight(comparisons["recovery_0"]),
+        "primary": {
+            "question": (
+                "does stock selection add value over the same universe held "
+                "equal-weight under identical execution/risk/settlement?"
+            ),
+            "benchmark": CONTROL_PORTFOLIO_NAME,
+            "result": primary,
+            "beta_vs_control": {
+                **beta_vs_control,
                 "interpretation_note": (
                     "the strategy is a ~20% cross-sectional slice of the same "
-                    "V1 universe in which equal_weight_v1 invests fully, so "
-                    "beta against equal_weight_v1 is expected to be close to 1"
+                    "V1 universe in which the control invests fully, so beta "
+                    "against the control is expected to be close to 1"
                 ),
             },
         },
-        "legacy_blocked_path_footnote": {
-            "path": "strict (legacy delist-date blocking, no settlement)",
-            "status": legacy_strict.status,
-            "note": (
-                "the legacy strict path is blocked_by_unsupported_event; no "
-                "benchmark attribution is computed for it because its return "
-                "series ends at the first blocking session and any "
-                "full-period comparison would be meaningless"
+        "secondary": {
+            "question": (
+                "how does the strategy behave relative to the market indices "
+                "(beta / active behavior)?"
             ),
+            "index_return_basis": "price_index_close",
+            "coverage_note": (
+                "formal index attribution requires complete per-session "
+                "close coverage per instrument over the requested period "
+                "(2020-2024 has no pre-inception excuse)"
+            ),
+            "coverage": index_coverage,
+            "result": secondary,
         },
+        "diagnostic": {
+            "legacy_blocked_path_footnote": {
+                "path": "strict (legacy delist-date blocking, no settlement)",
+                "status": legacy_strict.status,
+                "note": (
+                    "the legacy strict path is blocked_by_unsupported_event; no "
+                    "benchmark attribution is computed for it because its return "
+                    "series ends at the first blocking session and any "
+                    "full-period comparison would be meaningless"
+                ),
+            },
+            "no_risk_policy_settlement_paths": diagnostic_paths,
+            "cross_sectional_equal_weight_return_diagnostic": {
+                "definition": (
+                    "daily mean of per-instrument consecutive available "
+                    "returns over the PIT V1 universe; NOT a self-financing "
+                    "portfolio (suspended names drop out of the daily "
+                    "denominator and resume with lump returns; no cost is "
+                    "charged); retained as a diagnostic only"
+                ),
+                "n_dates": len(diagnostic_returns),
+                "first_date": min(diagnostic_returns).isoformat()
+                if diagnostic_returns
+                else None,
+                "last_date": max(diagnostic_returns).isoformat()
+                if diagnostic_returns
+                else None,
+            },
+        },
+        "symmetry_audit": symmetry,
     }
 
 
 def _print_benchmark_table(section: dict) -> None:
-    """Human-readable 2x4 comparison table."""
-    print("benchmark comparison (net book):")
-    primary = section["primary_valid_result"]
+    """Human-readable attribution tables (primary control + index)."""
+    print("benchmark attribution (net book):")
     header = (
         f"  {'benchmark':<16}{'n_obs':>7}{'beta':>8}{'alpha_ann':>11}"
-        f"{'TE':>8}{'IR':>8}{'act_CAGR':>10}{'cum_act':>10}"
+        f"{'TE':>8}{'IR':>8}{'act_CAGR':>10}{'act_MDD':>10}"
     )
-    for bound_key in ("recovery_1", "recovery_0"):
-        print(f"  [{bound_key}]")
+    for bound_key in BOUND_KEYS:
+        print(f"  [{bound_key}] PRIMARY strategy vs {CONTROL_PORTFOLIO_NAME}")
         print(header)
-        for name in BENCHMARK_ORDER:
-            row = primary[bound_key][name]
+        row = section["primary"]["result"][bound_key]
+        print(
+            f"  {CONTROL_PORTFOLIO_NAME:<16}{row['n_obs']:>7}{row['beta']:>8.3f}"
+            f"{row['alpha_annualized']:>11.4f}{row['tracking_error']:>8.4f}"
+            f"{row['information_ratio']:>8.3f}{row['active_cagr']:>10.4f}"
+            f"{row['active_max_drawdown']:>10.4f}"
+        )
+        print(f"  [{bound_key}] SECONDARY market price-index attribution")
+        print(header)
+        for name in INDEX_BENCHMARKS:
+            row = section["secondary"]["result"][bound_key][name]
             print(
                 f"  {name:<16}{row['n_obs']:>7}{row['beta']:>8.3f}"
                 f"{row['alpha_annualized']:>11.4f}{row['tracking_error']:>8.4f}"
                 f"{row['information_ratio']:>8.3f}{row['active_cagr']:>10.4f}"
-                f"{row['cumulative_active_return']:>10.4f}"
+                f"{row['active_max_drawdown']:>10.4f}"
             )
 
 
@@ -764,9 +891,8 @@ def _main() -> None:
     )
 
     # delisting settlement policy v0: explicit assumption bounds on the same
-    # legacy baseline configuration. Inside the engine, trusted-fact forced
-    # exits keep priority; settlement only resolves residual unknown
-    # lifecycle invalidations without a valid exit price.
+    # legacy baseline configuration. Legacy paths run WITHOUT the risk policy
+    # (kept as engineering diagnostics only).
     settlement_config = replace(
         bt_config,
         delisting_settlement=DelistingSettlementConfig(
@@ -790,12 +916,94 @@ def _main() -> None:
         requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
     )
 
-    # benchmark attribution for the primary valid strict result (the two
-    # settlement bounds); padded_dates covers the first record's prior close
-    benchmark_returns = _build_benchmark_returns(storage, padded_dates, universe)
+    # PRIMARY performance baseline: PIT lifecycle risk policy FIRST, and the
+    # delisting settlement only as the residual fallback. Trusted-fact forced
+    # exits (exit_after_termination_decision_v1) use the validated fact
+    # snapshot; only lifecycle-invalid residual delist positions without a
+    # valid exit price reach the settlement assumption.
+    settlement_risk_strict = run_backtest(
+        price_frame, bt_open_dates, targets, settlement_config,
+        execution_lag_sessions=1, mode=RUN_MODE_STRICT, lifecycle=monitor,
+        requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
+        risk_facts=delisting_facts, risk_policy=EXIT_POLICY_ID,
+    )
+    settlement_risk_zero_strict = run_backtest(
+        price_frame, bt_open_dates, targets, settlement_zero_config,
+        execution_lag_sessions=1, mode=RUN_MODE_STRICT, lifecycle=monitor,
+        requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
+        risk_facts=delisting_facts, risk_policy=EXIT_POLICY_ID,
+    )
+
+    # formal equal_weight_v1_control: real portfolio, same schedule/cost/
+    # lifecycle/risk/settlement, only the target construction differs
+    control_targets = build_equal_weight_control_targets(universe, signal_dates)
+    control_recovery_1 = run_backtest(
+        price_frame, bt_open_dates, control_targets, settlement_config,
+        execution_lag_sessions=1, mode=RUN_MODE_STRICT, lifecycle=monitor,
+        requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
+        risk_facts=delisting_facts, risk_policy=EXIT_POLICY_ID,
+    )
+    control_recovery_0 = run_backtest(
+        price_frame, bt_open_dates, control_targets, settlement_zero_config,
+        execution_lag_sessions=1, mode=RUN_MODE_STRICT, lifecycle=monitor,
+        requested_period_start=PERIOD_START, requested_period_end=PERIOD_END,
+        risk_facts=delisting_facts, risk_policy=EXIT_POLICY_ID,
+    )
+
+    # benchmark inputs: per-instrument session coverage is audited; formal
+    # index attribution fails hard on incomplete coverage
+    index_returns, index_coverage, diagnostic_returns = _build_benchmark_inputs(
+        storage, padded_dates, universe
+    )
+
+    control_symmetry = {}
+    for bound_key, recovery in (
+        ("recovery_assumption_1", settlement_config.delisting_settlement.recovery_rate),
+        ("recovery_assumption_0", settlement_zero_config.delisting_settlement.recovery_rate),
+    ):
+        control_symmetry[bound_key] = strategy_control_symmetry_audit(
+            {
+                "open_dates": bt_open_dates,
+                "signal_dates": sorted(targets),
+                "cost_rate": bt_config.transaction_cost_bps,
+                "mode": RUN_MODE_STRICT,
+                "risk_policy": EXIT_POLICY_ID,
+                "risk_facts": fact_sha,
+                "recovery_rate": recovery,
+                "execution_lag_sessions": 1,
+                "missing_price_policy": MISSING_PRICE_POLICY,
+            },
+            {
+                "open_dates": bt_open_dates,
+                "signal_dates": sorted(control_targets),
+                "cost_rate": bt_config.transaction_cost_bps,
+                "mode": RUN_MODE_STRICT,
+                "risk_policy": EXIT_POLICY_ID,
+                "risk_facts": fact_sha,
+                "recovery_rate": recovery,
+                "execution_lag_sessions": 1,
+                "missing_price_policy": MISSING_PRICE_POLICY,
+            },
+        )
+    control_symmetry["same_target_construction_allowed_to_differ"] = (
+        fingerprint_targets(targets) != fingerprint_targets(control_targets)
+    )
+
+    runs = {
+        "recovery_assumption_1": {
+            "strategy": settlement_risk_strict, "control": control_recovery_1,
+        },
+        "recovery_assumption_0": {
+            "strategy": settlement_risk_zero_strict, "control": control_recovery_0,
+        },
+    }
+    legacy_settlement = {
+        "recovery_assumption_1": settlement_strict,
+        "recovery_assumption_0": settlement_zero_strict,
+    }
     benchmark_section = _benchmark_comparison_section(
-        settlement_strict, settlement_zero_strict, strict_result, benchmark_returns,
-        bt_config.annualization,
+        runs, legacy_settlement, strict_result, index_returns, index_coverage,
+        diagnostic_returns, control_symmetry, bt_config.annualization,
     )
     runtime = time.perf_counter() - t0
 
@@ -824,21 +1032,26 @@ def _main() -> None:
     invalid_reasons = report["invalid_reasons"]
 
     settlement_report = build_report(
-        settlement_strict, None, reproducible, settlement_config,
+        settlement_risk_strict, None, reproducible, settlement_config,
         expected_sessions=bt_open_dates,
     )
-    bound_full = _settlement_bound(settlement_strict, settlement_config)
-    bound_zero = _settlement_bound(settlement_zero_strict, settlement_zero_config)
+    bound_full = _settlement_bound(settlement_risk_strict, settlement_config)
+    bound_zero = _settlement_bound(settlement_risk_zero_strict, settlement_zero_config)
     settlement_sensitivity = {
         "note": (
-            "same strict configuration and targets; only recovery_rate varies "
-            "between the explicit settlement bounds (1.0 = settle at the last "
-            "available mark, 0.0 = settle at zero). The bounds bracket the "
-            "assumption; they are not recovery expectations and the gap "
-            "measures how much conclusions depend on the settlement rate."
+            "same strict configuration, targets, risk policy and fact "
+            "snapshot; only recovery_rate varies between the two scenarios "
+            "(1.0 = settle at the last available mark, 0.0 = settle at zero). "
+            "These are scenario bounds over the assumed [0, last_mark] "
+            "recovery model, NOT mathematically guaranteed economic bounds: "
+            "actual economic recovery may differ from this simplified "
+            "assumption. The gap measures how much conclusions depend on "
+            "the settlement rate."
         ),
-        "recovery_1": bound_full,
-        "recovery_0": bound_zero,
+        "risk_policy": EXIT_POLICY_ID,
+        "risk_facts_sha256": fact_sha,
+        "recovery_assumption_1": bound_full,
+        "recovery_assumption_0": bound_zero,
         "deltas": {
             "total_return_net": abs(
                 bound_zero["total_return_net"] - bound_full["total_return_net"]
@@ -851,7 +1064,7 @@ def _main() -> None:
         },
         "cagr_net_delta": abs(bound_zero["cagr_net"] - bound_full["cagr_net"]),
         "affected_instruments": sorted(
-            {e.instrument_id for e in settlement_strict.settlement_events}
+            {e.instrument_id for e in settlement_risk_strict.settlement_events}
         ),
     }
 
@@ -974,8 +1187,12 @@ def _main() -> None:
                 ),
                 "gross_book_settlement_fee_bps": 0.0,
                 "scope": (
-                    "opt-in; only the strict_settlement paths use it, all "
-                    "comparison paths keep legacy blocking semantics"
+                    "delisting settlement assumption: covers held positions "
+                    "with event_type == 'delist' only; code_change/conflict "
+                    "events keep the strict blocked path. The PRIMARY "
+                    "baseline applies the PIT risk policy first; settlement "
+                    "is the residual fallback. The legacy no-risk-policy "
+                    "settlement paths are retained as diagnostics only."
                 ),
             },
         },
@@ -1033,6 +1250,33 @@ def _main() -> None:
         "performance_claim": False,
         "test_observed": True,
         "performance_valid": performance_valid,
+        "primary_baseline_performance_valid": (
+            settlement_report["performance_valid"]
+        ),
+        "result_hierarchy": {
+            "primary": "strategy vs equal_weight_v1_control (same engine/risk/settlement)",
+            "secondary": "market price-index attribution vs CSI300/CSI500/CSI1000",
+            "diagnostic": [
+                "legacy blocked strict path (footnote)",
+                "no-risk-policy settlement paths",
+                "cross-sectional equal-weight return diagnostic (not a portfolio)",
+            ],
+        },
+        "termination_fact_source": {
+            "source": "config/delisting_facts.json (validated golden snapshot)",
+            "fact_sha256": fact_sha,
+            "coverage_limited": True,
+            "unknown_is_not_safe": True,
+            "note": (
+                "anns_d remains blocked_by_missing_anns_d_permission; no "
+                "manual delisting facts were added this round and no ST "
+                "forced-delisting rule exists. The validated snapshot is an "
+                "explicitly disclosed partial source."
+            ),
+        },
+        "index_return_basis": "price_index_close",
+        "control_target_fingerprint": fingerprint_targets(control_targets),
+        "strategy_target_fingerprint": fingerprint_targets(targets),
         "code_manifest": provenance_before["code"],
         "data_manifest": provenance_before["data"],
         "environment": env,
@@ -1065,32 +1309,73 @@ def _main() -> None:
         },
         "strict_settlement_baseline": {
             "policy": "delisting_settlement_v0",
+            "role": (
+                "PRIMARY performance baseline: PIT lifecycle risk policy "
+                "first (trusted-fact forced exits), settlement only as the "
+                "residual fallback for lifecycle-invalid delist positions "
+                "without a valid exit price"
+            ),
+            "risk_policy": EXIT_POLICY_ID,
+            "risk_fact_snapshot": {
+                "source": "config/delisting_facts.json (validated golden)",
+                "fact_sha256": fact_sha,
+                "coverage_limited": True,
+                "unknown_is_not_safe": True,
+                "note": (
+                    "anns_d remains blocked_by_missing_anns_d_permission; "
+                    "the validated snapshot is an explicitly disclosed "
+                    "partial source"
+                ),
+            },
+            "settlement_scope": "event_type == delist only (held positions)",
             "recovery_rate": settlement_config.delisting_settlement.recovery_rate,
             "settlement_fee_bps": (
                 settlement_config.delisting_settlement.settlement_fee_bps
             ),
             "lifecycle_mode": LEGACY_DELIST_DATE_INCLUSIVE,
-            "status": settlement_strict.status,
+            "status": settlement_risk_strict.status,
             "performance_valid": settlement_report["performance_valid"],
             "invalid_reasons": settlement_report["invalid_reasons"],
-            "n_records": len(settlement_strict.records),
+            "n_records": len(settlement_risk_strict.records),
             "valid_through": (
-                settlement_strict.valid_through.isoformat()
-                if settlement_strict.valid_through else None
+                settlement_risk_strict.valid_through.isoformat()
+                if settlement_risk_strict.valid_through else None
             ),
-            "solver_root_residual": settlement_strict.solver_root_residual,
+            "solver_root_residual": settlement_risk_strict.solver_root_residual,
             "accounting_checks": [
-                c.__dict__ for c in settlement_strict.accounting_checks
+                c.__dict__ for c in settlement_risk_strict.accounting_checks
             ],
-            "accounting_error": settlement_strict.accounting_error,
+            "accounting_error": settlement_risk_strict.accounting_error,
             "first_blocking_event": (
-                settlement_strict.first_blocking_event.__dict__
-                if settlement_strict.first_blocking_event else None
+                settlement_risk_strict.first_blocking_event.__dict__
+                if settlement_risk_strict.first_blocking_event else None
             ),
-            "settlement_event_count": len(settlement_strict.settlement_events),
+            "risk_forced_exit_count": len(settlement_risk_strict.risk_policy_audit),
+            "residual_settlement_count": len(settlement_risk_strict.settlement_events),
             "metrics": settlement_report["metrics"],
             "settlement_disclosure": settlement_report["settlement_disclosure"],
-            "statistics": _statistics(settlement_strict),
+            "statistics": _statistics(settlement_risk_strict),
+        },
+        "diagnostic_settlement_paths_no_risk_policy": {
+            "recovery_assumption_1": {
+                "status": settlement_strict.status,
+                "settled_instruments": len(settlement_strict.settlement_events),
+                "cagr_net": _settlement_bound(settlement_strict, settlement_config)[
+                    "cagr_net"
+                ],
+            },
+            "recovery_assumption_0": {
+                "status": settlement_zero_strict.status,
+                "settled_instruments": len(settlement_zero_strict.settlement_events),
+                "cagr_net": _settlement_bound(
+                    settlement_zero_strict, settlement_zero_config
+                )["cagr_net"],
+            },
+            "note": (
+                "legacy no-risk-policy settlement paths kept as engineering "
+                "diagnostics; superseded by strict_settlement_baseline "
+                "(risk policy first, settlement residual)"
+            ),
         },
         "settlement_sensitivity": settlement_sensitivity,
         "benchmark_comparison": benchmark_section,
@@ -1214,8 +1499,16 @@ def _main() -> None:
     export_group(out_dir, "A_v1_baseline_diagnostic", baseline_new_diagnostic)
     export_group(out_dir, "C_v1_admission_v2", admission_v2_new_strict)
     export_group(out_dir, "C_v1_admission_v2_diagnostic", admission_v2_new_diagnostic)
-    export_group(out_dir, "strict_settlement_recovery_1", settlement_strict)
-    export_group(out_dir, "strict_settlement_recovery_0", settlement_zero_strict)
+    export_group(out_dir, "legacy_settlement_recovery_1", settlement_strict)
+    export_group(out_dir, "legacy_settlement_recovery_0", settlement_zero_strict)
+    export_group(
+        out_dir, "primary_strategy_recovery_assumption_1", settlement_risk_strict
+    )
+    export_group(
+        out_dir, "primary_strategy_recovery_assumption_0", settlement_risk_zero_strict
+    )
+    export_group(out_dir, "equal_weight_v1_control_recovery_assumption_1", control_recovery_1)
+    export_group(out_dir, "equal_weight_v1_control_recovery_assumption_0", control_recovery_0)
 
     print(f"=== research backtest {ENGINE_SCHEMA_VERSION} ===")
     print(f"strict status: {strict_result.status}")
@@ -1254,16 +1547,23 @@ def _main() -> None:
           f"buy_cap_binding: {comparison['buy_cap_binding']} "
           f"allowed_sell: {comparison['allowed_sell_occurrences']}")
     print(f"rejection evaluations: {comparison['rejection_evaluations']}")
-    print(f"settlement strict status: {settlement_strict.status} "
-          f"performance_valid={settlement_report['performance_valid']} "
+    print(f"legacy settlement (diagnostic) status: {settlement_strict.status} "
           f"settlements={len(settlement_strict.settlement_events)}")
+    print(f"PRIMARY baseline status: {settlement_risk_strict.status} "
+          f"performance_valid={settlement_report['performance_valid']} "
+          f"risk_forced_exits={len(settlement_risk_strict.risk_policy_audit)} "
+          f"residual_settlements={len(settlement_risk_strict.settlement_events)}")
     if settlement_report["metrics"] is not None:
         sm = settlement_report["metrics"]
-        print(f"settlement baseline: total_return_net={sm['total_return_net']:.4f} "
+        print(f"PRIMARY baseline: total_return_net={sm['total_return_net']:.4f} "
               f"cagr_net={sm['cagr_net']:.4f} sharpe_net={sm['sharpe_net']:.4f} "
               f"max_drawdown_net={sm['max_drawdown_net']:.4f}")
-    print(f"settlement bounds cagr_net: recovery_1={bound_full['cagr_net']:.4f} "
-          f"recovery_0={bound_zero['cagr_net']:.4f} "
+    print(f"control status: {control_recovery_1.status} "
+          f"n_holdings_first_target="
+          f"{len(next(iter(control_targets.values())).positions)}")
+    print(f"settlement bounds cagr_net: "
+          f"recovery_assumption_1={bound_full['cagr_net']:.4f} "
+          f"recovery_assumption_0={bound_zero['cagr_net']:.4f} "
           f"delta={settlement_sensitivity['cagr_net_delta']:.4f}")
     _print_benchmark_table(benchmark_section)
     print(f"output dir: {out_dir}")

@@ -42,7 +42,21 @@ _SOLVER_TOL = 1e-15
 _ROOT_MAX_ITER = 100
 _NEG_TOL = 1e-9
 _REL_TOL = 1e-9
-_ZERO_SCALE_ABS_TOL = 1e-9
+
+
+def _ulp_zero_scale_tolerance(scale_watermark: float) -> float:
+    """Residual bound for identities evaluated at exactly zero scale.
+
+    When every participant of an accounting identity is zero (portfolio fully
+    settled at the zero-recovery bound), the residual can only be floating
+    point dust left over from the largest magnitudes the session touched.
+    Float subtraction error is bounded by a few ULP of its operands, so a few
+    ULP of the session's largest magnitude is a mathematically justified,
+    fully scale-invariant bound (no absolute money tolerance involved).
+    """
+    if scale_watermark <= 0:
+        return 0.0
+    return 4.0 * math.ulp(scale_watermark)
 
 
 @dataclass
@@ -59,6 +73,11 @@ class _Book:
         self.cash = initial_nav
         self.positions: dict[str, _Position] = {}
         self.prev_nav = initial_nav
+        # largest magnitude any earlier session's identities touched; float
+        # dust produced at a large scale survives later zero-scale sessions,
+        # so zero-scale residual bounds must reference this, not the current
+        # session's (possibly dust-sized) participants
+        self.scale_watermark = abs(initial_nav)
 
     def nav(self) -> float:
         return self.cash + math.fsum(p.value for p in self.positions.values())
@@ -568,12 +587,16 @@ def run_backtest(
     ``mode`` is ``"strict"`` (stop before the first unsupported lifecycle event)
     or ``"diagnostic"`` (continue past events with ``diagnostic_only`` marking).
 
-    When ``config.delisting_settlement`` is set, lifecycle-invalid held
-    positions without a valid exit price are settled as cash at
-    ``last_mark_value * recovery_rate`` (net book minus ``settlement_fee_bps``;
-    gross book never pays the fee) and the run completes as
-    ``completed_with_settlement_assumptions`` instead of blocking. This is an
-    explicit accounting assumption, not a verified delisting fact.
+    When ``config.delisting_settlement`` is set, held positions whose
+    lifecycle event_type is ``delist`` and that have no valid exit price are
+    settled as cash at ``last_mark_value * recovery_rate`` (net book minus
+    ``settlement_fee_bps``; gross book never pays the fee) and the run
+    completes as ``completed_with_settlement_assumptions`` instead of
+    blocking. This is an explicit accounting assumption, not a verified
+    delisting fact. ``code_change`` and ``conflict`` events are NOT covered:
+    held positions keep the ``blocked_by_unsupported_event`` path. Available
+    trusted-fact risk instructions keep priority: settlement is only the
+    residual fallback for positions the risk policy could not exit.
     """
     if mode not in (RUN_MODE_STRICT, RUN_MODE_DIAGNOSTIC):
         raise ValueError(f"invalid mode {mode!r}")
@@ -767,6 +790,8 @@ def run_backtest(
                 key=lambda e: (e.blocking_session, e.book, e.instrument_id)
             )
             lifecycle_events.extend(new_events)
+            held_events = [e for e in new_events if e.book in ("gross", "net")]
+            unsupported_held = [e for e in held_events if e.event_type != "delist"]
             if settlement_cfg is None:
                 status = STATUS_BLOCKED_UNSUPPORTED_EVENT
                 if first_blocking_event is None:
@@ -775,11 +800,23 @@ def run_backtest(
                     break
                 if diagnostic_from is None:
                     diagnostic_from = trade_date
+            elif unsupported_held:
+                # The delisting settlement assumption only covers held positions
+                # whose event_type is "delist". Code changes and static
+                # conflicts are not delistings; cashing them out with a
+                # recovery assumption would fabricate an economic fact, so
+                # they keep the strict blocked path.
+                status = STATUS_BLOCKED_UNSUPPORTED_EVENT
+                if first_blocking_event is None:
+                    first_blocking_event = unsupported_held[0]
+                if mode == RUN_MODE_STRICT:
+                    break
+                if diagnostic_from is None:
+                    diagnostic_from = trade_date
             else:
-                # Settlement policy: held positions are resolved by the
+                # Delist-only session: held positions are resolved by the
                 # explicit settlement assumption below; target-only events
                 # (prevented new entries) stay audit-only and non-blocking.
-                held_events = [e for e in new_events if e.book in ("gross", "net")]
                 if held_events and first_blocking_event is None:
                     first_blocking_event = held_events[0]
 
@@ -919,6 +956,11 @@ def run_backtest(
                 )
                 for instr in sorted(blocked_instruments & set(book.positions)):
                     event = session_event_index.get((instr, book_name))
+                    if event is None or event.event_type != "delist":
+                        # Only a confirmed delisting may be settled. A held
+                        # code_change/conflict keeps blocking above and its
+                        # position stays frozen at the stale mark.
+                        continue
                     pos = book.positions.pop(instr)
                     recovered = pos.value * settlement_cfg.recovery_rate
                     settle_fee = recovered * fee_rate
@@ -967,6 +1009,18 @@ def run_backtest(
             set(blocked_instruments)
             | settled_by_book["gross"]
             | settled_by_book["net"]
+        )
+
+        # session total cost = market transaction fee + settlement fee
+        # (option A: every daily fee field reports the full session cost;
+        # the gross book never pays the settlement fee, so its total is 0).
+        # Computed on the common path so non-rebalance settlement sessions
+        # also report the fee in daily fields.
+        gross_settlement_fee_total = math.fsum(
+            v["fee"] for v in gross_settlements.values()
+        )
+        net_settlement_fee_total = math.fsum(
+            v["fee"] for v in net_settlements.values()
         )
 
         if target is not None:
@@ -1062,7 +1116,7 @@ def run_backtest(
                 sell_notional_ratio=net_sell_ratio,
                 traded_notional_ratio=net_traded_ratio,
                 turnover=net_turnover,
-                transaction_cost=net_cost,
+                transaction_cost=net_cost + net_settlement_fee_total,
                 pre_trade_gross_exposure=net_pre_exposure,
                 post_trade_gross_exposure=(
                     math.fsum(abs(p.value) for p in net_book.positions.values())
@@ -1073,7 +1127,7 @@ def run_backtest(
                 gross_book_sell_notional_ratio=gross_sell_ratio,
                 gross_book_traded_notional_ratio=gross_traded_ratio,
                 gross_book_turnover=gross_turnover,
-                gross_book_transaction_cost=gross_cost,
+                gross_book_transaction_cost=gross_cost + gross_settlement_fee_total,
                 gross_book_pre_trade_gross_exposure=gross_pre_exposure,
                 gross_book_post_trade_gross_exposure=(
                     math.fsum(abs(p.value) for p in gross_book.positions.values())
@@ -1131,8 +1185,8 @@ def run_backtest(
             net_return,
             gross_market_pnl,
             net_market_pnl,
-            gross_cost,
-            net_cost,
+            gross_cost + gross_settlement_fee_total,
+            net_cost + net_settlement_fee_total,
             current_prices,
         )
         books.append(gross_snapshot)
@@ -1150,7 +1204,7 @@ def run_backtest(
                 cash_weight=net_snapshot.cash_weight,
                 turnover=net_turnover,
                 traded_notional_ratio=net_traded_ratio,
-                transaction_cost=net_cost,
+                transaction_cost=net_cost + net_settlement_fee_total,
                 holdings_count=net_snapshot.holdings_count,
                 gross_book_gross_exposure=gross_snapshot.gross_exposure,
                 gross_book_net_exposure=gross_snapshot.net_exposure,
@@ -1207,6 +1261,7 @@ def _record_residual(
     scale: float,
     trade_date: date,
     book_name: str,
+    zero_tolerance: float,
 ) -> None:
     if not math.isfinite(abs_r):
         violations.append(
@@ -1220,12 +1275,14 @@ def _record_residual(
         return
     if scale == 0:
         # zero-NAV corner (portfolio settled to zero at the recovery=0 bound):
-        # only a near-zero absolute residual is acceptable; anything larger
-        # means real corruption and still fails
-        if abs_r > _ZERO_SCALE_ABS_TOL:
+        # the residual can only be float dust of the session's largest
+        # magnitudes, so the bound is a few ULP of that watermark — fully
+        # scale-invariant, no absolute money tolerance
+        if abs_r > zero_tolerance:
             violations.append(
                 f"{check} invalid scale on {trade_date} {book_name}: {scale} "
-                f"(residual {abs_r:.6e} at zero scale)"
+                f"(residual {abs_r:.6e} at zero scale, ULP bound "
+                f"{zero_tolerance:.6e})"
             )
             return
         acc.add(check, abs_r, 0.0, trade_date, book_name)
@@ -1301,9 +1358,37 @@ def _accumulate_checks(
         violations, book_name, trade_date, prev_nav, market_pnl, fee
     )
 
+    # Scale watermark for zero-scale residuals: the largest magnitude any
+    # participant of this session's identities touched. Float error in the
+    # residual expressions is bounded by a few ULP of it.
+    session_watermark = max(
+        abs(prev_nav), abs(market_pnl), abs(fee), abs(nav), abs(book.cash)
+    )
+    if summary is not None:
+        session_watermark = max(
+            session_watermark,
+            abs(summary["cash_before"]),
+            abs(summary["v_minus"]),
+            *(abs(v) for v in summary["signed"].values()),
+            *(abs(v) for v in summary["pre_values"].values()),
+            *(
+                abs(term)
+                for settlement in summary.get("settlements", {}).values()
+                for term in settlement.values()
+            ),
+        )
+    # accumulate the historical scale watermark before deriving the bound
+    book.scale_watermark = max(book.scale_watermark, session_watermark)
+    zero_tolerance = _ulp_zero_scale_tolerance(book.scale_watermark)
+
     # settlement runs may legitimately drive NAV to (float-dust around) zero
-    # at the zero-recovery bound; corruption still fails beyond tolerance
-    nav_floor = -_NEG_TOL * max(prev_nav, 1.0) if allow_zero_nav else 0.0
+    # at the zero-recovery bound; the floor is relative to the historical
+    # scale of the book, never to an absolute money amount
+    nav_floor = (
+        -_NEG_TOL * max(book.scale_watermark, prev_nav, abs(market_pnl), fee, nav)
+        if allow_zero_nav
+        else 0.0
+    )
     if not math.isfinite(nav) or nav < nav_floor:
         violations.append(f"{book_name} nav not finite/positive on {trade_date}: {nav}")
     if not math.isfinite(book.cash):
@@ -1325,7 +1410,10 @@ def _accumulate_checks(
     positions_sum = math.fsum(p.value for p in book.positions.values())
     r = nav - (book.cash + positions_sum)
     scale = nav if nav > 0 else (prev_nav if prev_nav > 0 else 0.0)
-    _record_residual(acc, violations, "asset_identity", abs(r), scale, trade_date, book_name)
+    _record_residual(
+        acc, violations, "asset_identity", abs(r), scale, trade_date, book_name,
+        zero_tolerance,
+    )
 
     settlements = (
         summary.get("settlements", {}) if summary is not None else {}
@@ -1337,7 +1425,10 @@ def _accumulate_checks(
         prev_nav + market_pnl - fee - settlement_fee_total - shortfall_total
     )
     scale = prev_nav if prev_nav > 0 else (nav if nav > 0 else 0.0)
-    _record_residual(acc, violations, "daily_nav_bridge", abs(r), scale, trade_date, book_name)
+    _record_residual(
+        acc, violations, "daily_nav_bridge", abs(r), scale, trade_date, book_name,
+        zero_tolerance,
+    )
 
     if summary is None:
         return violations
@@ -1357,7 +1448,8 @@ def _accumulate_checks(
     # market-cost consistency only; the settlement fee is a separate term
     r = fee - cost_rate * (actual_traded - recovered_total)
     _record_residual(
-        acc, violations, "fee_consistency", abs(r), scale_v, trade_date, book_name
+        acc, violations, "fee_consistency", abs(r), scale_v, trade_date, book_name,
+        zero_tolerance,
     )
 
     r = book.cash - (
@@ -1367,12 +1459,14 @@ def _accumulate_checks(
         - settlement_fee_total
     )
     _record_residual(
-        acc, violations, "cash_flow", abs(r), scale_v, trade_date, book_name
+        acc, violations, "cash_flow", abs(r), scale_v, trade_date, book_name,
+        zero_tolerance,
     )
 
     r = nav - (v_minus - fee - settlement_fee_total - shortfall_total)
     _record_residual(
-        acc, violations, "rebalance_nav", abs(r), scale_v, trade_date, book_name
+        acc, violations, "rebalance_nav", abs(r), scale_v, trade_date, book_name,
+        zero_tolerance,
     )
 
     # position reconciliation against the ACTUAL book, not the summary.
@@ -1386,7 +1480,7 @@ def _accumulate_checks(
         pscale = abs(pre) if pre != 0 else scale_v
         _record_residual(
             acc, violations, "position_reconciliation",
-            abs(r), pscale, trade_date, book_name,
+            abs(r), pscale, trade_date, book_name, zero_tolerance,
         )
 
     # frozen invariance against the ACTUAL book.
@@ -1396,7 +1490,7 @@ def _accumulate_checks(
         pscale = abs(pre) if pre != 0 else scale_v
         _record_residual(
             acc, violations, "frozen_invariance",
-            abs(r), pscale, trade_date, book_name,
+            abs(r), pscale, trade_date, book_name, zero_tolerance,
         )
 
     return violations

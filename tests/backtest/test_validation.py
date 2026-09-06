@@ -259,13 +259,13 @@ def test_market_pnl_nan_triggers_accounting_error(monkeypatch) -> None:
 def test_nonfinite_residual_and_scale_rejected() -> None:
     acc = _ResidualAccumulator()
     violations: list[str] = []
-    _record_residual(acc, violations, "x", float("inf"), 1.0, D0, "net")
+    _record_residual(acc, violations, "x", float("inf"), 1.0, D0, "net", 0.0)
     assert any("residual not finite" in v for v in violations)
     violations.clear()
-    _record_residual(acc, violations, "y", 1.0, 0.0, D0, "net")
+    _record_residual(acc, violations, "y", 1.0, 0.0, D0, "net", 0.0)
     assert any("invalid scale" in v for v in violations)
     violations.clear()
-    _record_residual(acc, violations, "z", 1.0, float("nan"), D0, "net")
+    _record_residual(acc, violations, "z", 1.0, float("nan"), D0, "net", 0.0)
     assert any("invalid scale" in v for v in violations)
 
 
