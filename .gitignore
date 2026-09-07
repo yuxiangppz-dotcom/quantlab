@@ -23,3 +23,6 @@ htmlcov/
 .idea/
 .vscode/
 .DS_Store
+
+# Local ZCode/Codex coordination mailbox (SQLite is the authority)
+.agent-loop/
