@@ -18,6 +18,7 @@ from typing import Any
 from quantlab.artifacts import ArtifactContract, verify_formal_artifact
 from quantlab.execution.readiness import (
     EXECUTION_READINESS_SCHEMA_V0_2_1,
+    EXECUTION_READINESS_SCHEMA_V0_2_2,
     ReadinessStatus,
     framework_check_ids,
     readiness_check_ids,
@@ -40,6 +41,7 @@ EXECUTION_READINESS_TOP_LEVEL_V0_2_1 = EXECUTION_READINESS_TOP_LEVEL_V0_2 + (
     "transaction_fault_injection.json",
     "fee_reservation_reconciliation.json",
 )
+EXECUTION_READINESS_TOP_LEVEL_V0_2_2 = EXECUTION_READINESS_TOP_LEVEL_V0_2_1
 READINESS_CHECK_COLUMNS = (
     "check_id",
     "category",
@@ -131,6 +133,8 @@ def execution_readiness_artifact_contract(
 
 
 def _inventory_for_schema(schema: str) -> tuple[str, ...]:
+    if schema == EXECUTION_READINESS_SCHEMA_V0_2_2:
+        return EXECUTION_READINESS_TOP_LEVEL_V0_2_2
     if schema == EXECUTION_READINESS_SCHEMA_V0_2_1:
         return EXECUTION_READINESS_TOP_LEVEL_V0_2_1
     if schema == EXECUTION_READINESS_SCHEMA_V0_2:
@@ -150,8 +154,27 @@ def _walk_keys(value: Any):
             yield from _walk_keys(nested)
 
 
-def _v021_smoke_failures(run_dir: Path) -> tuple[str, ...]:
-    """Deep canonical validation of the v0.2.1 order-path smoke evidence."""
+_V022_EXTRA_TRUE_FIELDS = (
+    "same_state_batch_committed",
+    "sell_share_reservation",
+    "typed_quote_lineage",
+    "stale_batch_rejected",
+    "day_submission_date_bound",
+    "authority_lineage_bound",
+)
+
+
+def _v021_smoke_failures(run_dir: Path, schema: str | None = None) -> tuple[str, ...]:
+    """Deep canonical validation of the order-path smoke evidence.
+
+    v0.2.2 extends the canonical scenario set with the same-state authority
+    keys; the v0.2.1 key set stays frozen for the v0.2.1 artifacts.
+    """
+    true_fields = _V021_SMOKE_TRUE_FIELDS
+    fields = _V021_SMOKE_FIELDS
+    if schema == EXECUTION_READINESS_SCHEMA_V0_2_2:
+        true_fields = _V021_SMOKE_TRUE_FIELDS + _V022_EXTRA_TRUE_FIELDS
+        fields = _V021_SMOKE_FIELDS + _V022_EXTRA_TRUE_FIELDS
     failures: list[str] = []
     try:
         payload = json.loads((run_dir / "order_path_smoke.json").read_text())
@@ -177,15 +200,15 @@ def _v021_smoke_failures(run_dir: Path) -> tuple[str, ...]:
         failures.append("order_path_smoke scenarios must be an object")
         return tuple(failures)
     scenario_keys = set(scenarios)
-    if scenario_keys != set(_V021_SMOKE_FIELDS):
-        missing = sorted(set(_V021_SMOKE_FIELDS) - scenario_keys)
-        extra = sorted(scenario_keys - set(_V021_SMOKE_FIELDS))
+    if scenario_keys != set(fields):
+        missing = sorted(set(fields) - scenario_keys)
+        extra = sorted(scenario_keys - set(fields))
         failures.append(
             "order_path_smoke scenarios are non-canonical: "
             f"missing={missing} extra={extra}"
         )
         return tuple(failures)
-    for field in _V021_SMOKE_TRUE_FIELDS:
+    for field in true_fields:
         if scenarios.get(field) is not True:
             failures.append(f"smoke scenario {field} must be true")
     for field in _V021_SMOKE_FALSE_FIELDS:
@@ -294,7 +317,6 @@ def _v021_rebinding_failures(run_dir: Path) -> tuple[str, ...]:
     except (OSError, KeyError) as exc:
         return (f"readiness CSV parse failed during rebinding: {exc}",)
 
-    smoke_failures = _v021_smoke_failures(run_dir)
     try:
         smoke = json.loads((run_dir / "order_path_smoke.json").read_text())
         scenarios = smoke.get("scenarios") or {}
@@ -324,7 +346,171 @@ def _v021_rebinding_failures(run_dir: Path) -> tuple[str, ...]:
                 f"readiness row {row['check_id']} claims {row['status']} "
                 f"but its evidence sub-conditions derive {expected}"
             )
-    failures.extend(smoke_failures)
+    return tuple(failures)
+
+
+_V022_SUMMARY_CLAIMS = (
+    "performance_claim",
+    "fill_claim",
+    "order_submission",
+    "external_broker_submission",
+    "canonical_data_written",
+    "external_provider_called",
+)
+_V022_FAULT_KEYS = (
+    "synthetic",
+    "non_trading",
+    "external_broker_submission",
+    "batch_first_submission_runtimeerror_restored",
+    "batch_middle_submission_keyboardinterrupt_restored",
+    "batch_last_submission_runtimeerror_restored",
+    "invariant_failure_after_mutation_restored",
+    "single_append_baseexception_restored",
+    "all_passed",
+)
+_V022_FEE_KEYS = (
+    "reconciled",
+    "fee_cap_semantics",
+    "typed_fee_quote_required",
+    "multi_partial_fee_reconciliation",
+    "full_fill_release",
+    "partial_fill_drawdown",
+    "cancel_release",
+)
+
+
+def _v022_deep_failures(
+    run_dir: Path,
+    payloads: dict[str, Any],
+    summary: dict,
+    rows: list[dict],
+) -> tuple[str, ...]:
+    """v0.2.2: exact canonical key sets, child-wise aggregates, and
+    field-level cross-binding of every framework readiness row."""
+    failures: list[str] = []
+
+    # -- summary claims: EXACT canonical set, every one explicitly false
+    claims = summary.get("claims")
+    if not isinstance(claims, dict) or set(claims) != set(
+        _V022_SUMMARY_CLAIMS
+    ):
+        failures.append(
+            "summary claims must be the exact canonical set "
+            f"{sorted(_V022_SUMMARY_CLAIMS)}"
+        )
+    else:
+        for claim, value in claims.items():
+            if value is not False:
+                failures.append(f"summary claim {claim} must be false")
+
+    # -- transaction fault injection: exact key set, child-wise aggregate
+    fault = payloads.get("transaction_fault_injection.json")
+    if not isinstance(fault, dict):
+        failures.append("transaction_fault_injection.json must be an object")
+    else:
+        if set(fault) != set(_V022_FAULT_KEYS):
+            failures.append(
+                "transaction fault injection keys are non-canonical: "
+                f"missing={sorted(set(_V022_FAULT_KEYS) - set(fault))} "
+                f"extra={sorted(set(fault) - set(_V022_FAULT_KEYS))}"
+            )
+        children = all(
+            fault.get(key) is True
+            for key in _V022_FAULT_KEYS
+            if key not in ("all_passed", "external_broker_submission")
+        )
+        if fault.get("all_passed") is not children or not children:
+            failures.append(
+                "transaction fault injection all_passed must equal the "
+                "recomputed AND of every child scenario"
+            )
+        if fault.get("external_broker_submission") is not False:
+            failures.append(
+                "transaction fault injection must deny external broker "
+                "submission"
+            )
+
+    # -- fee reconciliation: exact key set, child-wise aggregate
+    fee = payloads.get("fee_reservation_reconciliation.json")
+    if not isinstance(fee, dict):
+        failures.append("fee_reservation_reconciliation.json must be an object")
+    else:
+        if set(fee) != set(_V022_FEE_KEYS):
+            failures.append(
+                "fee reconciliation keys are non-canonical: "
+                f"missing={sorted(set(_V022_FEE_KEYS) - set(fee))} "
+                f"extra={sorted(set(fee) - set(_V022_FEE_KEYS))}"
+            )
+        children = all(
+            fee.get(key) is True
+            for key in (
+                "multi_partial_fee_reconciliation",
+                "full_fill_release",
+                "partial_fill_drawdown",
+                "cancel_release",
+            )
+        )
+        if fee.get("reconciled") is not children or not children:
+            failures.append(
+                "fee reconciliation reconciled must equal the recomputed "
+                "AND of its child conditions"
+            )
+        if fee.get("fee_cap_semantics") != "cumulative_order_lifetime":
+            failures.append(
+                "fee reconciliation must freeze the cumulative "
+                "order-lifetime fee-cap semantics"
+            )
+        if fee.get("typed_fee_quote_required") is not True:
+            failures.append(
+                "fee reconciliation must require typed fee quotes"
+            )
+
+    # -- same-state smoke section: exact keys and truth values
+    try:
+        smoke = json.loads((run_dir / "order_path_smoke.json").read_text())
+        scenarios = smoke.get("scenarios") or {}
+    except (OSError, ValueError):
+        scenarios = {}
+    for key in (
+        "same_state_batch_committed",
+        "sell_share_reservation",
+        "typed_quote_lineage",
+        "stale_batch_rejected",
+        "day_submission_date_bound",
+        "authority_lineage_bound",
+    ):
+        if scenarios.get(key) is not True:
+            failures.append(f"smoke scenario {key} must be true")
+
+    # -- readiness CSV: every framework row's evidence must bind the exact
+    # sub-conditions it discloses, field by field, to the smoke evidence
+    for row in rows:
+        if "framework" not in row["critical_for"].split("|"):
+            continue
+        try:
+            evidence = json.loads(row["evidence_json"])
+        except ValueError:
+            failures.append(
+                f"readiness evidence_json is invalid for {row['check_id']}"
+            )
+            continue
+        required = evidence.get("required_subconditions")
+        if not isinstance(required, list) or not required:
+            # non-composite framework rows (protocol/contract checks) are
+            # not smoke-bound; composite rows must disclose their set
+            continue
+        for sub in required:
+            if sub not in scenarios:
+                failures.append(
+                    f"readiness row {row['check_id']} discloses "
+                    f"{sub} but the smoke evidence lacks it"
+                )
+            elif scenarios.get(sub) is not True and row["status"] == "ready":
+                failures.append(
+                    f"readiness row {row['check_id']} claims ready while "
+                    f"its disclosed subcondition {sub} is false"
+                )
+
     return tuple(failures)
 
 
@@ -344,7 +530,10 @@ def execution_readiness_semantic_failures(
         "handoff_smoke.json",
         "input_inventory.json",
     ]
-    if schema == EXECUTION_READINESS_SCHEMA_V0_2_1:
+    if schema in (
+        EXECUTION_READINESS_SCHEMA_V0_2_1,
+        EXECUTION_READINESS_SCHEMA_V0_2_2,
+    ):
         json_names += [
             "order_path_smoke.json",
             "transaction_fault_injection.json",
@@ -474,8 +663,11 @@ def execution_readiness_semantic_failures(
     if inventory.get("stable_during_audit") is not True:
         failures.append("input inventory was not stable during audit")
 
-    if schema == EXECUTION_READINESS_SCHEMA_V0_2_1:
-        failures.extend(_v021_smoke_failures(run_dir))
+    if schema in (
+        EXECUTION_READINESS_SCHEMA_V0_2_1,
+        EXECUTION_READINESS_SCHEMA_V0_2_2,
+    ):
+        failures.extend(_v021_smoke_failures(run_dir, schema))
         failures.extend(_v021_handoff_failures(run_dir))
         failures.extend(_v021_rebinding_failures(run_dir))
         fault = payloads.get("transaction_fault_injection.json", {})
@@ -489,6 +681,10 @@ def execution_readiness_semantic_failures(
                 "fee/reservation reconciliation evidence must show "
                 "reconciled=true"
             )
+    if schema == EXECUTION_READINESS_SCHEMA_V0_2_2:
+        failures.extend(
+            _v022_deep_failures(run_dir, payloads, summary, rows)
+        )
     return tuple(failures)
 
 

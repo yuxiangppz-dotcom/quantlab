@@ -268,7 +268,7 @@ def _publish(tmp_path, tamper: dict | None = None, schema: str = EXECUTION_READI
 
         original = artifacts_module._v021_smoke_failures
 
-        def raising(run_dir):
+        def raising(run_dir, schema=None):
             raise KeyboardInterrupt
 
         artifacts_module._v021_smoke_failures = raising  # type: ignore[attr-defined]

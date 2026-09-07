@@ -28,7 +28,7 @@ from quantlab.execution import (  # noqa: E402
     default_a_share_rule_book,
 )
 from quantlab.execution.artifacts import (  # noqa: E402
-    EXECUTION_READINESS_SCHEMA_V0_2_1,
+    EXECUTION_READINESS_SCHEMA_V0_2_2,
     READINESS_CHECK_COLUMNS,
     execution_readiness_artifact_contract,
     verify_execution_readiness_artifact,
@@ -148,12 +148,12 @@ def main() -> int:
         default=PROJECT_ROOT
         / "data"
         / "experiments"
-        / EXECUTION_READINESS_SCHEMA_V0_2_1,
+        / EXECUTION_READINESS_SCHEMA_V0_2_2,
     )
     parser.add_argument("--run-id", default=None)
     args = parser.parse_args()
 
-    schema = EXECUTION_READINESS_SCHEMA_V0_2_1
+    schema = EXECUTION_READINESS_SCHEMA_V0_2_2
     if not _git_clean():
         raise RuntimeError("formal execution readiness requires a clean git workspace")
     head_before = _git_head()
@@ -228,6 +228,7 @@ def main() -> int:
                 "performance_claim": False,
                 "fill_claim": False,
                 "order_submission": False,
+                "external_broker_submission": False,
                 "canonical_data_written": False,
                 "external_provider_called": False,
             },

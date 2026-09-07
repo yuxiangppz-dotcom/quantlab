@@ -54,6 +54,7 @@ FRAMEWORK_CHECK_IDS = frozenset({
 EXECUTION_READINESS_SCHEMA = "execution_readiness_v0_1"
 EXECUTION_READINESS_SCHEMA_V0_2 = "execution_readiness_v0_2"
 EXECUTION_READINESS_SCHEMA_V0_2_1 = "execution_readiness_v0_2_1"
+EXECUTION_READINESS_SCHEMA_V0_2_2 = "execution_readiness_v0_2_2"
 
 # v0.2 extends the canonical inventory with the audited order-path
 # capabilities; the v0.1 inventory stays frozen for the v0.1 artifacts.
@@ -91,12 +92,27 @@ FRAMEWORK_CHECK_IDS_V0_2_1 = FRAMEWORK_CHECK_IDS_V0_2 | set(
     _TRANSACTION_CHECKS_V0_2_1
 )
 
+# v0.2.2 binds the submission authority chain: every submitted order must
+# reference a stored immutable authority on the exact intended trade date
+# with a typed fee quote, proved on one shared ledger state.
+_AUTHORITY_CHECKS_V0_2_2 = ("submission_authority_and_day_binding",)
+READINESS_CHECK_IDS_V0_2_2 = (
+    READINESS_CHECK_IDS_V0_2_1[:13]
+    + _AUTHORITY_CHECKS_V0_2_2
+    + READINESS_CHECK_IDS_V0_2_1[13:]
+)
+FRAMEWORK_CHECK_IDS_V0_2_2 = FRAMEWORK_CHECK_IDS_V0_2_1 | set(
+    _AUTHORITY_CHECKS_V0_2_2
+)
+
 
 def readiness_check_ids(schema: str) -> tuple[str, ...]:
     """Canonical check inventory for one readiness schema version.
 
     Unknown schemas are rejected; there is no fallback to v0.1.
     """
+    if schema == EXECUTION_READINESS_SCHEMA_V0_2_2:
+        return READINESS_CHECK_IDS_V0_2_2
     if schema == EXECUTION_READINESS_SCHEMA_V0_2_1:
         return READINESS_CHECK_IDS_V0_2_1
     if schema == EXECUTION_READINESS_SCHEMA_V0_2:
@@ -107,6 +123,8 @@ def readiness_check_ids(schema: str) -> tuple[str, ...]:
 
 
 def framework_check_ids(schema: str) -> frozenset[str]:
+    if schema == EXECUTION_READINESS_SCHEMA_V0_2_2:
+        return FRAMEWORK_CHECK_IDS_V0_2_2
     if schema == EXECUTION_READINESS_SCHEMA_V0_2_1:
         return FRAMEWORK_CHECK_IDS_V0_2_1
     if schema == EXECUTION_READINESS_SCHEMA_V0_2:
@@ -700,6 +718,15 @@ def v021_composite_statuses(
         "plan_to_order_lineage": (
             "ready" if lineage_ready else "blocked"
         ),
+        "submission_authority_and_day_binding": (
+            "ready"
+            if _flag("authority_lineage_bound")
+            and _flag("day_submission_date_bound")
+            and _flag("same_state_batch_committed")
+            and _flag("stale_batch_rejected")
+            and _flag("typed_quote_lineage")
+            else "blocked"
+        ),
         "suspension_partition_coverage": "partial",
         "stale_assessment_rejection": (
             "ready" if _flag("stale_assessment_rejected") else "blocked"
@@ -723,6 +750,7 @@ def _apply_v0_2_1_semantics(
     checks: tuple[ReadinessCheck, ...],
     smoke: dict[str, Any],
     suspensions_raw_clean: bool,
+    include_authority_check: bool = False,
 ) -> tuple[ReadinessCheck, ...]:
     """Re-bind composite READY decisions to their disclosed sub-conditions.
 
@@ -735,6 +763,7 @@ def _apply_v0_2_1_semantics(
     def _flag(key: str) -> bool:
         return smoke.get(key) is True
 
+    derived = v021_composite_statuses(smoke, suspensions_raw_clean)
     weekend = _flag("weekend_t_plus_one_exact")
     holiday = _flag("holiday_t_plus_one_exact")
     coverage = _flag("missing_next_session_fail_closed")
@@ -982,6 +1011,38 @@ def _apply_v0_2_1_semantics(
             ("framework",),
         ),
     }
+    replacements["submission_authority_and_day_binding"] = ReadinessCheck(
+        "submission_authority_and_day_binding", "framework",
+        (
+            ReadinessStatus.READY
+            if derived["submission_authority_and_day_binding"] == "ready"
+            else ReadinessStatus.BLOCKED
+        ),
+        "Every submitted order references the stored immutable assessment "
+        "authority, is bound to the same pre-batch availability state as "
+        "its batch, carries a typed fee quote, and is committed on its "
+        "exact intended trade date - proved by one same-state batch on one "
+        "ledger.",
+        {
+            "authority_lineage_bound": _flag("authority_lineage_bound"),
+            "day_submission_date_bound": _flag("day_submission_date_bound"),
+            "same_state_batch_committed": _flag(
+                "same_state_batch_committed"
+            ),
+            "stale_batch_rejected": _flag("stale_batch_rejected"),
+            "typed_quote_lineage": _flag("typed_quote_lineage"),
+            "required_subconditions": (
+                "authority_lineage_bound",
+                "day_submission_date_bound",
+                "same_state_batch_committed",
+                "stale_batch_rejected",
+                "typed_quote_lineage",
+            ),
+        },
+        "A submission can never present a fresh fingerprint or a bare "
+        "integer fee cap in place of the stored authority.",
+        ("framework",),
+    )
     result: list[ReadinessCheck] = []
     inserted = False
     for check in checks:
@@ -991,6 +1052,10 @@ def _apply_v0_2_1_semantics(
                 replacements[name]
                 for name in _TRANSACTION_CHECKS_V0_2_1
             )
+            if include_authority_check:
+                result.append(
+                    replacements["submission_authority_and_day_binding"]
+                )
             inserted = True
     if not inserted:  # pragma: no cover - inventory is schema-validated
         raise ValueError("v0.2.1 requires the v0.2 order-path inventory")
@@ -1016,7 +1081,10 @@ def build_execution_readiness_report(
     """
     rule_book = rule_book or default_a_share_rule_book()
     is_v0_2 = schema == EXECUTION_READINESS_SCHEMA_V0_2
-    is_v0_2_1 = schema == EXECUTION_READINESS_SCHEMA_V0_2_1
+    is_v0_2_1 = schema in (
+        EXECUTION_READINESS_SCHEMA_V0_2_1,
+        EXECUTION_READINESS_SCHEMA_V0_2_2,
+    )
     smoke = order_path_smoke or {}
     calendar = evidence["calendar"]
     calendar_ready = bool(
@@ -1346,7 +1414,12 @@ def build_execution_readiness_report(
             )
         )
         checks = _apply_v0_2_1_semantics(
-            checks, smoke, suspensions_raw_clean=suspensions_raw_clean
+            checks,
+            smoke,
+            suspensions_raw_clean=suspensions_raw_clean,
+            include_authority_check=(
+                schema == EXECUTION_READINESS_SCHEMA_V0_2_2
+            ),
         )
     framework_ids = framework_check_ids(schema)
     framework_valid = all(

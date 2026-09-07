@@ -326,6 +326,55 @@ def test_v021_fault_matrix_total_boolean_is_not_trusted() -> None:
     ).status is ReadinessStatus.BLOCKED
 
 
+def test_v022_authority_check_binds_new_smoke_subconditions() -> None:
+    from quantlab.execution.readiness import (
+        EXECUTION_READINESS_SCHEMA_V0_2_2,
+    )
+
+    evidence = _evidence()
+    smoke = dict(FULL_SMOKE)
+    smoke.update({
+        "authority_lineage_bound": True,
+        "day_submission_date_bound": True,
+        "same_state_batch_committed": True,
+        "stale_batch_rejected": True,
+        "typed_quote_lineage": True,
+    })
+    report = build_execution_readiness_report(
+        evidence,
+        period_start=date(2020, 1, 1),
+        period_end=date(2024, 12, 31),
+        handoff_smoke_valid=True,
+        schema=EXECUTION_READINESS_SCHEMA_V0_2_2,
+        order_path_smoke=smoke,
+    )[0]
+    from quantlab.execution.readiness import readiness_check_ids
+
+    assert len(report.checks) == len(readiness_check_ids(
+        EXECUTION_READINESS_SCHEMA_V0_2_2
+    ))
+    by_id = {check.check_id: check for check in report.checks}
+    assert by_id[
+        "submission_authority_and_day_binding"
+    ].status is ReadinessStatus.READY
+    assert report.framework_valid is True
+    # flipping one disclosed subcondition blocks the composite
+    smoke["day_submission_date_bound"] = False
+    report2 = build_execution_readiness_report(
+        evidence,
+        period_start=date(2020, 1, 1),
+        period_end=date(2024, 12, 31),
+        handoff_smoke_valid=True,
+        schema=EXECUTION_READINESS_SCHEMA_V0_2_2,
+        order_path_smoke=smoke,
+    )[0]
+    by_id2 = {check.check_id: check for check in report2.checks}
+    assert by_id2[
+        "submission_authority_and_day_binding"
+    ].status is ReadinessStatus.BLOCKED
+    assert report2.framework_valid is False
+
+
 def test_v021_unknown_schema_is_rejected_everywhere() -> None:
     from quantlab.execution.readiness import (
         framework_check_ids,
