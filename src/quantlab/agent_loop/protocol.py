@@ -761,6 +761,120 @@ class AgentLoop:
                 raise
         return self.status(role="reviewer")
 
+    def requeue_abandoned_claim(
+        self,
+        *,
+        reason: str,
+        expected_event_sha256: str,
+        expected_claim_agent: str,
+        actor: str = "human-recovery",
+    ) -> dict[str, Any]:
+        """Abandon a known dead executor and immutably requeue its task.
+
+        This is intentionally stricter than lease expiry.  A human must identify
+        the exact last event and claimed agent, while Git must be clean, pushed,
+        and descended from the abandoned task's expected HEAD.  The old
+        generation is never rewritten; the same task content is copied into a
+        new generation bound to the current HEAD.
+        """
+
+        if not reason.strip():
+            raise AgentLoopError("reason must not be empty")
+        if len(expected_event_sha256) != 64:
+            raise AgentLoopError("expected_event_sha256 must be a SHA-256 hex digest")
+        if not expected_claim_agent.strip():
+            raise AgentLoopError("expected_claim_agent must not be empty")
+        snapshot = git_snapshot(self.repo_root)
+        if not snapshot.clean:
+            raise AgentLoopError("claim recovery requires a clean git workspace")
+        if not snapshot.pushed:
+            raise AgentLoopError("claim recovery requires HEAD to equal its upstream")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                metadata = self._validate_metadata(connection)
+                if metadata["phase"] != "EXECUTING":
+                    raise AgentLoopError(
+                        f"requeue_abandoned_claim requires EXECUTING, got {metadata['phase']}"
+                    )
+                if metadata["claim_agent"] != expected_claim_agent:
+                    raise AgentLoopError(
+                        "claimed agent mismatch: "
+                        f"expected {expected_claim_agent!r}, got {metadata['claim_agent']!r}"
+                    )
+                last_event = connection.execute(
+                    "SELECT event_sha256 FROM events ORDER BY sequence DESC LIMIT 1"
+                ).fetchone()
+                actual_event_sha256 = last_event["event_sha256"] if last_event else None
+                if actual_event_sha256 != expected_event_sha256:
+                    raise AgentLoopError(
+                        "last event mismatch: "
+                        f"expected {expected_event_sha256}, got {actual_event_sha256}"
+                    )
+                old_generation = int(metadata["generation"])
+                old_task = self._artifact(connection, "task", old_generation)
+                if old_task is None:
+                    raise AgentLoopError(
+                        f"missing abandoned task artifact for generation {old_generation}"
+                    )
+                ancestry = _git(
+                    self.repo_root,
+                    "merge-base",
+                    "--is-ancestor",
+                    metadata["expected_head"],
+                    snapshot.head,
+                    check=False,
+                )
+                if ancestry.returncode != 0:
+                    raise AgentLoopError(
+                        f"recovery HEAD {snapshot.head} does not descend from abandoned "
+                        f"expected_head {metadata['expected_head']}"
+                    )
+                new_generation = old_generation + 1
+                task_digest = self._insert_artifact(
+                    connection,
+                    kind="task",
+                    generation=new_generation,
+                    title=old_task["title"],
+                    content=old_task["content"],
+                    git_head=snapshot.head,
+                )
+                now = _utc_now()
+                abandoned_token_sha256 = _sha256_text(metadata["claim_token"])
+                self._set_metadata(
+                    connection,
+                    phase="TASK_READY",
+                    generation=new_generation,
+                    expected_head=snapshot.head,
+                    claim_agent="",
+                    claim_token="",
+                    claim_expires_at="",
+                    updated_at=now,
+                )
+                self._append_event(
+                    connection,
+                    actor=actor,
+                    action="abandoned_claim_requeued",
+                    generation=new_generation,
+                    payload={
+                        "reason": reason.strip(),
+                        "abandoned_generation": old_generation,
+                        "abandoned_claim_agent": expected_claim_agent,
+                        "abandoned_claim_token_sha256": abandoned_token_sha256,
+                        "abandoned_event_sha256": expected_event_sha256,
+                        "abandoned_expected_head": metadata["expected_head"],
+                        "new_generation": new_generation,
+                        "new_expected_head": snapshot.head,
+                        "task_sha256": task_digest,
+                    },
+                    occurred_at=now,
+                )
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+        return self.status(role="executor")
+
     def _verify_event_chain(self, connection: sqlite3.Connection) -> tuple[int, str | None]:
         previous: str | None = None
         count = 0

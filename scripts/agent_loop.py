@@ -65,6 +65,14 @@ def _parser() -> argparse.ArgumentParser:
     expire.add_argument("--reason", required=True)
     expire.add_argument("--actor", default="codex-reviewer")
 
+    requeue = subparsers.add_parser(
+        "requeue-abandoned", help="abandon a known dead claim and requeue immutably"
+    )
+    requeue.add_argument("--reason", required=True)
+    requeue.add_argument("--expected-event-sha256", required=True)
+    requeue.add_argument("--expected-claim-agent", required=True)
+    requeue.add_argument("--actor", default="human-recovery")
+
     show = subparsers.add_parser("show", help="print an immutable artifact")
     show.add_argument("kind", choices=("task", "report", "review"))
     show.add_argument("--generation", type=int)
@@ -125,6 +133,13 @@ def main() -> int:
             )
         elif args.command == "expire-claim":
             result = loop.mark_expired_claim_blocked(actor=args.actor, reason=args.reason)
+        elif args.command == "requeue-abandoned":
+            result = loop.requeue_abandoned_claim(
+                reason=args.reason,
+                expected_event_sha256=args.expected_event_sha256,
+                expected_claim_agent=args.expected_claim_agent,
+                actor=args.actor,
+            )
         elif args.command == "show":
             print(loop.artifact_content(args.kind, args.generation), end="")
             return 0

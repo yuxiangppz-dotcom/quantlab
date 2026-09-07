@@ -161,6 +161,63 @@ def test_executor_block_rejects_wrong_token(repository: Path, tmp_path: Path) ->
     assert loop.status(role="reviewer")["phase"] == "EXECUTING"
 
 
+def test_known_dead_claim_is_requeued_as_new_immutable_generation(
+    repository: Path, tmp_path: Path
+) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    _, original_head = _publish_and_claim(loop, tmp_path)
+    claimed = loop.status(role="reviewer")
+    original_event = claimed["last_event_sha256"]
+    new_head = _commit_and_push(repository, "protocol maintenance")
+
+    result = loop.requeue_abandoned_claim(
+        reason="the owning ZCode run was deleted by the user",
+        expected_event_sha256=original_event,
+        expected_claim_agent="zcode",
+    )
+
+    assert result["phase"] == "TASK_READY"
+    assert result["action"] == "claim_task"
+    assert result["generation"] == 2
+    assert result["expected_head"] == new_head
+    assert result["expected_head"] != original_head
+    assert loop.artifact_content("task", 1) == loop.artifact_content("task", 2)
+    assert loop.doctor()["healthy"] is True
+
+
+@pytest.mark.parametrize(
+    "event_sha256, agent, message",
+    [
+        ("0" * 64, "zcode", "last event mismatch"),
+        ("0" * 64, "another-agent", "claimed agent mismatch"),
+    ],
+)
+def test_abandoned_claim_recovery_rejects_stale_authority_without_mutation(
+    repository: Path,
+    tmp_path: Path,
+    event_sha256: str,
+    agent: str,
+    message: str,
+) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    _publish_and_claim(loop, tmp_path)
+    before = loop.status(role="reviewer")
+
+    with pytest.raises(AgentLoopError, match=message):
+        loop.requeue_abandoned_claim(
+            reason="test recovery",
+            expected_event_sha256=event_sha256,
+            expected_claim_agent=agent,
+        )
+
+    after = loop.status(role="reviewer")
+    assert after["phase"] == "EXECUTING"
+    assert after["generation"] == before["generation"]
+    assert after["event_count"] == before["event_count"]
+
+
 def test_report_requires_commit_and_push(repository: Path, tmp_path: Path) -> None:
     loop = AgentLoop(repository)
     loop.initialize()

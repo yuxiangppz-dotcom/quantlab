@@ -115,6 +115,21 @@ uv run python scripts/agent_loop.py submit-review \
 An executing lease is never silently stolen; after expiry the reviewer may run
 `expire-claim --reason ...`, which moves the loop to `BLOCKED`.
 
+If the user has positively identified and deleted the ZCode run that owns a
+still-live claim, do not wait for expiry and do not edit SQLite. Use the exact
+last event hash and agent identity shown by `status`:
+
+```bash
+uv run python scripts/agent_loop.py requeue-abandoned \
+  --reason "owning ZCode run was deleted by the user" \
+  --expected-event-sha256 '<exact last_event_sha256>' \
+  --expected-claim-agent zcode
+```
+
+This preserves the abandoned generation and creates a new immutable generation
+bound to the current clean, pushed HEAD. A stale event hash or agent mismatch is
+rejected without mutation.
+
 ## One-time ZCode setup
 
 1. Keep this WSL project open in ZCode.
