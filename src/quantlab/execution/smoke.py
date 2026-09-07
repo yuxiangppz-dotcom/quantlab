@@ -617,7 +617,6 @@ def run_order_path_smoke() -> dict:
     evidence["stale_batch_rejected"] = same_state["stale_rejected"]
     evidence["day_submission_date_bound"] = same_state["day_bound"]
     evidence["authority_lineage_bound"] = same_state["authority_lineage"]
-    evidence["same_state_smoke"] = same_state
     evidence["external_broker_submission"] = False
 
     # 3. atomic cash reservation: contention, partial fill, cancel release

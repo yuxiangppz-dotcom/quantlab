@@ -820,8 +820,9 @@ def _apply_v0_2_1_semantics(
                 "holiday_exact": holiday,
                 "incomplete_coverage_fail_closed": coverage,
                 "required_subconditions": (
-                    "weekend_exact", "holiday_exact",
-                    "incomplete_coverage_fail_closed",
+                    "weekend_t_plus_one_exact",
+                    "holiday_t_plus_one_exact",
+                    "missing_next_session_fail_closed",
                 ),
             },
             "T+1 is only as good as the calendar's coverage.",
@@ -846,8 +847,9 @@ def _apply_v0_2_1_semantics(
                 "holiday_exact": holiday,
                 "incomplete_coverage_fail_closed": coverage,
                 "required_subconditions": (
-                    "weekend_exact", "holiday_exact",
-                    "incomplete_coverage_fail_closed",
+                    "weekend_t_plus_one_exact",
+                    "holiday_t_plus_one_exact",
+                    "missing_next_session_fail_closed",
                 ),
             },
             "A supplied later date is validated as later, not as exactly "
