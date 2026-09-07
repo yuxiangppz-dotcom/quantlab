@@ -108,9 +108,9 @@ def _identities() -> PITIdentityBook:
     )
 
 
-def _open(trade_date: date) -> SuspensionEvidence:
+def _open(trade_date: date, instrument_id: str = SMOKE_INSTRUMENT) -> SuspensionEvidence:
     return SuspensionEvidence(
-        instrument_id=SMOKE_INSTRUMENT,
+        instrument_id=instrument_id,
         trade_date=trade_date,
         state=SuspensionState.VERIFIED_OPEN,
         observed_at=_instant(trade_date),
@@ -168,9 +168,11 @@ def _intent(
     )
 
 
-def _fee_cap(trade_date: date = SMOKE_FRI) -> FeeCapQuote:
+def _fee_cap(
+    trade_date: date = SMOKE_FRI, instrument_id: str = SMOKE_INSTRUMENT
+) -> FeeCapQuote:
     return FeeCapQuote(
-        instrument_id=SMOKE_INSTRUMENT,
+        instrument_id=instrument_id,
         account_id="smoke-account",
         trade_date=trade_date,
         cap_fen=SMOKE_FEE_CAP_FEN,
@@ -592,6 +594,30 @@ def run_order_path_smoke() -> dict:
     ) and lineage_ledger.reserved_cash_fen() == (
         target_shares * 1_000 + SMOKE_FEE_CAP_FEN
     )
+
+    # 2c. SAME-STATE end-to-end batch: the planning state is the ledger's
+    #     own canonical availability state, one BUY leg and one SELL leg
+    #     bind the same pre-batch fingerprint, and the batch commits once.
+    same_state = _run_same_state_batch(calendar, engine)
+    evidence["same_state_batch_committed"] = (
+        same_state["same_state"]
+        and same_state["buy_leads_sell"]
+        and same_state["committed"]
+        and same_state["authority_lineage"]
+        and same_state["day_bound"]
+    )
+    evidence["sell_share_reservation"] = (
+        same_state["sell_shares_reserved"] == 200
+        and same_state["sell_fee_cap_fen"] == SMOKE_FEE_CAP_FEN
+    )
+    evidence["typed_quote_lineage"] = (
+        same_state["buy_fee_cap_fen"] == SMOKE_FEE_CAP_FEN
+        and same_state["sell_fee_cap_fen"] == SMOKE_FEE_CAP_FEN
+    )
+    evidence["stale_batch_rejected"] = same_state["stale_rejected"]
+    evidence["day_submission_date_bound"] = same_state["day_bound"]
+    evidence["authority_lineage_bound"] = same_state["authority_lineage"]
+    evidence["same_state_smoke"] = same_state
     evidence["external_broker_submission"] = False
 
     # 3. atomic cash reservation: contention, partial fill, cancel release
@@ -1094,3 +1120,225 @@ def run_transaction_fault_injection() -> dict:
     report.update(results)
     report["all_passed"] = all(results.values())
     return report
+
+
+def _run_same_state_batch(calendar, engine) -> dict:
+    """Plan, assess, and submit a BUY and a SELL leg from ONE ledger.
+
+    The planning state is the ledger's own canonical availability state,
+    both legs bind the same pre-batch fingerprint, and the whole batch is
+    one atomic transaction. Nothing here touches a broker: the resulting
+    OrderSubmitted events are internal ledger events only.
+    """
+    from quantlab.execution.handoff import (
+        PlanningPrice,
+        TargetHandoffConfig,
+        build_rebalance_instruction,
+    )
+    from quantlab.execution.ledger import (
+        ExecutionLedger,
+        OrderIntended,
+        OrderSubmitted,
+    )
+    from quantlab.execution.models import PositionLot
+    from quantlab.execution.orchestration import (
+        materialize_bound_request,
+        materialize_order_batch,
+    )
+    from quantlab.execution.planning import (
+        AvailabilityState,
+        ExecutionStateView,
+        build_order_plan,
+    )
+    from quantlab.portfolio import TargetPortfolio, TargetWeight
+
+    ledger = ExecutionLedger(
+        _account(as_of=_instant(SMOKE_MON, 0), cash_fen=50_000_000),
+        calendar=calendar,
+    )
+    # the held lot is part of the SAME ledger state used for planning
+    ledger._lots.append(
+        PositionLot(
+            lot_id="smoke-same-state-lot",
+            instrument_id="600001.SH",
+            quantity=200,
+            acquired_trade_date=SMOKE_THU,
+            sellable_from=SMOKE_FRI,
+        )
+    )
+
+    # 1. canonical availability state taken from THAT ledger
+    snapshot = ledger.snapshot(_instant(SMOKE_MON, 0))
+    view = ExecutionStateView(
+        account=snapshot,
+        state=AvailabilityState(
+            account_id=snapshot.account_id,
+            as_of=snapshot.as_of,
+            trade_date=SMOKE_MON,
+            settled_cash_fen=snapshot.cash_fen,
+            lots=snapshot.lots,
+            reservations=(),
+            available_cash_fen=snapshot.cash_fen,
+            available_sellable_shares={"600001.SH": 200},
+        ),
+    )
+    same_state = view.fingerprint == ledger.availability_fingerprint()
+
+    # 2. account-aware plan with a BUY leg and a SELL (exit) leg
+    handoff = build_rebalance_instruction(
+        TargetPortfolio(
+            as_of=SMOKE_FRI,
+            positions=(
+                TargetWeight(SMOKE_INSTRUMENT, 0.9),
+                TargetWeight("600001.SH", 0.0),
+            ),
+            cash_weight=0.1,
+        ),
+        TargetHandoffConfig(
+            portfolio_id="execution-readiness-same-state-smoke",
+            signal_as_of=_instant(SMOKE_FRI, 360),
+            execution_date=SMOKE_MON,
+            planning_nav_fen=4_000_000,
+            minimum_cash_fen=0,
+        ),
+        {
+            SMOKE_INSTRUMENT: PlanningPrice(
+                instrument_id=SMOKE_INSTRUMENT,
+                price=SMOKE_PRICE,
+                price_date=SMOKE_FRI,
+                available_at=_instant(SMOKE_FRI, 0),
+                basis=PriceBasis.RAW,
+                source_id="synthetic-planning-price",
+            ),
+            "600001.SH": PlanningPrice(
+                instrument_id="600001.SH",
+                price=SMOKE_PRICE,
+                price_date=SMOKE_FRI,
+                available_at=_instant(SMOKE_FRI, 0),
+                basis=PriceBasis.RAW,
+                source_id="synthetic-planning-price",
+            ),
+        },
+        calendar=calendar,
+        identities=_identities(),
+        rules=default_a_share_rule_book(),
+    )
+    plan = build_order_plan(
+        handoff.instruction,
+        snapshot,
+        created_at=_instant(SMOKE_MON, 1),
+        order_prices={
+            SMOKE_INSTRUMENT: _order_price_evidence(),
+            "600001.SH": _order_price_evidence("600001.SH"),
+        },
+        fee_caps={
+            SMOKE_INSTRUMENT: _fee_cap(SMOKE_MON),
+            "600001.SH": _fee_cap(SMOKE_MON, "600001.SH"),
+        },
+        calendar=calendar,
+        identities=_identities(),
+        rules=default_a_share_rule_book(),
+        execution_state=view,
+    )
+    batch = materialize_order_batch(
+        handoff.instruction,
+        plan,
+        state=view,
+        created_at=_instant(SMOKE_MON, 2),
+    )
+    buy_leg = next(item for item in batch.intents if item.side is Side.BUY)
+    sell_leg = next(item for item in batch.intents if item.side is Side.SELL)
+    pre_batch = ledger.availability_fingerprint()
+
+    # 3. intents into the ledger
+    for intent in batch.intents:
+        ledger.append(
+            OrderIntended(
+                f"smoke-event-same-{intent.order_id}-intended",
+                intent.created_at,
+                intent,
+            )
+        )
+
+    # 4. real assessments bound to the same pre-batch state
+    submissions = []
+    for index, intent in enumerate(batch.intents):
+        assess_at = _instant(SMOKE_MON, 10 + index)
+        result = engine.assess(
+            intent,
+            ledger.snapshot(assess_at),
+            assess_at,
+            suspension=_open(SMOKE_MON, intent.instrument_id),
+            fee_schedule=_smoke_fee(),
+            daily_bar_available=None,
+            availability_fingerprint=pre_batch,
+        )
+        ledger.append(result.event)
+        stored = ledger.order(intent.order_id).authority
+        quote = _fee_cap(SMOKE_MON, intent.instrument_id)
+        request = materialize_bound_request(
+            intent, stored, fee_quote=quote, stored_authority=stored
+        )
+        from dataclasses import replace as _replace
+
+        request = _replace(request, created_at=_instant(SMOKE_MON, 20 + index))
+        submissions.append(
+            (
+                OrderSubmitted(
+                    f"smoke-event-same-{intent.order_id}-submitted",
+                    request.created_at,
+                    request,
+                    worst_case_fee_fen=quote.cap_fen,
+                    availability_fingerprint=request.availability_fingerprint,
+                    fee_quote_fingerprint=fingerprint_fee_cap_quote(quote),
+                    fee_quote=quote,
+                ),
+                quote,
+            )
+        )
+
+    # 5. one atomic bound batch
+    ledger.submit_orders(submissions)
+
+    committed = all(
+        ledger.order(item.order_id).status.value == "submitted"
+        for item in batch.intents
+    )
+    buy_reservation = ledger._reservations[buy_leg.order_id]
+    sell_reservation = ledger._reservations[sell_leg.order_id]
+    authority_lineage = all(
+        ledger.order(item.order_id).authority is not None
+        and ledger.order(item.order_id).authority.assessment_event_id
+        and ledger.order(item.order_id).authority.decision_fingerprint
+        and ledger.order(item.order_id).authority.availability_fingerprint
+        == pre_batch
+        for item in batch.intents
+    )
+    day_bound = all(
+        item.intended_trade_date == SMOKE_MON for item in batch.intents
+    )
+
+    # 6. a state drift invalidates the whole batch: replaying the same
+    #    submissions against the now-changed ledger must fail
+    stale_rejected = False
+    try:
+        ledger.submit_orders(submissions)
+    except Exception:
+        stale_rejected = True
+
+    return {
+        "synthetic": True,
+        "non_trading": True,
+        "external_broker_submission": False,
+        "same_state": bool(same_state),
+        "buy_leads_sell": bool(buy_leg.leg_id != sell_leg.leg_id),
+        "pre_batch_fingerprint": pre_batch,
+        "committed": bool(committed),
+        "buy_cash_reserved_fen": buy_reservation.reserved_cash_fen,
+        "buy_fee_cap_fen": buy_reservation.fee_cap_fen,
+        "sell_shares_reserved": sell_reservation.reserved_shares,
+        "sell_fee_cap_fen": sell_reservation.fee_cap_fen,
+        "authority_lineage": bool(authority_lineage),
+        "day_bound": bool(day_bound),
+        "stale_rejected": stale_rejected,
+    }

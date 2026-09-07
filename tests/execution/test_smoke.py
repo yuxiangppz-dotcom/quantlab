@@ -7,6 +7,12 @@ from quantlab.execution.smoke import run_order_path_smoke
 REQUIRED_TRUE_FLAGS = (
     "synthetic",
     "non_trading",
+    "same_state_batch_committed",
+    "sell_share_reservation",
+    "typed_quote_lineage",
+    "stale_batch_rejected",
+    "day_submission_date_bound",
+    "authority_lineage_bound",
     "production_submission_path_reachable",
     "gating_dimensions_fail_closed",
     "account_aware_order_planning",

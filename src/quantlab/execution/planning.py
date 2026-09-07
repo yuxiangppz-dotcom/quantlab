@@ -709,6 +709,27 @@ def build_order_plan(
                 delta=delta,
             )
             continue
+        # a sell reserves shares only, but it still carries the
+        # order-lifetime cumulative fee budget: bind the quote when one is
+        # available for this instrument (and reject a mismatched one)
+        sell_fee_cap = fee_caps.get(instrument_id)
+        if sell_fee_cap is not None and (
+            sell_fee_cap.instrument_id != instrument_id
+            or sell_fee_cap.account_id != account.account_id
+            or sell_fee_cap.trade_date != instruction.execution_date
+        ):
+            reasons.add("fee_quote_mismatch")
+            _leg(
+                instrument_id, side, target_shares,
+                OrderPlanLegStatus.BLOCKED, "fee_quote_mismatch",
+                "the fee quote is bound to a different instrument, "
+                "account, or trade date",
+                lot_rule_id=rule.rule_id,
+                identity_record=identity.source_record_id,
+                price=evidence,
+                delta=delta,
+            )
+            continue
         _leg(
             instrument_id, side, target_shares,
             OrderPlanLegStatus.ORDERABLE, "sell_plan_orderable",
@@ -716,6 +737,7 @@ def build_order_plan(
             lot_rule_id=rule.rule_id,
             identity_record=identity.source_record_id,
             price=evidence,
+            fee_cap=sell_fee_cap,
             delta=delta,
         )
 
