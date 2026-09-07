@@ -29,7 +29,6 @@ from quantlab.execution.ledger import (
 from quantlab.execution.models import (
     AccountSnapshot,
     OrderIntent,
-    OrderRequest,
     OrderType,
     PositionLot,
     PriceBasis,
@@ -40,6 +39,7 @@ from quantlab.execution.planning import (
     FeeCapQuote,
     OrderPriceEvidence,
     build_order_plan,
+    fingerprint_fee_cap_quote,
 )
 from quantlab.execution.rules import (
     InstrumentIdentity,
@@ -130,6 +130,21 @@ def _intent(order_id: str, quantity: int = 300, minute: int = 1) -> OrderIntent:
         limit_price_basis=PriceBasis.RAW,
         limit_price_source_id="state-price-source",
         time_in_force=TimeInForce.DAY,
+        fee_quote_fingerprint=fingerprint_fee_cap_quote(_fee_quote()),
+    )
+
+
+def _fee_quote():
+    from quantlab.execution.planning import FeeCapQuote
+
+    return FeeCapQuote(
+        instrument_id="600000.SH",
+        account_id="state-account",
+        trade_date=FRI,
+        cap_fen=FEE_CAP,
+        evidence_id="state-fee-quote",
+        source_fingerprint="f" * 64,
+        synthetic=True,
     )
 
 
@@ -163,27 +178,22 @@ def _submit(
         availability_fingerprint=ledger.availability_fingerprint(),
     )
     ledger.append(result.event)
-    request = OrderRequest(
-        request_id=f"{order_id}-request",
-        order_id=order_id,
-        instrument_id=intent.instrument_id,
-        side=intent.side,
-        quantity=intent.quantity,
-        order_type=intent.order_type,
-        limit_price=intent.limit_price,
-        intended_trade_date=intent.intended_trade_date,
-        created_at=_instant(FRI, minute + 3),
-        limit_price_basis=intent.limit_price_basis,
-        limit_price_source_id=intent.limit_price_source_id,
-        time_in_force=intent.time_in_force,
+    from quantlab.execution.orchestration import materialize_bound_request
+
+    authority = ledger.order(order_id).authority
+    fee_quote = _fee_quote()
+    request = materialize_bound_request(
+        intent, authority, fee_quote=fee_quote, stored_authority=authority
     )
     ledger.append(
         OrderSubmitted(
             f"{order_id}-submitted",
             request.created_at,
             request,
-            worst_case_fee_fen=FEE_CAP,
-            availability_fingerprint=ledger.availability_fingerprint(),
+            worst_case_fee_fen=fee_quote.cap_fen,
+            availability_fingerprint=request.availability_fingerprint,
+            fee_quote_fingerprint=fingerprint_fee_cap_quote(fee_quote),
+            fee_quote=fee_quote,
         )
     )
 
@@ -249,20 +259,18 @@ def test_submission_rechecks_fingerprint_before_reservation() -> None:
     ledger.append(result.event)
     stale_state = ledger.availability_fingerprint()
     _submit(ledger, engine, "state-buy-first", minute=6)
-    request = OrderRequest(
-        request_id="state-buy-late-request",
-        order_id="state-buy-late",
-        instrument_id=intent.instrument_id,
-        side=intent.side,
-        quantity=intent.quantity,
-        order_type=intent.order_type,
-        limit_price=intent.limit_price,
-        intended_trade_date=intent.intended_trade_date,
-        created_at=_instant(FRI, 10),
-        limit_price_basis=intent.limit_price_basis,
-        limit_price_source_id=intent.limit_price_source_id,
-        time_in_force=intent.time_in_force,
+    from quantlab.execution.orchestration import materialize_bound_request
+
+    authority = ledger.order("state-buy-late").authority
+    request = materialize_bound_request(
+        intent,
+        authority,
+        fee_quote=_fee_quote(),
+        stored_authority=authority,
     )
+    from dataclasses import replace
+
+    request = replace(request, created_at=_instant(FRI, 10))
     with pytest.raises(LedgerTransitionError, match="availability state"):
         ledger.append(
             OrderSubmitted(
@@ -271,6 +279,8 @@ def test_submission_rechecks_fingerprint_before_reservation() -> None:
                 request,
                 worst_case_fee_fen=FEE_CAP,
                 availability_fingerprint=stale_state,
+                fee_quote_fingerprint=fingerprint_fee_cap_quote(_fee_quote()),
+                fee_quote=_fee_quote(),
             )
         )
 

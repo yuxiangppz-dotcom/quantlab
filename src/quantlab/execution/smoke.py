@@ -32,7 +32,6 @@ from quantlab.execution.models import (
     EXCHANGE_TIMEZONE,
     AccountSnapshot,
     OrderIntent,
-    OrderRequest,
     OrderType,
     PositionLot,
     PriceBasis,
@@ -147,6 +146,7 @@ def _intent(
     quantity: int = 300,
     trade_date: date = SMOKE_FRI,
     minute: int = 1,
+    fee_quote: FeeCapQuote | None = None,
 ) -> OrderIntent:
     return OrderIntent(
         order_id=order_id,
@@ -161,25 +161,22 @@ def _intent(
         limit_price_basis=PriceBasis.RAW,
         limit_price_source_id="synthetic-raw-price",
         time_in_force=TimeInForce.DAY,
+        limit_price_source_fingerprint="1" * 64,
+        fee_quote_fingerprint=fingerprint_fee_cap_quote(
+            fee_quote or _fee_cap(trade_date)
+        ),
     )
 
 
-def _request(
-    ledger: ExecutionLedger, intent: OrderIntent, minute: int = 3
-) -> OrderRequest:
-    return OrderRequest(
-        request_id=f"smoke-request-{intent.order_id}",
-        order_id=intent.order_id,
-        instrument_id=intent.instrument_id,
-        side=intent.side,
-        quantity=intent.quantity,
-        order_type=intent.order_type,
-        limit_price=intent.limit_price,
-        intended_trade_date=intent.intended_trade_date,
-        created_at=_instant(intent.intended_trade_date, minute),
-        limit_price_basis=intent.limit_price_basis,
-        limit_price_source_id=intent.limit_price_source_id,
-        time_in_force=intent.time_in_force,
+def _fee_cap(trade_date: date = SMOKE_FRI) -> FeeCapQuote:
+    return FeeCapQuote(
+        instrument_id=SMOKE_INSTRUMENT,
+        account_id="smoke-account",
+        trade_date=trade_date,
+        cap_fen=SMOKE_FEE_CAP_FEN,
+        evidence_id="synthetic-smoke-fee-quote",
+        source_fingerprint="4" * 64,
+        synthetic=True,
     )
 
 
@@ -192,6 +189,8 @@ def _assess_and_submit(
     fee_schedule=None,
     suspension: SuspensionEvidence,
 ) -> None:
+    from quantlab.execution.orchestration import materialize_bound_request
+
     base = _minutes_since_open(intent.created_at)
     assess_at = _instant(intent.intended_trade_date, base + 2)
     result = engine.assess(
@@ -201,15 +200,31 @@ def _assess_and_submit(
         suspension=suspension,
         fee_schedule=fee_schedule,
         daily_bar_available=None,
+        availability_fingerprint=ledger.availability_fingerprint(),
     )
     ledger.append(result.event)
-    request = _request(ledger, intent, base + 3)
+    authority = ledger.order(intent.order_id).authority
+    quote = FeeCapQuote(
+        instrument_id=SMOKE_INSTRUMENT,
+        account_id="smoke-account",
+        trade_date=intent.intended_trade_date,
+        cap_fen=fee_cap_fen or SMOKE_FEE_CAP_FEN,
+        evidence_id="synthetic-smoke-fee-quote",
+        source_fingerprint="4" * 64,
+        synthetic=True,
+    )
+    request = materialize_bound_request(
+        intent, authority, fee_quote=quote, stored_authority=authority
+    )
     ledger.append(
         OrderSubmitted(
             f"smoke-event-{intent.order_id}-submitted",
             request.created_at,
             request,
-            worst_case_fee_fen=fee_cap_fen,
+            worst_case_fee_fen=fee_cap_fen or quote.cap_fen,
+            availability_fingerprint=request.availability_fingerprint,
+            fee_quote_fingerprint=fingerprint_fee_cap_quote(quote),
+            fee_quote=quote,
         )
     )
 
@@ -249,18 +264,6 @@ def _order_price_evidence(
         basis=PriceBasis.RAW,
         source_id="synthetic-raw-order-price",
         source_fingerprint="1" * 64,
-    )
-
-
-def _fee_cap() -> FeeCapQuote:
-    return FeeCapQuote(
-        instrument_id=SMOKE_INSTRUMENT,
-        account_id="smoke-account",
-        trade_date=SMOKE_MON,
-        cap_fen=SMOKE_FEE_CAP_FEN,
-        evidence_id="synthetic-fee-cap-test-only",
-        source_fingerprint="4" * 64,
-        synthetic=True,
     )
 
 
@@ -383,7 +386,7 @@ def run_order_path_smoke() -> dict:
         SMOKE_INSTRUMENT: _order_price_evidence(),
         "600001.SH": _order_price_evidence("600001.SH"),
     }
-    fee_caps = {SMOKE_INSTRUMENT: _fee_cap()}
+    fee_caps = {SMOKE_INSTRUMENT: _fee_cap(SMOKE_MON)}
 
     def _handoff_plan(weights, *, account=None, view=None, cash_weight=0.1):
         target = TargetPortfolio(
@@ -451,7 +454,9 @@ def run_order_path_smoke() -> dict:
         == target_shares * 1_000 + SMOKE_FEE_CAP_FEN
     )
     intent = batch.intents[0]
-    request = batch.requests[0]
+    # requests are NEVER materialized from the plan: they require the
+    # stored assessment authority (materialize_bound_request in the
+    # transactional submission scenario below)
     drifted_view = replace(
         state_view,
         state=replace(state_view.state, available_cash_fen=49_999_999),
@@ -467,18 +472,12 @@ def run_order_path_smoke() -> dict:
         and intent.instruction_id == instruction_one.instruction_id
         and intent.availability_fingerprint == state_view.fingerprint
         and intent.limit_price_source_fingerprint == "1" * 64
-        and intent.fee_quote_fingerprint == fingerprint_fee_cap_quote(_fee_cap())
+        and intent.fee_quote_fingerprint
+        == fingerprint_fee_cap_quote(_fee_cap(SMOKE_MON))
         and intent.intended_trade_date == SMOKE_MON
         and intent.time_in_force.value == "day"
         and intent.quantity == target_shares
-        and all(
-            getattr(request, field) == getattr(intent, field)
-            for field in (
-                "instrument_id", "side", "quantity", "order_type",
-                "limit_price", "intended_trade_date", "limit_price_basis",
-                "limit_price_source_id", "time_in_force",
-            )
-        )
+        and batch.requests == ()
         and drift_detected
     )
     evidence["account_aware_order_planning"] = (
@@ -518,30 +517,28 @@ def run_order_path_smoke() -> dict:
         and odd_plan.legs[0].delta_shares == 3550
     )
 
-    # 2b. transactional submission of the real adapter batch: intents ->
-    #     assessments (execution-state bound) -> submit_orders with the
-    #     typed fee quote. Internal ledger OrderSubmitted events are NOT an
-    #     external broker submission. The buy leg carries the full path;
-    #     the omitted-exit sell leg is exercised by the share-reservation
-    #     scenario below.
+    # 2b. transactional submission of the real adapter batch, in the strict
+    #     production order: intents -> ledger -> assessments (authority) ->
+    #     bound requests -> submit_orders with the typed fee quote.
+    #     Internal ledger OrderSubmitted events are NOT an external broker
+    #     submission. The buy leg carries the full path; the omitted-exit
+    #     sell leg is exercised by the share-reservation scenario below.
     lineage_ledger = ExecutionLedger(
         _account(as_of=_instant(SMOKE_MON, 0), cash_fen=5_000_000),
         calendar=calendar,
     )
+    from quantlab.execution.orchestration import materialize_bound_request
+
     submit_batch = materialize_order_batch(
         instruction_one,
         plan_one,
         state=state_view,
         created_at=_instant(SMOKE_MON, 10),
     )
-    buy_pairs = [
-        (order_intent, order_request)
-        for order_intent, order_request in zip(
-            submit_batch.intents, submit_batch.requests, strict=True
-        )
-        if order_intent.side is Side.BUY
-    ]
-    for order_intent, order_request in buy_pairs:
+    assert submit_batch.requests == ()
+    for order_intent in submit_batch.intents:
+        if order_intent.side is not Side.BUY:
+            continue
         lineage_ledger.append(
             OrderIntended(
                 f"smoke-event-{order_intent.order_id}",
@@ -561,6 +558,15 @@ def run_order_path_smoke() -> dict:
             ),
         )
         lineage_ledger.append(assessment.event)
+        stored_authority = lineage_ledger.order(
+            order_intent.order_id
+        ).authority
+        order_request = materialize_bound_request(
+            order_intent,
+            stored_authority,
+            fee_quote=_fee_cap(SMOKE_MON),
+            stored_authority=stored_authority,
+        )
         lineage_ledger.submit_orders(
             [
                 (
@@ -570,10 +576,14 @@ def run_order_path_smoke() -> dict:
                         order_request,
                         worst_case_fee_fen=SMOKE_FEE_CAP_FEN,
                         availability_fingerprint=(
-                            lineage_ledger.availability_fingerprint()
+                            order_request.availability_fingerprint
                         ),
+                        fee_quote_fingerprint=(
+                            fingerprint_fee_cap_quote(_fee_cap(SMOKE_MON))
+                        ),
+                        fee_quote=_fee_cap(SMOKE_MON),
                     ),
-                    _fee_cap(),
+                    _fee_cap(SMOKE_MON),
                 )
             ]
         )
@@ -790,6 +800,8 @@ def run_order_path_smoke() -> dict:
     stale_fingerprint = account_state_fingerprint(
         stale_ledger.snapshot(_instant(SMOKE_FRI, 2))
     )
+    # the availability state BEFORE any foreign order touched the ledger
+    stale_availability = stale_ledger.availability_fingerprint()
     intent_other = _intent("smoke-other", minute=11)
     stale_ledger.append(
         OrderIntended(
@@ -813,6 +825,7 @@ def run_order_path_smoke() -> dict:
                     stale_intent, _account(), _instant(SMOKE_FRI, 60),
                     suspension=_open(SMOKE_FRI), fee_schedule=_smoke_fee(),
                     daily_bar_available=None,
+                    availability_fingerprint=stale_availability,
                 ).event,
                 account_fingerprint=stale_fingerprint,
             )
@@ -830,7 +843,18 @@ def run_order_path_smoke() -> dict:
     # 8. order-lifetime fee budget: multi-partial-fill reconciliation,
     #    price-improvement release, full-fill release
     recon_ledger = ExecutionLedger(account, calendar=calendar)
-    recon_intent = _intent("smoke-recon", quantity=100)
+    recon_quote = FeeCapQuote(
+        instrument_id=SMOKE_INSTRUMENT,
+        account_id="smoke-account",
+        trade_date=SMOKE_FRI,
+        cap_fen=RECON_FEE_CAP_FEN,
+        evidence_id="synthetic-smoke-fee-quote",
+        source_fingerprint="4" * 64,
+        synthetic=True,
+    )
+    recon_intent = _intent(
+        "smoke-recon", quantity=100, fee_quote=recon_quote
+    )
     recon_ledger.append(
         OrderIntended(
             "smoke-event-recon-intent", _instant(SMOKE_FRI, 1), recon_intent
@@ -904,8 +928,6 @@ def run_transaction_fault_injection() -> dict:
     """
     from quantlab.execution.models import (
         AccountSnapshot,
-        OrderRequest,
-        OrderType,
     )
 
     calendar = _calendar()
@@ -936,7 +958,9 @@ def run_transaction_fault_injection() -> dict:
         events = []
         for index in range(count):
             order_id = f"fault-buy-{index}"
-            intent = _intent(order_id, minute=1 + index * 10)
+            intent = _intent(
+                order_id, minute=1 + index * 10, fee_quote=fault_quote
+            )
             ledger.append(
                 OrderIntended(
                     f"fault-{order_id}-intended",
@@ -957,20 +981,12 @@ def run_transaction_fault_injection() -> dict:
                 ),
             )
             ledger.append(result.event)
-            request = OrderRequest(
-                request_id=f"fault-request-{order_id}",
-                order_id=order_id,
-                instrument_id=intent.instrument_id,
-                side=intent.side,
-                quantity=intent.quantity,
-                order_type=OrderType.LIMIT,
-                limit_price=intent.limit_price,
-                intended_trade_date=intent.intended_trade_date,
-                created_at=_instant(SMOKE_FRI, 40 + index),
-                limit_price_basis=intent.limit_price_basis,
-                limit_price_source_id=intent.limit_price_source_id,
-                time_in_force=intent.time_in_force,
+            stored = ledger.order(order_id).authority
+            request = materialize_bound_request(
+                intent, stored, fee_quote=fault_quote, stored_authority=stored
             )
+            # submissions come after every assessment (batch wall-clock order)
+            request = replace(request, created_at=_instant(SMOKE_FRI, 40 + index))
             events.append(
                 OrderSubmitted(
                     f"fault-{order_id}-submitted",
@@ -978,13 +994,18 @@ def run_transaction_fault_injection() -> dict:
                     request,
                     worst_case_fee_fen=SMOKE_FEE_CAP_FEN,
                     availability_fingerprint=(
-                        ledger.availability_fingerprint()
+                        request.availability_fingerprint
                     ),
+                    fee_quote_fingerprint=(
+                        fingerprint_fee_cap_quote(fault_quote)
+                    ),
+                    fee_quote=fault_quote,
                 )
             )
         return ledger, events
 
-    from quantlab.execution.planning import FeeCapQuote
+    from quantlab.execution.orchestration import materialize_bound_request
+    from quantlab.execution.planning import fingerprint_fee_cap_quote
 
     fault_quote = FeeCapQuote(
         instrument_id=SMOKE_INSTRUMENT,

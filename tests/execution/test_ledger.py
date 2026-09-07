@@ -166,7 +166,7 @@ def _validated_order(
     )
     submitted_at = start + timedelta(minutes=2)
     request = _request(order_id, intent, submitted_at)
-    ledger.append(
+    ledger.append_legacy_low_level(
         OrderSubmitted(
             f"event-{order_id}-submit",
             submitted_at,
@@ -310,7 +310,7 @@ def test_buy_without_fee_cap_cannot_reserve_or_submit() -> None:
     )
     request = _request("order-nofee", intent, START + timedelta(minutes=2))
     with pytest.raises(LedgerAccountingError, match="fee cap"):
-        ledger.append(
+        ledger.append_legacy_low_level(
             OrderSubmitted("event-submit", request.created_at, request)
         )
     assert ledger.order("order-nofee").status is OrderStatus.VALIDATED
@@ -337,7 +337,7 @@ def test_two_buys_contending_for_cash_second_fails_atomically() -> None:
     )
     request_b = _request("order-b", intent_b, assessed_at + timedelta(minutes=1))
     with pytest.raises(LedgerAccountingError, match="available"):
-        ledger.append(
+        ledger.append_legacy_low_level(
             OrderSubmitted("event-submit-b", request_b.created_at, request_b,
                            worst_case_fee_fen=500)
         )
@@ -406,7 +406,11 @@ def test_two_sells_contending_for_same_sellable_lot() -> None:
     )
     request_b = _request("sell-b", intent_b, assessed_at + timedelta(minutes=1))
     with pytest.raises(LedgerAccountingError, match="sellable"):
-        ledger.append(OrderSubmitted("event-sell-b-submit", request_b.created_at, request_b))
+        ledger.append_legacy_low_level(
+            OrderSubmitted(
+                "event-sell-b-submit", request_b.created_at, request_b
+            )
+        )
     assert ledger.reserved_sellable_shares("000001.SZ") == 100
     assert ledger.order("sell-b").status is OrderStatus.UNKNOWN or (
         ledger.order("sell-b").status is OrderStatus.VALIDATED
@@ -469,7 +473,11 @@ def test_event_replay_matches_fresh_run_including_reservations() -> None:
     _validated_order(
         ledger, "order-sell", side=Side.SELL, start=submitted_at + timedelta(minutes=2)
     )
-    replayed = ExecutionLedger.replay(_initial(cash_fen=500_000, lots=(lot,)), ledger.events)
+    replayed = ExecutionLedger.replay(
+        _initial(cash_fen=500_000, lots=(lot,)),
+        ledger.events,
+        legacy_fixture_entry=True,
+    )
     assert replayed.events == ledger.events
     assert replayed.orders == ledger.orders
     assert replayed.lots == ledger.lots
@@ -508,7 +516,9 @@ def test_request_trade_date_must_match_intent() -> None:
         intended_trade_date=MONDAY,
     )
     with pytest.raises(LedgerTransitionError, match="trade date"):
-        ledger.append(OrderSubmitted("event-submit", request.created_at, request))
+        ledger.append_legacy_low_level(
+            OrderSubmitted("event-submit", request.created_at, request)
+        )
 
 
 def test_non_day_time_in_force_is_rejected_at_construction() -> None:
@@ -604,7 +614,7 @@ def test_holiday_crossing_sellable_follows_calendar() -> None:
     )
     submitted = started + timedelta(minutes=2)
     request = _request("order-holiday", intent, submitted)
-    ledger.append(
+    ledger.append_legacy_low_level(
         OrderSubmitted(
             "event-submit", submitted, request, worst_case_fee_fen=500
         )
@@ -760,7 +770,11 @@ def test_illegal_transition_and_request_drift_fail() -> None:
         limit_price_source_id=intent.limit_price_source_id,
     )
     with pytest.raises(LedgerTransitionError, match="differ"):
-        ledger.append(OrderSubmitted("event-submit", bad_request.created_at, bad_request))
+        ledger.append_legacy_low_level(
+            OrderSubmitted(
+                "event-submit", bad_request.created_at, bad_request
+            )
+        )
     assert ledger.order(intent.order_id).status is OrderStatus.VALIDATED
 
 
@@ -780,7 +794,9 @@ def test_adjusted_price_cannot_bypass_constraint_engine_into_submission() -> Non
     assert ledger.order(intent.order_id).status is OrderStatus.VALIDATED
     request = _request("order-adjusted", intent, START + timedelta(minutes=2))
     with pytest.raises(LedgerTransitionError, match="raw unadjusted"):
-        ledger.append(OrderSubmitted("event-submit", request.created_at, request))
+        ledger.append_legacy_low_level(
+            OrderSubmitted("event-submit", request.created_at, request)
+        )
 
 
 @pytest.mark.parametrize(
@@ -815,7 +831,9 @@ def test_replay_is_deterministic() -> None:
     ledger.append(
         _fill("order-buy", "fill-buy", submitted_at + timedelta(minutes=1), quantity=100)
     )
-    replayed = ExecutionLedger.replay(_initial(), ledger.events)
+    replayed = ExecutionLedger.replay(
+        _initial(), ledger.events, legacy_fixture_entry=True
+    )
     assert replayed.events == ledger.events
     assert replayed.orders == ledger.orders
     assert replayed.lots == ledger.lots

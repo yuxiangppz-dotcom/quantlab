@@ -277,6 +277,7 @@ def test_materialized_batch_binds_full_lineage() -> None:
         created_at=_instant(MON, 1),
     )
     assert len(batch.intents) == 1
+    assert batch.requests == ()  # requests require the stored authority
     intent = batch.intents[0]
     assert intent.instruction_id == plan.instruction_id
     assert intent.plan_id == plan.plan_id
@@ -302,15 +303,9 @@ def test_materialized_batch_binds_full_lineage() -> None:
         created_at=_instant(MON, 1),
     )
     assert batch_two.intents == batch.intents
-    # requests mirror the intents term for term
-    assert len(batch.requests) == 1
-    request = batch.requests[0]
-    for field in (
-        "instrument_id", "side", "quantity", "order_type",
-        "limit_price", "intended_trade_date", "limit_price_basis",
-        "limit_price_source_id", "time_in_force",
-    ):
-        assert getattr(request, field) == getattr(intent, field)
+    # requests are NEVER materialized from the plan: they require the
+    # stored assessment authority (verified end to end in test_authority)
+    assert batch.requests == ()
 
 
 def test_not_traded_legs_are_not_materialized() -> None:

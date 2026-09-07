@@ -238,7 +238,8 @@ def test_ledger_recomputes_availability_fingerprint_on_accept() -> None:
                 availability_fingerprint=fabricated,
             )
         )
-    assert "drifted" in str(excinfo.value)
+    # the fabricated availability fingerprint is rejected on append
+    assert "availability" in str(excinfo.value)
 
 
 def test_view_fingerprint_comes_from_its_own_state() -> None:

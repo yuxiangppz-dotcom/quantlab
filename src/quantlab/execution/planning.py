@@ -29,15 +29,21 @@ from enum import StrEnum
 from quantlab.execution.models import (
     AccountSnapshot,
     ExecutionValidationError,
+    FeeCapQuote,
+    OrderPriceEvidence,
     PositionLot,
     PriceBasis,
     RebalanceInstruction,
     Side,
     exchange_date,
+    fingerprint_fee_cap_quote,
+    fingerprint_order_price_evidence,
     require_aware,
-    require_decimal,
     require_identifier,
     require_int,
+)
+from quantlab.execution.models import (
+    fingerprint_order_intent as fingerprint_order_intent,
 )
 from quantlab.execution.rules import PITIdentityBook, PITRuleBook, TradingCalendar
 
@@ -213,80 +219,6 @@ class OrderPlanLegStatus(StrEnum):
 
 
 @dataclass(frozen=True)
-class OrderPriceEvidence:
-    """Raw, unadjusted, independently sourced order-price evidence.
-
-    This is the ONLY permitted source of an order limit price. It is
-    deliberately a different type from the handoff planning price so the
-    two roles can never be conflated.
-    """
-
-    instrument_id: str
-    price: Decimal
-    price_date: date
-    available_at: datetime
-    basis: PriceBasis
-    source_id: str
-    source_fingerprint: str
-
-    def __post_init__(self) -> None:
-        require_identifier(self.instrument_id, "instrument_id")
-        require_decimal(self.price, "order price", positive=True)
-        require_aware(self.available_at, "order price available_at")
-        if not isinstance(self.basis, PriceBasis):
-            raise ExecutionValidationError("order price basis must be a PriceBasis")
-        require_identifier(self.source_id, "order price source_id")
-        if len(self.source_fingerprint) != 64 or any(
-            char not in "0123456789abcdef" for char in self.source_fingerprint
-        ):
-            raise ExecutionValidationError(
-                "order price source_fingerprint must be SHA-256"
-            )
-
-
-@dataclass(frozen=True)
-class FeeCapQuote:
-    """Explicit worst-case fee cap used to reserve cash for a buy.
-
-    The cap is the CUMULATIVE fee ceiling over the whole lifetime of one
-    order (every partial fill included). The quote is typed provenance, not
-    a bare integer: it binds the instrument, the account, the intended
-    trade date, the fee-schedule evidence id, and a SHA-256 fingerprint of
-    the schedule evidence it was derived from. ``synthetic`` marks test-only
-    quotes. Production callers must supply a quote derived from a real,
-    effective-dated, account-specific fee schedule; without one the buy leg
-    stays unknown and never reserves cash on an assumed zero fee or an
-    invented bps number.
-    """
-
-    instrument_id: str
-    account_id: str
-    trade_date: date
-    cap_fen: int
-    evidence_id: str
-    source_fingerprint: str
-    synthetic: bool
-
-    def __post_init__(self) -> None:
-        require_identifier(self.instrument_id, "instrument_id")
-        require_identifier(self.account_id, "account_id")
-        if not isinstance(self.trade_date, date):
-            raise ExecutionValidationError("trade_date must be a date")
-        require_int(self.cap_fen, "cap_fen", minimum=1)
-        require_identifier(self.evidence_id, "evidence_id")
-        if len(self.source_fingerprint) != 64 or any(
-            char not in "0123456789abcdef" for char in self.source_fingerprint
-        ):
-            raise ExecutionValidationError(
-                "fee quote source_fingerprint must be SHA-256"
-            )
-        if not isinstance(self.synthetic, bool):
-            raise ExecutionValidationError(
-                "fee quote synthetic flag must be a strict bool"
-            )
-
-
-@dataclass(frozen=True)
 class OrderPlanLeg:
     """One instrument's planned transition with its full audit trail."""
 
@@ -331,40 +263,6 @@ class OrderPlan:
     availability_fingerprint: str | None = None
 
 
-def fingerprint_fee_cap_quote(quote: FeeCapQuote) -> str:
-    """Canonical SHA-256 of the FULL fee quote payload.
-
-    This is the lineage fingerprint carried by legs, intents, assessments,
-    requests, and submission events. It is derived from every quote field -
-    instrument, account, trade date, cap, evidence id, source fingerprint,
-    and the synthetic flag - never copied from the source SHA alone.
-    """
-    payload = {
-        "instrument_id": quote.instrument_id,
-        "account_id": quote.account_id,
-        "trade_date": quote.trade_date.isoformat(),
-        "cap_fen": quote.cap_fen,
-        "evidence_id": quote.evidence_id,
-        "source_fingerprint": quote.source_fingerprint,
-        "synthetic": quote.synthetic,
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def fingerprint_order_price_evidence(evidence: OrderPriceEvidence) -> str:
-    """Canonical SHA-256 of the full order-price evidence payload."""
-    payload = {
-        "instrument_id": evidence.instrument_id,
-        "price": str(evidence.price),
-        "price_date": evidence.price_date.isoformat(),
-        "available_at": evidence.available_at.isoformat(),
-        "basis": evidence.basis.value,
-        "source_id": evidence.source_id,
-        "source_fingerprint": evidence.source_fingerprint,
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def fingerprint_rebalance_instruction(instruction: RebalanceInstruction) -> str:

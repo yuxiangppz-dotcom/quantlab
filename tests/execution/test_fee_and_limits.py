@@ -91,6 +91,7 @@ def _submit_event(
     *,
     minute: int = 5,
     fingerprint: str | None = None,
+    authority=None,
 ) -> OrderSubmitted:
     intent = _intent(order_id, side, quantity)
     request = OrderRequest(
@@ -106,6 +107,18 @@ def _submit_event(
         limit_price_basis=PriceBasis.RAW,
         limit_price_source_id="fee-price",
         time_in_force=TimeInForce.DAY,
+        instruction_id=authority.instruction_id if authority else None,
+        plan_id=authority.plan_id if authority else None,
+        leg_id=authority.leg_id if authority else None,
+        assessment_event_id=(
+            authority.assessment_event_id if authority else None
+        ),
+        assessment_decision_fingerprint=(
+            authority.decision_fingerprint if authority else None
+        ),
+        availability_fingerprint=(
+            authority.availability_fingerprint if authority else None
+        ),
     )
     return OrderSubmitted(
         f"fee-{order_id}-submitted",
@@ -142,6 +155,26 @@ def _prepare(ledger: ExecutionLedger, order_id: str, side: Side, quantity: int):
         )
 
     dimensions = tuple(decision(item) for item in ConstraintDimension)
+    from quantlab.execution.models import (
+        AssessmentAuthority,
+        fingerprint_decisions,
+        fingerprint_order_intent,
+    )
+
+    authority = AssessmentAuthority(
+        assessment_event_id=f"fee-{order_id}-assessed",
+        order_id=order_id,
+        intent_fingerprint=fingerprint_order_intent(intent),
+        decision_fingerprint=fingerprint_decisions(dimensions),
+        availability_fingerprint=ledger.availability_fingerprint(),
+        assessed_at=_instant(FRI, 3),
+        dimension_statuses=tuple(
+            (item.dimension.value, item.status.value) for item in dimensions
+        ),
+        fee_schedule_evidence_id=None,
+        fee_schedule_source_fingerprint=None,
+        instruction_id=intent.instruction_id,
+    )
     ledger.append(
         ConstraintsAssessed(
             f"fee-{order_id}-assessed",
@@ -149,8 +182,10 @@ def _prepare(ledger: ExecutionLedger, order_id: str, side: Side, quantity: int):
             order_id,
             dimensions,
             availability_fingerprint=ledger.availability_fingerprint(),
+            authority=authority,
         )
     )
+    return authority
 
 
 def _quote() -> FeeCapQuote:
@@ -207,9 +242,9 @@ def _fill(
 
 def test_buy_fill_above_limit_rejected_without_mutation() -> None:
     ledger = ExecutionLedger(_account(), calendar=_calendar())
-    _prepare(ledger, "fee-buy", Side.BUY, 100)
+    authority = _prepare(ledger, "fee-buy", Side.BUY, 100)
     before = _state(ledger)
-    ledger.submit_orders([(_submit_event("fee-buy", Side.BUY, 100), _quote())])
+    ledger.submit_orders([(_submit_event("fee-buy", Side.BUY, 100, authority=authority), _quote())])
     reserved = _state(ledger)
     with pytest.raises(LedgerAccountingError, match="limit"):
         ledger.append(
@@ -227,8 +262,12 @@ def test_sell_fill_below_limit_rejected_without_mutation() -> None:
         sellable_from=FRI,
     )
     ledger = ExecutionLedger(_account(lots=(lot,)), calendar=_calendar())
-    _prepare(ledger, "fee-sell", Side.SELL, 200)
-    ledger.submit_orders([(_submit_event("fee-sell", Side.SELL, 200), _quote())])
+    authority = _prepare(ledger, "fee-sell", Side.SELL, 200)
+    ledger.submit_orders([
+        (_submit_event(
+            "fee-sell", Side.SELL, 200, authority=authority
+        ), _quote())
+    ])
     before = _state(ledger)
     with pytest.raises(LedgerAccountingError, match="limit"):
         ledger.append(
@@ -240,8 +279,8 @@ def test_sell_fill_below_limit_rejected_without_mutation() -> None:
 def test_multi_partial_fill_fee_budget_and_reconciliation() -> None:
     """40@10.00 fee 500, then 60@10.00 fee 501 must exceed the cap."""
     ledger = ExecutionLedger(_account(), calendar=_calendar())
-    _prepare(ledger, "fee-buy", Side.BUY, 100)
-    ledger.submit_orders([(_submit_event("fee-buy", Side.BUY, 100), _quote())])
+    authority = _prepare(ledger, "fee-buy", Side.BUY, 100)
+    ledger.submit_orders([(_submit_event("fee-buy", Side.BUY, 100, authority=authority), _quote())])
     # initial reservation: 100 * 10.00 * 100 fen + 1000 fen fee cap
     assert ledger.reserved_cash_fen() == 101_000
     ledger.append(_fill("fee-buy", "fee-f1", 40, "10.00", 500, minute=30))
@@ -262,8 +301,8 @@ def test_multi_partial_fill_fee_budget_and_reconciliation() -> None:
 
 def test_price_improvement_releases_excess_reservation() -> None:
     ledger = ExecutionLedger(_account(), calendar=_calendar())
-    _prepare(ledger, "fee-buy", Side.BUY, 100)
-    ledger.submit_orders([(_submit_event("fee-buy", Side.BUY, 100), _quote())])
+    authority = _prepare(ledger, "fee-buy", Side.BUY, 100)
+    ledger.submit_orders([(_submit_event("fee-buy", Side.BUY, 100, authority=authority), _quote())])
     ledger.append(_fill("fee-buy", "fee-f1", 40, "9.90", 500, minute=30))
     # 60 unfilled * 10.00 + 500 remaining fee capacity (exact release)
     assert ledger.reserved_cash_fen() == 60_500
@@ -272,8 +311,8 @@ def test_price_improvement_releases_excess_reservation() -> None:
 
 def test_cancel_after_partial_fill_releases_remaining_reservation() -> None:
     ledger = ExecutionLedger(_account(), calendar=_calendar())
-    _prepare(ledger, "fee-buy", Side.BUY, 100)
-    ledger.submit_orders([(_submit_event("fee-buy", Side.BUY, 100), _quote())])
+    authority = _prepare(ledger, "fee-buy", Side.BUY, 100)
+    ledger.submit_orders([(_submit_event("fee-buy", Side.BUY, 100, authority=authority), _quote())])
     ledger.append(_fill("fee-buy", "fee-f1", 40, "10.00", 500, minute=30))
     from quantlab.execution.ledger import OrderCanceled
 
@@ -288,7 +327,7 @@ def test_cancel_after_partial_fill_releases_remaining_reservation() -> None:
 
 def test_submission_requires_matching_typed_fee_quote() -> None:
     ledger = ExecutionLedger(_account(), calendar=_calendar())
-    _prepare(ledger, "fee-buy", Side.BUY, 100)
+    authority = _prepare(ledger, "fee-buy", Side.BUY, 100)
     mismatched = FeeCapQuote(
         instrument_id="600001.SH",
         account_id="fee-account",
@@ -299,7 +338,11 @@ def test_submission_requires_matching_typed_fee_quote() -> None:
         synthetic=True,
     )
     with pytest.raises(Exception, match="fee quote"):
-        ledger.submit_orders([(_submit_event("fee-buy", Side.BUY, 100), mismatched)])
+        ledger.submit_orders([
+        (_submit_event(
+            "fee-buy", Side.BUY, 100, authority=authority
+        ), mismatched)
+    ])
     wrong_account = FeeCapQuote(
         instrument_id="600000.SH",
         account_id="other-account",
@@ -310,7 +353,11 @@ def test_submission_requires_matching_typed_fee_quote() -> None:
         synthetic=True,
     )
     with pytest.raises(Exception, match="fee quote"):
-        ledger.submit_orders([(_submit_event("fee-buy", Side.BUY, 100), wrong_account)])
+        ledger.submit_orders([
+        (_submit_event(
+            "fee-buy", Side.BUY, 100, authority=authority
+        ), wrong_account)
+    ])
     wrong_date = FeeCapQuote(
         instrument_id="600000.SH",
         account_id="fee-account",
@@ -321,9 +368,15 @@ def test_submission_requires_matching_typed_fee_quote() -> None:
         synthetic=True,
     )
     with pytest.raises(Exception, match="fee quote"):
-        ledger.submit_orders([(_submit_event("fee-buy", Side.BUY, 100), wrong_date)])
+        ledger.submit_orders([
+        (_submit_event(
+            "fee-buy", Side.BUY, 100, authority=authority
+        ), wrong_date)
+    ])
     # the bound quote records its fingerprint on the submission event
-    ledger.submit_orders([(_submit_event("fee-buy", Side.BUY, 100), _quote())])
+    ledger.submit_orders([(_submit_event("fee-buy", Side.BUY, 100, authority=authority), _quote())])
     event = ledger.events[-1]
-    assert event.fee_quote_fingerprint == "c" * 64
+    from quantlab.execution.planning import fingerprint_fee_cap_quote
+
+    assert event.fee_quote_fingerprint == fingerprint_fee_cap_quote(_quote())
     assert event.worst_case_fee_fen == CAP

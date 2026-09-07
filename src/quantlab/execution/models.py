@@ -8,14 +8,25 @@ Asia/Shanghai exchange-local date rather than an inferred UTC date.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard
+    from quantlab.execution.planning import FeeCapQuote
 
 EXCHANGE_TIMEZONE_NAME = "Asia/Shanghai"
 EXCHANGE_TIMEZONE = ZoneInfo(EXCHANGE_TIMEZONE_NAME)
+
+
+def _canonical_hash(payload: dict) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
 
 
 class ExecutionValidationError(ValueError):
@@ -54,6 +65,200 @@ class PriceBasis(StrEnum):
     RAW = "raw_unadjusted"
     ADJUSTED = "adjusted"
     UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class OrderPriceEvidence:
+    """Raw, unadjusted, independently sourced order-price evidence.
+
+    This is the ONLY permitted source of an order limit price. It is
+    deliberately a different type from the handoff planning price so the
+    two roles can never be conflated. Defined here (not in planning) so
+    the ledger and events can verify its canonical fingerprint without an
+    import cycle.
+    """
+
+    instrument_id: str
+    price: Decimal
+    price_date: date
+    available_at: datetime
+    basis: PriceBasis
+    source_id: str
+    source_fingerprint: str
+
+    def __post_init__(self) -> None:
+        require_identifier(self.instrument_id, "instrument_id")
+        require_decimal(self.price, "order price", positive=True)
+        require_aware(self.available_at, "order price available_at")
+        if not isinstance(self.basis, PriceBasis):
+            raise ExecutionValidationError("order price basis must be a PriceBasis")
+        require_identifier(self.source_id, "order price source_id")
+        if len(self.source_fingerprint) != 64 or any(
+            char not in "0123456789abcdef" for char in self.source_fingerprint
+        ):
+            raise ExecutionValidationError(
+                "order price source_fingerprint must be SHA-256"
+            )
+
+
+def fingerprint_order_price_evidence(evidence: OrderPriceEvidence) -> str:
+    """Canonical SHA-256 of the full order-price evidence payload."""
+    return "sha256:" + _canonical_hash({
+        "instrument_id": evidence.instrument_id,
+        "price": str(evidence.price),
+        "price_date": evidence.price_date.isoformat(),
+        "available_at": evidence.available_at.isoformat(),
+        "basis": evidence.basis.value,
+        "source_id": evidence.source_id,
+        "source_fingerprint": evidence.source_fingerprint,
+    })
+
+
+@dataclass(frozen=True)
+class FeeCapQuote:
+    """Explicit worst-case fee cap used to reserve cash for a buy.
+
+    The cap is the CUMULATIVE fee ceiling over the whole lifetime of one
+    order (every partial fill included). The quote is typed provenance, not
+    a bare integer: it binds the instrument, the account, the intended
+    trade date, the fee-schedule evidence id, and a SHA-256 fingerprint of
+    the schedule evidence it was derived from. ``synthetic`` marks test-only
+    quotes. Production callers must supply a quote derived from a real,
+    effective-dated, account-specific fee schedule; without one the buy leg
+    stays unknown and never reserves cash on an assumed zero fee or an
+    invented bps number.
+    """
+
+    instrument_id: str
+    account_id: str
+    trade_date: date
+    cap_fen: int
+    evidence_id: str
+    source_fingerprint: str
+    synthetic: bool
+
+    def __post_init__(self) -> None:
+        require_identifier(self.instrument_id, "instrument_id")
+        require_identifier(self.account_id, "account_id")
+        if not isinstance(self.trade_date, date):
+            raise ExecutionValidationError("trade_date must be a date")
+        require_int(self.cap_fen, "cap_fen", minimum=1)
+        require_identifier(self.evidence_id, "evidence_id")
+        if len(self.source_fingerprint) != 64 or any(
+            char not in "0123456789abcdef" for char in self.source_fingerprint
+        ):
+            raise ExecutionValidationError(
+                "fee quote source_fingerprint must be SHA-256"
+            )
+        if not isinstance(self.synthetic, bool):
+            raise ExecutionValidationError(
+                "fee quote synthetic flag must be a strict bool"
+            )
+
+
+def fingerprint_fee_cap_quote(quote) -> str:
+    """Canonical SHA-256 of the FULL fee quote payload.
+
+    The lineage fingerprint carried by legs, intents, assessments,
+    requests, and submission events. Derived from every quote field -
+    instrument, account, trade date, cap, evidence id, source
+    fingerprint, synthetic flag - never copied from the source SHA.
+    """
+    return _canonical_hash({
+        "instrument_id": quote.instrument_id,
+        "account_id": quote.account_id,
+        "trade_date": quote.trade_date.isoformat(),
+        "cap_fen": quote.cap_fen,
+        "evidence_id": quote.evidence_id,
+        "source_fingerprint": quote.source_fingerprint,
+        "synthetic": quote.synthetic,
+    })
+
+
+def fingerprint_order_intent(intent: OrderIntent) -> str:
+    """Canonical SHA-256 of the intent's full economic payload."""
+    return "sha256:" + _canonical_hash({
+        "order_id": intent.order_id,
+        "instruction_id": intent.instruction_id,
+        "instrument_id": intent.instrument_id,
+        "side": intent.side.value,
+        "quantity": intent.quantity,
+        "order_type": intent.order_type.value,
+        "limit_price": (
+            str(intent.limit_price) if intent.limit_price is not None else None
+        ),
+        "intended_trade_date": intent.intended_trade_date.isoformat(),
+        "created_at": intent.created_at.isoformat(),
+        "session": intent.session.value,
+        "limit_price_basis": (
+            intent.limit_price_basis.value
+            if intent.limit_price_basis is not None
+            else None
+        ),
+        "limit_price_source_id": intent.limit_price_source_id,
+        "time_in_force": intent.time_in_force.value,
+        "plan_id": intent.plan_id,
+        "leg_id": intent.leg_id,
+        "availability_fingerprint": intent.availability_fingerprint,
+        "limit_price_source_fingerprint": intent.limit_price_source_fingerprint,
+        "fee_quote_fingerprint": intent.fee_quote_fingerprint,
+    })
+
+
+def fingerprint_decisions(decisions: tuple) -> str:
+    """Canonical SHA-256 of a complete constraint-decision tuple."""
+    return "sha256:" + _canonical_hash({
+        "decisions": [
+            {
+                "decision_id": decision.decision_id,
+                "dimension": decision.dimension.value,
+                "status": decision.status.value,
+                "reason_code": decision.reason_code,
+                "rule_ids": list(decision.rule_ids),
+            }
+            for decision in decisions
+        ],
+    })
+
+
+@dataclass(frozen=True)
+class AssessmentAuthority:
+    """The immutable authorization produced by one constraint assessment.
+
+    Persisted by the ledger when the assessment is appended; a submission
+    must reference THIS object's ids, never a fresh fingerprint. Every
+    field is mandatory on the production order path.
+    """
+
+    assessment_event_id: str
+    order_id: str
+    intent_fingerprint: str
+    decision_fingerprint: str
+    availability_fingerprint: str
+    assessed_at: datetime
+    dimension_statuses: tuple[tuple[str, str], ...]
+    fee_schedule_evidence_id: str | None
+    fee_schedule_source_fingerprint: str | None
+    instruction_id: str
+    plan_id: str | None = None
+    leg_id: str | None = None
+
+    def __post_init__(self) -> None:
+        require_identifier(self.assessment_event_id, "assessment_event_id")
+        require_identifier(self.order_id, "order_id")
+        require_identifier(self.intent_fingerprint, "intent_fingerprint")
+        require_identifier(
+            self.decision_fingerprint, "decision_fingerprint"
+        )
+        require_identifier(
+            self.availability_fingerprint, "availability_fingerprint"
+        )
+        require_aware(self.assessed_at, "assessed_at")
+        require_identifier(self.instruction_id, "instruction_id")
+        if not self.dimension_statuses:
+            raise ExecutionValidationError(
+                "assessment authority requires the full dimension results"
+            )
 
 
 class ConstraintStatus(StrEnum):
@@ -369,6 +574,16 @@ class OrderRequest:
     limit_price_basis: PriceBasis | None = None
     limit_price_source_id: str | None = None
     time_in_force: TimeInForce = TimeInForce.DAY
+    # v0.2.2 lineage bindings: the ledger verifies these against the
+    # stored assessment authority before any reservation is created
+    instruction_id: str | None = None
+    plan_id: str | None = None
+    leg_id: str | None = None
+    assessment_event_id: str | None = None
+    assessment_decision_fingerprint: str | None = None
+    availability_fingerprint: str | None = None
+    limit_price_source_fingerprint: str | None = None
+    fee_quote_fingerprint: str | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.request_id, "request_id")

@@ -19,6 +19,7 @@ from decimal import Decimal
 
 from quantlab.execution.models import (
     AccountSnapshot,
+    AssessmentAuthority,
     ConstraintDecision,
     ConstraintDimension,
     ExecutionValidationError,
@@ -32,6 +33,9 @@ from quantlab.execution.models import (
     TimeInForce,
     derive_order_status,
     exchange_date,
+    fingerprint_decisions,
+    fingerprint_fee_cap_quote,
+    fingerprint_order_intent,
     require_aware,
     require_decimal,
     require_identifier,
@@ -79,6 +83,7 @@ class ConstraintsAssessed:
     decisions: tuple[ConstraintDecision, ...]
     account_fingerprint: str | None = None
     availability_fingerprint: str | None = None
+    authority: AssessmentAuthority | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.event_id, "event_id")
@@ -124,6 +129,7 @@ class OrderSubmitted:
     worst_case_fee_fen: int = 0
     availability_fingerprint: str | None = None
     fee_quote_fingerprint: str | None = None
+    fee_quote: FeeCapQuote | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.event_id, "event_id")
@@ -235,6 +241,7 @@ class OrderLedgerState:
     gross_notional_fen: int = 0
     fee_fen: int = 0
     request_id: str | None = None
+    authority: AssessmentAuthority | None = None
 
     @property
     def remaining_quantity(self) -> int:
@@ -376,6 +383,10 @@ class ExecutionLedger:
         self._fill_ids: set[str] = set()
         self._request_ids: set[str] = set()
         self._reservations: dict[str, ActiveReservation] = {}
+        # explicit non-production fixture switch (append_legacy_low_level)
+        self._legacy_fixture_mode = False
+        # active bound-batch base (submit_orders only); None outside a batch
+        self._batch_base_fingerprint: str | None = None
 
     @classmethod
     def replay(
@@ -384,10 +395,29 @@ class ExecutionLedger:
         events: tuple[LedgerEvent, ...] | list[LedgerEvent],
         *,
         calendar: TradingCalendar | None = None,
+        legacy_fixture_entry: bool = False,
     ) -> ExecutionLedger:
+        """Rebuild a ledger from its event history (deterministic).
+
+        ``legacy_fixture_entry`` mirrors ``append_legacy_low_level`` for
+        fixture-built histories and must never be used on the production
+        path.
+        """
         ledger = cls(initial, calendar=calendar)
+        ledger._legacy_fixture_mode = legacy_fixture_entry
         for event in events:
+            # fixture histories carry bound batches: replay them with the
+            # same batch-base semantics the original submission used
+            if isinstance(event, OrderSubmitted):
+                if ledger._batch_base_fingerprint is None:
+                    ledger._batch_base_fingerprint = (
+                        event.availability_fingerprint
+                    )
+            else:
+                ledger._batch_base_fingerprint = None
             ledger.append(event)
+        ledger._legacy_fixture_mode = False
+        ledger._batch_base_fingerprint = None
         return ledger
 
     @property
@@ -565,6 +595,24 @@ class ExecutionLedger:
         self._request_ids = snapshot.request_ids
         self._reservations = snapshot.reservations
 
+    def append_legacy_low_level(self, event: LedgerEvent) -> bool:
+        """Explicit NON-PRODUCTION entry point for low-level fixtures.
+
+        Skips ONLY the assessment-authority and typed-fee-quote
+        verification at the submission boundary; every other transition
+        rule, reservation rule, DAY/trade-date binding, limit-price
+        protection, and invariant still applies inside the same
+        transaction. The readiness production path must never call this
+        method: it uses ``submit_orders`` with stored assessment
+        authorities and typed fee quotes.
+        """
+        previous = self._legacy_fixture_mode
+        self._legacy_fixture_mode = True
+        try:
+            return self.append(event)
+        finally:
+            self._legacy_fixture_mode = previous
+
     def append(self, event: LedgerEvent) -> bool:
         """Append one event; exact duplicate event ids are idempotent.
 
@@ -694,6 +742,9 @@ class ExecutionLedger:
         staged_cash = 0
         staged_shares: dict[str, int] = {}
         pre_batch_state = self.availability_fingerprint()
+        # every member binds the SAME explicit pre-batch state; a member's
+        # own earlier reservation in this batch cannot make it stale
+        self._batch_base_fingerprint = pre_batch_state
         batch_snapshot = self._begin()
         try:
             for event, fee_quote in submissions:
@@ -732,10 +783,17 @@ class ExecutionLedger:
                         f"{self._initial.account_id}/"
                         f"{intent.intended_trade_date}"
                     )
+                # the pair-supplied quote is embedded as the typed fee
+                # authority; the lineage fingerprint stays the canonical
+                # FULL-quote hash (never the bare source SHA)
                 event = replace(
                     event,
                     worst_case_fee_fen=fee_quote.cap_fen,
-                    fee_quote_fingerprint=fee_quote.source_fingerprint,
+                    fee_quote_fingerprint=(
+                        event.fee_quote_fingerprint
+                        or fingerprint_fee_cap_quote(fee_quote)
+                    ),
+                    fee_quote=event.fee_quote or fee_quote,
                 )
                 if intent.side is Side.BUY:
                     if fee_quote.cap_fen <= 0:
@@ -780,6 +838,8 @@ class ExecutionLedger:
         except BaseException:
             self._restore(batch_snapshot)
             raise
+        finally:
+            self._batch_base_fingerprint = None
 
     def _apply_intended(self, event: OrderIntended) -> None:
         order_id = event.intent.order_id
@@ -797,13 +857,58 @@ class ExecutionLedger:
                 f"cannot assess order {event.order_id} from {state.status.value}"
             )
         if event.account_fingerprint is not None:
-            current = account_state_fingerprint(self.snapshot(event.occurred_at))
-            if current != event.account_fingerprint:
+            current_account = account_state_fingerprint(
+                self.snapshot(event.occurred_at)
+            )
+            if current_account != event.account_fingerprint:
                 raise LedgerTransitionError(
                     "stale constraint assessment rejected: account state "
                     f"fingerprint drifted (assessment bound "
-                    f"{event.account_fingerprint}, current {current})"
+                    f"{event.account_fingerprint}, current {current_account})"
                 )
+        authority = event.authority
+        if authority is None:
+            # Low-level fixtures may append a bare assessment (the order
+            # can never reach SUBMITTED without an authority), but the
+            # availability binding is still verified.
+            if event.availability_fingerprint is not None:
+                current_state = self.availability_fingerprint()
+                if current_state != event.availability_fingerprint:
+                    raise LedgerTransitionError(
+                        "stale constraint assessment rejected: availability "
+                        f"state drifted (assessment bound "
+                        f"{event.availability_fingerprint}, current "
+                        f"{current_state})"
+                    )
+            next_status = derive_order_status(state.intent.side, event.decisions)
+            self._orders[event.order_id] = replace(state, status=next_status)
+            return
+        # the authority must bind THIS ledger's intent, decisions, and state
+        if authority.order_id != event.order_id:
+            raise LedgerTransitionError(
+                "assessment authority is bound to "
+                f"{authority.order_id}, not {event.order_id}"
+            )
+        intent_fingerprint = fingerprint_order_intent(state.intent)
+        if authority.intent_fingerprint != intent_fingerprint:
+            raise LedgerTransitionError(
+                "assessment authority intent fingerprint does not match the "
+                f"stored intent (authority {authority.intent_fingerprint}, "
+                f"stored {intent_fingerprint})"
+            )
+        decision_fingerprint = fingerprint_decisions(event.decisions)
+        if authority.decision_fingerprint != decision_fingerprint:
+            raise LedgerTransitionError(
+                "assessment authority decision fingerprint does not match "
+                f"the assessed decisions (authority "
+                f"{authority.decision_fingerprint}, computed "
+                f"{decision_fingerprint})"
+            )
+        if authority.assessment_event_id != event.event_id:
+            raise LedgerTransitionError(
+                "assessment authority references event "
+                f"{authority.assessment_event_id}, not {event.event_id}"
+            )
         if event.availability_fingerprint is not None:
             current_state = self.availability_fingerprint()
             if current_state != event.availability_fingerprint:
@@ -813,8 +918,20 @@ class ExecutionLedger:
                     f"{event.availability_fingerprint}, current "
                     f"{current_state})"
                 )
+        if (
+            authority.availability_fingerprint is not None
+            and event.availability_fingerprint is not None
+            and authority.availability_fingerprint
+            != event.availability_fingerprint
+        ):
+            raise LedgerTransitionError(
+                "assessment authority availability fingerprint differs from "
+                "the assessment event binding"
+            )
         next_status = derive_order_status(state.intent.side, event.decisions)
-        self._orders[event.order_id] = replace(state, status=next_status)
+        self._orders[event.order_id] = replace(
+            state, status=next_status, authority=authority
+        )
 
     def _apply_submitted(self, event: OrderSubmitted) -> None:
         request = event.request
@@ -823,15 +940,101 @@ class ExecutionLedger:
             raise LedgerTransitionError(
                 f"cannot submit order {request.order_id} from {state.status.value}"
             )
-        if event.availability_fingerprint is not None:
-            current_state = self.availability_fingerprint()
-            if current_state != event.availability_fingerprint:
-                raise LedgerTransitionError(
-                    "stale submission rejected: availability state drifted "
-                    f"since assessment (submission bound "
-                    f"{event.availability_fingerprint}, current "
-                    f"{current_state})"
+        if not self._legacy_fixture_mode:
+            # -- typed fee quote: the submission boundary never accepts a
+            # bare integer as fee authority ----------------------------
+            quote = event.fee_quote
+            if not isinstance(quote, FeeCapQuote):
+                raise LedgerAccountingError(
+                    "submission requires an embedded typed FeeCapQuote "
+                    "bound to account, instrument, trade date, and "
+                    "schedule evidence; a bare integer is not accepted"
                 )
+            quote_fingerprint = fingerprint_fee_cap_quote(quote)
+            if event.fee_quote_fingerprint != quote_fingerprint:
+                raise LedgerAccountingError(
+                    "submission fee_quote_fingerprint does not match the "
+                    "embedded typed quote"
+                )
+            if event.worst_case_fee_fen != quote.cap_fen:
+                raise LedgerAccountingError(
+                    "submission worst_case_fee_fen does not match the "
+                    "typed fee quote cap"
+                )
+            # -- immutable assessment authority -------------------------
+            authority = state.authority
+            if authority is None:
+                raise LedgerTransitionError(
+                    f"order {request.order_id} has no stored assessment "
+                    "authority; it was assessed outside the production path"
+                )
+            if (
+                request.assessment_event_id is None
+                or request.assessment_event_id != authority.assessment_event_id
+            ):
+                raise LedgerTransitionError(
+                    "submission references assessment event "
+                    f"{request.assessment_event_id!r}, but the stored "
+                    f"authority is {authority.assessment_event_id!r}"
+                )
+            if (
+                request.assessment_decision_fingerprint is None
+                or request.assessment_decision_fingerprint
+                != authority.decision_fingerprint
+            ):
+                raise LedgerTransitionError(
+                    "submission decision fingerprint does not match the "
+                    "stored assessment authority"
+                )
+            if (
+                request.availability_fingerprint is None
+                or request.availability_fingerprint
+                != authority.availability_fingerprint
+            ):
+                raise LedgerTransitionError(
+                    "submission availability fingerprint does not match "
+                    "the stored assessment authority"
+                )
+            if (
+                request.plan_id != authority.plan_id
+                or request.leg_id != authority.leg_id
+                or request.instruction_id != authority.instruction_id
+            ):
+                raise LedgerTransitionError(
+                    "submission plan/leg/instruction lineage differs from "
+                    "the stored assessment authority"
+                )
+            if (
+                request.limit_price_source_fingerprint is not None
+                and request.limit_price_source_fingerprint
+                != state.intent.limit_price_source_fingerprint
+            ):
+                raise LedgerTransitionError(
+                    "submission price evidence fingerprint differs from "
+                    "the validated intent"
+                )
+            if (
+                request.fee_quote_fingerprint
+                != state.intent.fee_quote_fingerprint
+            ):
+                raise LedgerTransitionError(
+                    "submission fee quote fingerprint differs from the "
+                    "validated intent"
+                )
+        if (
+            request.availability_fingerprint is not None
+            and request.availability_fingerprint
+            != (
+                self._batch_base_fingerprint
+                or self.availability_fingerprint()
+            )
+        ):
+            raise LedgerTransitionError(
+                "stale submission rejected: availability state drifted "
+                f"since assessment (submission bound "
+                f"{request.availability_fingerprint}, current "
+                f"{self.availability_fingerprint()})"
+            )
         if request.request_id in self._request_ids:
             raise LedgerTransitionError(f"duplicate request_id: {request.request_id}")
         intent = state.intent

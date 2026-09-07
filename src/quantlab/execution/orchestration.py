@@ -20,29 +20,38 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from quantlab.execution.models import (
+    AssessmentAuthority,
     ExecutionValidationError,
     OrderIntent,
     OrderRequest,
     OrderType,
     RebalanceInstruction,
     TimeInForce,
+    fingerprint_order_intent,
     require_aware,
 )
 from quantlab.execution.planning import (
     ExecutionStateView,
+    FeeCapQuote,
     OrderPlan,
     OrderPlanLegStatus,
+    fingerprint_fee_cap_quote,
     fingerprint_rebalance_instruction,
 )
 
 
 @dataclass(frozen=True)
 class OrderBatch:
-    """A deterministic, fully bound plan-to-order batch."""
+    """A deterministic, fully bound plan-to-intent batch.
+
+    ``requests`` is always empty: requests are materialized ONLY from the
+    stored assessment authority after the intent has been assessed inside
+    the ledger (materialize_bound_request).
+    """
 
     plan: OrderPlan
     intents: tuple[OrderIntent, ...]
-    requests: tuple[OrderRequest, ...]
+    requests: tuple[OrderRequest, ...] = ()
 
 
 def _binding_digest(plan_id: str, leg_id: str, suffix: str) -> str:
@@ -58,12 +67,12 @@ def materialize_order_batch(
     state: ExecutionStateView,
     created_at: datetime,
 ) -> OrderBatch:
-    """Materialize ORDERABLE legs of a SUBMIT_READY plan into orders.
+    """Materialize ORDERABLE legs of a SUBMIT_READY plan into intents.
 
-    Deterministic: identical inputs produce identical order/request ids and
-    payloads. Raises when the plan is blocked, when the plan does not
-    belong to the instruction, or when the plan's execution-state
-    fingerprint differs from ``state`` (plan or account drift).
+    This is step 1 of the strict production order: plan adapter ->
+    intents ONLY. Requests require the stored assessment authority and
+    are created by :func:`materialize_bound_request` after the ledger has
+    accepted the assessment.
     """
     require_aware(created_at, "created_at")
     if plan.status.value != "submit_ready":
@@ -89,7 +98,6 @@ def materialize_order_batch(
             "plan was built"
         )
     intents: list[OrderIntent] = []
-    requests: list[OrderRequest] = []
     for leg in plan.legs:
         if leg.status is not OrderPlanLegStatus.ORDERABLE:
             # blocked and not-traded legs never become orders
@@ -118,25 +126,78 @@ def materialize_order_batch(
             limit_price_source_fingerprint=leg.limit_price_source_fingerprint,
             fee_quote_fingerprint=leg.fee_quote_fingerprint,
         )
-        request = OrderRequest(
-            request_id=f"req-{digest}",
-            order_id=intent.order_id,
-            instrument_id=intent.instrument_id,
-            side=intent.side,
-            quantity=intent.quantity,
-            order_type=intent.order_type,
-            limit_price=intent.limit_price,
-            intended_trade_date=intent.intended_trade_date,
-            created_at=created_at,
-            session=intent.session,
-            limit_price_basis=intent.limit_price_basis,
-            limit_price_source_id=intent.limit_price_source_id,
-            time_in_force=intent.time_in_force,
-        )
         intents.append(intent)
-        requests.append(request)
-    return OrderBatch(
-        plan=plan, intents=tuple(intents), requests=tuple(requests)
+    return OrderBatch(plan=plan, intents=tuple(intents))
+
+
+def materialize_bound_request(
+    intent: OrderIntent,
+    authority: AssessmentAuthority,
+    *,
+    fee_quote: FeeCapQuote,
+    stored_authority: AssessmentAuthority,
+) -> OrderRequest:
+    """Materialize the broker-facing request from the STORED authority.
+
+    Step 4 of the strict production order: only an assessment authority
+    the ledger has persisted can produce a request. ``stored_authority``
+    is the ledger's own copy and MUST be supplied; it must equal
+    ``authority`` field for field, and the ledger re-verifies everything
+    again at submission time.
+    """
+    if stored_authority != authority:
+        raise ExecutionValidationError(
+            "assessment authority does not match the authority stored in "
+            "the ledger; re-assess before submitting"
+        )
+    if authority.intent_fingerprint != fingerprint_order_intent(intent):
+        raise ExecutionValidationError(
+            "assessment authority binds a different intent payload"
+        )
+    if authority.order_id != intent.order_id:
+        raise ExecutionValidationError(
+            "assessment authority is bound to "
+            f"{authority.order_id}, not {intent.order_id}"
+        )
+    if fee_quote.instrument_id != intent.instrument_id:
+        raise ExecutionValidationError(
+            "fee quote instrument does not match the intent"
+        )
+    quote_fingerprint = fingerprint_fee_cap_quote(fee_quote)
+    if intent.fee_quote_fingerprint is not None and (
+        intent.fee_quote_fingerprint != quote_fingerprint
+    ):
+        raise ExecutionValidationError(
+            "fee quote fingerprint differs from the plan-leg binding"
+        )
+    digest = _binding_digest(
+        intent.plan_id or "adhoc",
+        intent.leg_id or intent.order_id,
+        intent.instrument_id,
+    )
+    return OrderRequest(
+        request_id=f"req-{digest}",
+        order_id=intent.order_id,
+        instrument_id=intent.instrument_id,
+        side=intent.side,
+        quantity=intent.quantity,
+        order_type=intent.order_type,
+        limit_price=intent.limit_price,
+        intended_trade_date=intent.intended_trade_date,
+        # the request comes into existence with its authorizing assessment
+        created_at=authority.assessed_at,
+        session=intent.session,
+        limit_price_basis=intent.limit_price_basis,
+        limit_price_source_id=intent.limit_price_source_id,
+        time_in_force=intent.time_in_force,
+        instruction_id=authority.instruction_id,
+        plan_id=authority.plan_id,
+        leg_id=authority.leg_id,
+        assessment_event_id=authority.assessment_event_id,
+        assessment_decision_fingerprint=authority.decision_fingerprint,
+        availability_fingerprint=authority.availability_fingerprint,
+        limit_price_source_fingerprint=intent.limit_price_source_fingerprint,
+        fee_quote_fingerprint=quote_fingerprint,
     )
 
 
@@ -149,7 +210,7 @@ def verify_lineage(
     """Re-validate that an existing intent still matches its lineage.
 
     Any drift - a different plan, changed instruction content, or a moved
-    account execution state - invalidates reuse of the old intent/request.
+    account availability state - invalidates reuse of the old intent.
     """
     failures = []
     if intent.plan_id != plan.plan_id:

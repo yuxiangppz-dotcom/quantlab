@@ -10,6 +10,7 @@ from enum import StrEnum
 from quantlab.execution.ledger import ConstraintsAssessed, account_state_fingerprint
 from quantlab.execution.models import (
     AccountSnapshot,
+    AssessmentAuthority,
     ConstraintDecision,
     ConstraintDimension,
     ConstraintStatus,
@@ -20,6 +21,8 @@ from quantlab.execution.models import (
     PriceBasis,
     Side,
     derive_order_status,
+    fingerprint_decisions,
+    fingerprint_order_intent,
     require_aware,
     require_identifier,
 )
@@ -173,6 +176,28 @@ class AShareConstraintEngine:
             assessed_at.isoformat(),
             *(decision.decision_id for decision in decisions),
         )
+        fee_authority = (
+            (fee_schedule.schedule_id, fee_schedule.source_sha256)
+            if fee_schedule is not None
+            else (None, None)
+        )
+        authority = AssessmentAuthority(
+            assessment_event_id=event_id,
+            order_id=intent.order_id,
+            intent_fingerprint=fingerprint_order_intent(intent),
+            decision_fingerprint=fingerprint_decisions(decisions),
+            availability_fingerprint=availability_fingerprint or "unbound",
+            assessed_at=assessed_at,
+            dimension_statuses=tuple(
+                (decision.dimension.value, decision.status.value)
+                for decision in decisions
+            ),
+            fee_schedule_evidence_id=fee_authority[0],
+            fee_schedule_source_fingerprint=fee_authority[1],
+            instruction_id=intent.instruction_id,
+            plan_id=intent.plan_id,
+            leg_id=intent.leg_id,
+        )
         return AssessmentResult(
             event=ConstraintsAssessed(
                 event_id=event_id,
@@ -181,6 +206,7 @@ class AShareConstraintEngine:
                 decisions=decisions,
                 account_fingerprint=account_state_fingerprint(account),
                 availability_fingerprint=availability_fingerprint,
+                authority=authority,
             ),
             derived_status=derived,
         )

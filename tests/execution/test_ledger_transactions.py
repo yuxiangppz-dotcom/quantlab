@@ -24,7 +24,6 @@ from quantlab.execution.ledger import (
     ExecutionLedger,
     FillRecorded,
     LedgerAccountingError,
-    OrderCanceled,
     OrderIntended,
     OrderSubmitted,
 )
@@ -120,6 +119,8 @@ def _engine() -> AShareConstraintEngine:
 
 
 def _intent(order_id: str, quantity: int = 300, minute: int = 1) -> OrderIntent:
+    from quantlab.execution.models import fingerprint_fee_cap_quote
+
     return OrderIntent(
         order_id=order_id,
         instruction_id="txn-instruction",
@@ -133,6 +134,7 @@ def _intent(order_id: str, quantity: int = 300, minute: int = 1) -> OrderIntent:
         limit_price_basis=PriceBasis.RAW,
         limit_price_source_id="txn-price",
         time_in_force=TimeInForce.DAY,
+        fee_quote_fingerprint=fingerprint_fee_cap_quote(_quote()),
     )
 
 
@@ -175,7 +177,35 @@ def _assess(ledger: ExecutionLedger, engine, intent, minute: int):
     return result
 
 
-def _submit_event(intent: OrderIntent, minute: int, fee: int = FEE_CAP):
+def _submit_event(
+    intent: OrderIntent,
+    minute: int,
+    fee: int = FEE_CAP,
+    authority=None,
+    ledger=None,
+):
+    from quantlab.execution.orchestration import materialize_bound_request
+
+    if authority is not None and ledger is not None:
+        stored = ledger.order(intent.order_id).authority
+        request = materialize_bound_request(
+            intent,
+            stored,
+            fee_quote=_quote(),
+            stored_authority=stored,
+        )
+        request = __import__("dataclasses").replace(
+            request, created_at=_instant(FRI, minute)
+        )
+        return OrderSubmitted(
+            f"txn-{intent.order_id}-submitted",
+            _instant(FRI, minute),
+            request,
+            worst_case_fee_fen=fee,
+            availability_fingerprint=request.availability_fingerprint,
+            fee_quote_fingerprint=request.fee_quote_fingerprint,
+            fee_quote=_quote(),
+        )
     return OrderSubmitted(
         f"txn-{intent.order_id}-submitted",
         _instant(FRI, minute),
@@ -220,12 +250,23 @@ def _prepared_batch_ledger(self) -> tuple[ExecutionLedger, list]:
     ledger = ExecutionLedger(_account(), calendar=_calendar())
     engine = _engine()
     events = []
+    authorities = []
     for index, order_id in enumerate(("txn-a", "txn-b", "txn-c")):
         minute = 1 + index * 10
         intent = _intend(ledger, order_id, minute=minute)
         _assess(ledger, engine, intent, minute=minute + 2)
-        # submissions come after every assessment (batch wall-clock order)
-        events.append(_submit_event(intent, minute=40 + index))
+        authorities.append(ledger.order(order_id).authority)
+    # submissions come after every assessment (batch wall-clock order)
+    for index, order_id in enumerate(("txn-a", "txn-b", "txn-c")):
+        intent = ledger.order(order_id).intent
+        events.append(
+            _submit_event(
+                intent,
+                minute=40 + index,
+                authority=authorities[index],
+                ledger=ledger,
+            )
+        )
     return ledger, events
 
 
@@ -374,38 +415,22 @@ def test_cancel_after_batch_failure_releases_nothing_extra() -> None:
             raise RuntimeError("third submission fails")
         original(self, event)
 
-    # fail the THIRD submission after the first two succeeded, through the
-    # public single-append path, mixing ledger APIs like a real caller
+    # fail the THIRD submission inside one atomic bound batch: the first
+    # two reservations must roll back with the failed third
     ExecutionLedger._apply_submitted = failing  # type: ignore[method-assign]
     try:
-        ledger.append(events[0])
-        ledger.append(events[1])
         with pytest.raises(RuntimeError):
-            ledger.append(events[2])
+            ledger.submit_orders([(event, _quote()) for event in events])
     finally:
         ExecutionLedger._apply_submitted = original  # type: ignore[method-assign]
-    # the failed third submission left nothing behind: no request id,
-    # no reservation, and the order back at its validated state
-    assert ledger._request_ids == set(  # noqa: SLF001
-        event.request.request_id for event in events[:2]
-    )
+    # the failed third submission left nothing behind: no request ids,
+    # no reservations, and EVERY order back at its validated state —
+    # the whole bound batch rolled back as one transaction
+    assert ledger._request_ids == set()  # noqa: SLF001
     assert ledger.order("txn-c").status.value == "validated"
     assert ledger.order("txn-c").request_id is None
-    assert all(
-        reservation.order_id in {"txn-a", "txn-b"}
-        for reservation in ledger.reservations
-    )
-    assert ledger.order("txn-a").status.value == "submitted"
-    # canceling the two live orders releases their reservations exactly
-    ledger.append(
-        OrderCanceled(
-            "txn-cancel-a", _instant(FRI, 50), "txn-a", "txn cancel"
-        )
-    )
-    ledger.append(
-        OrderCanceled(
-            "txn-cancel-b", _instant(FRI, 51), "txn-b", "txn cancel"
-        )
-    )
+    assert ledger.order("txn-a").status.value == "validated"
+    assert ledger.order("txn-b").status.value == "validated"
+    assert ledger.reservations == ()
     assert ledger.reserved_cash_fen() == 0
-    assert _state(ledger) != before  # the two good submissions did commit
+    assert _state(ledger) == before  # zero residue versus the pre-batch state
