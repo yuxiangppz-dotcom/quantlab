@@ -678,7 +678,13 @@ class ExecutionLedger:
                     f"reservation for unknown order {reservation.order_id}"
                 )
             remaining = order_state.remaining_quantity
-            if reservation.limit_price_fen:
+            is_buy = order_state.intent.side is Side.BUY
+            if not is_buy and reservation.reserved_cash_fen:
+                raise LedgerAccountingError(
+                    f"sell reservation carries a buy-style cash identity: "
+                    f"{reservation.order_id}"
+                )
+            if is_buy and reservation.limit_price_fen:
                 needed = (
                     remaining * reservation.limit_price_fen
                     + (reservation.fee_cap_fen - reservation.fee_used_fen)
@@ -1049,6 +1055,17 @@ class ExecutionLedger:
             raise LedgerTransitionError(
                 "request intended trade date differs from validated intent"
             )
+        # DAY commit boundary: the Shanghai-local submission date must be
+        # exactly the intended trade date. A Friday-created intent for
+        # Monday may exist as a future intention, but Friday can never
+        # submit its Monday DAY request; late broker reports arrive later,
+        # yet their fills still bind the submitted DAY trade date.
+        if exchange_date(event.occurred_at) != request.intended_trade_date:
+            raise LedgerTransitionError(
+                "a DAY order is submitted on its intended trade date: "
+                f"submission date {exchange_date(event.occurred_at)} != "
+                f"intended {request.intended_trade_date}"
+            )
         if request.time_in_force is not TimeInForce.DAY:
             raise LedgerTransitionError("only DAY orders may be submitted")
         if intent.time_in_force is not TimeInForce.DAY:
@@ -1119,6 +1136,9 @@ class ExecutionLedger:
                 instrument_id=intent.instrument_id,
                 reserved_cash_fen=0,
                 reserved_shares=intent.quantity,
+                limit_price_fen=int(intent.limit_price * 100),
+                fee_cap_fen=event.worst_case_fee_fen,
+                fee_used_fen=0,
             )
 
         self._request_ids.add(request.request_id)
@@ -1180,6 +1200,21 @@ class ExecutionLedger:
                 raise LedgerAccountingError(
                     f"sell fill price {event.price} is below the limit "
                     f"{intent.limit_price} for {event.order_id}"
+                )
+
+        reservation = self._reservations.get(event.order_id)
+        if reservation is not None:
+            # cumulative order-lifetime fee cap applies to buys AND sells
+            if (
+                reservation.fee_cap_fen
+                and reservation.fee_used_fen + event.fee_fen
+                > reservation.fee_cap_fen
+            ):
+                raise LedgerAccountingError(
+                    f"fill fee {event.fee_fen} fen exceeds the order "
+                    f"fee cap: cumulative "
+                    f"{reservation.fee_used_fen + event.fee_fen} > "
+                    f"{reservation.fee_cap_fen} for {event.order_id}"
                 )
 
         if intent.side is Side.BUY:
@@ -1275,9 +1310,27 @@ class ExecutionLedger:
                 event.quantity,
             )
             self._cash_fen += event.gross_notional_fen - event.fee_fen
+            sell_reservation = self._reservations.get(event.order_id)
             self._release_reservation(
                 event.order_id, cash_used=0, shares_used=event.quantity
             )
+            # a sell reserves shares only, but it still carries the
+            # order-lifetime cumulative fee budget: accumulate fee usage
+            # for as long as the order is not fully filled
+            if sell_reservation is not None:
+                unfilled = intent.quantity - new_filled
+                if unfilled > 0:
+                    self._reservations[event.order_id] = ActiveReservation(
+                        order_id=sell_reservation.order_id,
+                        instrument_id=sell_reservation.instrument_id,
+                        reserved_cash_fen=0,
+                        reserved_shares=unfilled,
+                        limit_price_fen=sell_reservation.limit_price_fen,
+                        fee_cap_fen=sell_reservation.fee_cap_fen,
+                        fee_used_fen=(
+                            sell_reservation.fee_used_fen + event.fee_fen
+                        ),
+                    )
 
         self._fill_ids.add(event.fill_id)
         next_status = (

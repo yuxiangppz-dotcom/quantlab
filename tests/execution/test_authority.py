@@ -118,13 +118,19 @@ def _fee_schedule() -> FeeScheduleEvidence:
     )
 
 
-def _intent(order_id: str = "authority-order", minute: int = 1) -> OrderIntent:
+def _intent(
+    order_id: str = "authority-order",
+    minute: int = 1,
+    *,
+    side: Side = Side.BUY,
+    quantity: int = 100,
+) -> OrderIntent:
     return OrderIntent(
         order_id=order_id,
         instruction_id="authority-instruction",
         instrument_id="600000.SH",
-        side=Side.BUY,
-        quantity=100,
+        side=side,
+        quantity=quantity,
         order_type=OrderType.LIMIT,
         limit_price=Decimal("10.00"),
         intended_trade_date=MON,
@@ -459,6 +465,122 @@ def test_foreign_drift_before_the_batch_fails_every_member() -> None:
             == "validated"
         )
         assert f"authority-stale-{index}" not in ledger._reservations
+
+
+def test_friday_cannot_submit_a_monday_day_request() -> None:
+    """DAY commit boundary: the Shanghai-local submission date must equal
+    the intended trade date; a Friday-created Monday intent may exist as a
+    future intention but Friday can never submit its Monday request."""
+    from quantlab.execution.orchestration import materialize_bound_request
+
+    calendar = _calendar()
+    ledger = ExecutionLedger(_account(), calendar=calendar)
+    engine = _engine(calendar)
+    intent = _intent("authority-monday")
+    ledger.append(
+        OrderIntended("ev-authority-monday-intent", intent.created_at, intent)
+    )
+    result = _assess(ledger, engine, intent, minute=2)
+    ledger.append(result.event)
+    stored = ledger.order("authority-monday").authority
+    request = materialize_bound_request(
+        intent, stored, fee_quote=_fee_quote(), stored_authority=stored
+    )
+    # the request is dated TUESDAY while the order is intended for Monday:
+    # the submission boundary must refuse any non-intended submission date
+    tue = date(2024, 12, 3)
+    from dataclasses import replace as _replace
+
+    late_request = _replace(request, created_at=_instant(tue))
+    event = OrderSubmitted(
+        "ev-authority-monday-submitted",
+        late_request.created_at,
+        late_request,
+        worst_case_fee_fen=_fee_quote().cap_fen,
+        availability_fingerprint=request.availability_fingerprint,
+        fee_quote_fingerprint=fingerprint_fee_cap_quote(_fee_quote()),
+        fee_quote=_fee_quote(),
+    )
+    with pytest.raises(LedgerTransitionError, match="intended trade date"):
+        ledger.append(event)
+
+
+def test_sell_order_lifetime_fee_budget_is_enforced() -> None:
+    """Sell orders do not freeze cash but still carry the order-lifetime
+    cumulative fee cap: exceeding it rejects the fill."""
+    lot = __import__(
+        "quantlab.execution.models", fromlist=["PositionLot"]
+    ).PositionLot(
+        lot_id="authority-sell-lot",
+        instrument_id="600000.SH",
+        quantity=100,
+        acquired_trade_date=THU,
+        sellable_from=FRI,
+    )
+    account = replace(_account(), lots=(lot,))
+    calendar = _calendar()
+    ledger = ExecutionLedger(account, calendar=calendar)
+    engine = _engine(calendar)
+    from quantlab.execution.orchestration import materialize_bound_request
+
+    intent = _intent("authority-sell", side=Side.SELL, quantity=100)
+    small_cap = replace(_fee_quote(), cap_fen=1_000)
+    intent = replace(
+        intent,
+        fee_quote_fingerprint=fingerprint_fee_cap_quote(small_cap),
+    )
+    ledger.append(
+        OrderIntended("ev-authority-sell-intent", intent.created_at, intent)
+    )
+    result = _assess(ledger, engine, intent, minute=2)
+    ledger.append(result.event)
+    stored = ledger.order("authority-sell").authority
+    request = materialize_bound_request(
+        intent, stored, fee_quote=small_cap, stored_authority=stored
+    )
+    ledger.append(
+        OrderSubmitted(
+            "ev-authority-sell-submitted",
+            request.created_at,
+            request,
+            worst_case_fee_fen=small_cap.cap_fen,
+            availability_fingerprint=request.availability_fingerprint,
+            fee_quote_fingerprint=fingerprint_fee_cap_quote(small_cap),
+            fee_quote=small_cap,
+        )
+    )
+    assert ledger.reserved_cash_fen() == 0
+    assert ledger.reserved_sellable_shares("600000.SH") == 100
+    first = __import__(
+        "quantlab.execution.ledger", fromlist=["FillRecorded"]
+    ).FillRecorded(
+        event_id="ev-sell-fill-1",
+        fill_id="authority-sell-f1",
+        occurred_at=_instant(MON, 20),
+        order_id="authority-sell",
+        trade_date=MON,
+        quantity=40,
+        price=Decimal("10.00"),
+        gross_notional_fen=40_000,
+        fee_fen=800,
+    )
+    ledger.append(first)
+    second = __import__(
+        "quantlab.execution.ledger", fromlist=["FillRecorded"]
+    ).FillRecorded(
+        event_id="ev-sell-fill-2",
+        fill_id="authority-sell-f2",
+        occurred_at=_instant(MON, 21),
+        order_id="authority-sell",
+        trade_date=MON,
+        quantity=60,
+        price=Decimal("10.00"),
+        gross_notional_fen=60_000,
+        fee_fen=300,
+    )
+    with pytest.raises(Exception, match="fee cap"):
+        ledger.append(second)
+    assert ledger.order("authority-sell").fee_fen == 800
 
 
 def test_happy_path_authority_chain_end_to_end() -> None:
