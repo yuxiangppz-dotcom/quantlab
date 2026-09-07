@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from quantlab.agent_loop import AgentLoop, AgentLoopError
+from quantlab.agent_loop.codex_bridge import (
+    bridge_status,
+    configure_bridge,
+    kick_reviewer_notification,
+)
 from quantlab.agent_loop.protocol import discover_repo_root
 
 
@@ -33,6 +38,7 @@ def _parser() -> argparse.ArgumentParser:
     publish.add_argument("--actor", default="codex-reviewer")
     publish.add_argument("--expected-head")
     publish.add_argument("--resume-blocked", action="store_true")
+    publish.add_argument("--resume-complete", action="store_true")
 
     claim = subparsers.add_parser("claim", help="atomically claim a ready task")
     claim.add_argument("--agent", required=True)
@@ -76,6 +82,23 @@ def _parser() -> argparse.ArgumentParser:
     show = subparsers.add_parser("show", help="print an immutable artifact")
     show.add_argument("kind", choices=("task", "report", "review"))
     show.add_argument("--generation", type=int)
+
+    configure = subparsers.add_parser(
+        "configure-codex-bridge", help="configure event-driven Codex review wake-up"
+    )
+    configure.add_argument("--thread-id", required=True)
+    configure.add_argument("--codex-executable", type=Path, required=True)
+    configure.add_argument("--disabled", action="store_true")
+    configure.add_argument("--turn-timeout-seconds", type=int, default=21_600)
+    configure.add_argument("--stale-delivery-seconds", type=int, default=25_200)
+
+    subparsers.add_parser("codex-bridge-status", help="show local bridge and delivery state")
+
+    notify = subparsers.add_parser(
+        "notify-reviewer", help="retry or synchronously deliver the current review event"
+    )
+    notify.add_argument("--event-sha256")
+    notify.add_argument("--synchronous", action="store_true")
     return parser
 
 
@@ -89,6 +112,15 @@ def _print_json(value: dict[str, Any]) -> None:
     print(json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2))
 
 
+def _safe_kick(loop: AgentLoop) -> dict[str, Any]:
+    """Keep a committed mailbox transition successful if delivery setup is broken."""
+
+    try:
+        return kick_reviewer_notification(loop)
+    except AgentLoopError as exc:
+        return {"status": "failed", "launched": False, "error": str(exc)}
+
+
 def main() -> int:
     args = _parser().parse_args()
     try:
@@ -97,6 +129,8 @@ def main() -> int:
             result = loop.initialize(project_id=args.project_id)
         elif args.command == "status":
             result = loop.status(role=args.role)
+            if args.role == "executor" and result["phase"] in {"REVIEW_READY", "BLOCKED"}:
+                result["codex_review_delivery"] = _safe_kick(loop)
         elif args.command == "doctor":
             result = loop.doctor()
         elif args.command == "publish-task":
@@ -106,6 +140,7 @@ def main() -> int:
                 actor=args.actor,
                 expected_head=args.expected_head,
                 resume_blocked=args.resume_blocked,
+                resume_complete=args.resume_complete,
             )
         elif args.command == "claim":
             result = loop.claim_task(agent=args.agent, lease_hours=args.lease_hours)
@@ -116,12 +151,14 @@ def main() -> int:
                 title=args.title,
                 require_commit=not args.allow_no_commit,
             )
+            result["codex_review_delivery"] = _safe_kick(loop)
         elif args.command == "block":
             result = loop.block_execution(
                 args.blocker_file,
                 claim_token=args.claim_token,
                 title=args.title,
             )
+            result["codex_review_delivery"] = _safe_kick(loop)
         elif args.command == "submit-review":
             result = loop.submit_review(
                 args.review_file,
@@ -143,6 +180,23 @@ def main() -> int:
         elif args.command == "show":
             print(loop.artifact_content(args.kind, args.generation), end="")
             return 0
+        elif args.command == "configure-codex-bridge":
+            result = configure_bridge(
+                loop,
+                thread_id=args.thread_id,
+                codex_executable=args.codex_executable,
+                enabled=not args.disabled,
+                turn_timeout_seconds=args.turn_timeout_seconds,
+                stale_delivery_seconds=args.stale_delivery_seconds,
+            )
+        elif args.command == "codex-bridge-status":
+            result = bridge_status(loop)
+        elif args.command == "notify-reviewer":
+            result = kick_reviewer_notification(
+                loop,
+                event_sha256=args.event_sha256,
+                synchronous=args.synchronous,
+            )
         else:  # pragma: no cover - argparse enforces this
             raise AssertionError(args.command)
         _print_json(result)

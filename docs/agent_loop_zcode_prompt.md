@@ -7,8 +7,9 @@ and `docs/agent_loop.md` before doing anything else.
 At the start of every scheduled run:
 
 1. Run `uv run python scripts/agent_loop.py status --role executor`.
-2. If `action` is not `claim_task`, stop immediately without modifying files,
-   Git, or mailbox state. A no-op is normal.
+2. If `action` is not `claim_task`, stop immediately without modifying project
+   files or Git. A no-op is normal. The status command may retry delivery of a
+   previously committed reviewer notification inside the ignored mailbox.
 3. If `action` is `claim_task`, run
    `uv run python scripts/agent_loop.py claim --agent zcode --lease-hours 24`.
    Retain the exact `claim_token` returned by that command. Never claim twice.
@@ -57,5 +58,6 @@ uv run python scripts/agent_loop.py block \
   --claim-token '<exact token>'
 ```
 
-After either successful report submission or blocker submission, stop. The
-Codex reviewer owns the next transition.
+After either successful report submission or blocker submission, stop. That
+command queues and launches the event-driven Codex reviewer notification. The
+Codex reviewer owns the next transition; do not wait for or duplicate it.

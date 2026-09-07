@@ -30,6 +30,7 @@ PHASES = {
 }
 DECISIONS = {"advance", "rework", "blocked", "complete"}
 ARTIFACT_KINDS = {"task", "report", "review"}
+NOTIFICATION_STATES = {"queued", "launching", "delivered", "failed"}
 
 
 class AgentLoopError(RuntimeError):
@@ -150,7 +151,29 @@ class AgentLoop:
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA synchronous = FULL")
+        if require_initialized:
+            self._ensure_notification_schema(connection)
         return connection
+
+    @staticmethod
+    def _ensure_notification_schema(connection: sqlite3.Connection) -> None:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS review_notifications (
+                event_sha256 TEXT PRIMARY KEY,
+                generation INTEGER NOT NULL,
+                event_action TEXT NOT NULL,
+                state TEXT NOT NULL,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                delivery_token TEXT NOT NULL DEFAULT '',
+                process_id INTEGER,
+                last_error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (event_sha256) REFERENCES events(event_sha256)
+            )
+            """
+        )
 
     def initialize(self, *, project_id: str = "quantlab") -> dict[str, Any]:
         if not project_id.strip():
@@ -182,6 +205,19 @@ class AgentLoop:
                     payload_json TEXT NOT NULL,
                     previous_sha256 TEXT,
                     event_sha256 TEXT NOT NULL UNIQUE
+                );
+                CREATE TABLE IF NOT EXISTS review_notifications (
+                    event_sha256 TEXT PRIMARY KEY,
+                    generation INTEGER NOT NULL,
+                    event_action TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    delivery_token TEXT NOT NULL DEFAULT '',
+                    process_id INTEGER,
+                    last_error TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (event_sha256) REFERENCES events(event_sha256)
                 );
                 """
             )
@@ -330,6 +366,24 @@ class AgentLoop:
             ) from exc
         return digest
 
+    @staticmethod
+    def _queue_review_notification(
+        connection: sqlite3.Connection,
+        *,
+        event_sha256: str,
+        generation: int,
+        event_action: str,
+        occurred_at: str,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO review_notifications(
+                event_sha256, generation, event_action, state, created_at, updated_at
+            ) VALUES (?, ?, ?, 'queued', ?, ?)
+            """,
+            (event_sha256, generation, event_action, occurred_at, occurred_at),
+        )
+
     def publish_task(
         self,
         task_file: Path,
@@ -338,6 +392,7 @@ class AgentLoop:
         actor: str = "codex-reviewer",
         expected_head: str | None = None,
         resume_blocked: bool = False,
+        resume_complete: bool = False,
     ) -> dict[str, Any]:
         content = _read_nonempty(task_file, "task file")
         snapshot = git_snapshot(self.repo_root)
@@ -354,12 +409,15 @@ class AgentLoop:
             connection.execute("BEGIN IMMEDIATE")
             try:
                 metadata = self._validate_metadata(connection)
-                allowed = metadata["phase"] == "IDLE" or (
-                    resume_blocked and metadata["phase"] == "BLOCKED"
+                allowed = (
+                    metadata["phase"] == "IDLE"
+                    or (resume_blocked and metadata["phase"] == "BLOCKED")
+                    or (resume_complete and metadata["phase"] == "COMPLETE")
                 )
                 if not allowed:
                     raise AgentLoopError(
-                        f"publish_task requires IDLE (or BLOCKED with --resume-blocked), "
+                        "publish_task requires IDLE, BLOCKED with --resume-blocked, "
+                        "or COMPLETE with --resume-complete; "
                         f"got {metadata['phase']}"
                     )
                 generation = int(metadata["generation"]) + 1
@@ -518,7 +576,7 @@ class AgentLoop:
                     claim_expires_at="",
                     updated_at=now,
                 )
-                self._append_event(
+                event_sha256 = self._append_event(
                     connection,
                     actor=metadata["claim_agent"],
                     action="report_submitted",
@@ -530,6 +588,13 @@ class AgentLoop:
                         "commit_count": commit_count,
                         "upstream": snapshot.upstream,
                     },
+                    occurred_at=now,
+                )
+                self._queue_review_notification(
+                    connection,
+                    event_sha256=event_sha256,
+                    generation=generation,
+                    event_action="report_submitted",
                     occurred_at=now,
                 )
                 connection.commit()
@@ -584,7 +649,7 @@ class AgentLoop:
                     claim_expires_at="",
                     updated_at=now,
                 )
-                self._append_event(
+                event_sha256 = self._append_event(
                     connection,
                     actor=metadata["claim_agent"],
                     action="execution_blocked",
@@ -595,6 +660,13 @@ class AgentLoop:
                         "clean": snapshot.clean,
                         "pushed": snapshot.pushed,
                     },
+                    occurred_at=now,
+                )
+                self._queue_review_notification(
+                    connection,
+                    event_sha256=event_sha256,
+                    generation=generation,
+                    event_action="execution_blocked",
                     occurred_at=now,
                 )
                 connection.commit()
@@ -875,6 +947,192 @@ class AgentLoop:
                 raise
         return self.status(role="executor")
 
+    def pending_review_notification(self) -> dict[str, Any] | None:
+        """Return the newest actionable reviewer notification, if any.
+
+        Notification delivery is deliberately separate from the state transition:
+        a committed report remains authoritative even when launching Codex fails.
+        """
+
+        with self._connect() as connection:
+            metadata = self._validate_metadata(connection)
+            if metadata["phase"] not in {"REVIEW_READY", "BLOCKED"}:
+                return None
+            row = connection.execute(
+                """
+                SELECT * FROM review_notifications
+                WHERE generation = ?
+                ORDER BY created_at DESC, event_sha256 DESC
+                LIMIT 1
+                """,
+                (int(metadata["generation"]),),
+            ).fetchone()
+            if row is None:
+                return None
+            result = dict(row)
+            if result["state"] not in NOTIFICATION_STATES:
+                raise AgentLoopError(
+                    f"invalid review notification state: {result['state']!r}"
+                )
+            result["delivery_token"] = "" if not result["delivery_token"] else "<redacted>"
+            return result
+
+    def claim_review_notification(
+        self,
+        *,
+        event_sha256: str | None = None,
+        stale_after_seconds: int = 25_200,
+    ) -> dict[str, Any] | None:
+        """Atomically claim one queued/failed notification for bridge delivery."""
+
+        if stale_after_seconds < 60:
+            raise AgentLoopError("stale_after_seconds must be at least 60")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                metadata = self._validate_metadata(connection)
+                if metadata["phase"] not in {"REVIEW_READY", "BLOCKED"}:
+                    connection.commit()
+                    return None
+                parameters: list[Any] = [int(metadata["generation"])]
+                selector = "generation = ?"
+                if event_sha256 is not None:
+                    selector += " AND event_sha256 = ?"
+                    parameters.append(event_sha256)
+                row = connection.execute(
+                    f"""
+                    SELECT * FROM review_notifications
+                    WHERE {selector}
+                    ORDER BY created_at DESC, event_sha256 DESC
+                    LIMIT 1
+                    """,
+                    parameters,
+                ).fetchone()
+                if row is None:
+                    connection.commit()
+                    return None
+                state = row["state"]
+                if state not in NOTIFICATION_STATES:
+                    raise AgentLoopError(f"invalid review notification state: {state!r}")
+                if state == "delivered":
+                    connection.commit()
+                    return None
+                if state == "launching":
+                    updated = datetime.fromisoformat(row["updated_at"].replace("Z", "+00:00"))
+                    if datetime.now(UTC) - updated < timedelta(seconds=stale_after_seconds):
+                        connection.commit()
+                        return None
+                token = secrets.token_urlsafe(32)
+                now = _utc_now()
+                connection.execute(
+                    """
+                    UPDATE review_notifications
+                    SET state = 'launching', attempt_count = attempt_count + 1,
+                        delivery_token = ?, process_id = NULL, last_error = '', updated_at = ?
+                    WHERE event_sha256 = ?
+                    """,
+                    (token, now, row["event_sha256"]),
+                )
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+        return {
+            "event_sha256": row["event_sha256"],
+            "generation": row["generation"],
+            "event_action": row["event_action"],
+            "delivery_token": token,
+            "attempt_count": int(row["attempt_count"]) + 1,
+        }
+
+    def record_review_notification_process(
+        self,
+        *,
+        event_sha256: str,
+        delivery_token: str,
+        process_id: int,
+    ) -> None:
+        if process_id <= 0:
+            raise AgentLoopError("process_id must be positive")
+        with self._connect() as connection:
+            changed = connection.execute(
+                """
+                UPDATE review_notifications
+                SET process_id = ?, updated_at = ?
+                WHERE event_sha256 = ? AND state = 'launching' AND delivery_token = ?
+                """,
+                (process_id, _utc_now(), event_sha256, delivery_token),
+            ).rowcount
+            if changed != 1:
+                raise AgentLoopError("notification delivery claim is stale")
+
+    def claimed_review_notification(
+        self, *, event_sha256: str, delivery_token: str
+    ) -> dict[str, Any]:
+        """Validate and return the exact currently launching delivery claim."""
+
+        if not delivery_token:
+            raise AgentLoopError("delivery_token must not be empty")
+        with self._connect() as connection:
+            metadata = self._validate_metadata(connection)
+            row = connection.execute(
+                """
+                SELECT * FROM review_notifications
+                WHERE event_sha256 = ? AND state = 'launching' AND delivery_token = ?
+                """,
+                (event_sha256, delivery_token),
+            ).fetchone()
+            if row is None:
+                raise AgentLoopError("notification delivery claim is stale")
+            if int(metadata["generation"]) != row["generation"] or metadata["phase"] not in {
+                "REVIEW_READY",
+                "BLOCKED",
+            }:
+                raise AgentLoopError("notification no longer matches current review state")
+            result = dict(row)
+            result["delivery_token"] = delivery_token
+            return result
+
+    def finish_review_notification(
+        self,
+        *,
+        event_sha256: str,
+        delivery_token: str,
+        delivered: bool,
+        error: str = "",
+    ) -> dict[str, Any]:
+        """Finish exactly the delivery attempt identified by its private token."""
+
+        if not delivery_token:
+            raise AgentLoopError("delivery_token must not be empty")
+        state = "delivered" if delivered else "failed"
+        detail = "" if delivered else (error.strip() or "unspecified delivery failure")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                changed = connection.execute(
+                    """
+                    UPDATE review_notifications
+                    SET state = ?, delivery_token = '', process_id = NULL,
+                        last_error = ?, updated_at = ?
+                    WHERE event_sha256 = ? AND state = 'launching' AND delivery_token = ?
+                    """,
+                    (state, detail[:4000], _utc_now(), event_sha256, delivery_token),
+                ).rowcount
+                if changed != 1:
+                    raise AgentLoopError("notification delivery claim is stale")
+                row = connection.execute(
+                    "SELECT * FROM review_notifications WHERE event_sha256 = ?",
+                    (event_sha256,),
+                ).fetchone()
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+        result = dict(row)
+        result["delivery_token"] = "" if not result["delivery_token"] else "<redacted>"
+        return result
+
     def _verify_event_chain(self, connection: sqlite3.Connection) -> tuple[int, str | None]:
         previous: str | None = None
         count = 0
@@ -980,6 +1238,18 @@ class AgentLoop:
                 "role": role,
                 "action": action,
             }
+            notification = connection.execute(
+                """
+                SELECT event_sha256, generation, event_action, state, attempt_count,
+                       process_id, last_error, created_at, updated_at
+                FROM review_notifications
+                WHERE generation = ?
+                ORDER BY created_at DESC, event_sha256 DESC
+                LIMIT 1
+                """,
+                (generation,),
+            ).fetchone()
+            result["review_notification"] = dict(notification) if notification else None
             if phase == "EXECUTING":
                 result["claim"] = {
                     "agent": metadata["claim_agent"],
@@ -1001,10 +1271,29 @@ class AgentLoop:
                     raise AgentLoopError(
                         f"artifact hash mismatch: {row['kind']} generation {row['generation']}"
                     )
+            notification_count = 0
+            for row in connection.execute("SELECT * FROM review_notifications"):
+                notification_count += 1
+                if row["state"] not in NOTIFICATION_STATES:
+                    raise AgentLoopError(
+                        f"invalid review notification state: {row['state']!r}"
+                    )
+                event = connection.execute(
+                    "SELECT action, generation FROM events WHERE event_sha256 = ?",
+                    (row["event_sha256"],),
+                ).fetchone()
+                if event is None:
+                    raise AgentLoopError("review notification references a missing event")
+                if (
+                    event["action"] != row["event_action"]
+                    or event["generation"] != row["generation"]
+                ):
+                    raise AgentLoopError("review notification event binding mismatch")
         snapshot = git_snapshot(self.repo_root)
         return {
             **status,
             "artifact_count": artifact_count,
+            "notification_count": notification_count,
             "git": {
                 "head": snapshot.head,
                 "branch": snapshot.branch,

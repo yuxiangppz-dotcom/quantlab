@@ -14,6 +14,7 @@ Codex publishes immutable task + expected HEAD
   -> ZCode atomically claims
   -> ZCode implements, tests, commits, and pushes
   -> ZCode submits immutable report + final HEAD
+  -> local bridge wakes Codex for that committed event exactly once
   -> Codex independently reviews repository evidence
   -> Codex publishes rework/next task, or stops BLOCKED/COMPLETE
 ```
@@ -39,6 +40,13 @@ before projection writes is repaired by the next `status` or `doctor` command.
 Projected-file tampering is overwritten from SQLite; database or event-chain
 tampering fails closed.
 
+Report/block submission also queues a reviewer notification in the same SQLite
+transaction. Delivery happens only after commit and contains only generation,
+event action, and event SHA-256—not task or report content. A private delivery
+token makes concurrent or stale workers fail closed. Failed delivery remains in
+SQLite and is retried by the next ZCode status check; a delivered event is never
+relaunched. Notification failure cannot roll back or hide the submitted report.
+
 ## State machine
 
 | Phase | Owner | Allowed next action |
@@ -62,6 +70,7 @@ uv run python scripts/agent_loop.py init --project-id quantlab
 uv run python scripts/agent_loop.py status --role executor
 uv run python scripts/agent_loop.py status --role reviewer
 uv run python scripts/agent_loop.py doctor
+uv run python scripts/agent_loop.py codex-bridge-status
 uv run python scripts/agent_loop.py show task
 uv run python scripts/agent_loop.py show report
 ```
@@ -130,6 +139,30 @@ This preserves the abandoned generation and creates a new immutable generation
 bound to the current clean, pushed HEAD. A stale event hash or agent mismatch is
 rejected without mutation.
 
+## One-time event bridge setup
+
+Configure the current Codex task and the local Codex executable. The config is
+stored only in the Git-ignored mailbox; do not commit a user-specific task ID or
+installation path.
+
+```bash
+uv run python scripts/agent_loop.py configure-codex-bridge \
+  --thread-id '<current Codex task id>' \
+  --codex-executable '<absolute local codex executable path>'
+uv run python scripts/agent_loop.py codex-bridge-status
+```
+
+The bridge uses the official Codex App Server to resume that task and start one
+review turn. Keep the Codex scheduled reviewer automation paused: it is no
+longer part of the normal loop. The 20-minute ZCode schedule remains useful for
+finding new implementation tasks and retrying a failed local notification, but
+it does not wake or spend a Codex turn while nothing is actionable.
+
+For deliberate recovery, inspect the bridge status and log under
+`.agent-loop/bridge/logs/`, then retry the committed event with
+`notify-reviewer`. `--synchronous` is a diagnostic mode and waits for the Codex
+turn to complete.
+
 ## One-time ZCode setup
 
 1. Keep this WSL project open in ZCode.
@@ -143,8 +176,8 @@ rejected without mutation.
    are no-ops unless `status --role executor` returns `claim_task`.
 
 Both desktop applications and the computer must remain running for local
-scheduled work. The Codex reviewer runs in the current chat every 20 minutes;
-it stays quiet when there is no new report or blocker.
+scheduled work. Codex is invoked only after a report or blocker commits; it no
+longer runs a 20-minute polling turn.
 
 ## Operations and recovery
 
