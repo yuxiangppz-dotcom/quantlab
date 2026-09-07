@@ -1,5 +1,48 @@
 # Execution Framework and Readiness
 
+## v0.2.2 — Submission Authority and Same-State Closure (current)
+
+v0.2.2 (schema `execution_readiness_v0_2_2`) closes the v0.2.1 review
+findings; v0.2.1 and v0.2 are superseded and NOT frozen, but keep
+verifying under their own schemas:
+
+- **Immutable assessment authority.** Every validated order persists
+  which assessment authorized it — assessment event id, canonical intent
+  and decision fingerprints, availability fingerprint, assessed_at, the
+  full dimension results, and the fee-schedule evidence binding. A
+  submission must reference the stored authority; a forged authority, a
+  swapped decision, different fee evidence, or a fresh fingerprint fails
+  closed. Legacy low-level fixtures are isolated behind an explicitly
+  named entry point and can never reach the production path.
+- **Canonical availability state.** Planning and every assessment bind
+  the availability fingerprint computed from the ledger's own canonical
+  payload (never a caller-declared string); the ledger recomputes and
+  compares it at every acceptance point, so fabricated views cannot bind.
+- **Bound atomic batches.** Every member of a multi-order submission
+  binds the same pre-batch availability fingerprint; aggregated cash and
+  share needs are validated once against that state; a member's own
+  earlier reservation can no longer stale its own batch, while any
+  out-of-batch drift fails every member.
+- **Typed fee authority everywhere.** The submission boundary embeds the
+  typed FeeCapQuote (a bare integer is refused) whose canonical
+  fingerprint matches the plan leg, intent, assessment, and request.
+  Sell orders carry the same order-lifetime cumulative fee budget
+  (without freezing cash).
+- **DAY commit boundary.** A DAY order can only be submitted on its
+  intended trade date (Shanghai-local); a Friday-created Monday
+  intention exists as a future intention, but Friday can never submit
+  its Monday request, and late broker reports still bind the committed
+  DAY trade date.
+- **Same-state smoke.** The formal smoke plans one BUY and one SELL leg
+  on the submitting ledger's own canonical availability state, assesses
+  both against one pre-batch fingerprint, materializes requests from the
+  stored authorities, commits one atomic batch, and proves a state drift
+  invalidates the replayed batch.
+- **Deep evidence binding.** Exact canonical key sets on the summary
+  claims, fault-injection, and fee-reconciliation files; both aggregate
+  booleans recomputed from their children; every composite readiness row
+  field-bound to its disclosed smoke sub-conditions.
+
 ## Freeze status of prior artifacts (v0.2.1 review record)
 
 The v0.2.1 formal artifact (`20260907T001202`) is **verifiable but not

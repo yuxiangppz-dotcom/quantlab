@@ -233,9 +233,10 @@ uv run python scripts/run_execution_readiness.py
 ```
 
 It publishes only evidence and readiness gates under
-`data/experiments/execution_readiness_v0_2_1/<run_id>/` (schema
-`execution_readiness_v0_2_1`; the v0.1 and superseded-candidate v0.2
-artifacts and verifiers remain valid). The audit includes the synthetic,
+`data/experiments/execution_readiness_v0_2_2/<run_id>/` (schema
+`execution_readiness_v0_2_2`; the v0.1 artifacts stay valid and the
+superseded v0.2/v0.2.1 artifacts keep verifying under their own
+schemas but are not frozen evidence). The audit includes the synthetic,
 non-trading order-path smoke suite, transactional fault-injection
 evidence, fee/reservation reconciliation, row-level daily/ST/suspension
 partition audits, and fail-closed readiness gates whose composite READY
