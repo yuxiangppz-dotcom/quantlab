@@ -132,6 +132,35 @@ def test_wrong_claim_token_cannot_mutate_state(repository: Path, tmp_path: Path)
     assert after["event_count"] == before["event_count"]
 
 
+def test_executor_can_publish_a_blocker_from_dirty_unpushed_state(
+    repository: Path, tmp_path: Path
+) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    token, _ = _publish_and_claim(loop, tmp_path)
+    (repository / "partial.txt").write_text("partial work\n", encoding="utf-8")
+    blocker = _write(tmp_path / "blocker.md", "# Blocked\n\nNeed external authority.\n")
+
+    status = loop.block_execution(blocker, claim_token=token, title="Authority blocked")
+
+    assert status["phase"] == "BLOCKED"
+    assert status["action"] == "inspect_blocker"
+    assert status["artifacts"]["report"]["content"].startswith("# Blocked")
+    assert loop.artifact_content("report", 1).startswith("# Blocked")
+
+
+def test_executor_block_rejects_wrong_token(repository: Path, tmp_path: Path) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    _publish_and_claim(loop, tmp_path)
+    blocker = _write(tmp_path / "blocker.md", "blocked\n")
+
+    with pytest.raises(AgentLoopError, match="claim token mismatch"):
+        loop.block_execution(blocker, claim_token="wrong", title="Blocked")
+
+    assert loop.status(role="reviewer")["phase"] == "EXECUTING"
+
+
 def test_report_requires_commit_and_push(repository: Path, tmp_path: Path) -> None:
     loop = AgentLoop(repository)
     loop.initialize()
@@ -245,4 +274,5 @@ def test_terminal_review_has_no_next_task(
     )
 
     assert result["phase"] == expected
-    assert result["action"] == "noop"
+    expected_action = "loop_complete" if expected == "COMPLETE" else "inspect_blocker"
+    assert result["action"] == expected_action

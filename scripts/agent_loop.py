@@ -44,6 +44,11 @@ def _parser() -> argparse.ArgumentParser:
     report.add_argument("--title", required=True)
     report.add_argument("--allow-no-commit", action="store_true")
 
+    block = subparsers.add_parser("block", help="publish an executor blocker")
+    block.add_argument("--blocker-file", type=Path, required=True)
+    block.add_argument("--claim-token", required=True)
+    block.add_argument("--title", required=True)
+
     review = subparsers.add_parser("submit-review", help="record review and optionally next task")
     review.add_argument("--review-file", type=Path, required=True)
     review.add_argument(
@@ -102,6 +107,12 @@ def main() -> int:
                 claim_token=args.claim_token,
                 title=args.title,
                 require_commit=not args.allow_no_commit,
+            )
+        elif args.command == "block":
+            result = loop.block_execution(
+                args.blocker_file,
+                claim_token=args.claim_token,
+                title=args.title,
             )
         elif args.command == "submit-review":
             result = loop.submit_review(

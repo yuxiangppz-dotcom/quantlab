@@ -247,6 +247,15 @@ See [docs/execution_readiness.md](docs/execution_readiness.md).
 
 The `data/` directory is git-ignored; canonical data is never committed.
 
+## ZCode + Codex Agent Loop
+
+The optional local shared-agent loop lets a scheduled ZCode executor hand a
+clean, pushed implementation to an independent Codex reviewer without copying
+task cards or run reports between applications. Its transactional mailbox is
+Git-ignored, binds every generation to exact Git heads and immutable artifact
+hashes, and fails closed on concurrent claims or evidence drift. It changes no
+financial or execution semantics. See [docs/agent_loop.md](docs/agent_loop.md).
+
 ## Systematic Lifecycle Event Data v0
 
 `SecurityLifecycleEvent` is a separate canonical layer: a raw, date-partitioned

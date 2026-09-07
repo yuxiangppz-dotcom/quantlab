@@ -538,6 +538,71 @@ class AgentLoop:
                 raise
         return self.status(role="reviewer")
 
+    def block_execution(
+        self,
+        blocker_file: Path,
+        *,
+        claim_token: str,
+        title: str,
+    ) -> dict[str, Any]:
+        """Publish a blocker without pretending the workspace is clean or pushed.
+
+        A blocked executor may have partial local work.  The protocol records that
+        fact for the reviewer instead of hiding the blocker or waiting for lease
+        expiry.  Resuming still requires the reviewer to restore a clean, pushed
+        repository state before publishing a replacement task.
+        """
+
+        content = _read_nonempty(blocker_file, "blocker file")
+        if not claim_token:
+            raise AgentLoopError("claim_token must not be empty")
+        snapshot = git_snapshot(self.repo_root)
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                metadata = self._validate_metadata(connection)
+                if metadata["phase"] != "EXECUTING":
+                    raise AgentLoopError(
+                        f"block_execution requires EXECUTING, got {metadata['phase']}"
+                    )
+                if not secrets.compare_digest(metadata["claim_token"], claim_token):
+                    raise AgentLoopError("claim token mismatch")
+                generation = int(metadata["generation"])
+                digest = self._insert_artifact(
+                    connection,
+                    kind="report",
+                    generation=generation,
+                    title=title,
+                    content=content,
+                    git_head=snapshot.head,
+                )
+                now = _utc_now()
+                self._set_metadata(
+                    connection,
+                    phase="BLOCKED",
+                    claim_token="",
+                    claim_expires_at="",
+                    updated_at=now,
+                )
+                self._append_event(
+                    connection,
+                    actor=metadata["claim_agent"],
+                    action="execution_blocked",
+                    generation=generation,
+                    payload={
+                        "blocker_sha256": digest,
+                        "head": snapshot.head,
+                        "clean": snapshot.clean,
+                        "pushed": snapshot.pushed,
+                    },
+                    occurred_at=now,
+                )
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+        return self.status(role="reviewer")
+
     def submit_review(
         self,
         review_file: Path,
@@ -756,11 +821,15 @@ class AgentLoop:
             generation = int(metadata["generation"])
             phase = metadata["phase"]
             required_artifacts: list[tuple[str, int]] = []
+            artifacts: dict[str, Any] = {}
             if generation > 0:
                 required_artifacts.append(("task", generation))
             if phase in {"REVIEW_READY", "COMPLETE"}:
                 required_artifacts.append(("report", generation))
-            artifacts: dict[str, Any] = {}
+            if phase == "BLOCKED":
+                blocked_report = self._artifact(connection, "report", generation)
+                if blocked_report is not None:
+                    artifacts["report"] = blocked_report
             for kind, artifact_generation in required_artifacts:
                 artifact = self._artifact(connection, kind, artifact_generation)
                 if artifact is None:
@@ -779,6 +848,10 @@ class AgentLoop:
                     expiry = datetime.fromisoformat(expiry_text.replace("Z", "+00:00"))
                     if datetime.now(UTC) >= expiry:
                         action = "block_expired_claim"
+            elif role == "reviewer" and phase == "BLOCKED":
+                action = "inspect_blocker"
+            elif role == "reviewer" and phase == "COMPLETE":
+                action = "loop_complete"
             result: dict[str, Any] = {
                 "protocol_version": metadata["protocol_version"],
                 "project_id": metadata["project_id"],
