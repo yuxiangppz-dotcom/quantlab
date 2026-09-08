@@ -142,11 +142,19 @@ rejected without mutation.
 ## Event bridge setup: dedicated reviewer topology
 
 The delivery target is always a **dedicated reviewer thread** created and
-verified by `bootstrap-codex-reviewer`. Never bind the bridge to the current
-interactive desktop Codex task: an independent App Server cannot resume a
-thread another process owns (`already has an active writer`), and a freshly
-started thread with no completed turn is not persisted (`no rollout found`).
-Both errors are deterministic configuration failures, not transient ones.
+verified by `bootstrap-codex-reviewer`. Only a configuration whose
+`probe_status` is `verified` may load as enabled: the load path rejects any
+other status, any missing or malformed structured persistence evidence, and
+any `thread/read`/`thread/resume` response that does not echo the requested
+thread id. Configuration creation is available only through the bounded
+bootstrap path; a failed or incomplete bootstrap stays recorded in
+`.agent-loop/bridge/bootstrap.json` and is never advertised as ready. Never
+bind the bridge to the current interactive desktop Codex task: an independent
+App Server cannot resume a thread another process owns, and a freshly started
+thread with no completed turn is not persisted (`no rollout found`). A
+foreign/interactive `already has an active writer` target discovered during
+bootstrap or validation is a deterministic configuration failure, not a
+transient one.
 
 ```bash
 uv run python scripts/agent_loop.py bootstrap-codex-reviewer \
@@ -160,7 +168,7 @@ The bootstrap command:
 2. runs exactly one fixed, content-free bootstrap turn and waits for
    `turn/completed` with status `completed`;
 3. closes that server, opens a fresh process, and proves `thread/read` and
-   `thread/resume` succeed for the same thread id;
+   `thread/resume` succeed for the same thread id and echo it back;
 4. only then atomically writes the Git-ignored bridge config
    (`.agent-loop/codex_bridge.json`, protocol
    `quantlab_codex_review_bridge_v2`) containing the dedicated thread id, the
@@ -176,27 +184,44 @@ Codex installation. Tests never call the real service.
 ### Delivery and retry classes
 
 Each delivery attempt is bound to the committed event SHA-256, generation,
-dedicated thread id, and configuration fingerprint, with exactly one live
-attempt per event. `delivered` requires the exact returned turn id and a
-`completed` status. Failures are classified:
+dedicated thread id, and configuration fingerprint. Exactly one live attempt
+exists per event, and — enforced by a partial unique index, transactionally at
+claim time — at most one live attempt exists per dedicated reviewer target
+(`config_fingerprint`, `thread_id`) across all events and generations. A
+different event that finds a fresh live attempt on its target receives a
+deterministic `target_busy` no-op and launches no process and no model turn;
+the same-event duplicate stays a no-op. A live attempt older than the bounded
+stale interval (`stale_delivery_seconds`) is superseded automatically, so a
+crashed worker cannot wedge the target forever. `delivered` requires the exact
+returned turn id and a `completed` status. Failures are classified:
 
-- **configuration** — `already has an active writer` on a foreign/interactive
-  thread, `no rollout found`, or a broken/fingerprint-mismatched config.
-  Automatic retries stop after the first failure for that fingerprint; a new
-  successfully bootstrapped configuration, or an explicit
+- **configuration** — `no rollout found`, a broken or fingerprint-mismatched
+  configuration, or a foreign/interactive target discovered during bootstrap
+  or validation. Automatic retries stop after the first failure for that
+  fingerprint; a new successfully bootstrapped configuration, or an explicit
   `uv run python scripts/agent_loop.py recover-bridge-delivery --reason ...`,
   re-queues the event.
-- **transient** — everything else (process exit, stream loss, timeout,
-  launch failure). Retries back off exponentially (60 s base, 1 h cap).
+- **transient** — everything else (process exit, stream loss, timeout, launch
+  failure), including an `already has an active writer`/busy overlap on the
+  verified dedicated target. A transient overlap fails the attempt closed,
+  schedules the normal exponential backoff (60 s base, 1 h cap), and never
+  sets `blocked_fingerprint`, so a legitimate busy verified reviewer can never
+  poison a valid configuration.
 
 Worker logs live under `.agent-loop/bridge/logs/<event-sha256>.log`. The
 delivery token is handed to the worker only through the
-`QUANTLAB_AGENT_LOOP_DELIVERY_TOKEN` environment variable and is redacted from
-errors, logs, projections, and status JSON. A report/block transaction always
-commits even if delivery later fails; a failed or blocked delivery is retried
-by the next ZCode `status` check. The wake prompt carries only fixed reviewer
-instructions plus generation, action, and event digest; artifact bodies are
-read by the reviewer from the authoritative mailbox.
+`QUANTLAB_AGENT_LOOP_DELIVERY_TOKEN` environment variable. The worker removes
+the variable from its own environment immediately after reading the token and
+keeps the value in memory only, and every Codex App Server process —
+bootstrap, probe, and delivery — is launched with an explicitly sanitized
+environment that excludes the variable. The raw token therefore never reaches
+the reviewer App Server or any descendant process, stays out of argv, logs,
+projections, and public status JSON, and is redacted from stored errors as a
+final defense in depth. A report/block transaction always commits even if
+delivery later fails; a failed or blocked delivery is retried by the next
+ZCode `status` check. The wake prompt carries only fixed reviewer instructions
+plus generation, action, and event digest; artifact bodies are read by the
+reviewer from the authoritative mailbox.
 
 The bridge uses the official Codex App Server to resume the dedicated thread
 and start one review turn. Keep the Codex scheduled reviewer automation paused:
