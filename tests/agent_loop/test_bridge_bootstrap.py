@@ -16,11 +16,9 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import sqlite3
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -145,6 +143,13 @@ _ACTIVE_WRITER = '''    if method == "thread/resume":
         reply(request_id, error={"code": -32601, "message": f"unsupported {method}"})
 '''
 
+_NO_ROLLOUT_RESUME = '''    if method == "thread/resume":
+        detail = f"no rollout found for thread id {THREAD_ID}"
+        reply(request_id, error={"code": -32600, "message": detail})
+    else:
+        reply(request_id, error={"code": -32601, "message": f"unsupported {method}"})
+'''
+
 _DELIVERY_TURN = '''    if method == "thread/resume":
         reply(request_id, result={"thread": {"id": THREAD_ID, "status": {"type": "idle"}}})
     elif method == "turn/start":
@@ -201,6 +206,20 @@ def _fake_codex(
     return path
 
 
+def _verified_evidence() -> dict[str, object]:
+    return {
+        "bootstrap_turn_id": "boot-turn-1",
+        "persistence": {
+            "bootstrap_turn_completed": True,
+            "creator_process_exited": True,
+            "thread_read_after_restart": True,
+            "thread_resume_after_restart": True,
+        },
+        "started_at": _utc_now(),
+        "finished_at": _utc_now(),
+    }
+
+
 def _write_bridge_config(
     loop: AgentLoop,
     *,
@@ -214,7 +233,7 @@ def _write_bridge_config(
         codex_executable=codex_executable,
         bootstrapped_at=_utc_now(),
         probe_status=probe_status,
-        probe_evidence={},
+        probe_evidence=_verified_evidence(),
     )
     _atomic_write(
         bridge_config_path(loop),
@@ -381,44 +400,19 @@ def test_dedicated_thread_completes_a_later_review_turn(
     assert attempts == [("delivered", result["turn_id"])]
 
 
-def test_active_writer_failure_is_deterministic_and_blocks_retry(
-    repository: Path, tmp_path: Path, make_review_ready
-) -> None:
-    loop = AgentLoop(repository)
-    loop.initialize()
-    make_review_ready(loop, tmp_path)
-    executable = _fake_codex(tmp_path / "codex", handlers=_ACTIVE_WRITER)
-    payload = _write_bridge_config(loop, codex_executable=executable)
-    fingerprint = payload["config_fingerprint"]
-
-    first = kick_reviewer_notification(loop, synchronous=True)
-
-    assert first["status"] == "failed"
-    assert first["classification"] == "configuration"
-    pending = loop.pending_review_notification()
-    assert pending is not None
-    assert pending["state"] == "failed"
-    assert pending["retry_class"] == "configuration"
-    assert pending["blocked_fingerprint"] == fingerprint
-    assert pending["next_retry_at"] == ""
-
-    second = kick_reviewer_notification(loop, synchronous=True)
-
-    assert second["status"] == "configuration_blocked"
-    assert second["launched"] is False
-    assert second["blocked_fingerprint"] == fingerprint
-    assert loop.doctor()["delivery_attempt_count"] == 1
-
-
 def test_new_probed_configuration_resumes_delivery_after_block(
     repository: Path, tmp_path: Path, make_review_ready
 ) -> None:
     loop = AgentLoop(repository)
     loop.initialize()
     make_review_ready(loop, tmp_path)
-    blocked_executable = _fake_codex(tmp_path / "codex-blocked", handlers=_ACTIVE_WRITER)
+    blocked_executable = _fake_codex(
+        tmp_path / "codex-blocked", handlers=_NO_ROLLOUT_RESUME
+    )
     _write_bridge_config(loop, codex_executable=blocked_executable)
-    assert kick_reviewer_notification(loop, synchronous=True)["status"] == "failed"
+    first = kick_reviewer_notification(loop, synchronous=True)
+    assert first["status"] == "failed"
+    assert first["classification"] == "configuration"
 
     good_executable = _fake_codex(
         tmp_path / "codex-good",
@@ -439,7 +433,7 @@ def test_recover_bridge_delivery_clears_blocked_fingerprint(
     loop = AgentLoop(repository)
     loop.initialize()
     make_review_ready(loop, tmp_path)
-    executable = _fake_codex(tmp_path / "codex", handlers=_ACTIVE_WRITER)
+    executable = _fake_codex(tmp_path / "codex", handlers=_NO_ROLLOUT_RESUME)
     _write_bridge_config(loop, codex_executable=executable)
     assert kick_reviewer_notification(loop, synchronous=True)["status"] == "failed"
     assert kick_reviewer_notification(loop, synchronous=True)["status"] == (
@@ -599,62 +593,6 @@ def test_approval_request_fails_attempt_without_granting_authority(
     assert pending is not None
     assert pending["state"] == "failed"
     assert "approval or user interaction" in pending["last_error"]
-
-
-def test_delivery_token_is_redacted_from_errors(
-    repository: Path,
-    tmp_path: Path,
-    make_review_ready,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    loop = AgentLoop(repository)
-    loop.initialize()
-    make_review_ready(loop, tmp_path)
-    src_root = str(Path(codex_bridge.__file__).resolve().parents[2])
-    repo_root = Path(codex_bridge.__file__).resolve().parents[3]
-    monkeypatch.setenv("PYTHONPATH", src_root)
-    scripts_dir = repository / "scripts"
-    scripts_dir.mkdir(exist_ok=True)
-    shutil.copy(repo_root / "scripts" / "agent_loop_notify.py", scripts_dir)
-    leak = (
-        "import os, sys\n"
-        'print(os.environ.get("QUANTLAB_AGENT_LOOP_DELIVERY_TOKEN", ""), '
-        "file=sys.stderr, flush=True)\n"
-        "sys.exit(3)\n"
-    )
-    executable = _fake_codex(tmp_path / "codex-leak", handlers="", prologue=leak)
-    _write_bridge_config(loop, codex_executable=executable)
-
-    assert codex_bridge._redact_token("secret abc secret", "abc") == "secret <redacted> secret"
-
-    launched = kick_reviewer_notification(loop)
-    assert launched["status"] == "launching"
-
-    log_path = Path(str(launched["log_path"]))
-    raw_token = ""
-
-    def _raw_token() -> str:
-        with sqlite3.connect(loop.database) as connection:
-            row = connection.execute(
-                "SELECT delivery_token FROM review_notifications"
-            ).fetchone()
-        return str(row[0])
-
-    state = ""
-    for _ in range(100):
-        raw_token = raw_token or _raw_token()
-        pending = loop.pending_review_notification()
-        assert pending is not None
-        state = str(pending["state"])
-        if state == "failed":
-            break
-        time.sleep(0.1)
-    assert state == "failed"
-    assert raw_token, "launching token was never observable"
-    last_error = str(loop.pending_review_notification()["last_error"])
-    assert "<redacted>" in last_error
-    assert raw_token not in last_error
-    assert raw_token not in log_path.read_text(encoding="utf-8")
 
 
 def test_worker_launch_failure_keeps_report_committed(

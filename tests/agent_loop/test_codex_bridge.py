@@ -28,6 +28,20 @@ def _git(repo: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+def _verified_evidence() -> dict[str, object]:
+    return {
+        "bootstrap_turn_id": "boot-turn-1",
+        "persistence": {
+            "bootstrap_turn_completed": True,
+            "creator_process_exited": True,
+            "thread_read_after_restart": True,
+            "thread_resume_after_restart": True,
+        },
+        "started_at": _utc_now(),
+        "finished_at": _utc_now(),
+    }
+
+
 def _configure_bridge(
     loop: AgentLoop,
     *,
@@ -43,7 +57,7 @@ def _configure_bridge(
         codex_executable=codex_executable,
         bootstrapped_at=_utc_now(),
         probe_status=probe_status,
-        probe_evidence={},
+        probe_evidence=_verified_evidence(),
         turn_timeout_seconds=turn_timeout_seconds,
         stale_delivery_seconds=stale_delivery_seconds,
     )
@@ -289,6 +303,7 @@ def test_kick_launches_one_detached_worker_and_records_pid(
     assert launches[0][1]["start_new_session"] is True
     command, kwargs = launches[0]
     assert "--delivery-token" not in command
+    assert all(codex_bridge.DELIVERY_TOKEN_ENV not in part for part in command)
     worker_env = kwargs["env"]
     assert worker_env[codex_bridge.DELIVERY_TOKEN_ENV]
     assert loop.pending_review_notification()["process_id"] == 4321  # type: ignore[index]
@@ -319,7 +334,12 @@ for line in sys.stdin:
     method = message.get("method")
     result = {}
     if method == "thread/resume":
-        result = {"thread": {"status": {"type": "idle"}}}
+        result = {
+            "thread": {
+                "id": "01a0749b-b253-7133-87d7-683ace12c634",
+                "status": {"type": "idle"},
+            }
+        }
     if method == "turn/start":
         result = {"turn": {"id": "turn-1"}}
     print(json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result}), flush=True)

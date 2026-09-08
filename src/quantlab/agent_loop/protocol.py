@@ -196,6 +196,20 @@ class AgentLoop:
             ON delivery_attempts(event_sha256) WHERE state = 'live'
             """
         )
+        try:
+            connection.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS one_live_delivery_attempt_per_target
+                ON delivery_attempts(config_fingerprint, thread_id) WHERE state = 'live'
+                """
+            )
+        except sqlite3.IntegrityError as exc:
+            raise AgentLoopError(
+                "ambiguous live delivery history: historical rows leave more "
+                "than one live delivery attempt on a single reviewer target "
+                "(config_fingerprint, thread_id); resolve them explicitly "
+                "without discarding attempt history"
+            ) from exc
         existing = {
             row["name"]
             for row in connection.execute("PRAGMA table_info(review_notifications)")
@@ -280,6 +294,8 @@ class AgentLoop:
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS one_live_delivery_attempt_per_event
                 ON delivery_attempts(event_sha256) WHERE state = 'live';
+                CREATE UNIQUE INDEX IF NOT EXISTS one_live_delivery_attempt_per_target
+                ON delivery_attempts(config_fingerprint, thread_id) WHERE state = 'live';
                 """
             )
             existing = connection.execute("SELECT COUNT(*) FROM metadata").fetchone()[0]
@@ -1050,8 +1066,12 @@ class AgentLoop:
 
         Returns ``None`` when the event must not be attempted now: it is
         delivered, a fresh live attempt exists, automatic retry is blocked for
-        the supplied configuration fingerprint, or the exponential backoff from
-        a transient failure is not due yet.
+        the supplied configuration fingerprint, the exponential backoff from a
+        transient failure is not due yet, or another event's fresh live
+        attempt holds the same dedicated reviewer target
+        (``config_fingerprint`` + ``thread_id``).  A live attempt older than
+        ``stale_after_seconds`` is superseded so a crashed worker cannot wedge
+        the target forever.
         """
 
         if stale_after_seconds < 60:
@@ -1111,6 +1131,47 @@ class AgentLoop:
                 attempt_id = secrets.token_hex(16)
                 now = _utc_now()
                 attempt_number = int(row["attempt_count"]) + 1
+                if state == "launching":
+                    # Bounded stale recovery for the same event: the crashed
+                    # worker's live attempt is superseded before the takeover.
+                    connection.execute(
+                        """
+                        UPDATE delivery_attempts
+                        SET state = 'superseded', updated_at = ?
+                        WHERE event_sha256 = ? AND state = 'live'
+                        """,
+                        (now, row["event_sha256"]),
+                    )
+                live = connection.execute(
+                    """
+                    SELECT attempt_id, event_sha256, updated_at
+                    FROM delivery_attempts
+                    WHERE state = 'live' AND config_fingerprint = ?
+                      AND thread_id = ?
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (config_fingerprint, thread_id),
+                ).fetchone()
+                if live is not None:
+                    # Another event already holds this dedicated reviewer
+                    # target.  A fresh live attempt keeps the target busy; a
+                    # crash cannot wedge it forever because an attempt older
+                    # than the bounded stale interval is superseded here.
+                    live_updated = datetime.fromisoformat(
+                        live["updated_at"].replace("Z", "+00:00")
+                    )
+                    if now_dt - live_updated < timedelta(seconds=stale_after_seconds):
+                        connection.commit()
+                        return None
+                    connection.execute(
+                        """
+                        UPDATE delivery_attempts
+                        SET state = 'superseded', updated_at = ?
+                        WHERE attempt_id = ?
+                        """,
+                        (now, live["attempt_id"]),
+                    )
                 connection.execute(
                     """
                     UPDATE review_notifications
@@ -1121,15 +1182,6 @@ class AgentLoop:
                     """,
                     (attempt_number, token, config_fingerprint, now, row["event_sha256"]),
                 )
-                if state == "launching":
-                    connection.execute(
-                        """
-                        UPDATE delivery_attempts
-                        SET state = 'superseded', updated_at = ?
-                        WHERE event_sha256 = ? AND state = 'live'
-                        """,
-                        (now, row["event_sha256"]),
-                    )
                 connection.execute(
                     """
                     INSERT INTO delivery_attempts(
@@ -1165,6 +1217,28 @@ class AgentLoop:
             "config_fingerprint": config_fingerprint,
             "thread_id": thread_id,
         }
+
+    def live_target_attempt(
+        self, *, config_fingerprint: str, thread_id: str
+    ) -> dict[str, Any] | None:
+        """Return the live delivery attempt holding this reviewer target, if any.
+
+        At most one live attempt exists per ``(config_fingerprint, thread_id)``
+        across all events and generations; this read-only view lets delivery
+        callers report a deterministic busy result without launching anything.
+        """
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM delivery_attempts
+                WHERE state = 'live' AND config_fingerprint = ? AND thread_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (config_fingerprint, thread_id),
+            ).fetchone()
+        return dict(row) if row is not None else None
 
     def record_review_notification_process(
         self,
@@ -1559,7 +1633,52 @@ class AgentLoop:
                     or event["generation"] != row["generation"]
                 ):
                     raise AgentLoopError("review notification event binding mismatch")
+                live_count = connection.execute(
+                    """
+                    SELECT COUNT(*) FROM delivery_attempts
+                    WHERE event_sha256 = ? AND state = 'live'
+                    """,
+                    (row["event_sha256"],),
+                ).fetchone()[0]
+                if row["state"] == "launching":
+                    if live_count != 1:
+                        raise AgentLoopError(
+                            "launching notification has no unique live delivery attempt"
+                        )
+                    if row["delivery_token"]:
+                        bound = connection.execute(
+                            """
+                            SELECT COUNT(*) FROM delivery_attempts
+                            WHERE event_sha256 = ? AND state = 'live'
+                              AND delivery_token_sha256 = ?
+                            """,
+                            (row["event_sha256"], _sha256_text(row["delivery_token"])),
+                        ).fetchone()[0]
+                        if bound != 1:
+                            raise AgentLoopError(
+                                "launching notification token does not match "
+                                "its live delivery attempt"
+                            )
+                    if row["config_fingerprint"]:
+                        fingerprint_bound = connection.execute(
+                            """
+                            SELECT COUNT(*) FROM delivery_attempts
+                            WHERE event_sha256 = ? AND state = 'live'
+                              AND config_fingerprint = ?
+                            """,
+                            (row["event_sha256"], row["config_fingerprint"]),
+                        ).fetchone()[0]
+                        if fingerprint_bound != 1:
+                            raise AgentLoopError(
+                                "live delivery attempt fingerprint is not bound "
+                                "to its notification"
+                            )
+                elif live_count:
+                    raise AgentLoopError(
+                        "live delivery attempt exists without a launching notification"
+                    )
             delivery_attempt_count = 0
+            live_targets: dict[tuple[str, str], int] = {}
             for row in connection.execute("SELECT * FROM delivery_attempts"):
                 delivery_attempt_count += 1
                 if row["state"] not in DELIVERY_ATTEMPT_STATES:
@@ -1577,6 +1696,15 @@ class AgentLoop:
                     or event["generation"] != row["generation"]
                 ):
                     raise AgentLoopError("delivery attempt event binding mismatch")
+                if row["state"] == "live":
+                    target = (row["config_fingerprint"], row["thread_id"])
+                    live_targets[target] = live_targets.get(target, 0) + 1
+            for (fingerprint, thread_id), count in live_targets.items():
+                if count > 1:
+                    raise AgentLoopError(
+                        "multiple live delivery attempts share one reviewer "
+                        f"target: fingerprint {fingerprint[:12]}… thread {thread_id}"
+                    )
         snapshot = git_snapshot(self.repo_root)
         return {
             **status,

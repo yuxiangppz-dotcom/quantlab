@@ -2,8 +2,11 @@
 """Internal detached worker for one claimed Codex reviewer notification.
 
 The delivery token is handed over only through the
-``QUANTLAB_AGENT_LOOP_DELIVERY_TOKEN`` environment variable; it never appears
-in argv, logs, or projections.
+``QUANTLAB_AGENT_LOOP_DELIVERY_TOKEN`` environment variable and is removed
+from this process environment immediately after it is read: the worker keeps
+it in memory only, so no child process — including the Codex App Server —
+can inherit the capability.  The token never appears in argv, logs, or
+projections.
 """
 
 from __future__ import annotations
@@ -28,7 +31,7 @@ def main() -> int:
     parser.add_argument("--mailbox", type=Path, required=True)
     parser.add_argument("--event-sha256", required=True)
     args = parser.parse_args()
-    token = os.environ.get(DELIVERY_TOKEN_ENV, "")
+    token = os.environ.pop(DELIVERY_TOKEN_ENV, "")
     if not token:
         print(
             json.dumps(

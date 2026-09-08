@@ -7,10 +7,21 @@ are read independently by the reviewer from the authoritative mailbox.
 The delivery target is always a *dedicated* reviewer thread created and
 persistence-verified by :func:`bootstrap_codex_reviewer`.  A thread that was
 never proven to survive its creator process is never advertised as ready, and
-the generation-3 failures (``already has an active writer`` on the interactive
-desktop task, ``no rollout found`` on an unpersisted fresh thread) are
-classified as deterministic configuration failures instead of retryable
-transients.
+``no rollout found`` on an unpersisted thread is a deterministic configuration
+failure instead of a retryable transient.
+
+Two generation-5 boundaries hold here:
+
+- the private delivery token is handed to the detached worker through the
+  environment only; the worker drops it immediately after reading, and every
+  Codex App Server process (bootstrap, probe, and delivery) is launched with an
+  explicitly sanitized environment that excludes the variable, so the reviewer
+  process tree never holds the capability;
+- delivery is serialized per dedicated target: at most one live attempt exists
+  for a ``(config_fingerprint, thread_id)`` pair across all events, an
+  active-writer overlap on the verified target is a transient busy retry (never
+  a permanent configuration block), and only ``probe_status: verified``
+  configurations with structured persistence evidence load as enabled.
 """
 
 from __future__ import annotations
@@ -39,15 +50,23 @@ from quantlab.agent_loop.protocol import (
 
 BRIDGE_PROTOCOL_VERSION = "quantlab_codex_review_bridge_v2"
 REVIEWER_KIND = "dedicated"
-PROBE_STATUSES = {"verified", "unverified"}
+VERIFIED_PROBE_STATUS = "verified"
+PERSISTENCE_EVIDENCE_KEYS = (
+    "bootstrap_turn_completed",
+    "creator_process_exited",
+    "thread_read_after_restart",
+    "thread_resume_after_restart",
+)
 _THREAD_ID = re.compile(r"^[0-9a-fA-F-]{20,80}$")
 DELIVERY_TOKEN_ENV = "QUANTLAB_AGENT_LOOP_DELIVERY_TOKEN"
 BOOTSTRAP_RECORD_NAME = "bootstrap.json"
 BOOTSTRAP_TIMEOUT_LIMITS = (60, 3_600)
-# Deterministic configuration failures from the generation-3 handshake: a
-# foreign/interactive owner holds the thread, or the thread was never persisted.
+# Deterministic configuration failures: the thread was never persisted.  An
+# "already has an active writer" report on the verified dedicated target is a
+# transient busy overlap (another live attempt holds the thread), not a broken
+# configuration; foreign/interactive active-writer targets are rejected during
+# bootstrap/validation before any configuration is ever written.
 CONFIGURATION_ERROR_MARKERS = (
-    "already has an active writer",
     "no rollout found",
 )
 BOOTSTRAP_PROMPT = (
@@ -115,6 +134,39 @@ def _validate_timeout_values(
         raise CodexBridgeError("stale_delivery_seconds must exceed turn_timeout_seconds")
 
 
+def _app_server_environment() -> dict[str, str]:
+    """Explicit child environment for every App Server process.
+
+    The delivery capability must never reach the Codex reviewer process tree,
+    so the token variable is removed before spawning instead of relying on
+    later redaction.
+    """
+
+    environment = dict(os.environ)
+    environment.pop(DELIVERY_TOKEN_ENV, None)
+    return environment
+
+
+def _validate_probe_evidence(evidence: dict[str, Any]) -> None:
+    """Require the minimum structured proof of a persistence-verified probe."""
+
+    bootstrap_turn_id = evidence.get("bootstrap_turn_id")
+    if not isinstance(bootstrap_turn_id, str) or not bootstrap_turn_id:
+        raise CodexBridgeError(
+            "bridge probe evidence is missing its completed bootstrap turn id"
+        )
+    persistence = evidence.get("persistence")
+    if not isinstance(persistence, dict):
+        raise CodexBridgeError(
+            "bridge probe evidence is missing structured persistence proof"
+        )
+    for key in PERSISTENCE_EVIDENCE_KEYS:
+        if persistence.get(key) is not True:
+            raise CodexBridgeError(
+                f"bridge persistence proof is incomplete: {key!r} is not proven"
+            )
+
+
 def compose_bridge_config(
     loop: AgentLoop,
     *,
@@ -134,8 +186,11 @@ def compose_bridge_config(
         turn_timeout_seconds=turn_timeout_seconds,
         stale_delivery_seconds=stale_delivery_seconds,
     )
-    if probe_status not in PROBE_STATUSES:
-        raise CodexBridgeError(f"invalid probe_status: {probe_status!r}")
+    if probe_status != VERIFIED_PROBE_STATUS:
+        raise CodexBridgeError(
+            "only a verified, persistence-proven reviewer probe may be written "
+            f"as bridge configuration, got probe_status {probe_status!r}"
+        )
     fingerprint = compute_config_fingerprint(
         thread_id=thread_id, codex_executable=executable, repo_root=loop.repo_root
     )
@@ -193,10 +248,14 @@ def load_bridge_config(loop: AgentLoop) -> CodexBridgeConfig | None:
             "bridge target must be a 'dedicated' reviewer thread, got "
             f"{raw['reviewer_kind']!r}; interactive desktop tasks are not valid targets"
         )
-    if raw["probe_status"] not in PROBE_STATUSES:
-        raise CodexBridgeError(f"invalid bridge probe_status: {raw['probe_status']!r}")
+    if raw["probe_status"] != VERIFIED_PROBE_STATUS:
+        raise CodexBridgeError(
+            "bridge probe_status must be 'verified': unverified or incomplete "
+            f"targets never load as enabled, got {raw['probe_status']!r}"
+        )
     if not isinstance(raw["probe_evidence"], dict):
         raise CodexBridgeError("bridge probe_evidence must be an object")
+    _validate_probe_evidence(raw["probe_evidence"])
     for key in ("thread_id", "codex_executable", "config_fingerprint", "bootstrapped_at"):
         if not isinstance(raw[key], str) or not raw[key]:
             raise CodexBridgeError(f"bridge {key} must be a non-empty string")
@@ -417,6 +476,19 @@ def bridge_status(loop: AgentLoop) -> dict[str, Any]:
     config = load_bridge_config(loop)
     pending = loop.pending_review_notification()
     record = read_bootstrap_record(loop)
+    live_attempt = None
+    if config is not None:
+        live = loop.live_target_attempt(
+            config_fingerprint=config.config_fingerprint, thread_id=config.thread_id
+        )
+        if live is not None:
+            live_attempt = {
+                "event_sha256": live["event_sha256"],
+                "generation": live["generation"],
+                "attempt_number": live["attempt_number"],
+                "created_at": live["created_at"],
+                "updated_at": live["updated_at"],
+            }
     return {
         "enabled": config is not None,
         "config_path": str(bridge_config_path(loop)),
@@ -428,6 +500,7 @@ def bridge_status(loop: AgentLoop) -> dict[str, Any]:
         "bootstrapped_at": config.bootstrapped_at if config else None,
         "last_bootstrap_attempt": record,
         "pending_notification": pending,
+        "live_delivery_attempt": live_attempt,
     }
 
 
@@ -450,6 +523,28 @@ def kick_reviewer_notification(
     gate = _delivery_gate_status(config=config, pending=pending)
     if gate is not None:
         return gate
+    live = loop.live_target_attempt(
+        config_fingerprint=config.config_fingerprint, thread_id=config.thread_id
+    )
+    if live is not None and live["event_sha256"] != pending["event_sha256"]:
+        # A different event already holds the dedicated target with a live
+        # attempt.  Never launch a second process or model turn; the claim
+        # path enforces the same invariant transactionally and supersedes the
+        # holding attempt once it exceeds the bounded stale interval.
+        live_updated = datetime.fromisoformat(
+            str(live["updated_at"]).replace("Z", "+00:00")
+        )
+        if (
+            datetime.now(UTC) - live_updated
+            < timedelta(seconds=config.stale_delivery_seconds)
+        ):
+            return {
+                "status": "target_busy",
+                "launched": False,
+                "event_sha256": pending["event_sha256"],
+                "live_event_sha256": live["event_sha256"],
+                "live_since": live["updated_at"],
+            }
     claimed = loop.claim_review_notification(
         event_sha256=event_sha256,
         stale_after_seconds=config.stale_delivery_seconds,
@@ -752,6 +847,7 @@ class _AppServerSession:
         process = subprocess.Popen(  # noqa: S603 - executable is explicit local configuration
             command,
             cwd=self._repo_root,
+            env=_app_server_environment(),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -905,10 +1001,23 @@ class _AppServerSession:
 
     def resume_thread(self, *, thread_id: str) -> str:
         result = self.request("thread/resume", {"threadId": thread_id})
-        status = result.get("thread", {}).get("status", {}).get("type")
+        thread = result.get("thread", {})
+        if thread.get("id") != thread_id:
+            raise CodexBridgeError(
+                "Codex App Server thread/resume returned a different thread "
+                f"identity: requested {thread_id}, got {thread.get('id')!r}"
+            )
+        status = thread.get("status", {}).get("type")
         if not isinstance(status, str):
             raise CodexBridgeError("Codex App Server returned no thread status")
         return status
 
     def read_thread(self, *, thread_id: str) -> dict[str, Any]:
-        return self.request("thread/read", {"threadId": thread_id})
+        result = self.request("thread/read", {"threadId": thread_id})
+        returned = result.get("thread", {}).get("id")
+        if returned != thread_id:
+            raise CodexBridgeError(
+                "Codex App Server thread/read returned a different thread "
+                f"identity: requested {thread_id}, got {returned!r}"
+            )
+        return result
