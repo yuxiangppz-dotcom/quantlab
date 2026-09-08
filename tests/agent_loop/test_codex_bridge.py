@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import subprocess
@@ -11,10 +12,13 @@ from quantlab.agent_loop import AgentLoop, AgentLoopError, codex_bridge
 from quantlab.agent_loop.codex_bridge import (
     CodexBridgeConfig,
     CodexBridgeError,
+    bridge_config_path,
     bridge_status,
-    configure_bridge,
+    compose_bridge_config,
+    deliver_review_event,
     kick_reviewer_notification,
 )
+from quantlab.agent_loop.protocol import _atomic_write, _utc_now
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -22,6 +26,32 @@ def _git(repo: Path, *args: str) -> str:
         ["git", *args], cwd=repo, check=True, capture_output=True, text=True
     )
     return result.stdout.strip()
+
+
+def _configure_bridge(
+    loop: AgentLoop,
+    *,
+    thread_id: str,
+    codex_executable: Path,
+    probe_status: str = "verified",
+    turn_timeout_seconds: int = 21_600,
+    stale_delivery_seconds: int = 25_200,
+) -> dict[str, object]:
+    payload = compose_bridge_config(
+        loop,
+        thread_id=thread_id,
+        codex_executable=codex_executable,
+        bootstrapped_at=_utc_now(),
+        probe_status=probe_status,
+        probe_evidence={},
+        turn_timeout_seconds=turn_timeout_seconds,
+        stale_delivery_seconds=stale_delivery_seconds,
+    )
+    _atomic_write(
+        bridge_config_path(loop),
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+    )
+    return payload
 
 
 @pytest.fixture
@@ -157,6 +187,7 @@ def test_delivery_claim_is_idempotent_and_private_token_is_cas_bound(
         event_sha256=str(claimed["event_sha256"]),
         delivery_token=str(claimed["delivery_token"]),
         delivered=True,
+        turn_id="turn-1",
     )
     assert finished["state"] == "delivered"
     assert finished["delivery_token"] == ""
@@ -176,6 +207,8 @@ def test_failed_delivery_is_retryable_with_a_new_token(
         delivery_token=str(first["delivery_token"]),
         delivered=False,
         error="injected launch failure",
+        backoff_base_seconds=0,
+        backoff_max_seconds=0,
     )
 
     second = loop.claim_review_notification()
@@ -229,7 +262,7 @@ def test_kick_launches_one_detached_worker_and_records_pid(
     _review_ready(loop, tmp_path)
     executable = tmp_path / "codex"
     executable.write_text("placeholder\n", encoding="utf-8")
-    configure_bridge(
+    _configure_bridge(
         loop,
         thread_id="01a0749b-b253-7133-87d7-683ace12c634",
         codex_executable=executable,
@@ -254,6 +287,10 @@ def test_kick_launches_one_detached_worker_and_records_pid(
     assert second["status"] == "launching"
     assert len(launches) == 1
     assert launches[0][1]["start_new_session"] is True
+    command, kwargs = launches[0]
+    assert "--delivery-token" not in command
+    worker_env = kwargs["env"]
+    assert worker_env[codex_bridge.DELIVERY_TOKEN_ENV]
     assert loop.pending_review_notification()["process_id"] == 4321  # type: ignore[index]
 
 
@@ -302,17 +339,23 @@ for line in sys.stdin:
     config = CodexBridgeConfig(
         thread_id="01a0749b-b253-7133-87d7-683ace12c634",
         codex_executable=executable,
+        reviewer_kind="dedicated",
+        config_fingerprint="f" * 64,
+        bootstrapped_at=_utc_now(),
+        probe_status="verified",
+        probe_evidence={},
         turn_timeout_seconds=60,
         stale_delivery_seconds=120,
     )
 
-    codex_bridge._run_app_server(  # noqa: SLF001 - protocol-level integration test
+    turn_id = deliver_review_event(
         config,
         repo_root=tmp_path,
         generation=3,
         event_action="report_submitted",
         event_sha256="a" * 64,
     )
+    assert turn_id == "turn-1"
 
 
 def test_config_rejects_stale_timeout_not_larger_than_turn_timeout(
@@ -324,10 +367,13 @@ def test_config_rejects_stale_timeout_not_larger_than_turn_timeout(
     executable.write_text("placeholder\n", encoding="utf-8")
 
     with pytest.raises(CodexBridgeError, match="must exceed"):
-        configure_bridge(
+        compose_bridge_config(
             loop,
             thread_id="01a0749b-b253-7133-87d7-683ace12c634",
             codex_executable=executable,
+            bootstrapped_at=_utc_now(),
+            probe_status="verified",
+            probe_evidence={},
             turn_timeout_seconds=120,
             stale_delivery_seconds=120,
         )

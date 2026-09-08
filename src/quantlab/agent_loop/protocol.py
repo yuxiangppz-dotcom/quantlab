@@ -31,6 +31,16 @@ PHASES = {
 DECISIONS = {"advance", "rework", "blocked", "complete"}
 ARTIFACT_KINDS = {"task", "report", "review"}
 NOTIFICATION_STATES = {"queued", "launching", "delivered", "failed"}
+RETRY_CLASSES = {"", "transient", "configuration"}
+DELIVERY_ATTEMPT_STATES = {
+    "live",
+    "delivered",
+    "failed_configuration",
+    "failed_transient",
+    "superseded",
+}
+RETRY_BACKOFF_BASE_SECONDS = 60
+RETRY_BACKOFF_MAX_SECONDS = 3_600
 
 
 class AgentLoopError(RuntimeError):
@@ -157,16 +167,22 @@ class AgentLoop:
 
     @staticmethod
     def _ensure_notification_schema(connection: sqlite3.Connection) -> None:
+        """Idempotently migrate delivery state; legacy rows are preserved."""
+
         connection.execute(
             """
-            CREATE TABLE IF NOT EXISTS review_notifications (
-                event_sha256 TEXT PRIMARY KEY,
+            CREATE TABLE IF NOT EXISTS delivery_attempts (
+                attempt_id TEXT PRIMARY KEY,
+                event_sha256 TEXT NOT NULL,
                 generation INTEGER NOT NULL,
                 event_action TEXT NOT NULL,
+                config_fingerprint TEXT NOT NULL DEFAULT '',
+                thread_id TEXT NOT NULL DEFAULT '',
+                attempt_number INTEGER NOT NULL,
+                delivery_token_sha256 TEXT NOT NULL DEFAULT '',
                 state TEXT NOT NULL,
-                attempt_count INTEGER NOT NULL DEFAULT 0,
-                delivery_token TEXT NOT NULL DEFAULT '',
-                process_id INTEGER,
+                turn_id TEXT NOT NULL DEFAULT '',
+                classification TEXT NOT NULL DEFAULT '',
                 last_error TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
@@ -174,6 +190,28 @@ class AgentLoop:
             )
             """
         )
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS one_live_delivery_attempt_per_event
+            ON delivery_attempts(event_sha256) WHERE state = 'live'
+            """
+        )
+        existing = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(review_notifications)")
+        }
+        if not existing:
+            return
+        for column, definition in (
+            ("config_fingerprint", "TEXT NOT NULL DEFAULT ''"),
+            ("retry_class", "TEXT NOT NULL DEFAULT ''"),
+            ("next_retry_at", "TEXT NOT NULL DEFAULT ''"),
+            ("blocked_fingerprint", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            if column not in existing:
+                connection.execute(
+                    f"ALTER TABLE review_notifications ADD COLUMN {column} {definition}"
+                )
 
     def initialize(self, *, project_id: str = "quantlab") -> dict[str, Any]:
         if not project_id.strip():
@@ -215,10 +253,33 @@ class AgentLoop:
                     delivery_token TEXT NOT NULL DEFAULT '',
                     process_id INTEGER,
                     last_error TEXT NOT NULL DEFAULT '',
+                    config_fingerprint TEXT NOT NULL DEFAULT '',
+                    retry_class TEXT NOT NULL DEFAULT '',
+                    next_retry_at TEXT NOT NULL DEFAULT '',
+                    blocked_fingerprint TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY (event_sha256) REFERENCES events(event_sha256)
                 );
+                CREATE TABLE IF NOT EXISTS delivery_attempts (
+                    attempt_id TEXT PRIMARY KEY,
+                    event_sha256 TEXT NOT NULL,
+                    generation INTEGER NOT NULL,
+                    event_action TEXT NOT NULL,
+                    config_fingerprint TEXT NOT NULL DEFAULT '',
+                    thread_id TEXT NOT NULL DEFAULT '',
+                    attempt_number INTEGER NOT NULL,
+                    delivery_token_sha256 TEXT NOT NULL DEFAULT '',
+                    state TEXT NOT NULL,
+                    turn_id TEXT NOT NULL DEFAULT '',
+                    classification TEXT NOT NULL DEFAULT '',
+                    last_error TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (event_sha256) REFERENCES events(event_sha256)
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS one_live_delivery_attempt_per_event
+                ON delivery_attempts(event_sha256) WHERE state = 'live';
                 """
             )
             existing = connection.execute("SELECT COUNT(*) FROM metadata").fetchone()[0]
@@ -982,8 +1043,16 @@ class AgentLoop:
         *,
         event_sha256: str | None = None,
         stale_after_seconds: int = 25_200,
+        config_fingerprint: str = "",
+        thread_id: str = "",
     ) -> dict[str, Any] | None:
-        """Atomically claim one queued/failed notification for bridge delivery."""
+        """Atomically claim one actionable notification for bridge delivery.
+
+        Returns ``None`` when the event must not be attempted now: it is
+        delivered, a fresh live attempt exists, automatic retry is blocked for
+        the supplied configuration fingerprint, or the exponential backoff from
+        a transient failure is not due yet.
+        """
 
         if stale_after_seconds < 60:
             raise AgentLoopError("stale_after_seconds must be at least 60")
@@ -1017,21 +1086,70 @@ class AgentLoop:
                 if state == "delivered":
                     connection.commit()
                     return None
+                now_dt = datetime.now(UTC)
                 if state == "launching":
-                    updated = datetime.fromisoformat(row["updated_at"].replace("Z", "+00:00"))
-                    if datetime.now(UTC) - updated < timedelta(seconds=stale_after_seconds):
+                    updated = datetime.fromisoformat(
+                        row["updated_at"].replace("Z", "+00:00")
+                    )
+                    if now_dt - updated < timedelta(seconds=stale_after_seconds):
                         connection.commit()
                         return None
+                else:
+                    if row["blocked_fingerprint"] and (
+                        row["blocked_fingerprint"] == config_fingerprint
+                    ):
+                        connection.commit()
+                        return None
+                    if row["next_retry_at"]:
+                        due = datetime.fromisoformat(
+                            row["next_retry_at"].replace("Z", "+00:00")
+                        )
+                        if now_dt < due:
+                            connection.commit()
+                            return None
                 token = secrets.token_urlsafe(32)
+                attempt_id = secrets.token_hex(16)
                 now = _utc_now()
+                attempt_number = int(row["attempt_count"]) + 1
                 connection.execute(
                     """
                     UPDATE review_notifications
-                    SET state = 'launching', attempt_count = attempt_count + 1,
-                        delivery_token = ?, process_id = NULL, last_error = '', updated_at = ?
+                    SET state = 'launching', attempt_count = ?, delivery_token = ?,
+                        process_id = NULL, last_error = '', config_fingerprint = ?,
+                        updated_at = ?
                     WHERE event_sha256 = ?
                     """,
-                    (token, now, row["event_sha256"]),
+                    (attempt_number, token, config_fingerprint, now, row["event_sha256"]),
+                )
+                if state == "launching":
+                    connection.execute(
+                        """
+                        UPDATE delivery_attempts
+                        SET state = 'superseded', updated_at = ?
+                        WHERE event_sha256 = ? AND state = 'live'
+                        """,
+                        (now, row["event_sha256"]),
+                    )
+                connection.execute(
+                    """
+                    INSERT INTO delivery_attempts(
+                        attempt_id, event_sha256, generation, event_action,
+                        config_fingerprint, thread_id, attempt_number,
+                        delivery_token_sha256, state, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'live', ?, ?)
+                    """,
+                    (
+                        attempt_id,
+                        row["event_sha256"],
+                        row["generation"],
+                        row["event_action"],
+                        config_fingerprint,
+                        thread_id,
+                        attempt_number,
+                        _sha256_text(token),
+                        now,
+                        now,
+                    ),
                 )
                 connection.commit()
             except BaseException:
@@ -1042,7 +1160,10 @@ class AgentLoop:
             "generation": row["generation"],
             "event_action": row["event_action"],
             "delivery_token": token,
-            "attempt_count": int(row["attempt_count"]) + 1,
+            "attempt_count": attempt_number,
+            "attempt_id": attempt_id,
+            "config_fingerprint": config_fingerprint,
+            "thread_id": thread_id,
         }
 
     def record_review_notification_process(
@@ -1100,27 +1221,111 @@ class AgentLoop:
         delivery_token: str,
         delivered: bool,
         error: str = "",
+        classification: str = "transient",
+        turn_id: str = "",
+        backoff_base_seconds: int = RETRY_BACKOFF_BASE_SECONDS,
+        backoff_max_seconds: int = RETRY_BACKOFF_MAX_SECONDS,
     ) -> dict[str, Any]:
-        """Finish exactly the delivery attempt identified by its private token."""
+        """Finish exactly the delivery attempt identified by its private token.
+
+        Transient failures schedule a bounded exponential backoff.  A
+        configuration failure additionally blocks automatic retries for the
+        exact configuration fingerprint that failed until a new, successfully
+        probed configuration is written or recovery is requested explicitly.
+        """
 
         if not delivery_token:
             raise AgentLoopError("delivery_token must not be empty")
-        state = "delivered" if delivered else "failed"
+        if classification not in RETRY_CLASSES or not classification:
+            raise AgentLoopError(f"invalid delivery failure classification: {classification!r}")
+        if backoff_base_seconds < 0 or backoff_max_seconds < backoff_base_seconds:
+            raise AgentLoopError("invalid backoff bounds")
         detail = "" if delivered else (error.strip() or "unspecified delivery failure")
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
-                changed = connection.execute(
+                row = connection.execute(
                     """
-                    UPDATE review_notifications
-                    SET state = ?, delivery_token = '', process_id = NULL,
-                        last_error = ?, updated_at = ?
+                    SELECT * FROM review_notifications
                     WHERE event_sha256 = ? AND state = 'launching' AND delivery_token = ?
                     """,
-                    (state, detail[:4000], _utc_now(), event_sha256, delivery_token),
-                ).rowcount
-                if changed != 1:
+                    (event_sha256, delivery_token),
+                ).fetchone()
+                if row is None:
                     raise AgentLoopError("notification delivery claim is stale")
+                if delivered:
+                    if classification != "transient":
+                        raise AgentLoopError(
+                            "delivered attempts must not carry a failure classification"
+                        )
+                    if turn_id == "":
+                        raise AgentLoopError("delivered attempts must record their turn id")
+                now = _utc_now()
+                next_retry_at = ""
+                if delivered:
+                    attempt_state = "delivered"
+                    stored_class = ""
+                    connection.execute(
+                        """
+                        UPDATE review_notifications
+                        SET state = 'delivered', delivery_token = '', process_id = NULL,
+                            last_error = '', retry_class = '', next_retry_at = '',
+                            updated_at = ?
+                        WHERE event_sha256 = ?
+                        """,
+                        (now, event_sha256),
+                    )
+                elif classification == "configuration":
+                    attempt_state = "failed_configuration"
+                    stored_class = "configuration"
+                    connection.execute(
+                        """
+                        UPDATE review_notifications
+                        SET state = 'failed', delivery_token = '', process_id = NULL,
+                            last_error = ?, retry_class = 'configuration',
+                            next_retry_at = '', blocked_fingerprint = config_fingerprint,
+                            updated_at = ?
+                        WHERE event_sha256 = ?
+                        """,
+                        (detail[:4000], now, event_sha256),
+                    )
+                else:
+                    backoff_seconds = min(
+                        backoff_base_seconds
+                        * (2 ** max(0, int(row["attempt_count"]) - 1)),
+                        backoff_max_seconds,
+                    )
+                    next_retry_at = (
+                        datetime.now(UTC) + timedelta(seconds=backoff_seconds)
+                    ).isoformat().replace("+00:00", "Z")
+                    attempt_state = "failed_transient"
+                    stored_class = "transient"
+                    connection.execute(
+                        """
+                        UPDATE review_notifications
+                        SET state = 'failed', delivery_token = '', process_id = NULL,
+                            last_error = ?, retry_class = 'transient',
+                            next_retry_at = ?, updated_at = ?
+                        WHERE event_sha256 = ?
+                        """,
+                        (detail[:4000], next_retry_at, now, event_sha256),
+                    )
+                connection.execute(
+                    """
+                    UPDATE delivery_attempts
+                    SET state = ?, turn_id = ?, classification = ?, last_error = ?,
+                        updated_at = ?
+                    WHERE event_sha256 = ? AND state = 'live'
+                    """,
+                    (
+                        attempt_state,
+                        turn_id,
+                        stored_class,
+                        detail[:4000],
+                        now,
+                        event_sha256,
+                    ),
+                )
                 row = connection.execute(
                     "SELECT * FROM review_notifications WHERE event_sha256 = ?",
                     (event_sha256,),
@@ -1132,6 +1337,65 @@ class AgentLoop:
         result = dict(row)
         result["delivery_token"] = "" if not result["delivery_token"] else "<redacted>"
         return result
+
+    def recover_bridge_delivery(self, *, reason: str) -> dict[str, Any]:
+        """Explicitly re-queue a blocked or backed-off reviewer notification.
+
+        This is an operator decision: it clears the configuration block and any
+        pending backoff for the current notification, never touches delivered
+        events, and never discards recorded failure history.
+        """
+
+        if not reason.strip():
+            raise AgentLoopError("reason must not be empty")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                metadata = self._validate_metadata(connection)
+                if metadata["phase"] not in {"REVIEW_READY", "BLOCKED"}:
+                    raise AgentLoopError(
+                        f"bridge recovery requires REVIEW_READY or BLOCKED, "
+                        f"got {metadata['phase']}"
+                    )
+                row = connection.execute(
+                    """
+                    SELECT * FROM review_notifications
+                    WHERE generation = ?
+                    ORDER BY created_at DESC, event_sha256 DESC
+                    LIMIT 1
+                    """,
+                    (int(metadata["generation"]),),
+                ).fetchone()
+                if row is None:
+                    raise AgentLoopError("no reviewer notification to recover")
+                if row["state"] == "delivered":
+                    raise AgentLoopError("reviewer notification is already delivered")
+                now = _utc_now()
+                connection.execute(
+                    """
+                    UPDATE review_notifications
+                    SET state = 'queued', delivery_token = '', process_id = NULL,
+                        next_retry_at = '', blocked_fingerprint = '', updated_at = ?
+                    WHERE event_sha256 = ?
+                    """,
+                    (now, row["event_sha256"]),
+                )
+                connection.execute(
+                    """
+                    UPDATE delivery_attempts
+                    SET state = 'superseded', updated_at = ?
+                    WHERE event_sha256 = ? AND state = 'live'
+                    """,
+                    (now, row["event_sha256"]),
+                )
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+        pending = self.pending_review_notification()
+        if pending is None:  # pragma: no cover - row was just updated
+            raise AgentLoopError("recovered notification disappeared")
+        return pending
 
     def _verify_event_chain(self, connection: sqlite3.Connection) -> tuple[int, str | None]:
         previous: str | None = None
@@ -1241,7 +1505,9 @@ class AgentLoop:
             notification = connection.execute(
                 """
                 SELECT event_sha256, generation, event_action, state, attempt_count,
-                       process_id, last_error, created_at, updated_at
+                       config_fingerprint, retry_class, next_retry_at,
+                       blocked_fingerprint, process_id, last_error, created_at,
+                       updated_at
                 FROM review_notifications
                 WHERE generation = ?
                 ORDER BY created_at DESC, event_sha256 DESC
@@ -1278,6 +1544,10 @@ class AgentLoop:
                     raise AgentLoopError(
                         f"invalid review notification state: {row['state']!r}"
                     )
+                if row["retry_class"] not in RETRY_CLASSES:
+                    raise AgentLoopError(
+                        f"invalid review notification retry class: {row['retry_class']!r}"
+                    )
                 event = connection.execute(
                     "SELECT action, generation FROM events WHERE event_sha256 = ?",
                     (row["event_sha256"],),
@@ -1289,11 +1559,30 @@ class AgentLoop:
                     or event["generation"] != row["generation"]
                 ):
                     raise AgentLoopError("review notification event binding mismatch")
+            delivery_attempt_count = 0
+            for row in connection.execute("SELECT * FROM delivery_attempts"):
+                delivery_attempt_count += 1
+                if row["state"] not in DELIVERY_ATTEMPT_STATES:
+                    raise AgentLoopError(
+                        f"invalid delivery attempt state: {row['state']!r}"
+                    )
+                event = connection.execute(
+                    "SELECT action, generation FROM events WHERE event_sha256 = ?",
+                    (row["event_sha256"],),
+                ).fetchone()
+                if event is None:
+                    raise AgentLoopError("delivery attempt references a missing event")
+                if (
+                    event["action"] != row["event_action"]
+                    or event["generation"] != row["generation"]
+                ):
+                    raise AgentLoopError("delivery attempt event binding mismatch")
         snapshot = git_snapshot(self.repo_root)
         return {
             **status,
             "artifact_count": artifact_count,
             "notification_count": notification_count,
+            "delivery_attempt_count": delivery_attempt_count,
             "git": {
                 "head": snapshot.head,
                 "branch": snapshot.branch,

@@ -11,9 +11,10 @@ from typing import Any
 
 from quantlab.agent_loop import AgentLoop, AgentLoopError
 from quantlab.agent_loop.codex_bridge import (
+    bootstrap_codex_reviewer,
     bridge_status,
-    configure_bridge,
     kick_reviewer_notification,
+    probe_codex_reviewer,
 )
 from quantlab.agent_loop.protocol import discover_repo_root
 
@@ -83,16 +84,35 @@ def _parser() -> argparse.ArgumentParser:
     show.add_argument("kind", choices=("task", "report", "review"))
     show.add_argument("--generation", type=int)
 
-    configure = subparsers.add_parser(
-        "configure-codex-bridge", help="configure event-driven Codex review wake-up"
+    bootstrap = subparsers.add_parser(
+        "bootstrap-codex-reviewer",
+        help=(
+            "create and persistence-verify a dedicated Codex reviewer thread, "
+            "then atomically write the bridge configuration"
+        ),
     )
-    configure.add_argument("--thread-id", required=True)
-    configure.add_argument("--codex-executable", type=Path, required=True)
-    configure.add_argument("--disabled", action="store_true")
-    configure.add_argument("--turn-timeout-seconds", type=int, default=21_600)
-    configure.add_argument("--stale-delivery-seconds", type=int, default=25_200)
+    bootstrap.add_argument("--codex-executable", type=Path, required=True)
+    bootstrap.add_argument("--turn-timeout-seconds", type=int, default=21_600)
+    bootstrap.add_argument("--stale-delivery-seconds", type=int, default=25_200)
+    bootstrap.add_argument("--bootstrap-timeout-seconds", type=int, default=900)
+
+    probe = subparsers.add_parser(
+        "probe-codex-reviewer",
+        help=(
+            "bounded opt-in probe of the locally installed Codex; proves thread "
+            "persistence without writing any bridge configuration"
+        ),
+    )
+    probe.add_argument("--codex-executable", type=Path, required=True)
+    probe.add_argument("--bootstrap-timeout-seconds", type=int, default=900)
 
     subparsers.add_parser("codex-bridge-status", help="show local bridge and delivery state")
+
+    recover = subparsers.add_parser(
+        "recover-bridge-delivery",
+        help="explicitly re-queue a blocked or backed-off reviewer notification",
+    )
+    recover.add_argument("--reason", required=True)
 
     notify = subparsers.add_parser(
         "notify-reviewer", help="retry or synchronously deliver the current review event"
@@ -180,17 +200,25 @@ def main() -> int:
         elif args.command == "show":
             print(loop.artifact_content(args.kind, args.generation), end="")
             return 0
-        elif args.command == "configure-codex-bridge":
-            result = configure_bridge(
+        elif args.command == "bootstrap-codex-reviewer":
+            result = bootstrap_codex_reviewer(
                 loop,
-                thread_id=args.thread_id,
                 codex_executable=args.codex_executable,
-                enabled=not args.disabled,
                 turn_timeout_seconds=args.turn_timeout_seconds,
                 stale_delivery_seconds=args.stale_delivery_seconds,
+                bootstrap_timeout_seconds=args.bootstrap_timeout_seconds,
+                write_config=True,
+            )
+        elif args.command == "probe-codex-reviewer":
+            result = probe_codex_reviewer(
+                loop,
+                codex_executable=args.codex_executable,
+                bootstrap_timeout_seconds=args.bootstrap_timeout_seconds,
             )
         elif args.command == "codex-bridge-status":
             result = bridge_status(loop)
+        elif args.command == "recover-bridge-delivery":
+            result = loop.recover_bridge_delivery(reason=args.reason)
         elif args.command == "notify-reviewer":
             result = kick_reviewer_notification(
                 loop,
