@@ -434,13 +434,17 @@ def test_recover_bridge_delivery_clears_blocked_fingerprint(
     loop.initialize()
     make_review_ready(loop, tmp_path)
     executable = _fake_codex(tmp_path / "codex", handlers=_NO_ROLLOUT_RESUME)
-    _write_bridge_config(loop, codex_executable=executable)
+    payload = _write_bridge_config(loop, codex_executable=executable)
     assert kick_reviewer_notification(loop, synchronous=True)["status"] == "failed"
     assert kick_reviewer_notification(loop, synchronous=True)["status"] == (
         "configuration_blocked"
     )
 
-    recovered = loop.recover_bridge_delivery(reason="operator decision after inspection")
+    recovered = loop.recover_bridge_delivery(
+        reason="operator decision after inspection",
+        config_fingerprint=str(payload["config_fingerprint"]),
+        thread_id=str(payload["thread_id"]),
+    )
 
     assert recovered["state"] == "queued"
     assert recovered["blocked_fingerprint"] == ""
@@ -494,9 +498,13 @@ def test_backoff_expiry_via_recovery_allows_delivery(
     assert kick_reviewer_notification(loop)["status"] == "backoff"
 
     good = _fake_codex(tmp_path / "codex-good", handlers=_DELIVERY_TURN)
-    _write_bridge_config(loop, codex_executable=good)
+    payload = _write_bridge_config(loop, codex_executable=good)
     assert kick_reviewer_notification(loop)["status"] == "backoff"
-    loop.recover_bridge_delivery(reason="transient fault cleared")
+    loop.recover_bridge_delivery(
+        reason="transient fault cleared",
+        config_fingerprint=str(payload["config_fingerprint"]),
+        thread_id=str(payload["thread_id"]),
+    )
 
     result = kick_reviewer_notification(loop, synchronous=True)
     assert result["status"] == "delivered"
@@ -508,7 +516,9 @@ def test_stale_worker_cannot_finish_or_overwrite_newer_attempt(
     loop = AgentLoop(repository)
     loop.initialize()
     make_review_ready(loop, tmp_path)
-    first = loop.claim_review_notification()
+    first = loop.claim_review_notification(
+        config_fingerprint="f" * 64, thread_id=_THREAD
+    )
     assert first is not None
     with sqlite3.connect(loop.database) as connection:
         connection.execute(
@@ -516,7 +526,9 @@ def test_stale_worker_cannot_finish_or_overwrite_newer_attempt(
         )
 
     second_loop = AgentLoop(repository)
-    second = second_loop.claim_review_notification()
+    second = second_loop.claim_review_notification(
+        config_fingerprint="f" * 64, thread_id=_THREAD
+    )
     assert second is not None
     assert second["delivery_token"] != first["delivery_token"]
     assert second["attempt_count"] == 2
@@ -567,8 +579,12 @@ def test_delivered_requires_matching_turn_id_and_completed_status(
             handlers=_DELIVERY_TURN,
             completed_status=status,
         )
-        _write_bridge_config(loop, codex_executable=executable)
-        loop.recover_bridge_delivery(reason="retry non-completed status")
+        payload = _write_bridge_config(loop, codex_executable=executable)
+        loop.recover_bridge_delivery(
+            reason="retry non-completed status",
+            config_fingerprint=str(payload["config_fingerprint"]),
+            thread_id=str(payload["thread_id"]),
+        )
         result = kick_reviewer_notification(loop, synchronous=True)
         assert result["status"] == "failed"
         assert f"ended with status {status!r}" in result["error"]

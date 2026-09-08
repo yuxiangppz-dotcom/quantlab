@@ -20,6 +20,15 @@ from quantlab.agent_loop.codex_bridge import (
 )
 from quantlab.agent_loop.protocol import _atomic_write, _utc_now
 
+_DIRECT_FINGERPRINT = "f" * 64
+_DIRECT_THREAD = "01a0749b-b253-7133-87d7-683ace12c634"
+
+
+def _claim_direct(loop: AgentLoop):
+    return loop.claim_review_notification(
+        config_fingerprint=_DIRECT_FINGERPRINT, thread_id=_DIRECT_THREAD
+    )
+
 
 def _git(repo: Path, *args: str) -> str:
     result = subprocess.run(
@@ -187,10 +196,10 @@ def test_delivery_claim_is_idempotent_and_private_token_is_cas_bound(
     loop.initialize()
     _review_ready(loop, tmp_path)
 
-    claimed = loop.claim_review_notification()
+    claimed = _claim_direct(loop)
 
     assert claimed is not None
-    assert loop.claim_review_notification() is None
+    assert _claim_direct(loop) is None
     with pytest.raises(AgentLoopError, match="stale"):
         loop.finish_review_notification(
             event_sha256=str(claimed["event_sha256"]),
@@ -205,7 +214,7 @@ def test_delivery_claim_is_idempotent_and_private_token_is_cas_bound(
     )
     assert finished["state"] == "delivered"
     assert finished["delivery_token"] == ""
-    assert loop.claim_review_notification() is None
+    assert _claim_direct(loop) is None
 
 
 def test_failed_delivery_is_retryable_with_a_new_token(
@@ -214,7 +223,7 @@ def test_failed_delivery_is_retryable_with_a_new_token(
     loop = AgentLoop(repository)
     loop.initialize()
     _review_ready(loop, tmp_path)
-    first = loop.claim_review_notification()
+    first = _claim_direct(loop)
     assert first is not None
     loop.finish_review_notification(
         event_sha256=str(first["event_sha256"]),
@@ -225,7 +234,7 @@ def test_failed_delivery_is_retryable_with_a_new_token(
         backoff_max_seconds=0,
     )
 
-    second = loop.claim_review_notification()
+    second = _claim_direct(loop)
 
     assert second is not None
     assert second["delivery_token"] != first["delivery_token"]

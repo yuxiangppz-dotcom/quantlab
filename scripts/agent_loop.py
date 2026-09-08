@@ -14,6 +14,7 @@ from quantlab.agent_loop.codex_bridge import (
     bootstrap_codex_reviewer,
     bridge_status,
     kick_reviewer_notification,
+    load_bridge_config,
     probe_codex_reviewer,
 )
 from quantlab.agent_loop.protocol import discover_repo_root
@@ -113,6 +114,7 @@ def _parser() -> argparse.ArgumentParser:
         help="explicitly re-queue a blocked or backed-off reviewer notification",
     )
     recover.add_argument("--reason", required=True)
+    recover.add_argument("--actor", default="human-recovery")
 
     notify = subparsers.add_parser(
         "notify-reviewer", help="retry or synchronously deliver the current review event"
@@ -218,7 +220,17 @@ def main() -> int:
         elif args.command == "codex-bridge-status":
             result = bridge_status(loop)
         elif args.command == "recover-bridge-delivery":
-            result = loop.recover_bridge_delivery(reason=args.reason)
+            config = load_bridge_config(loop)
+            if config is None:
+                raise AgentLoopError(
+                    "bridge recovery requires an enabled, verified configuration"
+                )
+            result = loop.recover_bridge_delivery(
+                reason=args.reason,
+                actor=args.actor,
+                config_fingerprint=config.config_fingerprint,
+                thread_id=config.thread_id,
+            )
         elif args.command == "notify-reviewer":
             result = kick_reviewer_notification(
                 loop,

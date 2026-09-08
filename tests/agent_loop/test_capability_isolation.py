@@ -31,6 +31,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -521,8 +522,11 @@ def test_independently_generated_error_is_redacted_with_sentinel(
         completed_turn=sentinel,
         completed_status="failed",
     )
-    _write_verified_config(loop, codex_executable=executable)
-    claimed = loop.claim_review_notification()
+    payload = _write_verified_config(loop, codex_executable=executable)
+    claimed = loop.claim_review_notification(
+        config_fingerprint=str(payload["config_fingerprint"]),
+        thread_id=str(payload["thread_id"]),
+    )
     assert claimed is not None
 
     result = codex_bridge.deliver_claimed_notification(
@@ -676,7 +680,21 @@ def test_stale_live_attempt_is_superseded_after_bounded_interval(
         states = connection.execute(
             "SELECT state FROM delivery_attempts ORDER BY created_at, attempt_id"
         ).fetchall()
+        old_notification = connection.execute(
+            "SELECT state, delivery_token, process_id FROM review_notifications "
+            "WHERE event_sha256 = ?",
+            (claim_a["event_sha256"],),
+        ).fetchone()
     assert [row[0] for row in states] == ["superseded", "live"]
+    assert old_notification == ("failed", "", None)
+    with pytest.raises(AgentLoopError, match="stale"):
+        loop.finish_review_notification(
+            event_sha256=str(claim_a["event_sha256"]),
+            delivery_token=str(claim_a["delivery_token"]),
+            delivered=True,
+            turn_id="late-review-turn-a",
+        )
+    assert loop.doctor()["healthy"] is True
     loop.finish_review_notification(
         event_sha256=str(claimed_b["event_sha256"]),
         delivery_token=str(claimed_b["delivery_token"]),
@@ -689,6 +707,202 @@ def test_stale_live_attempt_is_superseded_after_bounded_interval(
         )
         is None
     )
+
+
+@pytest.mark.parametrize(
+    "boundary",
+    ("attempt_supersede", "notification_revoke", "current_claim", "attempt_insert"),
+)
+def test_cross_event_takeover_rolls_back_at_every_write_boundary(
+    repository: Path, tmp_path: Path, make_review_ready, boundary: str
+) -> None:
+    loop, fingerprint, thread_id, claim_a = _two_events_on_one_target(
+        repository, tmp_path, make_review_ready
+    )
+    pending_b = loop.pending_review_notification()
+    assert pending_b is not None
+    with sqlite3.connect(loop.database) as connection:
+        connection.execute(
+            "UPDATE delivery_attempts SET updated_at = '2020-01-01T00:00:00Z' "
+            "WHERE state = 'live'"
+        )
+        clauses = {
+            "attempt_supersede": (
+                "BEFORE UPDATE OF state ON delivery_attempts "
+                "WHEN OLD.attempt_id = '" + str(claim_a["attempt_id"]) + "' "
+                "AND NEW.state = 'superseded'"
+            ),
+            "notification_revoke": (
+                "BEFORE UPDATE OF state ON review_notifications "
+                "WHEN OLD.event_sha256 = '" + str(claim_a["event_sha256"]) + "' "
+                "AND NEW.state = 'failed'"
+            ),
+            "current_claim": (
+                "BEFORE UPDATE OF state ON review_notifications "
+                "WHEN OLD.event_sha256 = '" + str(pending_b["event_sha256"]) + "' "
+                "AND NEW.state = 'launching'"
+            ),
+            "attempt_insert": (
+                "BEFORE INSERT ON delivery_attempts "
+                "WHEN NEW.event_sha256 = '" + str(pending_b["event_sha256"]) + "'"
+            ),
+        }
+        connection.execute(
+            f"CREATE TRIGGER injected_failure {clauses[boundary]} "
+            "BEGIN SELECT RAISE(ABORT, 'injected takeover failure'); END"
+        )
+
+    with pytest.raises(sqlite3.DatabaseError, match="injected takeover failure"):
+        loop.claim_review_notification(
+            config_fingerprint=fingerprint,
+            thread_id=thread_id,
+            stale_after_seconds=60,
+        )
+
+    with sqlite3.connect(loop.database) as connection:
+        old_notification = connection.execute(
+            "SELECT state, delivery_token FROM review_notifications "
+            "WHERE event_sha256 = ?",
+            (claim_a["event_sha256"],),
+        ).fetchone()
+        current_notification = connection.execute(
+            "SELECT state FROM review_notifications WHERE event_sha256 = ?",
+            (pending_b["event_sha256"],),
+        ).fetchone()
+        live = connection.execute(
+            "SELECT attempt_id FROM delivery_attempts WHERE state = 'live'"
+        ).fetchall()
+    assert old_notification == ("launching", claim_a["delivery_token"])
+    assert current_notification == ("queued",)
+    assert live == [(claim_a["attempt_id"],)]
+    assert loop.doctor()["healthy"] is True
+
+
+def test_two_stale_takeover_claimers_grant_one_owner_and_revoke_old_worker(
+    repository: Path, tmp_path: Path, make_review_ready
+) -> None:
+    loop, fingerprint, thread_id, claim_a = _two_events_on_one_target(
+        repository, tmp_path, make_review_ready
+    )
+    with sqlite3.connect(loop.database) as connection:
+        connection.execute(
+            "UPDATE delivery_attempts SET updated_at = '2020-01-01T00:00:00Z' "
+            "WHERE state = 'live'"
+        )
+
+    def claim() -> dict[str, object] | None:
+        return AgentLoop(repository).claim_review_notification(
+            config_fingerprint=fingerprint,
+            thread_id=thread_id,
+            stale_after_seconds=60,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: claim(), range(2)))
+
+    winners = [result for result in results if result is not None]
+    assert len(winners) == 1
+    with pytest.raises(AgentLoopError, match="stale"):
+        loop.finish_review_notification(
+            event_sha256=str(claim_a["event_sha256"]),
+            delivery_token=str(claim_a["delivery_token"]),
+            delivered=True,
+            turn_id="late-turn-a",
+        )
+    assert loop.doctor()["healthy"] is True
+
+
+def test_explicit_recovery_revokes_prior_event_and_persists_audit(
+    repository: Path, tmp_path: Path, make_review_ready
+) -> None:
+    loop, fingerprint, thread_id, claim_a = _two_events_on_one_target(
+        repository, tmp_path, make_review_ready
+    )
+    pending_b = loop.pending_review_notification()
+    assert pending_b is not None
+
+    recovered = loop.recover_bridge_delivery(
+        reason="operator confirmed orphaned prior worker",
+        actor="test-operator",
+        config_fingerprint=fingerprint,
+        thread_id=thread_id,
+    )
+
+    assert recovered["state"] == "queued"
+    with pytest.raises(AgentLoopError, match="stale"):
+        loop.finish_review_notification(
+            event_sha256=str(claim_a["event_sha256"]),
+            delivery_token=str(claim_a["delivery_token"]),
+            delivered=True,
+            turn_id="late-turn-a",
+        )
+    claimed_b = loop.claim_review_notification(
+        config_fingerprint=fingerprint, thread_id=thread_id
+    )
+    assert claimed_b is not None
+    with sqlite3.connect(loop.database) as connection:
+        audit = connection.execute(
+            "SELECT actor, reason, revoked_event_sha256, revoked_attempt_id, "
+            "current_event_sha256, config_fingerprint, thread_id "
+            "FROM delivery_recoveries"
+        ).fetchone()
+    assert audit == (
+        "test-operator",
+        "operator confirmed orphaned prior worker",
+        claim_a["event_sha256"],
+        claim_a["attempt_id"],
+        pending_b["event_sha256"],
+        fingerprint,
+        thread_id,
+    )
+    assert loop.doctor()["healthy"] is True
+
+
+@pytest.mark.parametrize("field", ("delivery_token", "config_fingerprint", "thread_id"))
+def test_doctor_rejects_empty_mandatory_launching_binding(
+    repository: Path, tmp_path: Path, make_review_ready, field: str
+) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    make_review_ready(loop, tmp_path)
+    claimed = loop.claim_review_notification(
+        config_fingerprint="f" * 64, thread_id=_THREAD
+    )
+    assert claimed is not None
+    with sqlite3.connect(loop.database) as connection:
+        connection.execute(
+            f"UPDATE review_notifications SET {field} = '' WHERE event_sha256 = ?",
+            (claimed["event_sha256"],),
+        )
+
+    with pytest.raises(AgentLoopError, match="mandatory|binding"):
+        loop.doctor()
+
+
+def test_finish_requires_exact_live_attempt_and_token_hash(
+    repository: Path, tmp_path: Path, make_review_ready
+) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    make_review_ready(loop, tmp_path)
+    claimed = loop.claim_review_notification(
+        config_fingerprint="f" * 64, thread_id=_THREAD
+    )
+    assert claimed is not None
+    with sqlite3.connect(loop.database) as connection:
+        connection.execute(
+            "UPDATE delivery_attempts SET delivery_token_sha256 = ? "
+            "WHERE attempt_id = ?",
+            ("0" * 64, claimed["attempt_id"]),
+        )
+
+    with pytest.raises(AgentLoopError, match="stale|token"):
+        loop.finish_review_notification(
+            event_sha256=str(claimed["event_sha256"]),
+            delivery_token=str(claimed["delivery_token"]),
+            delivered=True,
+            turn_id="turn-1",
+        )
 
 
 # ---------------------------------------------------------------------------

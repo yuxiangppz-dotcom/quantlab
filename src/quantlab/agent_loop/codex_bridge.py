@@ -501,6 +501,7 @@ def bridge_status(loop: AgentLoop) -> dict[str, Any]:
         "last_bootstrap_attempt": record,
         "pending_notification": pending,
         "live_delivery_attempt": live_attempt,
+        "recent_delivery_recoveries": loop.delivery_recoveries(limit=5),
     }
 
 
