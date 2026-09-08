@@ -191,9 +191,13 @@ claim time — at most one live attempt exists per dedicated reviewer target
 different event that finds a fresh live attempt on its target receives a
 deterministic `target_busy` no-op and launches no process and no model turn;
 the same-event duplicate stays a no-op. A live attempt older than the bounded
-stale interval (`stale_delivery_seconds`) is superseded automatically, so a
+stale interval (`stale_delivery_seconds`) is superseded automatically. That
+transition also moves the old notification out of `launching`, clears its raw
+token and process id, and grants the new attempt in the same database
+transaction. The old worker therefore cannot finish after a takeover, and a
 crashed worker cannot wedge the target forever. `delivered` requires the exact
-returned turn id and a `completed` status. Failures are classified:
+live attempt, the SHA-256 of its raw token, its target binding, the exact
+returned turn id, and a `completed` status. Failures are classified:
 
 - **configuration** — `no rollout found`, a broken or fingerprint-mismatched
   configuration, or a foreign/interactive target discovered during bootstrap
@@ -232,8 +236,21 @@ actionable.
 
 For deliberate delivery recovery, inspect `codex-bridge-status` and the logs
 under `.agent-loop/bridge/logs/`, then either re-run `bootstrap-codex-reviewer`
-(new probed configuration) or `recover-bridge-delivery --reason ...` (explicit
-operator reset of the block/backoff for the current event). `notify-reviewer
+(new probed configuration) or run:
+
+```bash
+uv run python scripts/agent_loop.py recover-bridge-delivery \
+  --reason '<why the previous worker is no longer authoritative>' \
+  --actor '<operator identity>'
+```
+
+Recovery requires the currently enabled, verified bridge configuration. It
+atomically supersedes any live holder of that exact reviewer target, clears the
+old notification token/process authority, re-queues the current event, and
+appends an immutable audit record containing the actor, reason, timestamp,
+current event, revoked event/attempt when present, configuration fingerprint,
+and thread id. `codex-bridge-status` exposes recent audit records without raw
+tokens. A missing or ambiguous binding fails closed. `notify-reviewer
 --synchronous` is a diagnostic mode and waits for the Codex turn to complete.
 
 ## One-time ZCode setup

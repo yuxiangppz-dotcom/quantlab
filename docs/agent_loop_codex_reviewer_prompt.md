@@ -39,6 +39,12 @@ fields, and objective completion gates. Do not authorize provider calls,
 canonical writes, external submissions/fills, or new unverified financial rules
 without the user's explicit approval.
 
+Agent-loop infrastructure is an enabling dependency, not the QuantLab roadmap.
+After the current delivery-correctness task passes its objective gates, return
+the next card to QuantLab's research/execution/accounting/evidence readiness.
+Do not create another bridge-hardening card unless the independent review finds
+a concrete reproducible defect or a live delivery produces new failure evidence.
+
 Commit the review transition with `submit-review`: use `rework` for defects,
 `advance` for a correct result plus a safe next card, `blocked` when the next
 step requires user authority or a material research decision, and `complete`
