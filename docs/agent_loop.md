@@ -139,29 +139,77 @@ This preserves the abandoned generation and creates a new immutable generation
 bound to the current clean, pushed HEAD. A stale event hash or agent mismatch is
 rejected without mutation.
 
-## One-time event bridge setup
+## Event bridge setup: dedicated reviewer topology
 
-Configure the current Codex task and the local Codex executable. The config is
-stored only in the Git-ignored mailbox; do not commit a user-specific task ID or
-installation path.
+The delivery target is always a **dedicated reviewer thread** created and
+verified by `bootstrap-codex-reviewer`. Never bind the bridge to the current
+interactive desktop Codex task: an independent App Server cannot resume a
+thread another process owns (`already has an active writer`), and a freshly
+started thread with no completed turn is not persisted (`no rollout found`).
+Both errors are deterministic configuration failures, not transient ones.
 
 ```bash
-uv run python scripts/agent_loop.py configure-codex-bridge \
-  --thread-id '<current Codex task id>' \
+uv run python scripts/agent_loop.py bootstrap-codex-reviewer \
   --codex-executable '<absolute local codex executable path>'
 uv run python scripts/agent_loop.py codex-bridge-status
 ```
 
-The bridge uses the official Codex App Server to resume that task and start one
-review turn. Keep the Codex scheduled reviewer automation paused: it is no
-longer part of the normal loop. The 20-minute ZCode schedule remains useful for
-finding new implementation tasks and retrying a failed local notification, but
-it does not wake or spend a Codex turn while nothing is actionable.
+The bootstrap command:
 
-For deliberate recovery, inspect the bridge status and log under
-`.agent-loop/bridge/logs/`, then retry the committed event with
-`notify-reviewer`. `--synchronous` is a diagnostic mode and waits for the Codex
-turn to complete.
+1. starts a new App Server thread rooted at this repository;
+2. runs exactly one fixed, content-free bootstrap turn and waits for
+   `turn/completed` with status `completed`;
+3. closes that server, opens a fresh process, and proves `thread/read` and
+   `thread/resume` succeed for the same thread id;
+4. only then atomically writes the Git-ignored bridge config
+   (`.agent-loop/codex_bridge.json`, protocol
+   `quantlab_codex_review_bridge_v2`) containing the dedicated thread id, the
+   executable path, a SHA-256 **configuration fingerprint** binding
+   thread + executable + checkout, and probe evidence (no secrets);
+5. records every attempt under `.agent-loop/bridge/bootstrap.json`;
+   incomplete attempts are marked `incomplete` and never advertised as ready.
+
+`probe-codex-reviewer` runs the same persistence proof without writing any
+configuration; it is a bounded, opt-in, non-destructive check of the local
+Codex installation. Tests never call the real service.
+
+### Delivery and retry classes
+
+Each delivery attempt is bound to the committed event SHA-256, generation,
+dedicated thread id, and configuration fingerprint, with exactly one live
+attempt per event. `delivered` requires the exact returned turn id and a
+`completed` status. Failures are classified:
+
+- **configuration** — `already has an active writer` on a foreign/interactive
+  thread, `no rollout found`, or a broken/fingerprint-mismatched config.
+  Automatic retries stop after the first failure for that fingerprint; a new
+  successfully bootstrapped configuration, or an explicit
+  `uv run python scripts/agent_loop.py recover-bridge-delivery --reason ...`,
+  re-queues the event.
+- **transient** — everything else (process exit, stream loss, timeout,
+  launch failure). Retries back off exponentially (60 s base, 1 h cap).
+
+Worker logs live under `.agent-loop/bridge/logs/<event-sha256>.log`. The
+delivery token is handed to the worker only through the
+`QUANTLAB_AGENT_LOOP_DELIVERY_TOKEN` environment variable and is redacted from
+errors, logs, projections, and status JSON. A report/block transaction always
+commits even if delivery later fails; a failed or blocked delivery is retried
+by the next ZCode `status` check. The wake prompt carries only fixed reviewer
+instructions plus generation, action, and event digest; artifact bodies are
+read by the reviewer from the authoritative mailbox.
+
+The bridge uses the official Codex App Server to resume the dedicated thread
+and start one review turn. Keep the Codex scheduled reviewer automation paused:
+it is no longer part of the normal loop. The 20-minute ZCode schedule remains
+useful for finding new implementation tasks and retrying a failed local
+notification, but it does not wake or spend a Codex turn while nothing is
+actionable.
+
+For deliberate delivery recovery, inspect `codex-bridge-status` and the logs
+under `.agent-loop/bridge/logs/`, then either re-run `bootstrap-codex-reviewer`
+(new probed configuration) or `recover-bridge-delivery --reason ...` (explicit
+operator reset of the block/backoff for the current event). `notify-reviewer
+--synchronous` is a diagnostic mode and waits for the Codex turn to complete.
 
 ## One-time ZCode setup
 

@@ -59,5 +59,12 @@ uv run python scripts/agent_loop.py block \
 ```
 
 After either successful report submission or blocker submission, stop. That
-command queues and launches the event-driven Codex reviewer notification. The
-Codex reviewer owns the next transition; do not wait for or duplicate it.
+command queues and launches the event-driven Codex reviewer notification
+through the dedicated reviewer thread configured by
+`bootstrap-codex-reviewer` (see `docs/agent_loop.md` for the topology,
+configuration fingerprint, retry classes, logs, and recovery commands). If
+delivery fails or is blocked, the mailbox transition is still committed: leave
+retry-or-recover to later scheduled runs and the reviewer/operator; never
+hand-edit the bridge configuration, and never point the bridge at the
+interactive desktop Codex task. The Codex reviewer owns the next transition;
+do not wait for or duplicate it.
