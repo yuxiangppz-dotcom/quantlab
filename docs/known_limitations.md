@@ -20,6 +20,14 @@
   implemented.
 - The formal settlement paths use explicit recovery assumptions. They do not
   prove actual delisting proceeds or fills.
+- The first bounded multi-factor batch evaluates only monthly RankIC. Candidate
+  status does not include portfolio turnover, cost, or Strategy-vs-Control
+  closure, so none is auto-promoted into the default daily strategy.
+- Qlib is an optional locked dependency. Its local install attempt timed out;
+  the adapter exists but the exercised run correctly reports Qlib unavailable.
+- The LightGBM wheel is present in the optional research environment but the
+  WSL host lacks `libgomp.so.1`. No LightGBM model was trained and no fallback
+  model is labelled as LightGBM.
 
 ## Data and execution
 

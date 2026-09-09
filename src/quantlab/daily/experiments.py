@@ -11,6 +11,7 @@ import pandas as pd
 from quantlab.daily.service import PROJECT_ROOT
 
 BASELINE_SCHEMA = "performance_baseline_benchmark_correctness_v0_1_3"
+FACTOR_SCHEMA = "daily_factor_research_v1"
 
 
 def latest_completed_baseline(
@@ -113,4 +114,28 @@ def load_baseline_view(run_dir: Path | None = None) -> dict | None:
             "settlement": "held-delist recovery scenario; recovery 0 and 1 are assumptions",
             "fact_coverage": "limited; unknown is not safe",
         },
+    }
+
+
+def load_latest_factor_view(
+    experiments_root: Path = PROJECT_ROOT / "data" / "experiments",
+) -> dict | None:
+    root = experiments_root / FACTOR_SCHEMA
+    if not root.exists():
+        return None
+    candidates = sorted(
+        path for path in root.iterdir() if path.is_dir() and (path / "summary.json").exists()
+    )
+    if not candidates:
+        return None
+    summary = json.loads((candidates[-1] / "summary.json").read_text(encoding="utf-8"))
+    return {
+        "run_dir": str(candidates[-1]),
+        "run_id": summary["run_id"],
+        "signal_end": summary["signal_end"],
+        "registry": summary["registry"],
+        "transparent_combination": summary["transparent_combination"],
+        "lightgbm": summary["lightgbm"],
+        "qlib": summary["qlib"],
+        "performance_claim": summary["performance_claim"],
     }

@@ -146,6 +146,8 @@ def test_snapshot_is_deterministic_idempotent_and_future_isolated(tmp_path: Path
     assert ranking_before.loc[1, "instrument_id"] == "600000.SH"
     assert set(ranking_before["selected"]) == {True}
     assert ranking_before["selection_reason"].str.startswith("RESEARCH_TARGET").all()
+    assert "transparent_combo_v1" in ranking_before
+    assert "low_amplitude" in ranking_before
     assert first.report["target"]["status"] == "research_target_only"
     assert first.report["claims"]["broker_order"] is False
 

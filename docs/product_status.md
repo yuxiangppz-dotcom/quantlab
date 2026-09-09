@@ -8,7 +8,7 @@ It is evidence notes, not a substitute for tests or an investment claim.
 | Milestone | Status | Local evidence | Next action |
 |---|---|---|---|
 | M1 Daily workflow + local UI | Implemented and locally verified | `quantlab doctor`, controlled Provider update, idempotent `quantlab daily`, four-page Streamlit UI, CSV/HTML cache, 926-test regression | Continue to bounded M2 research capability |
-| M2 Multi-factor + optional Qlib/ML | Not implemented | Existing Momentum 20D research baseline only | Add bounded registry and candidates |
+| M2 Multi-factor + optional Qlib/ML | Bounded factor batch implemented; Qlib/LightGBM locally blocked | 10-candidate registry, transparent combination, 81 monthly signal dates / 384,319 rows; optional Qlib adapter; fixed LightGBM config | Do not promote before cost/Control evaluation; install missing optional runtimes only with explicit system authority |
 | M3 Account input + reference rebalance | Not implemented | Execution contracts exist; UI keeps research targets separate | Add local account snapshot and plan |
 | M4 Manual fills + tracking | Not implemented | Transactional in-memory execution ledger exists | Add durable user-import adapter without parallel truth |
 | M5 v1 acceptance | Not run | — | End-to-end acceptance after M1–M4 |
@@ -40,3 +40,21 @@ It is evidence notes, not a substitute for tests or an investment claim.
 
 Generated product files live under `data/products/` and are intentionally
 Git-ignored. They are local cache/output, not Canonical truth.
+
+## M2 exercised facts
+
+- `daily_factor_research_v1/20260910T012031` ran on local QuantLab Canonical
+  data from 2020 through signal date 2026-09-02. Runtime was about 147 seconds
+  and peak RSS about 2.16 GiB.
+- Ten pre-registered candidates were all retained. Four crossed the simple
+  validation RankIC thresholds (`momentum_1d`, `intraday_strength`,
+  `low_amplitude`, `float_ratio`); the transparent combination had validation
+  mean RankIC about 0.031 across 24 monthly observations. These are research
+  diagnostics, not strategy profitability or promotion evidence.
+- Qlib 0.9.7 is locked as an optional extra and the official
+  `StaticDataLoader(DataFrame)` adapter is implemented, but the large optional
+  dependency download timed out locally. The run records
+  `qlib_available=false`; no fallback is called Qlib.
+- LightGBM 4.7.0 is locked in the `research` extra, but its Linux wheel cannot
+  load because the host lacks `libgomp.so.1`. The run records the OSError and
+  produces no fake predictions or substitute model.

@@ -81,13 +81,21 @@ def _update(through: date | None, include_context: bool) -> int:
     return 0
 
 
-def _research(alpha: str) -> int:
-    command = [
-        sys.executable,
-        str(PROJECT_ROOT / "scripts" / "run_alpha_research.py"),
-        "--alpha",
-        alpha,
-    ]
+def _research(alpha: str | None, config: str | None) -> int:
+    if config:
+        command = [
+            sys.executable,
+            str(PROJECT_ROOT / "scripts" / "run_daily_factor_research.py"),
+            "--config",
+            config,
+        ]
+    else:
+        command = [
+            sys.executable,
+            str(PROJECT_ROOT / "scripts" / "run_alpha_research.py"),
+            "--alpha",
+            alpha or "momentum_20d",
+        ]
     try:
         return subprocess.run(command, cwd=PROJECT_ROOT, check=False).returncode
     except KeyboardInterrupt:
@@ -127,7 +135,9 @@ def _parser() -> argparse.ArgumentParser:
     daily = sub.add_parser("daily", help="Generate an offline daily ranking snapshot.")
     daily.add_argument("--as-of", type=_date, help="Requested local date (YYYY-MM-DD).")
     research = sub.add_parser("research", help="Run a registered research experiment.")
-    research.add_argument("--alpha", default="momentum_20d", choices=("momentum_20d",))
+    research_choice = research.add_mutually_exclusive_group()
+    research_choice.add_argument("--alpha", choices=("momentum_20d",))
+    research_choice.add_argument("--config", help="Versioned Daily v1 research config.")
     ui = sub.add_parser("ui", help="Start the local-only Streamlit UI.")
     ui.add_argument("--port", type=int, default=8501)
     return parser
@@ -142,7 +152,7 @@ def main() -> None:
     elif args.command == "daily":
         code = _daily(args.as_of)
     elif args.command == "research":
-        code = _research(args.alpha)
+        code = _research(args.alpha, args.config)
     elif args.command == "ui":
         code = _ui(args.port)
     else:  # pragma: no cover - argparse enforces this

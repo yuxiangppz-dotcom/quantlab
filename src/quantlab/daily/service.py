@@ -32,6 +32,11 @@ from quantlab.data.sync import (
     validate_daily_basic,
 )
 from quantlab.research import build_research_dataset, filter_v1_universe
+from quantlab.research.factor_registry import (
+    FACTOR_REGISTRY,
+    add_transparent_combination,
+    build_factor_columns,
+)
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -403,6 +408,19 @@ def generate_daily_snapshot(
         how="left",
         validate="one_to_one",
     )
+    raw = pd.DataFrame(
+        [asdict(item) for item in storage.load_daily_bars_by_date(effective)]
+    )
+    ranking = ranking.merge(
+        raw[["instrument_id", "open", "high", "low", "amount"]],
+        on="instrument_id",
+        validate="one_to_one",
+    )
+    ranking = build_factor_columns(ranking)
+    ranking = add_transparent_combination(
+        ranking,
+        ["reversal_20d", "low_amplitude", "small_size", "intraday_strength"],
+    )
     securities = {item.instrument_id: item for item in storage.load_securities()}
     ranking["name"] = ranking["instrument_id"].map(
         lambda value: securities[value].name if value in securities else None
@@ -460,6 +478,8 @@ def generate_daily_snapshot(
             "turnover_rate",
             "total_mv",
             "circ_mv",
+            *[item.factor_id for item in FACTOR_REGISTRY],
+            "transparent_combo_v1",
             "selected",
             "target_weight",
             "selection_reason",
@@ -495,6 +515,11 @@ def generate_daily_snapshot(
         "daily_service": Path(__file__),
         "momentum_alpha": PROJECT_ROOT / "src" / "quantlab" / "alpha" / "momentum.py",
         "research_dataset": PROJECT_ROOT / "src" / "quantlab" / "research" / "dataset.py",
+        "factor_registry": PROJECT_ROOT
+        / "src"
+        / "quantlab"
+        / "research"
+        / "factor_registry.py",
         "universe": PROJECT_ROOT / "src" / "quantlab" / "research" / "universe.py",
     }
     next_session = _next_open_session(storage, effective)
@@ -514,6 +539,12 @@ def generate_daily_snapshot(
             "score_interpretation": (
                 "lower return_20d ranks first because this frozen example baseline tests "
                 "short-horizon reversal; it is test-observed and not a profit claim"
+            ),
+            "factor_detail_columns": [item.factor_id for item in FACTOR_REGISTRY]
+            + ["transparent_combo_v1"],
+            "factor_selection_note": (
+                "factor columns are diagnostics; daily_mvp_v1 still selects on the frozen "
+                "return_20d reversal example"
             ),
         },
         "target": {

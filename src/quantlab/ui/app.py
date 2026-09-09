@@ -8,7 +8,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from quantlab.daily.experiments import load_baseline_view
+from quantlab.daily.experiments import load_baseline_view, load_latest_factor_view
 from quantlab.daily.service import (
     generate_daily_snapshot,
     inspect_data_status,
@@ -21,6 +21,11 @@ st.set_page_config(page_title="QuantLab Daily", page_icon="📈", layout="wide")
 @st.cache_data(show_spinner=False)
 def _baseline_view() -> dict | None:
     return load_baseline_view()
+
+
+@st.cache_data(show_spinner=False)
+def _factor_view() -> dict | None:
+    return load_latest_factor_view()
 
 
 def _latest() -> tuple[object | None, pd.DataFrame | None, pd.DataFrame | None]:
@@ -113,6 +118,29 @@ elif page == "股票排名与因子":
             mask |= shown["name"].astype(str).str.contains(query, case=False, na=False)
             shown = shown[mask]
         st.dataframe(shown, width="stretch", hide_index=True, height=650)
+        research = _factor_view()
+        if research is not None:
+            st.subheader("有限因子研究批次")
+            st.caption(
+                f"run {research['run_id']} · signal end {research['signal_end']} · "
+                "仅 RankIC 诊断，尚未完成成本与 Control 晋级"
+            )
+            rows = []
+            for item in research["registry"]:
+                rows.append(
+                    {
+                        "factor": item["factor_id"],
+                        "status": item["status"],
+                        "discovery_ic": item["discovery"]["mean_rank_ic"],
+                        "validation_ic": item["validation"]["mean_rank_ic"],
+                        "observed_ic": item["test_observed"]["mean_rank_ic"],
+                    }
+                )
+            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+            st.info(
+                f"Qlib: {research['qlib']['status']}；"
+                f"LightGBM: {research['lightgbm']['status']}"
+            )
         st.download_button(
             "下载完整排名 CSV",
             snapshot.ranking_path.read_bytes(),
