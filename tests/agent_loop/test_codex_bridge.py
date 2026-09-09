@@ -424,6 +424,71 @@ for line in sys.stdin:
     assert started == ["turn-1"]
 
 
+def test_app_server_polls_terminal_turn_when_completion_notification_is_lost(
+    tmp_path: Path,
+) -> None:
+    executable = tmp_path / "fake-codex"
+    executable.write_text(
+        """#!/usr/bin/env python3
+import json
+import sys
+
+reads = 0
+for line in sys.stdin:
+    message = json.loads(line)
+    request_id = message.get("id")
+    if request_id is None:
+        continue
+    method = message.get("method")
+    result = {}
+    if method == "thread/resume":
+        result = {"thread": {
+            "id": "01a0749b-b253-7133-87d7-683ace12c634",
+            "status": {"type": "idle"},
+        }}
+    elif method == "turn/start":
+        result = {"turn": {"id": "turn-1"}}
+    elif method == "thread/read":
+        reads += 1
+        status = "inProgress" if reads == 1 else "interrupted"
+        result = {"thread": {
+            "id": "01a0749b-b253-7133-87d7-683ace12c634",
+            "turns": [{"id": "turn-1", "status": status}],
+        }}
+    elif method == "thread/unsubscribe":
+        result = {"status": "unsubscribed"}
+    print(json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result}), flush=True)
+""",
+        encoding="utf-8",
+    )
+    os.chmod(executable, 0o755)
+    config = CodexBridgeConfig(
+        thread_id="01a0749b-b253-7133-87d7-683ace12c634",
+        codex_executable=executable,
+        reviewer_kind="dedicated",
+        config_fingerprint="f" * 64,
+        bootstrapped_at=_utc_now(),
+        probe_status="verified",
+        probe_evidence={},
+        turn_timeout_seconds=60,
+        stale_delivery_seconds=120,
+    )
+    heartbeats: list[str] = []
+
+    with pytest.raises(CodexBridgeError, match="ended with status 'interrupted'"):
+        deliver_review_event(
+            config,
+            repo_root=tmp_path,
+            generation=3,
+            event_action="report_submitted",
+            event_sha256="a" * 64,
+            on_turn_heartbeat=heartbeats.append,
+            turn_status_poll_seconds=0.01,
+        )
+
+    assert heartbeats == ["turn-1"]
+
+
 def test_config_rejects_stale_timeout_not_larger_than_turn_timeout(
     repository: Path, tmp_path: Path
 ) -> None:

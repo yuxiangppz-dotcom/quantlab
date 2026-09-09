@@ -728,6 +728,11 @@ def _deliver_claim(
                 delivery_token=token,
                 turn_id=started_turn_id,
             ),
+            on_turn_heartbeat=lambda active_turn_id: loop.record_review_turn_started(
+                event_sha256=str(claim["event_sha256"]),
+                delivery_token=token,
+                turn_id=active_turn_id,
+            ),
         )
     except BaseException as exc:
         classification = "configuration" if _is_configuration_error(exc) else "transient"
@@ -787,6 +792,8 @@ def deliver_review_event(
     event_action: str,
     event_sha256: str,
     on_turn_started: Callable[[str], None] | None = None,
+    on_turn_heartbeat: Callable[[str], None] | None = None,
+    turn_status_poll_seconds: float = 30.0,
 ) -> str:
     """Resume the dedicated thread, run one review turn, and return its id.
 
@@ -817,7 +824,14 @@ def deliver_review_event(
         if on_turn_started is not None:
             on_turn_started(turn_id)
         final_status = session.wait_for_turn_completed(
-            thread_id=config.thread_id, turn_id=turn_id
+            thread_id=config.thread_id,
+            turn_id=turn_id,
+            on_heartbeat=(
+                (lambda: on_turn_heartbeat(turn_id))
+                if on_turn_heartbeat is not None
+                else None
+            ),
+            poll_seconds=turn_status_poll_seconds,
         )
         session.unsubscribe_thread(thread_id=config.thread_id)
         if final_status != "completed":
@@ -1037,16 +1051,59 @@ class _AppServerSession:
             raise CodexBridgeError("Codex App Server returned no turn id")
         return turn_id
 
-    def wait_for_turn_completed(self, *, thread_id: str, turn_id: str) -> str:
-        completed = self._receive(
-            lambda item: item.get("method") == "turn/completed"
-            and item.get("params", {}).get("threadId") == thread_id
-            and item.get("params", {}).get("turn", {}).get("id") == turn_id
-        )
-        status = completed.get("params", {}).get("turn", {}).get("status")
-        if not isinstance(status, str):
-            raise CodexBridgeError("turn/completed carried no turn status")
-        return status
+    def wait_for_turn_completed(
+        self,
+        *,
+        thread_id: str,
+        turn_id: str,
+        on_heartbeat: Callable[[], None] | None = None,
+        poll_seconds: float = 30.0,
+    ) -> str:
+        """Wait for the exact terminal turn, polling when its notification is lost."""
+
+        if poll_seconds <= 0:
+            raise CodexBridgeError("turn status poll interval must be positive")
+        terminal = {"completed", "failed", "interrupted", "cancelled"}
+
+        def predicate(item: dict[str, Any]) -> bool:
+            return (
+                item.get("method") == "turn/completed"
+                and item.get("params", {}).get("threadId") == thread_id
+                and item.get("params", {}).get("turn", {}).get("id") == turn_id
+            )
+
+        while True:
+            poll_deadline = min(self._deadline, time.monotonic() + poll_seconds)
+            try:
+                completed = self._receive(predicate, deadline=poll_deadline)
+            except CodexBridgeError as exc:
+                if (
+                    str(exc) != "Codex App Server request timed out"
+                    or time.monotonic() >= self._deadline
+                ):
+                    raise
+                snapshot = self.read_thread(thread_id=thread_id, include_turns=True)
+                turns = snapshot.get("thread", {}).get("turns", [])
+                matching = [
+                    turn
+                    for turn in turns
+                    if isinstance(turn, dict) and turn.get("id") == turn_id
+                ]
+                if len(matching) > 1:
+                    raise CodexBridgeError(
+                        "thread/read returned duplicate records for the reviewer turn"
+                    ) from exc
+                if matching:
+                    status = matching[0].get("status")
+                    if status in terminal:
+                        return str(status)
+                if on_heartbeat is not None:
+                    on_heartbeat()
+                continue
+            status = completed.get("params", {}).get("turn", {}).get("status")
+            if not isinstance(status, str):
+                raise CodexBridgeError("turn/completed carried no turn status")
+            return status
 
     def resume_thread(self, *, thread_id: str) -> str:
         result = self.request("thread/resume", {"threadId": thread_id})
@@ -1079,8 +1136,12 @@ class _AppServerSession:
         self._subscriptions.discard(thread_id)
         return status
 
-    def read_thread(self, *, thread_id: str) -> dict[str, Any]:
-        result = self.request("thread/read", {"threadId": thread_id})
+    def read_thread(
+        self, *, thread_id: str, include_turns: bool = False
+    ) -> dict[str, Any]:
+        result = self.request(
+            "thread/read", {"threadId": thread_id, "includeTurns": include_turns}
+        )
         returned = result.get("thread", {}).get("id")
         if returned != thread_id:
             raise CodexBridgeError(

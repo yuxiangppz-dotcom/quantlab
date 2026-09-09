@@ -206,8 +206,11 @@ before a turn exists and `delivery_stage=reviewing` only after the exact turn
 has been created. Bootstrap, verification, and completed delivery all require
 an acknowledged `thread/unsubscribe`, preventing an otherwise idle reviewer
 from retaining an active-writer lock. Immediate App Server RPCs are bounded to
-60 seconds independently of the longer model-turn timeout, and exceptional
-process cleanup is also bounded. Failures are classified:
+60 seconds independently of the longer model-turn timeout. While a model turn
+is active, the worker periodically re-reads the exact turn: this refreshes its
+mailbox heartbeat and detects a terminal `failed`, `interrupted`, or
+`cancelled` turn even if `turn/completed` was not delivered on the original
+stream. Exceptional process cleanup is also bounded. Failures are classified:
 
 - **configuration** — `no rollout found`, a broken or fingerprint-mismatched
   configuration, or a foreign/interactive target discovered during bootstrap
