@@ -167,14 +167,17 @@ The bootstrap command:
 1. starts a new App Server thread rooted at this repository;
 2. runs exactly one fixed, content-free bootstrap turn and waits for
    `turn/completed` with status `completed`;
-3. closes that server, opens a fresh process, and proves `thread/read` and
+3. explicitly releases the creator's writer with `thread/unsubscribe`, closes
+   that server, opens a fresh process, and proves `thread/read` and
    `thread/resume` succeed for the same thread id and echo it back;
-4. only then atomically writes the Git-ignored bridge config
+4. explicitly releases the verifier's writer too; a target is not ready unless
+   both unsubscribe operations are acknowledged as `unsubscribed`;
+5. only then atomically writes the Git-ignored bridge config
    (`.agent-loop/codex_bridge.json`, protocol
-   `quantlab_codex_review_bridge_v2`) containing the dedicated thread id, the
+   `quantlab_codex_review_bridge_v3`) containing the dedicated thread id, the
    executable path, a SHA-256 **configuration fingerprint** binding
    thread + executable + checkout, and probe evidence (no secrets);
-5. records every attempt under `.agent-loop/bridge/bootstrap.json`;
+6. records every attempt under `.agent-loop/bridge/bootstrap.json`;
    incomplete attempts are marked `incomplete` and never advertised as ready.
 
 `probe-codex-reviewer` runs the same persistence proof without writing any
@@ -197,7 +200,14 @@ token and process id, and grants the new attempt in the same database
 transaction. The old worker therefore cannot finish after a takeover, and a
 crashed worker cannot wedge the target forever. `delivered` requires the exact
 live attempt, the SHA-256 of its raw token, its target binding, the exact
-returned turn id, and a `completed` status. Failures are classified:
+returned turn id, and a `completed` status. The worker commits that turn id as
+soon as `turn/start` succeeds, so status exposes `delivery_stage=starting`
+before a turn exists and `delivery_stage=reviewing` only after the exact turn
+has been created. Bootstrap, verification, and completed delivery all require
+an acknowledged `thread/unsubscribe`, preventing an otherwise idle reviewer
+from retaining an active-writer lock. Immediate App Server RPCs are bounded to
+60 seconds independently of the longer model-turn timeout, and exceptional
+process cleanup is also bounded. Failures are classified:
 
 - **configuration** — `no rollout found`, a broken or fingerprint-mismatched
   configuration, or a foreign/interactive target discovered during bootstrap

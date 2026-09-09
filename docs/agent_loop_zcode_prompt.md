@@ -7,9 +7,24 @@ and `docs/agent_loop.md` before doing anything else.
 At the start of every scheduled run:
 
 1. Run `uv run python scripts/agent_loop.py status --role executor`.
-2. If `action` is not `claim_task`, stop immediately without modifying project
-   files or Git. A no-op is normal. The status command may retry delivery of a
-   previously committed reviewer notification inside the ignored mailbox.
+2. If `action` is not `claim_task`, do not modify project files or Git. Report exactly one concise Chinese status line, then stop:
+
+- If `review_notification.delivery_stage == "reviewing"` and
+  `review_notification.turn_id` is non-empty:
+  `Codex 正在 review Generation <generation>（turn=<turn_id>）；GLM 本轮不领取任务。`
+- If `codex_review_delivery.status == "launching"` or
+  `review_notification.delivery_stage == "starting"`:
+  `Codex reviewer 投递正在启动，评审回合尚未确认；GLM 本轮不领取任务。`
+- If `phase == "REVIEW_READY"` and the notification is `queued`, `failed`, blocked, or waiting for `next_retry_at`:
+  `Codex review 正在等待投递或重试（state=<state>，next_retry_at=<time>）；GLM 本轮不领取任务。`
+- If `phase == "EXECUTING"`:
+  `Generation <generation> 已有 executor 执行中；GLM 本轮不重复领取。`
+- Otherwise:
+  `当前没有 GLM 可领取的任务（phase=<phase>，action=<action>）。`
+
+Never describe `starting`, `queued`, `failed`, blocked, or backoff state as
+“Codex 正在 review” or “under review”. Only a non-empty, authority-bound
+`turn_id` with `delivery_stage == "reviewing"` proves that review began.
 3. If `action` is `claim_task`, run
    `uv run python scripts/agent_loop.py claim --agent zcode --lease-hours 24`.
    Retain the exact `claim_token` returned by that command. Never claim twice.

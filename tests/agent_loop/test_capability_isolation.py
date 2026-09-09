@@ -85,6 +85,9 @@ for line in sys.stdin:
     if method == "initialize":
         reply(request_id)
         continue
+    if method == "thread/unsubscribe":
+        reply(request_id, result={"status": "unsubscribed"})
+        continue
 @HANDLERS@
 '''
 
@@ -125,7 +128,6 @@ _DELIVERY_TURN = '''    if method == "thread/resume":
         send({"jsonrpc": "2.0", "method": "turn/completed", "params": {
             "threadId": THREAD_ID,
             "turn": {"id": "@COMPLETED_TURN@", "status": "@COMPLETED_STATUS@"}}})
-        sys.exit(0)
     else:
         reply(request_id, error={"code": -32601, "message": f"unsupported {method}"})
 '''
@@ -208,8 +210,10 @@ def _verified_evidence(bootstrap_turn_id: str = "boot-turn-1") -> dict[str, obje
         "persistence": {
             "bootstrap_turn_completed": True,
             "creator_process_exited": True,
+            "creator_unsubscribed": True,
             "thread_read_after_restart": True,
             "thread_resume_after_restart": True,
+            "verifier_unsubscribed": True,
         },
         "started_at": _utc_now(),
         "finished_at": _utc_now(),

@@ -71,6 +71,11 @@ for line in sys.stdin:
     if method == "initialize":
         reply(request_id)
         continue
+    if method == "thread/unsubscribe":
+        with COUNT_FILE.with_suffix(".unsubscribed").open("a", encoding="utf-8") as stream:
+            stream.write(message["params"]["threadId"] + "\\n")
+        reply(request_id, result={"status": "unsubscribed"})
+        continue
 @HANDLERS@
 '''
 
@@ -157,7 +162,8 @@ _DELIVERY_TURN = '''    if method == "thread/resume":
         send({"jsonrpc": "2.0", "method": "turn/completed", "params": {
             "threadId": THREAD_ID,
             "turn": {"id": "@COMPLETED_TURN@", "status": "@COMPLETED_STATUS@"}}})
-        sys.exit(0)
+        if "@COMPLETED_TURN@" != "review-turn-1":
+            sys.exit(0)
     else:
         reply(request_id, error={"code": -32601, "message": f"unsupported {method}"})
 '''
@@ -212,8 +218,10 @@ def _verified_evidence() -> dict[str, object]:
         "persistence": {
             "bootstrap_turn_completed": True,
             "creator_process_exited": True,
+            "creator_unsubscribed": True,
             "thread_read_after_restart": True,
             "thread_resume_after_restart": True,
+            "verifier_unsubscribed": True,
         },
         "started_at": _utc_now(),
         "finished_at": _utc_now(),
@@ -264,6 +272,8 @@ def test_bootstrap_survives_creator_exit_and_writes_verified_config(
     assert result["persistence"]["thread_read_after_restart"] is True
     assert result["persistence"]["thread_resume_after_restart"] is True
     assert result["persistence"]["creator_process_exited"] is True
+    assert result["persistence"]["creator_unsubscribed"] is True
+    assert result["persistence"]["verifier_unsubscribed"] is True
     assert result["config_fingerprint"] == compute_config_fingerprint(
         thread_id=_THREAD, codex_executable=executable, repo_root=repository
     )
@@ -398,6 +408,10 @@ def test_dedicated_thread_completes_a_later_review_turn(
             "SELECT state, turn_id FROM delivery_attempts"
         ).fetchall()
     assert attempts == [("delivered", result["turn_id"])]
+    unsubscribed = executable.with_suffix(".unsubscribed").read_text(
+        encoding="utf-8"
+    ).splitlines()
+    assert unsubscribed == [_THREAD, _THREAD, _THREAD]
 
 
 def test_new_probed_configuration_resumes_delivery_after_block(

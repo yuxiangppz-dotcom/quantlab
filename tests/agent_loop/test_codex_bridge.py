@@ -43,8 +43,10 @@ def _verified_evidence() -> dict[str, object]:
         "persistence": {
             "bootstrap_turn_completed": True,
             "creator_process_exited": True,
+            "creator_unsubscribed": True,
             "thread_read_after_restart": True,
             "thread_resume_after_restart": True,
+            "verifier_unsubscribed": True,
         },
         "started_at": _utc_now(),
         "finished_at": _utc_now(),
@@ -217,6 +219,36 @@ def test_delivery_claim_is_idempotent_and_private_token_is_cas_bound(
     assert _claim_direct(loop) is None
 
 
+def test_turn_start_marker_distinguishes_starting_from_reviewing(
+    repository: Path, tmp_path: Path
+) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    _review_ready(loop, tmp_path)
+    claim = _claim_direct(loop)
+    assert claim is not None
+
+    starting = loop.status(role="executor")["review_notification"]
+    assert starting["delivery_stage"] == "starting"
+    assert starting["turn_id"] == ""
+
+    loop.record_review_turn_started(
+        event_sha256=str(claim["event_sha256"]),
+        delivery_token=str(claim["delivery_token"]),
+        turn_id="review-turn-1",
+    )
+
+    reviewing = loop.status(role="executor")["review_notification"]
+    assert reviewing["delivery_stage"] == "reviewing"
+    assert reviewing["turn_id"] == "review-turn-1"
+    with pytest.raises(AgentLoopError, match="different turn id"):
+        loop.record_review_turn_started(
+            event_sha256=str(claim["event_sha256"]),
+            delivery_token=str(claim["delivery_token"]),
+            turn_id="other-turn",
+        )
+
+
 def test_failed_delivery_is_retryable_with_a_new_token(
     repository: Path, tmp_path: Path
 ) -> None:
@@ -351,6 +383,8 @@ for line in sys.stdin:
         }
     if method == "turn/start":
         result = {"turn": {"id": "turn-1"}}
+    if method == "thread/unsubscribe":
+        result = {"status": "unsubscribed"}
     print(json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result}), flush=True)
     if method == "turn/start":
         print(json.dumps({
@@ -377,14 +411,17 @@ for line in sys.stdin:
         stale_delivery_seconds=120,
     )
 
+    started: list[str] = []
     turn_id = deliver_review_event(
         config,
         repo_root=tmp_path,
         generation=3,
         event_action="report_submitted",
         event_sha256="a" * 64,
+        on_turn_started=started.append,
     )
     assert turn_id == "turn-1"
+    assert started == ["turn-1"]
 
 
 def test_config_rejects_stale_timeout_not_larger_than_turn_timeout(

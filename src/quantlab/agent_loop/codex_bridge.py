@@ -35,6 +35,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -48,14 +49,16 @@ from quantlab.agent_loop.protocol import (
     _utc_now,
 )
 
-BRIDGE_PROTOCOL_VERSION = "quantlab_codex_review_bridge_v2"
+BRIDGE_PROTOCOL_VERSION = "quantlab_codex_review_bridge_v3"
 REVIEWER_KIND = "dedicated"
 VERIFIED_PROBE_STATUS = "verified"
 PERSISTENCE_EVIDENCE_KEYS = (
     "bootstrap_turn_completed",
     "creator_process_exited",
+    "creator_unsubscribed",
     "thread_read_after_restart",
     "thread_resume_after_restart",
+    "verifier_unsubscribed",
 )
 _THREAD_ID = re.compile(r"^[0-9a-fA-F-]{20,80}$")
 DELIVERY_TOKEN_ENV = "QUANTLAB_AGENT_LOOP_DELIVERY_TOKEN"
@@ -354,12 +357,7 @@ def bootstrap_codex_reviewer(
             repo_root=loop.repo_root,
             timeout_seconds=bootstrap_timeout_seconds,
         ) as creator:
-            created = creator.request("thread/start", {})
-            thread_id = created.get("thread", {}).get("id", "")
-            if not isinstance(thread_id, str) or not _THREAD_ID.fullmatch(thread_id):
-                raise CodexBridgeError(
-                    "Codex App Server returned an invalid dedicated thread id"
-                )
+            thread_id = creator.start_thread()
             bootstrap_turn_id = creator.start_turn(
                 thread_id=thread_id, text=BOOTSTRAP_PROMPT
             )
@@ -368,6 +366,8 @@ def bootstrap_codex_reviewer(
             )
             if status != "completed":
                 raise CodexBridgeError(f"bootstrap turn ended with status {status!r}")
+            creator.unsubscribe_thread(thread_id=thread_id)
+            persistence["creator_unsubscribed"] = True
         persistence["bootstrap_turn_completed"] = True
         persistence["creator_process_exited"] = True
         with _AppServerSession(
@@ -381,6 +381,8 @@ def bootstrap_codex_reviewer(
                 raise CodexBridgeError(
                     "freshly resumed dedicated thread already reports an active writer"
                 )
+            verifier.unsubscribe_thread(thread_id=thread_id)
+            persistence["verifier_unsubscribed"] = True
         persistence["thread_read_after_restart"] = True
         persistence["thread_resume_after_restart"] = True
         persistence["resumed_thread_status"] = resumed_status
@@ -486,6 +488,8 @@ def bridge_status(loop: AgentLoop) -> dict[str, Any]:
                 "event_sha256": live["event_sha256"],
                 "generation": live["generation"],
                 "attempt_number": live["attempt_number"],
+                "turn_id": live["turn_id"] or None,
+                "delivery_stage": "reviewing" if live["turn_id"] else "starting",
                 "created_at": live["created_at"],
                 "updated_at": live["updated_at"],
             }
@@ -719,6 +723,11 @@ def _deliver_claim(
             generation=int(claim["generation"]),
             event_action=str(claim["event_action"]),
             event_sha256=str(claim["event_sha256"]),
+            on_turn_started=lambda started_turn_id: loop.record_review_turn_started(
+                event_sha256=str(claim["event_sha256"]),
+                delivery_token=token,
+                turn_id=started_turn_id,
+            ),
         )
     except BaseException as exc:
         classification = "configuration" if _is_configuration_error(exc) else "transient"
@@ -777,6 +786,7 @@ def deliver_review_event(
     generation: int,
     event_action: str,
     event_sha256: str,
+    on_turn_started: Callable[[str], None] | None = None,
 ) -> str:
     """Resume the dedicated thread, run one review turn, and return its id.
 
@@ -804,9 +814,12 @@ def deliver_review_event(
                 event_sha256=event_sha256,
             ),
         )
+        if on_turn_started is not None:
+            on_turn_started(turn_id)
         final_status = session.wait_for_turn_completed(
             thread_id=config.thread_id, turn_id=turn_id
         )
+        session.unsubscribe_thread(thread_id=config.thread_id)
         if final_status != "completed":
             raise CodexBridgeError(
                 f"Codex reviewer turn {turn_id} ended with status {final_status!r}"
@@ -835,6 +848,7 @@ class _AppServerSession:
         self._next_request_id = 1
         self._stdout_thread: threading.Thread | None = None
         self._stderr_thread: threading.Thread | None = None
+        self._subscriptions: set[str] = set()
 
     def __enter__(self) -> _AppServerSession:
         self._start()
@@ -909,6 +923,14 @@ class _AppServerSession:
         process = self._process
         if process is None:
             return
+        if process.poll() is None:
+            for thread_id in tuple(self._subscriptions):
+                try:
+                    self.unsubscribe_thread(thread_id=thread_id, timeout_seconds=5.0)
+                except (OSError, CodexBridgeError):
+                    # Best effort on exceptional paths.  Normal bootstrap and
+                    # delivery paths explicitly require a successful unsubscribe.
+                    pass
         try:
             if process.stdin is not None:
                 process.stdin.close()
@@ -917,10 +939,16 @@ class _AppServerSession:
         if process.poll() is None:
             process.terminate()
             try:
-                process.wait(timeout=10)
+                process.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 process.kill()
-                process.wait(timeout=10)
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    # Never strand a mailbox claim merely because an interop
+                    # process refuses to reap after it has been killed.
+                    pass
+        self._process = None
 
     def _send(self, value: dict[str, Any]) -> None:
         assert self._process is not None and self._process.stdin is not None
@@ -929,13 +957,14 @@ class _AppServerSession:
         )
         self._process.stdin.flush()
 
-    def _receive(self, predicate: Any) -> dict[str, Any]:
+    def _receive(self, predicate: Any, *, deadline: float | None = None) -> dict[str, Any]:
         assert self._process is not None
+        receive_deadline = self._deadline if deadline is None else deadline
         while True:
             for index, pending in enumerate(self._pending):
                 if predicate(pending):
                     return self._pending.pop(index)
-            remaining = self._deadline - time.monotonic()
+            remaining = receive_deadline - time.monotonic()
             if remaining <= 0:
                 raise CodexBridgeError("Codex App Server request timed out")
             try:
@@ -964,11 +993,20 @@ class _AppServerSession:
                 return message
             self._pending.append(message)
 
-    def request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+    def request(
+        self,
+        method: str,
+        params: dict[str, Any],
+        *,
+        timeout_seconds: float = 60.0,
+    ) -> dict[str, Any]:
         request_id = self._next_request_id
         self._next_request_id += 1
         self._send({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
-        message = self._receive(lambda item: item.get("id") == request_id)
+        deadline = min(self._deadline, time.monotonic() + timeout_seconds)
+        message = self._receive(
+            lambda item: item.get("id") == request_id, deadline=deadline
+        )
         if "error" in message:
             raise CodexBridgeError(
                 f"App Server request for {method} failed: {message['error']}"
@@ -978,6 +1016,16 @@ class _AppServerSession:
 
     def notify(self, method: str, params: dict[str, Any]) -> None:
         self._send({"jsonrpc": "2.0", "method": method, "params": params})
+
+    def start_thread(self) -> str:
+        result = self.request("thread/start", {})
+        thread_id = result.get("thread", {}).get("id", "")
+        if not isinstance(thread_id, str) or not _THREAD_ID.fullmatch(thread_id):
+            raise CodexBridgeError(
+                "Codex App Server returned an invalid dedicated thread id"
+            )
+        self._subscriptions.add(thread_id)
+        return thread_id
 
     def start_turn(self, *, thread_id: str, text: str) -> str:
         result = self.request(
@@ -1011,6 +1059,24 @@ class _AppServerSession:
         status = thread.get("status", {}).get("type")
         if not isinstance(status, str):
             raise CodexBridgeError("Codex App Server returned no thread status")
+        self._subscriptions.add(thread_id)
+        return status
+
+    def unsubscribe_thread(
+        self, *, thread_id: str, timeout_seconds: float = 10.0
+    ) -> str:
+        result = self.request(
+            "thread/unsubscribe",
+            {"threadId": thread_id},
+            timeout_seconds=timeout_seconds,
+        )
+        status = result.get("status")
+        if status != "unsubscribed":
+            raise CodexBridgeError(
+                "Codex App Server did not release the reviewer writer: "
+                f"thread/unsubscribe returned {status!r}"
+            )
+        self._subscriptions.discard(thread_id)
         return status
 
     def read_thread(self, *, thread_id: str) -> dict[str, Any]:

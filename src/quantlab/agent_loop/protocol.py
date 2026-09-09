@@ -1432,6 +1432,70 @@ class AgentLoop:
             result["delivery_token"] = delivery_token
             return result
 
+    def record_review_turn_started(
+        self,
+        *,
+        event_sha256: str,
+        delivery_token: str,
+        turn_id: str,
+    ) -> None:
+        """Commit evidence that the claimed delivery created its reviewer turn."""
+
+        if not delivery_token:
+            raise AgentLoopError("delivery_token must not be empty")
+        if not turn_id:
+            raise AgentLoopError("turn_id must not be empty")
+        token_sha256 = _sha256_text(delivery_token)
+        now = _utc_now()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                attempts = connection.execute(
+                    """
+                    SELECT a.* FROM delivery_attempts AS a
+                    JOIN review_notifications AS n
+                      ON n.event_sha256 = a.event_sha256
+                    WHERE a.event_sha256 = ? AND a.state = 'live'
+                      AND n.state = 'launching' AND n.delivery_token = ?
+                      AND a.delivery_token_sha256 = ?
+                      AND a.config_fingerprint = n.config_fingerprint
+                      AND a.thread_id = n.thread_id
+                    """,
+                    (event_sha256, delivery_token, token_sha256),
+                ).fetchall()
+                if len(attempts) != 1:
+                    raise AgentLoopError("notification delivery claim is stale")
+                attempt = attempts[0]
+                if attempt["turn_id"] not in {"", turn_id}:
+                    raise AgentLoopError(
+                        "notification delivery claim already records a different turn id"
+                    )
+                changed_attempt = connection.execute(
+                    """
+                    UPDATE delivery_attempts
+                    SET turn_id = ?, updated_at = ?
+                    WHERE attempt_id = ? AND state = 'live'
+                      AND delivery_token_sha256 = ?
+                    """,
+                    (turn_id, now, attempt["attempt_id"], token_sha256),
+                ).rowcount
+                changed_notification = connection.execute(
+                    """
+                    UPDATE review_notifications SET updated_at = ?
+                    WHERE event_sha256 = ? AND state = 'launching'
+                      AND delivery_token = ?
+                    """,
+                    (now, event_sha256, delivery_token),
+                ).rowcount
+                if changed_attempt != 1 or changed_notification != 1:
+                    raise AgentLoopError(
+                        "notification turn-start lost its exact live-attempt ownership CAS"
+                    )
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+
     def finish_review_notification(
         self,
         *,
@@ -1508,6 +1572,10 @@ class AgentLoop:
                         )
                     if turn_id == "":
                         raise AgentLoopError("delivered attempts must record their turn id")
+                    if attempt["turn_id"] not in {"", turn_id}:
+                        raise AgentLoopError(
+                            "delivered turn id does not match the started reviewer turn"
+                        )
                 now = _utc_now()
                 if delivered:
                     attempt_state = "delivered"
@@ -1920,13 +1988,21 @@ class AgentLoop:
             }
             notification = connection.execute(
                 """
-                SELECT event_sha256, generation, event_action, state, attempt_count,
-                       config_fingerprint, retry_class, next_retry_at,
-                       blocked_fingerprint, thread_id, process_id, last_error, created_at,
-                       updated_at
-                FROM review_notifications
-                WHERE generation = ?
-                ORDER BY created_at DESC, event_sha256 DESC
+                SELECT n.event_sha256, n.generation, n.event_action, n.state,
+                       n.attempt_count, n.config_fingerprint, n.retry_class,
+                       n.next_retry_at, n.blocked_fingerprint, n.thread_id,
+                       n.process_id, n.last_error, n.created_at, n.updated_at,
+                       COALESCE(a.turn_id, '') AS turn_id,
+                       CASE
+                           WHEN a.turn_id IS NOT NULL AND a.turn_id != '' THEN 'reviewing'
+                           WHEN n.state = 'launching' THEN 'starting'
+                           ELSE n.state
+                       END AS delivery_stage
+                FROM review_notifications AS n
+                LEFT JOIN delivery_attempts AS a
+                  ON a.event_sha256 = n.event_sha256 AND a.state = 'live'
+                WHERE n.generation = ?
+                ORDER BY n.created_at DESC, n.event_sha256 DESC
                 LIMIT 1
                 """,
                 (generation,),
