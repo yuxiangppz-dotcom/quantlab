@@ -7,6 +7,14 @@ from quantlab.personal.account import (
     load_account,
 )
 from quantlab.personal.plan import build_reference_plan, load_latest_plan
+from quantlab.personal.tracking import (
+    build_plan_fill_comparison,
+    build_tracking_valuation,
+    import_manual_fills,
+    load_effective_account,
+    load_tracking_summary,
+    preview_manual_fills,
+)
 
 __all__ = [
     "build_reference_plan",
@@ -15,4 +23,10 @@ __all__ = [
     "list_accounts",
     "load_account",
     "load_latest_plan",
+    "import_manual_fills",
+    "load_effective_account",
+    "load_tracking_summary",
+    "preview_manual_fills",
+    "build_plan_fill_comparison",
+    "build_tracking_valuation",
 ]

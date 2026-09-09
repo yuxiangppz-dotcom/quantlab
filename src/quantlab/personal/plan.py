@@ -17,7 +17,6 @@ from quantlab.personal.account import (
     DEFAULT_ACCOUNT_ROOT,
     atomic_json,
     atomic_text,
-    load_account,
 )
 
 
@@ -89,11 +88,22 @@ def build_reference_plan(
 ) -> tuple[Path, Path, dict]:
     """Build an auditable plan that is explicitly not submission-ready."""
     storage = storage or ParquetStorage(PROJECT_ROOT / "data" / "canonical")
-    account = load_account(account_id, account_root=account_root)
+    from quantlab.personal.tracking import load_effective_account
+
+    account = load_effective_account(account_id, account_root=account_root, storage=storage)
     snapshot = load_latest_snapshot(product_root)
     if snapshot is None:
         raise FileNotFoundError("no daily snapshot; run `quantlab daily` first")
     signal_date = date.fromisoformat(snapshot.report["effective_as_of"])
+    next_session_value = snapshot.report.get("next_known_open_session")
+    if not next_session_value:
+        raise ValueError("daily snapshot has no verified next open session")
+    intended_session = date.fromisoformat(next_session_value)
+    latest_fill = account.get("latest_fill_trade_date")
+    if latest_fill is not None and date.fromisoformat(latest_fill) >= intended_session:
+        raise ValueError(
+            "daily snapshot is stale relative to imported fills; update and regenerate daily first"
+        )
     account_as_of = account["as_of"]
     ranking = pd.read_csv(snapshot.ranking_path)
     target_rows = ranking[ranking["selected"]]
@@ -227,7 +237,7 @@ def build_reference_plan(
         "account_fingerprint": account["account_fingerprint"],
         "account_as_of": account_as_of,
         "signal_date": signal_date.isoformat(),
-        "intended_next_session": snapshot.report["next_known_open_session"],
+        "intended_next_session": intended_session.isoformat(),
         "daily_content_fingerprint": snapshot.report["content_fingerprint"],
         "planning_nav_fen": nav_fen,
         "remaining_current_cash_after_reference_buys_fen": available_cash,

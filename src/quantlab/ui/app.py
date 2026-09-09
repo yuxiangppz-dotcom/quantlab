@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import date
 from decimal import Decimal
@@ -16,12 +17,17 @@ from quantlab.daily.service import (
     load_latest_snapshot,
 )
 from quantlab.personal import (
+    build_plan_fill_comparison,
     build_reference_plan,
+    build_tracking_valuation,
     create_demo_account,
     import_account_csv,
+    import_manual_fills,
     list_accounts,
-    load_account,
+    load_effective_account,
     load_latest_plan,
+    load_tracking_summary,
+    preview_manual_fills,
 )
 
 st.set_page_config(page_title="QuantLab Daily", page_icon="📈", layout="wide")
@@ -213,7 +219,8 @@ else:
         st.info("尚无账户。请显式创建演示账户或导入完整账户快照。")
     else:
         account_id = st.selectbox("账户", accounts)
-        account = load_account(account_id)
+        account = load_effective_account(account_id)
+        tracking = load_tracking_summary(account_id)
         positions = pd.DataFrame(account["positions"])
         cols = st.columns(4)
         cols[0].metric("账户模式", account["account_mode"])
@@ -222,11 +229,95 @@ else:
         cols[3].metric("账户时间", account["as_of"])
         if account["account_mode"] == "demo_simulation":
             st.info("这是演示账户，不是用户实际资产。")
+        if tracking["event_count"]:
+            st.success(
+                f"已通过同一执行账本回放 {tracking['event_count']} 笔人工成交；"
+                f"累计实际费用 ¥{Decimal(tracking['total_fee_fen']) / 100:,.2f}。"
+            )
+            valuation = build_tracking_valuation(account_id)
+            if valuation["status"] == "complete_reference_mark_to_market":
+                cols = st.columns(2)
+                cols[0].metric(
+                    "参考盯市净值",
+                    f"¥{Decimal(valuation['current_nav_fen']) / 100:,.2f}",
+                )
+                cols[1].metric("参考盯市变化", f"{valuation['reference_return']:.2%}")
+                st.caption(
+                    "从首次 journal 的最近完整 raw close 参考锚点计算；"
+                    "不是经公司行动和外部现金流验证的业绩声明。"
+                )
+            else:
+                st.warning(f"组合表现暂不可计算：{valuation['status']}")
         if not positions.empty:
             positions["reference_cost_cny"] = positions["reference_cost_fen"].map(
                 lambda value: None if pd.isna(value) else float(value) / 100
             )
             st.dataframe(positions, width="stretch", hide_index=True)
+        if account["account_mode"] != "manual_tracking":
+            st.info("演示账户不会接收人工真实成交；请导入 manual_tracking 账户。")
+        else:
+            with st.expander("人工成交：预览后导入"):
+                fill_template = (
+                    "account_id,broker_trade_id,trade_date,reported_at,instrument_id,side,"
+                    "quantity,price_cny,gross_notional_cny,fee_cny\n"
+                    f"{account_id},broker_trade_001,2026-09-10,"
+                    "2026-09-10T15:10:00+08:00,000001.SZ,BUY,100,10.00,1000.00,5.00\n"
+                )
+                st.download_button(
+                    "下载人工成交模板 CSV",
+                    fill_template.encode(),
+                    "quantlab_manual_fills_template.csv",
+                    "text/csv",
+                )
+                fill_upload = st.file_uploader(
+                    "选择券商人工成交 CSV", type="csv", key="manual_fill_upload"
+                )
+                if fill_upload is not None:
+                    fill_raw = fill_upload.getvalue()
+                    fill_sha = hashlib.sha256(fill_raw).hexdigest()
+                    if st.button("预览并校验成交"):
+                        try:
+                            preview = preview_manual_fills(account_id, fill_raw)
+                            st.session_state["fill_preview"] = preview
+                            st.session_state["fill_preview_sha"] = fill_sha
+                        except Exception as exc:
+                            st.error(f"成交预览失败：{exc}")
+                    preview = st.session_state.get("fill_preview")
+                    if preview and st.session_state.get("fill_preview_sha") == fill_sha:
+                        st.write(
+                            f"新增 {preview['accepted_count']} 笔，重复 "
+                            f"{preview['duplicate_count']} 笔；预览后现金 "
+                            f"¥{Decimal(preview['cash_fen']) / 100:,.2f}。"
+                        )
+                        preview_rows = [
+                            {
+                                key: item[key]
+                                for key in (
+                                    "fill_id",
+                                    "trade_date",
+                                    "instrument_id",
+                                    "side",
+                                    "quantity",
+                                    "price",
+                                    "gross_notional_fen",
+                                    "fee_fen",
+                                )
+                            }
+                            for item in preview["events"]
+                        ]
+                        st.dataframe(pd.DataFrame(preview_rows), width="stretch", hide_index=True)
+                        if st.button("确认导入已预览成交"):
+                            try:
+                                path, result = import_manual_fills(account_id, fill_raw)
+                                st.success(f"已导入 {result['accepted_count']} 笔；journal {path}")
+                                st.session_state.pop("fill_preview", None)
+                                st.session_state.pop("fill_preview_sha", None)
+                                st.rerun()
+                            except Exception as exc:
+                                st.error(f"成交导入失败：{exc}")
+        if tracking["fills"]:
+            with st.expander("已入账人工成交"):
+                st.dataframe(pd.DataFrame(tracking["fills"]), width="stretch", hide_index=True)
         if st.button("生成下一交易日参考计划", type="primary"):
             try:
                 json_path, csv_path, payload = build_reference_plan(account_id)
@@ -254,5 +345,12 @@ else:
             with st.expander("已知限制"):
                 for limitation in payload["known_limitations"]:
                     st.write(f"- {limitation}")
+        comparison = build_plan_fill_comparison(account_id)
+        if comparison is not None:
+            st.subheader("参考计划与实际成交差异")
+            st.caption(
+                f"计划 {comparison['plan_id'][:12]} · 交易日 {comparison['intended_trade_date']}"
+            )
+            st.dataframe(pd.DataFrame(comparison["rows"]), width="stretch", hide_index=True)
     if snapshot is None:
         st.info("尚无日频报告；参考计划需要先生成日报。")

@@ -2,8 +2,8 @@
 
 ## Product
 
-- QuantLab Daily v1 is under staged implementation. Daily research and account
-  reference planning are available; durable manual-fill tracking arrives in M4.
+- QuantLab Daily v1 now covers daily research, account reference planning, and
+  manual-fill tracking. Final end-to-end acceptance remains in M5.
 - A cached report is viewable offline, but its exact `effective_as_of` remains
   prominent. Offline availability is not evidence of fresh market data.
 - The local UI binds only to `127.0.0.1`; it has no authentication and must not
@@ -45,3 +45,14 @@
   broker gateway and QuantLab does not submit orders.
 - Corporate-action share/cash postings are not yet supported in a real account
   ledger. Adjusted research prices must not be used as a substitute.
+- Manual tracking does not yet model deposits or withdrawals. Its displayed
+  return is explicitly a raw-close reference mark from the opening snapshot,
+  not a broker-verified performance record. It remains unavailable when prices
+  predate a fill or a held instrument cannot be valued.
+- Opening aggregate holdings are adapted into execution-ledger availability
+  lots: imported sellable shares are immediately available; imported
+  unavailable shares become available on the next known session. This is an
+  accounting adapter, not an assertion of their historical acquisition date.
+- `demo_simulation` is isolated from manual-fill import. QuantLab v1 does not
+  infer simulated fills from daily bars; no queue, slippage, or fill claim is
+  made.

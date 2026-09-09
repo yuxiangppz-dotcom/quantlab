@@ -201,6 +201,9 @@ uv run quantlab update
 uv run quantlab daily --as-of 2026-09-10
 uv run quantlab portfolio demo
 uv run quantlab portfolio plan --account-id demo_200k
+uv run quantlab portfolio fills-preview --account-id my_account --file fills.csv
+uv run quantlab portfolio fills-import --account-id my_account --file fills.csv
+uv run quantlab portfolio track --account-id my_account
 uv run quantlab ui
 ```
 
@@ -224,6 +227,14 @@ every row: `account_id`, `account_mode`, timezone-aware `as_of`, `cash_cny`,
 `open_orders_declaration`. Generated plans are reference-only. They use the
 signal day's raw close, current cash, imported sellable quantity, and a visibly
 incomplete user-reported commission estimate; they are not executable orders.
+
+Manual fills use a second exact CSV schema: `account_id`, `broker_trade_id`,
+`trade_date`, timezone-aware `reported_at`, `instrument_id`, `side`, `quantity`,
+`price_cny`, `gross_notional_cny`, and `fee_cny`. Preview performs a full replay
+without writing. Import commits the complete deduplicated journal atomically;
+re-importing the same broker trade is a no-op, while altered economics under the
+same trade id are rejected. These facts update the local manual-tracking ledger
+only—they never submit an order or change Canonical market data.
 
 The UI listens on `127.0.0.1:8501` and has four pages: data/report, rankings,
 formal baseline comparison, and account/reference-plan status. From Windows,

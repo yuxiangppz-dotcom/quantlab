@@ -124,8 +124,12 @@ def _ui(port: int) -> int:
 def _portfolio(action: str, account_id: str, source: str | None) -> int:
     from quantlab.personal import (
         build_reference_plan,
+        build_tracking_valuation,
         create_demo_account,
         import_account_csv,
+        import_manual_fills,
+        load_tracking_summary,
+        preview_manual_fills,
     )
 
     if action == "demo":
@@ -144,6 +148,22 @@ def _portfolio(action: str, account_id: str, source: str | None) -> int:
         print(f"  status: {payload['status']}")
         print(f"  plan: {json_path}")
         print(f"  csv: {csv_path}")
+    elif action in {"fills-preview", "fills-import"}:
+        if source is None:  # pragma: no cover - argparse enforces this
+            raise ValueError("--file is required")
+        if action == "fills-preview":
+            payload = preview_manual_fills(account_id, Path(source))
+            payload.pop("events", None)
+        else:
+            path, payload = import_manual_fills(account_id, Path(source))
+            payload["journal_path"] = str(path)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    elif action == "track":
+        payload = {
+            "account": load_tracking_summary(account_id),
+            "valuation": build_tracking_valuation(account_id),
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:  # pragma: no cover - argparse enforces this
         raise AssertionError(action)
     return 0
@@ -177,6 +197,15 @@ def _parser() -> argparse.ArgumentParser:
     portfolio_import.add_argument("--file", required=True)
     portfolio_plan = portfolio_sub.add_parser("plan", help="Build a next-session reference plan.")
     portfolio_plan.add_argument("--account-id", required=True)
+    for action, help_text in (
+        ("fills-preview", "Validate a broker-fill CSV without writing."),
+        ("fills-import", "Atomically import a validated broker-fill CSV."),
+    ):
+        fill_parser = portfolio_sub.add_parser(action, help=help_text)
+        fill_parser.add_argument("--account-id", required=True)
+        fill_parser.add_argument("--file", required=True)
+    portfolio_track = portfolio_sub.add_parser("track", help="Show replayed account state.")
+    portfolio_track.add_argument("--account-id", required=True)
     ui = sub.add_parser("ui", help="Start the local-only Streamlit UI.")
     ui.add_argument("--port", type=int, default=8501)
     return parser

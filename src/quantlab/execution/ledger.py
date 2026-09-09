@@ -90,9 +90,7 @@ class ConstraintsAssessed:
         require_identifier(self.order_id, "order_id")
         require_aware(self.occurred_at, "occurred_at")
         if self.account_fingerprint is not None:
-            require_identifier(
-                self.account_fingerprint, "account_fingerprint"
-            )
+            require_identifier(self.account_fingerprint, "account_fingerprint")
         if self.availability_fingerprint is not None:
             require_identifier(
                 self.availability_fingerprint,
@@ -105,8 +103,7 @@ class ConstraintsAssessed:
             missing = sorted(d.value for d in set(ConstraintDimension) - set(dimensions))
             extra = sorted(d.value for d in set(dimensions) - set(ConstraintDimension))
             raise ExecutionValidationError(
-                f"constraint assessment must cover all dimensions; "
-                f"missing={missing} extra={extra}"
+                f"constraint assessment must cover all dimensions; missing={missing} extra={extra}"
             )
         if any(decision.assessed_at > self.occurred_at for decision in self.decisions):
             raise ExecutionValidationError("decision timestamp exceeds assessment event")
@@ -142,12 +139,9 @@ class OrderSubmitted:
             )
         if self.fee_quote_fingerprint is not None:
             if len(self.fee_quote_fingerprint) != 64 or any(
-                char not in "0123456789abcdef"
-                for char in self.fee_quote_fingerprint
+                char not in "0123456789abcdef" for char in self.fee_quote_fingerprint
             ):
-                raise ExecutionValidationError(
-                    "fee_quote_fingerprint must be SHA-256"
-                )
+                raise ExecutionValidationError("fee_quote_fingerprint must be SHA-256")
         if self.occurred_at != self.request.created_at:
             raise ExecutionValidationError("submit event time must equal request.created_at")
 
@@ -196,6 +190,59 @@ class FillRecorded:
 
 
 @dataclass(frozen=True)
+class ManualFillImported:
+    """User-imported broker fill fact, not a QuantLab order or simulated fill."""
+
+    event_id: str
+    fill_id: str
+    occurred_at: datetime
+    account_id: str
+    instrument_id: str
+    side: Side
+    trade_date: date
+    quantity: int
+    price: Decimal
+    gross_notional_fen: int
+    fee_fen: int
+    buy_lot_sellable_from: date | None
+    source_sha256: str
+    source_row_sha256: str
+
+    def __post_init__(self) -> None:
+        for value, field in (
+            (self.event_id, "event_id"),
+            (self.fill_id, "fill_id"),
+            (self.account_id, "account_id"),
+            (self.instrument_id, "instrument_id"),
+        ):
+            require_identifier(value, field)
+        require_aware(self.occurred_at, "occurred_at")
+        if not isinstance(self.side, Side):
+            raise ExecutionValidationError("side must be a Side enum")
+        require_int(self.quantity, "quantity", minimum=1)
+        require_decimal(self.price, "price", positive=True)
+        require_int(self.gross_notional_fen, "gross_notional_fen", minimum=1)
+        require_int(self.fee_fen, "fee_fen")
+        if exchange_date(self.occurred_at) < self.trade_date:
+            raise ExecutionValidationError("fill reported before its exchange trade_date")
+        exact_fen = self.price * self.quantity * 100
+        if exact_fen != exact_fen.to_integral_value():
+            raise ExecutionValidationError(
+                "fill price and quantity produce fractional fen; explicit rounding is required"
+            )
+        if int(exact_fen) != self.gross_notional_fen:
+            raise ExecutionValidationError(
+                "gross_notional_fen disagrees with Decimal price * quantity"
+            )
+        for digest, field in (
+            (self.source_sha256, "source_sha256"),
+            (self.source_row_sha256, "source_row_sha256"),
+        ):
+            if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+                raise ExecutionValidationError(f"{field} must be lowercase SHA-256")
+
+
+@dataclass(frozen=True)
 class OrderCanceled:
     event_id: str
     occurred_at: datetime
@@ -228,6 +275,7 @@ LedgerEvent = (
     | ConstraintsAssessed
     | OrderSubmitted
     | FillRecorded
+    | ManualFillImported
     | OrderCanceled
     | OrderExpired
 )
@@ -385,6 +433,7 @@ class ExecutionLedger:
         self._reservations: dict[str, ActiveReservation] = {}
         # explicit non-production fixture switch (append_legacy_low_level)
         self._legacy_fixture_mode = False
+        self._manual_import_mode = False
         # active bound-batch base (submit_orders only); None outside a batch
         self._batch_base_fingerprint: str | None = None
 
@@ -410,12 +459,13 @@ class ExecutionLedger:
             # same batch-base semantics the original submission used
             if isinstance(event, OrderSubmitted):
                 if ledger._batch_base_fingerprint is None:
-                    ledger._batch_base_fingerprint = (
-                        event.availability_fingerprint
-                    )
+                    ledger._batch_base_fingerprint = event.availability_fingerprint
             else:
                 ledger._batch_base_fingerprint = None
-            ledger.append(event)
+            if isinstance(event, ManualFillImported):
+                ledger.append_manual_imports([event])
+            else:
+                ledger.append(event)
         ledger._legacy_fixture_mode = False
         ledger._batch_base_fingerprint = None
         return ledger
@@ -448,9 +498,7 @@ class ExecutionLedger:
 
     @property
     def reservations(self) -> tuple[ActiveReservation, ...]:
-        return tuple(
-            self._reservations[key] for key in sorted(self._reservations)
-        )
+        return tuple(self._reservations[key] for key in sorted(self._reservations))
 
     def order(self, order_id: str) -> OrderLedgerState:
         try:
@@ -469,10 +517,7 @@ class ExecutionLedger:
         )
 
     def reserved_cash_fen(self) -> int:
-        return sum(
-            reservation.reserved_cash_fen
-            for reservation in self._reservations.values()
-        )
+        return sum(reservation.reserved_cash_fen for reservation in self._reservations.values())
 
     def reserved_sellable_shares(self, instrument_id: str) -> int:
         return sum(
@@ -526,9 +571,7 @@ class ExecutionLedger:
                 reserved_cash_fen=reservation.reserved_cash_fen,
                 reserved_shares=reservation.reserved_shares,
             )
-            for reservation in sorted(
-                self._reservations.values(), key=lambda item: item.order_id
-            )
+            for reservation in sorted(self._reservations.values(), key=lambda item: item.order_id)
         )
         available: dict[str, int] = {}
         for instrument_id in {lot.instrument_id for lot in self._lots}:
@@ -641,6 +684,12 @@ class ExecutionLedger:
                 self._apply_submitted(event)
             elif isinstance(event, FillRecorded):
                 self._apply_fill(event)
+            elif isinstance(event, ManualFillImported):
+                if not self._manual_import_mode:
+                    raise LedgerTransitionError(
+                        "manual fills require the explicit manual-import entry point"
+                    )
+                self._apply_manual_fill(event)
             elif isinstance(event, OrderCanceled):
                 self._apply_terminal(event.order_id, OrderStatus.CANCELED)
             elif isinstance(event, OrderExpired):
@@ -659,6 +708,22 @@ class ExecutionLedger:
             raise
         return True
 
+    def append_manual_imports(self, events: list[ManualFillImported]) -> None:
+        """Atomically post a validated batch of external user-reported fills."""
+        if any(not isinstance(event, ManualFillImported) for event in events):
+            raise TypeError("manual import batch accepts only ManualFillImported events")
+        snapshot = self._begin()
+        previous = self._manual_import_mode
+        self._manual_import_mode = True
+        try:
+            for event in events:
+                self.append(event)
+        except BaseException:
+            self._restore(snapshot)
+            raise
+        finally:
+            self._manual_import_mode = previous
+
     def _check_invariants(self) -> None:
         """Absolute integer invariants re-checked after every event."""
         reserved_cash = self.reserved_cash_fen()
@@ -667,9 +732,7 @@ class ExecutionLedger:
                 f"reserved cash {reserved_cash} exceeds settled cash {self._cash_fen}"
             )
         for reservation in self._reservations.values():
-            sellable = self.sellable_quantity(
-                reservation.instrument_id, date.max
-            )
+            sellable = self.sellable_quantity(reservation.instrument_id, date.max)
             reserved = self.reserved_sellable_shares(reservation.instrument_id)
             if reserved > sellable:
                 raise LedgerAccountingError(
@@ -678,20 +741,16 @@ class ExecutionLedger:
                 )
             order_state = self._orders.get(reservation.order_id)
             if order_state is None:
-                raise LedgerAccountingError(
-                    f"reservation for unknown order {reservation.order_id}"
-                )
+                raise LedgerAccountingError(f"reservation for unknown order {reservation.order_id}")
             remaining = order_state.remaining_quantity
             is_buy = order_state.intent.side is Side.BUY
             if not is_buy and reservation.reserved_cash_fen:
                 raise LedgerAccountingError(
-                    f"sell reservation carries a buy-style cash identity: "
-                    f"{reservation.order_id}"
+                    f"sell reservation carries a buy-style cash identity: {reservation.order_id}"
                 )
             if is_buy and reservation.limit_price_fen:
-                needed = (
-                    remaining * reservation.limit_price_fen
-                    + (reservation.fee_cap_fen - reservation.fee_used_fen)
+                needed = remaining * reservation.limit_price_fen + (
+                    reservation.fee_cap_fen - reservation.fee_used_fen
                 )
                 if reservation.reserved_cash_fen != needed:
                     raise LedgerAccountingError(
@@ -705,8 +764,7 @@ class ExecutionLedger:
                     )
                 if remaining <= 0:
                     raise LedgerAccountingError(
-                        f"buy reservation survives a fully filled order: "
-                        f"{reservation.order_id}"
+                        f"buy reservation survives a fully filled order: {reservation.order_id}"
                     )
             else:
                 if reservation.reserved_shares != remaining:
@@ -724,12 +782,10 @@ class ExecutionLedger:
                 availability.settled_cash_fen
                 != availability.available_cash_fen + availability.reserved_cash_fen
                 or availability.sellable_shares
-                != availability.available_sellable_shares
-                + availability.reserved_sellable_shares
+                != availability.available_sellable_shares + availability.reserved_sellable_shares
             ):
                 raise LedgerAccountingError(
-                    "settled/available/reserved identity violated for "
-                    + reservation.instrument_id
+                    "settled/available/reserved identity violated for " + reservation.instrument_id
                 )
 
     def submit_orders(
@@ -776,8 +832,7 @@ class ExecutionLedger:
                 state = self.order(event.request.order_id)
                 if state.status is not OrderStatus.VALIDATED:
                     raise LedgerTransitionError(
-                        f"cannot submit order {event.request.order_id} "
-                        f"from {state.status.value}"
+                        f"cannot submit order {event.request.order_id} from {state.status.value}"
                     )
                 intent = state.intent
                 if (
@@ -800,8 +855,7 @@ class ExecutionLedger:
                     event,
                     worst_case_fee_fen=fee_quote.cap_fen,
                     fee_quote_fingerprint=(
-                        event.fee_quote_fingerprint
-                        or fingerprint_fee_cap_quote(fee_quote)
+                        event.fee_quote_fingerprint or fingerprint_fee_cap_quote(fee_quote)
                     ),
                     fee_quote=event.fee_quote or fee_quote,
                 )
@@ -813,13 +867,14 @@ class ExecutionLedger:
                             "without a real fee table stays unknown instead of "
                             "assuming zero fees"
                         )
-                    need = int(intent.limit_price * intent.quantity * 100) + (
-                        fee_quote.cap_fen
+                    need = int(intent.limit_price * intent.quantity * 100) + (fee_quote.cap_fen)
+                    available_now = (
+                        self.availability(
+                            intent.instrument_id,
+                            intent.intended_trade_date,
+                        ).available_cash_fen
+                        - staged_cash
                     )
-                    available_now = self.availability(
-                        intent.instrument_id,
-                        intent.intended_trade_date,
-                    ).available_cash_fen - staged_cash
                     if need > available_now:
                         raise LedgerAccountingError(
                             f"buy reservation for {intent.instrument_id} needs "
@@ -828,12 +883,9 @@ class ExecutionLedger:
                         )
                     staged_cash += need
                 else:
-                    available = (
-                        self.availability(
-                            intent.instrument_id, intent.intended_trade_date
-                        ).available_sellable_shares
-                        - staged_shares.get(intent.instrument_id, 0)
-                    )
+                    available = self.availability(
+                        intent.instrument_id, intent.intended_trade_date
+                    ).available_sellable_shares - staged_shares.get(intent.instrument_id, 0)
                     if intent.quantity > available:
                         raise LedgerAccountingError(
                             f"sell reservation for {intent.instrument_id} needs "
@@ -867,9 +919,7 @@ class ExecutionLedger:
                 f"cannot assess order {event.order_id} from {state.status.value}"
             )
         if event.account_fingerprint is not None:
-            current_account = account_state_fingerprint(
-                self.snapshot(event.occurred_at)
-            )
+            current_account = account_state_fingerprint(self.snapshot(event.occurred_at))
             if current_account != event.account_fingerprint:
                 raise LedgerTransitionError(
                     "stale constraint assessment rejected: account state "
@@ -896,8 +946,7 @@ class ExecutionLedger:
         # the authority must bind THIS ledger's intent, decisions, and state
         if authority.order_id != event.order_id:
             raise LedgerTransitionError(
-                "assessment authority is bound to "
-                f"{authority.order_id}, not {event.order_id}"
+                f"assessment authority is bound to {authority.order_id}, not {event.order_id}"
             )
         intent_fingerprint = fingerprint_order_intent(state.intent)
         if authority.intent_fingerprint != intent_fingerprint:
@@ -931,17 +980,14 @@ class ExecutionLedger:
         if (
             authority.availability_fingerprint is not None
             and event.availability_fingerprint is not None
-            and authority.availability_fingerprint
-            != event.availability_fingerprint
+            and authority.availability_fingerprint != event.availability_fingerprint
         ):
             raise LedgerTransitionError(
                 "assessment authority availability fingerprint differs from "
                 "the assessment event binding"
             )
         next_status = derive_order_status(state.intent.side, event.decisions)
-        self._orders[event.order_id] = replace(
-            state, status=next_status, authority=authority
-        )
+        self._orders[event.order_id] = replace(state, status=next_status, authority=authority)
 
     def _apply_submitted(self, event: OrderSubmitted) -> None:
         request = event.request
@@ -963,13 +1009,11 @@ class ExecutionLedger:
             quote_fingerprint = fingerprint_fee_cap_quote(quote)
             if event.fee_quote_fingerprint != quote_fingerprint:
                 raise LedgerAccountingError(
-                    "submission fee_quote_fingerprint does not match the "
-                    "embedded typed quote"
+                    "submission fee_quote_fingerprint does not match the embedded typed quote"
                 )
             if event.worst_case_fee_fen != quote.cap_fen:
                 raise LedgerAccountingError(
-                    "submission worst_case_fee_fen does not match the "
-                    "typed fee quote cap"
+                    "submission worst_case_fee_fen does not match the typed fee quote cap"
                 )
             # -- immutable assessment authority -------------------------
             authority = state.authority
@@ -989,17 +1033,14 @@ class ExecutionLedger:
                 )
             if (
                 request.assessment_decision_fingerprint is None
-                or request.assessment_decision_fingerprint
-                != authority.decision_fingerprint
+                or request.assessment_decision_fingerprint != authority.decision_fingerprint
             ):
                 raise LedgerTransitionError(
-                    "submission decision fingerprint does not match the "
-                    "stored assessment authority"
+                    "submission decision fingerprint does not match the stored assessment authority"
                 )
             if (
                 request.availability_fingerprint is None
-                or request.availability_fingerprint
-                != authority.availability_fingerprint
+                or request.availability_fingerprint != authority.availability_fingerprint
             ):
                 raise LedgerTransitionError(
                     "submission availability fingerprint does not match "
@@ -1020,16 +1061,11 @@ class ExecutionLedger:
                 != state.intent.limit_price_source_fingerprint
             ):
                 raise LedgerTransitionError(
-                    "submission price evidence fingerprint differs from "
-                    "the validated intent"
+                    "submission price evidence fingerprint differs from the validated intent"
                 )
-            if (
-                request.fee_quote_fingerprint
-                != state.intent.fee_quote_fingerprint
-            ):
+            if request.fee_quote_fingerprint != state.intent.fee_quote_fingerprint:
                 raise LedgerTransitionError(
-                    "submission fee quote fingerprint differs from the "
-                    "validated intent"
+                    "submission fee quote fingerprint differs from the validated intent"
                 )
             # -- fee quote to assessment-authority binding: the typed quote
             # must derive from the EXACT fee schedule the stored
@@ -1039,8 +1075,7 @@ class ExecutionLedger:
             # from incomplete evidence.
             if (
                 quote.evidence_id != authority.fee_schedule_evidence_id
-                or quote.source_fingerprint
-                != authority.fee_schedule_source_fingerprint
+                or quote.source_fingerprint != authority.fee_schedule_source_fingerprint
             ):
                 raise LedgerAccountingError(
                     "submission fee quote does not derive from the fee "
@@ -1070,13 +1105,8 @@ class ExecutionLedger:
                     "canonical fingerprint; a missing fingerprint is not "
                     "fee lineage"
                 )
-        if (
-            request.availability_fingerprint is not None
-            and request.availability_fingerprint
-            != (
-                self._batch_base_fingerprint
-                or self.availability_fingerprint()
-            )
+        if request.availability_fingerprint is not None and request.availability_fingerprint != (
+            self._batch_base_fingerprint or self.availability_fingerprint()
         ):
             raise LedgerTransitionError(
                 "stale submission rejected: availability state drifted "
@@ -1087,17 +1117,10 @@ class ExecutionLedger:
         if request.request_id in self._request_ids:
             raise LedgerTransitionError(f"duplicate request_id: {request.request_id}")
         intent = state.intent
-        if (
-            intent.order_type is OrderType.LIMIT
-            and intent.limit_price_basis is not PriceBasis.RAW
-        ):
-            raise LedgerTransitionError(
-                "only raw unadjusted prices may reach order submission"
-            )
+        if intent.order_type is OrderType.LIMIT and intent.limit_price_basis is not PriceBasis.RAW:
+            raise LedgerTransitionError("only raw unadjusted prices may reach order submission")
         if request.intended_trade_date != intent.intended_trade_date:
-            raise LedgerTransitionError(
-                "request intended trade date differs from validated intent"
-            )
+            raise LedgerTransitionError("request intended trade date differs from validated intent")
         # DAY commit boundary: the Shanghai-local submission date must be
         # exactly the intended trade date. A Friday-created intent for
         # Monday may exist as a future intention, but Friday can never
@@ -1144,12 +1167,8 @@ class ExecutionLedger:
                     "production without a real fee table stays unknown and "
                     "cannot reserve with an assumed zero fee"
                 )
-            need = int(intent.limit_price * intent.quantity * 100) + (
-                event.worst_case_fee_fen
-            )
-            availability = self.availability(
-                intent.instrument_id, intent.intended_trade_date
-            )
+            need = int(intent.limit_price * intent.quantity * 100) + (event.worst_case_fee_fen)
+            availability = self.availability(intent.instrument_id, intent.intended_trade_date)
             if need > availability.available_cash_fen:
                 raise LedgerAccountingError(
                     f"buy reservation needs {need} fen, available "
@@ -1165,9 +1184,7 @@ class ExecutionLedger:
                 fee_used_fen=0,
             )
         else:
-            availability = self.availability(
-                intent.instrument_id, intent.intended_trade_date
-            )
+            availability = self.availability(intent.instrument_id, intent.intended_trade_date)
             if intent.quantity > availability.available_sellable_shares:
                 raise LedgerAccountingError(
                     f"sell reservation needs {intent.quantity} sellable "
@@ -1191,8 +1208,9 @@ class ExecutionLedger:
             request_id=request.request_id,
         )
 
-    def _release_reservation(self, order_id: str, *, cash_used: int = 0,
-                             shares_used: int = 0) -> None:
+    def _release_reservation(
+        self, order_id: str, *, cash_used: int = 0, shares_used: int = 0
+    ) -> None:
         reservation = self._reservations.pop(order_id, None)
         if reservation is None:
             return
@@ -1230,10 +1248,7 @@ class ExecutionLedger:
         # Limit protection BEFORE any mutation: a buy never fills above its
         # limit and a sell never fills below it.
         intent = state.intent
-        if (
-            intent.order_type is OrderType.LIMIT
-            and intent.limit_price is not None
-        ):
+        if intent.order_type is OrderType.LIMIT and intent.limit_price is not None:
             if intent.side is Side.BUY and event.price > intent.limit_price:
                 raise LedgerAccountingError(
                     f"buy fill price {event.price} exceeds the limit "
@@ -1250,8 +1265,7 @@ class ExecutionLedger:
             # cumulative order-lifetime fee cap applies to buys AND sells
             if (
                 reservation.fee_cap_fen
-                and reservation.fee_used_fen + event.fee_fen
-                > reservation.fee_cap_fen
+                and reservation.fee_used_fen + event.fee_fen > reservation.fee_cap_fen
             ):
                 raise LedgerAccountingError(
                     f"fill fee {event.fee_fen} fen exceeds the order "
@@ -1262,9 +1276,7 @@ class ExecutionLedger:
 
         if intent.side is Side.BUY:
             expected = (
-                self.calendar.next_session(event.trade_date)
-                if self.calendar is not None
-                else None
+                self.calendar.next_session(event.trade_date) if self.calendar is not None else None
             )
             if self.calendar is not None:
                 if expected is None:
@@ -1290,8 +1302,7 @@ class ExecutionLedger:
                 # cumulative order-lifetime fee cap
                 if (
                     reservation.fee_cap_fen
-                    and reservation.fee_used_fen + event.fee_fen
-                    > reservation.fee_cap_fen
+                    and reservation.fee_used_fen + event.fee_fen > reservation.fee_cap_fen
                 ):
                     raise LedgerAccountingError(
                         f"fill fee {event.fee_fen} fen exceeds the order "
@@ -1315,9 +1326,8 @@ class ExecutionLedger:
                     # exact remaining need: worst-case notional of the
                     # unfilled shares plus the remaining fee capacity;
                     # price improvement releases the excess automatically
-                    needed = (
-                        unfilled * reservation.limit_price_fen
-                        + (reservation.fee_cap_fen - fee_used)
+                    needed = unfilled * reservation.limit_price_fen + (
+                        reservation.fee_cap_fen - fee_used
                     )
                     self._reservations[event.order_id] = ActiveReservation(
                         order_id=reservation.order_id,
@@ -1342,9 +1352,7 @@ class ExecutionLedger:
             )
         else:
             if event.buy_lot_sellable_from is not None:
-                raise LedgerAccountingError(
-                    "sell fill cannot carry buy_lot_sellable_from"
-                )
+                raise LedgerAccountingError("sell fill cannot carry buy_lot_sellable_from")
             if event.fee_fen > event.gross_notional_fen:
                 raise LedgerAccountingError("sell fee exceeds gross proceeds")
             self._consume_sellable_lots(
@@ -1354,9 +1362,7 @@ class ExecutionLedger:
             )
             self._cash_fen += event.gross_notional_fen - event.fee_fen
             sell_reservation = self._reservations.get(event.order_id)
-            self._release_reservation(
-                event.order_id, cash_used=0, shares_used=event.quantity
-            )
+            self._release_reservation(event.order_id, cash_used=0, shares_used=event.quantity)
             # a sell reserves shares only, but it still carries the
             # order-lifetime cumulative fee budget: accumulate fee usage
             # for as long as the order is not fully filled
@@ -1370,16 +1376,12 @@ class ExecutionLedger:
                         reserved_shares=unfilled,
                         limit_price_fen=sell_reservation.limit_price_fen,
                         fee_cap_fen=sell_reservation.fee_cap_fen,
-                        fee_used_fen=(
-                            sell_reservation.fee_used_fen + event.fee_fen
-                        ),
+                        fee_used_fen=(sell_reservation.fee_used_fen + event.fee_fen),
                     )
 
         self._fill_ids.add(event.fill_id)
         next_status = (
-            OrderStatus.FILLED
-            if new_filled == intent.quantity
-            else OrderStatus.PARTIALLY_FILLED
+            OrderStatus.FILLED if new_filled == intent.quantity else OrderStatus.PARTIALLY_FILLED
         )
         self._orders[event.order_id] = replace(
             state,
@@ -1388,6 +1390,45 @@ class ExecutionLedger:
             gross_notional_fen=state.gross_notional_fen + event.gross_notional_fen,
             fee_fen=state.fee_fen + event.fee_fen,
         )
+
+    def _apply_manual_fill(self, event: ManualFillImported) -> None:
+        if event.account_id != self._initial.account_id:
+            raise LedgerTransitionError("manual fill account does not match ledger account")
+        if event.fill_id in self._fill_ids:
+            raise LedgerTransitionError(f"duplicate fill_id: {event.fill_id}")
+        if event.side is Side.BUY:
+            expected = self.calendar.next_session(event.trade_date) if self.calendar else None
+            if self.calendar is not None and expected is None:
+                raise LedgerAccountingError(
+                    "calendar cannot derive the next session for an imported buy fill"
+                )
+            if event.buy_lot_sellable_from != expected:
+                raise LedgerAccountingError(
+                    "imported buy sellable_from must equal the next verified session"
+                )
+            debit = event.gross_notional_fen + event.fee_fen
+            if debit > self._cash_fen:
+                raise LedgerAccountingError(
+                    f"manual buy draws {debit} fen but cash is {self._cash_fen} fen"
+                )
+            self._cash_fen -= debit
+            self._lots.append(
+                PositionLot(
+                    lot_id=event.fill_id,
+                    instrument_id=event.instrument_id,
+                    quantity=event.quantity,
+                    acquired_trade_date=event.trade_date,
+                    sellable_from=event.buy_lot_sellable_from,
+                )
+            )
+        else:
+            if event.buy_lot_sellable_from is not None:
+                raise LedgerAccountingError("imported sell cannot carry buy sellable_from")
+            if event.fee_fen > event.gross_notional_fen:
+                raise LedgerAccountingError("sell fee exceeds gross proceeds")
+            self._consume_sellable_lots(event.instrument_id, event.trade_date, event.quantity)
+            self._cash_fen += event.gross_notional_fen - event.fee_fen
+        self._fill_ids.add(event.fill_id)
 
     def _consume_sellable_lots(
         self,
@@ -1411,11 +1452,7 @@ class ExecutionLedger:
                 item.lot_id,
             ),
         ):
-            if (
-                remaining
-                and lot.instrument_id == instrument_id
-                and lot.sellable_from <= trade_date
-            ):
+            if remaining and lot.instrument_id == instrument_id and lot.sellable_from <= trade_date:
                 consumed = min(remaining, lot.quantity)
                 remaining -= consumed
                 if consumed < lot.quantity:

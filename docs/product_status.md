@@ -10,7 +10,7 @@ It is evidence notes, not a substitute for tests or an investment claim.
 | M1 Daily workflow + local UI | Implemented and locally verified | `quantlab doctor`, controlled Provider update, idempotent `quantlab daily`, four-page Streamlit UI, CSV/HTML cache, 926-test regression | Continue to bounded M2 research capability |
 | M2 Multi-factor + optional Qlib/ML | Bounded factor batch implemented; Qlib/LightGBM locally blocked | 10-candidate registry, transparent combination, 81 monthly signal dates / 384,319 rows; optional Qlib adapter; fixed LightGBM config | Do not promote before cost/Control evaluation; install missing optional runtimes only with explicit system authority |
 | M3 Account input + reference rebalance | Implemented and locally verified | Strict account CSV import, 200k demo, raw-close reference plan, BUY/SELL/HOLD/NO_TRADE UI + CSV export | Add manual-fill journal and portfolio tracking |
-| M4 Manual fills + tracking | Not implemented | Transactional in-memory execution ledger exists | Add durable user-import adapter without parallel truth |
+| M4 Manual fills + tracking | Implemented and locally verified | Preview/commit broker-fill CSV, durable fingerprinted journal, same ExecutionLedger cash/T+1 replay, plan-vs-fill comparison, conservative reference valuation | Run final end-to-end acceptance |
 | M5 v1 acceptance | Not run | — | End-to-end acceptance after M1–M4 |
 
 ## M1 exercised facts
@@ -78,3 +78,23 @@ Git-ignored. They are local cache/output, not Canonical truth.
 - Every plan remains `reference_only_pending_review`: the signal-date close is
   not an order limit, next-session status is unknown, and the displayed fee is
   only the user-reported commission estimate—not a verified all-in charge.
+
+## M4 exercised facts
+
+- A `manual_tracking` account can preview a complete broker-fill CSV before any
+  write. Each row carries an actual broker trade id, trade/report date, side,
+  quantity, Decimal price, explicit gross amount, and actual fee. The gross
+  amount must equal price × quantity exactly in integer fen.
+- Imported fills are a typed external fact in the existing `ExecutionLedger`;
+  no QuantLab order, broker submission, or daily-bar fill is fabricated. The
+  same cash, lot, oversell, event-ordering and T+1 invariants are applied.
+- The full combined event set is replayed before one atomic journal write. A
+  bad row leaves no journal; the same file is an exact no-op on re-import; a
+  broker trade id reused with different economics is rejected.
+- The current account view is the immutable opening snapshot plus that journal.
+  A new opening snapshot produces a new fingerprint namespace, preserving but
+  not silently applying the old history.
+- The UI displays imported fills, actual cash/positions/fees, and the difference
+  from the newest plan for its intended date. Reference performance appears
+  only when the daily price date covers every fill and both opening/current
+  holdings can be valued; otherwise it is unavailable with a reason.
