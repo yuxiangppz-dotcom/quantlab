@@ -208,12 +208,19 @@ class AgentLoop:
             )
             """
         )
-        connection.execute(
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS one_live_delivery_attempt_per_event
-            ON delivery_attempts(event_sha256) WHERE state = 'live'
-            """
-        )
+        try:
+            connection.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS one_live_delivery_attempt_per_event
+                ON delivery_attempts(event_sha256) WHERE state = 'live'
+                """
+            )
+        except sqlite3.IntegrityError as exc:
+            raise AgentLoopError(
+                "ambiguous live delivery history: historical rows leave more "
+                "than one live delivery attempt on a single event; resolve them "
+                "explicitly without discarding attempt history"
+            ) from exc
         try:
             connection.execute(
                 """
@@ -1593,6 +1600,77 @@ class AgentLoop:
         result["delivery_token"] = "" if not result["delivery_token"] else "<redacted>"
         return result
 
+    @staticmethod
+    def _validate_recovery_ownership(
+        connection: sqlite3.Connection,
+        *,
+        notification: sqlite3.Row,
+        config_fingerprint: str,
+        thread_id: str,
+    ) -> None:
+        """Fail closed before any recovery write on ambiguous current ownership.
+
+        The single-revoked-attempt audit model cannot represent a coherent
+        multi-target revocation, so a launching current notification bound to a
+        target other than the requested verified configuration is rejected
+        atomically instead of partially superseded.
+        """
+
+        state = notification["state"]
+        if state not in NOTIFICATION_STATES:
+            raise AgentLoopError(
+                f"invalid review notification state: {state!r}"
+            )
+        live_for_event = connection.execute(
+            """
+            SELECT * FROM delivery_attempts
+            WHERE event_sha256 = ? AND state = 'live'
+            """,
+            (notification["event_sha256"],),
+        ).fetchall()
+        if state == "launching":
+            if len(live_for_event) != 1:
+                raise AgentLoopError(
+                    "recovery rejected: launching current notification "
+                    f"{notification['event_sha256'][:12]}… does not own exactly "
+                    f"one live delivery attempt (found {len(live_for_event)})"
+                )
+            attempt = live_for_event[0]
+            if (
+                not notification["delivery_token"]
+                or attempt["generation"] != notification["generation"]
+                or attempt["event_action"] != notification["event_action"]
+                or attempt["delivery_token_sha256"]
+                != _sha256_text(notification["delivery_token"])
+                or attempt["config_fingerprint"] != notification["config_fingerprint"]
+                or attempt["thread_id"] != notification["thread_id"]
+            ):
+                raise AgentLoopError(
+                    "recovery rejected: the live delivery attempt for current "
+                    f"event {notification['event_sha256'][:12]}… does not match "
+                    "its launching notification ownership binding"
+                )
+            if (
+                attempt["config_fingerprint"] != config_fingerprint
+                or attempt["thread_id"] != thread_id
+            ):
+                raise AgentLoopError(
+                    "recovery rejected: current notification "
+                    f"{notification['event_sha256'][:12]}… is launching on target "
+                    f"(fingerprint {attempt['config_fingerprint'][:12]}…, thread "
+                    f"{attempt['thread_id']}) which differs from the requested "
+                    "verified target (fingerprint "
+                    f"{config_fingerprint[:12]}…, thread {thread_id}); recovery "
+                    "performs no multi-target revocation"
+                )
+            return
+        if live_for_event:
+            raise AgentLoopError(
+                "recovery rejected: non-launching current notification "
+                f"{notification['event_sha256'][:12]}… still owns "
+                f"{len(live_for_event)} live delivery attempt(s)"
+            )
+
     def recover_bridge_delivery(
         self,
         *,
@@ -1606,6 +1684,16 @@ class AgentLoop:
         This is an operator decision: it clears the configuration block and any
         pending backoff for the current notification, never touches delivered
         events, and never discards recorded failure history.
+
+        Current-notification ownership is validated fail-closed before any
+        write, inside this same transaction.  A launching current notification
+        must own exactly one live attempt whose generation, action, raw-token
+        hash, fingerprint, and thread match it, and that attempt's target must
+        equal the requested verified target; a queued or failed current
+        notification must own no live attempt.  A launching event on a target
+        different from the requested configuration is therefore rejected with
+        zero mutations — the single-revoked-attempt audit model cannot
+        represent a coherent multi-target revocation.
         """
 
         if not reason.strip():
@@ -1638,6 +1726,12 @@ class AgentLoop:
                     raise AgentLoopError("no reviewer notification to recover")
                 if row["state"] == "delivered":
                     raise AgentLoopError("reviewer notification is already delivered")
+                self._validate_recovery_ownership(
+                    connection,
+                    notification=row,
+                    config_fingerprint=config_fingerprint,
+                    thread_id=thread_id,
+                )
                 now = _utc_now()
                 holders = connection.execute(
                     """
@@ -1664,10 +1758,6 @@ class AgentLoop:
                             f"{row['event_sha256']}: {reason.strip()}"
                         ),
                         occurred_at=now,
-                    )
-                elif row["state"] == "launching":
-                    raise AgentLoopError(
-                        "launching current notification is not owned by the requested target"
                     )
                 changed = connection.execute(
                     """
