@@ -253,6 +253,30 @@ and thread id. `codex-bridge-status` exposes recent audit records without raw
 tokens. A missing or ambiguous binding fails closed. `notify-reviewer
 --synchronous` is a diagnostic mode and waits for the Codex turn to complete.
 
+### Recovery ownership validation
+
+Before any write, and inside the same transaction, recovery validates the
+current notification's ownership:
+
+- a `launching` current notification must own exactly one live attempt whose
+  generation, action, raw-token hash, fingerprint, and thread match that
+  notification, and that attempt's target must equal the requested verified
+  target;
+- a `queued` or `failed` current notification must own no live attempt for its
+  event before any different event's holder is considered.
+
+When the current event is launching on a target that differs from the active
+verified configuration — reachable through ordinary operations after a bridge
+rotation — recovery is rejected with a precise configuration/ownership
+mismatch and performs zero mutations: no attempt is superseded, no capability
+is cleared, no audit row is written, and `doctor` remains healthy. The audit
+schema records a single revoked attempt, so recovery never performs
+multi-target revocation; mismatched multi-target ownership fails closed and
+stays available for explicit operator resolution. Recovery remains permitted
+for a launching attempt on the exact verified target, a queued or failed
+current event behind a prior-event holder on that target, and a queued or
+failed current event with no holder.
+
 ## One-time ZCode setup
 
 1. Keep this WSL project open in ZCode.
