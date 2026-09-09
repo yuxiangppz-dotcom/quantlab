@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from quantlab.daily.experiments import load_baseline_view
+from quantlab.daily.experiments import load_baseline_view, load_latest_factor_view
 from quantlab.daily.service import (
     PROJECT_ROOT,
     _atomic_write_text,
@@ -31,6 +31,7 @@ def run_v1_acceptance(
     status = inspect_data_status()
     snapshot = load_latest_snapshot()
     baseline = load_baseline_view()
+    factor_view = load_latest_factor_view()
     accounts = list_accounts()
     plan_item = load_latest_plan(account_id) if account_id in accounts else None
     checks = {
@@ -49,6 +50,7 @@ def run_v1_acceptance(
             )
         ),
         "formal_baseline_available": baseline is not None,
+        "bounded_factor_research_available": factor_view is not None,
         "account_available": account_id in accounts,
         "reference_plan_available": plan_item is not None,
         "worktree_clean": not _git("status --porcelain"),
@@ -84,6 +86,11 @@ def run_v1_acceptance(
         ),
         "baseline": (
             {"schema": baseline["schema"], "run_id": baseline["run_id"]} if baseline else None
+        ),
+        "factor_research": (
+            {"run_id": factor_view["run_id"], "signal_end": factor_view["signal_end"]}
+            if factor_view
+            else None
         ),
         "account_id": account_id,
         "plan_id": plan_item[1]["plan_id"] if plan_item else None,

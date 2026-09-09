@@ -48,6 +48,11 @@ def test_acceptance_requires_and_publishes_the_real_user_path(tmp_path: Path, mo
         "load_baseline_view",
         lambda: {"schema": "formal", "run_id": "run"},
     )
+    monkeypatch.setattr(
+        acceptance,
+        "load_latest_factor_view",
+        lambda: {"run_id": "factor-run", "signal_end": "2026-09-02"},
+    )
     monkeypatch.setattr(acceptance, "list_accounts", lambda: ["demo_200k"])
     monkeypatch.setattr(
         acceptance,
