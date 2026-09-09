@@ -8,6 +8,7 @@ dependencies = [
     "tushare>=1.4.0",
     "pandas>=2.2.0",
     "pyarrow>=15.0.0",
+    "streamlit>=1.40,<2",
 ]
 
 [project.scripts]
@@ -23,6 +24,10 @@ dev = [
     "ruff>=0.16.6",
 ]
 
+[[tool.uv.index]]
+url = "https://uv.agentsmirror.com/pypi/simple"
+default = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
@@ -37,7 +42,3 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["quantlab"]
-
-[[tool.uv.index]]
-url = "https://uv.agentsmirror.com/pypi/simple"
-default = true

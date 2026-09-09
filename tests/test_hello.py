@@ -1,11 +1,12 @@
 import quantlab
-from quantlab.__main__ import main
+from quantlab.__main__ import _parser
 
 
 def test_version() -> None:
     assert quantlab.__version__ == "0.1.0"
 
 
-def test_main_prints_hello(capsys) -> None:
-    main()
-    assert "Hello from quantlab!" in capsys.readouterr().out
+def test_product_cli_exposes_real_commands() -> None:
+    parser = _parser()
+    for command in ("doctor", "update", "daily", "research", "ui"):
+        assert parser.parse_args([command]).command == command

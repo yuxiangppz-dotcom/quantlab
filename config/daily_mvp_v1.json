@@ -1,0 +1,14 @@
+{
+  "config_id": "daily_mvp_v1",
+  "strategy_id": "momentum_20d_reversal_example",
+  "model_status": "baseline_research_example",
+  "score_definition": "return_20d",
+  "score_direction": "lower_is_better",
+  "universe": "V1_SH_SZ_A_share",
+  "target_count": 20,
+  "max_weight_per_name": 0.05,
+  "gross_exposure": 1.0,
+  "tie_policy": "alpha_score_then_instrument_id",
+  "test_observed": true,
+  "performance_claim": false
+}

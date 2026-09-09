@@ -191,6 +191,39 @@ uv run pytest
 uv run ruff check .
 ```
 
+## QuantLab Daily local tool
+
+The product entry point now exposes real commands rather than a placeholder:
+
+```bash
+uv run quantlab doctor
+uv run quantlab update
+uv run quantlab daily --as-of 2026-09-10
+uv run quantlab ui
+```
+
+`update` is the only command above that calls Tushare and writes Canonical
+partitions. `daily` is read-only with respect to Canonical data: it selects the
+latest common complete date required by the configured model, reads only its
+lookback, and writes an idempotent local cache under `data/products/daily/`.
+If the requested date is newer than local calendar/data coverage, both CLI and
+UI show the older `effective_as_of` as stale instead of calling it today's
+result.
+
+The UI listens on `127.0.0.1:8501` and has four pages: data/report, rankings,
+formal baseline comparison, and account/reference-plan status. From Windows,
+the same local-only server can be started with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start_quantlab_ui.ps1
+```
+
+The current model is explicitly a **test-observed research example**. Its
+formal 2020–2024 strategy result underperformed the same-universe equal-weight
+control; rankings are not investment advice, executable orders, or fills. See
+[product status](docs/product_status.md) and
+[known limitations](docs/known_limitations.md).
+
 Tushare token (never committed to the repository):
 
 ```bash
