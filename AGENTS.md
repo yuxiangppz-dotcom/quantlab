@@ -8,8 +8,8 @@ These rules apply to every coding agent working in this repository.
 - Prefer framework, accounting, evidence, and workflow correctness over searching
   for a useful alpha.
 - Do not call a data provider, write canonical data, submit an external order,
-  invent a fill, or make a performance claim unless the active task card
-  explicitly authorizes that exact action.
+  invent a fill, or make a performance claim unless the active task card or a
+  direct user commission explicitly authorizes that exact action.
 - Unknown evidence remains unknown. Do not silently replace it with a favorable
   assumption, zero fee, tradable status, or a synthetic fact presented as real.
 - Keep research/backtest concepts separate from executable prices, orders,
@@ -17,11 +17,21 @@ These rules apply to every coding agent working in this repository.
 - Never commit secrets, tokens, local agent-loop state, or generated experiment
   data.
 
+## Direct single-agent commissions
+
+When the user directly commissions work outside the scheduled ZCode/Codex
+workflow, that commission is the active authority. In this mode one coding
+agent may inspect, implement, test, self-review, commit, and push without a
+mailbox claim or a separate reviewer. The agent must first confirm that no old
+executor or reviewer is concurrently writing the workspace. All financial,
+data-safety, Git, verification, and stop-condition rules in this file still
+apply.
+
 ## Shared ZCode/Codex loop
 
-When running from the scheduled ZCode/Codex workflow, `.agent-loop/loop.sqlite3`
-is the only coordination authority. Markdown and JSON files in that directory
-are projections, not commit markers.
+Only when the scheduled ZCode/Codex workflow is explicitly active,
+`.agent-loop/loop.sqlite3` is the coordination authority. Markdown and JSON
+files in that directory are projections, not commit markers.
 
 - Do not act unless `scripts/agent_loop.py status --role <role>` returns an action
   assigned to your role.
