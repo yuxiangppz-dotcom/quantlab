@@ -468,10 +468,11 @@ def test_delivery_completes_without_token_reaching_app_server_tree(
         if not raw_token:
             raw_token = _raw_delivery_token(loop)
         pending = loop.pending_review_notification()
-        if pending is not None and pending["state"] == "delivered":
+        if pending is not None and pending["state"] == "failed":
             break
         time.sleep(0.05)
-    assert pending is not None and pending["state"] == "delivered"
+    assert pending is not None and pending["state"] == "failed"
+    assert "completed_without_mailbox_ack" in pending["last_error"]
     assert raw_token, "worker hand-off must keep the private token"
 
     app_marker_data = json.loads(app_marker.read_text(encoding="utf-8"))
@@ -636,6 +637,11 @@ def test_finishing_live_attempt_releases_target_exactly_once(
     loop, fingerprint, thread_id, claim_a = _two_events_on_one_target(
         repository, tmp_path, make_review_ready
     )
+    loop.record_review_turn_started(
+        event_sha256=str(claim_a["event_sha256"]),
+        delivery_token=str(claim_a["delivery_token"]),
+        turn_id="review-turn-a",
+    )
     loop.finish_review_notification(
         event_sha256=str(claim_a["event_sha256"]),
         delivery_token=str(claim_a["delivery_token"]),
@@ -645,7 +651,8 @@ def test_finishing_live_attempt_releases_target_exactly_once(
 
     delivered = kick_reviewer_notification(loop, synchronous=True)
 
-    assert delivered["status"] == "delivered"
+    assert delivered["status"] == "failed"
+    assert "completed_without_mailbox_ack" in delivered["error"]
     event_b = str(delivered["event_sha256"])
     with sqlite3.connect(loop.database) as connection:
         rows = connection.execute(
@@ -654,9 +661,12 @@ def test_finishing_live_attempt_releases_target_exactly_once(
             FROM delivery_attempts ORDER BY created_at, attempt_id
             """
         ).fetchall()
-    assert [(row[1], row[2]) for row in rows] == [("delivered", 1), ("delivered", 1)]
+    assert [(row[1], row[2]) for row in rows] == [
+        ("delivered", 1),
+        ("failed_transient", 1),
+    ]
     assert {row[0] for row in rows} == {claim_a["event_sha256"], event_b}
-    assert kick_reviewer_notification(loop)["status"] == "already_delivered"
+    assert kick_reviewer_notification(loop)["status"] == "backoff"
     assert (
         loop.claim_review_notification(
             config_fingerprint=fingerprint, thread_id=thread_id
@@ -703,6 +713,14 @@ def test_stale_live_attempt_is_superseded_after_bounded_interval(
             turn_id="late-review-turn-a",
         )
     assert loop.doctor()["healthy"] is True
+    loop.record_review_turn_started(
+        event_sha256=str(claimed_b["event_sha256"]),
+        delivery_token=str(claimed_b["delivery_token"]),
+        turn_id="review-turn-b",
+    )
+    review = tmp_path / "review-b.md"
+    review.write_text("accepted\n", encoding="utf-8")
+    loop.submit_review(review, decision="complete", title="Complete")
     loop.finish_review_notification(
         event_sha256=str(claimed_b["event_sha256"]),
         delivery_token=str(claimed_b["delivery_token"]),
@@ -1365,10 +1383,19 @@ def test_rejected_rotation_preserves_ordinary_attempt_completion_cas(
             thread_id=_THREAD,
         )
 
+    review = tmp_path / "review-b-complete.md"
+    review.write_text("accepted\n", encoding="utf-8")
+    loop.submit_review(review, decision="complete", title="Complete")
+
     for claim, turn in (
         (claim_a, "review-turn-a"),
         (claim_b, "review-turn-b"),
     ):
+        loop.record_review_turn_started(
+            event_sha256=str(claim["event_sha256"]),
+            delivery_token=str(claim["delivery_token"]),
+            turn_id=turn,
+        )
         finished = loop.finish_review_notification(
             event_sha256=str(claim["event_sha256"]),
             delivery_token=str(claim["delivery_token"]),
@@ -1710,6 +1737,14 @@ def test_permitted_recovery_supersedes_own_stale_launching_attempt(
         config_fingerprint=fingerprint, thread_id=thread_id
     )
     assert reclaimed is not None
+    loop.record_review_turn_started(
+        event_sha256=str(reclaimed["event_sha256"]),
+        delivery_token=str(reclaimed["delivery_token"]),
+        turn_id="turn-after-recovery",
+    )
+    review = tmp_path / "review.md"
+    review.write_text("accepted\n", encoding="utf-8")
+    loop.submit_review(review, decision="complete", title="Complete")
     loop.finish_review_notification(
         event_sha256=str(claim["event_sha256"]),
         delivery_token=str(reclaimed["delivery_token"]),

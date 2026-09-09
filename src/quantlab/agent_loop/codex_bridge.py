@@ -753,12 +753,21 @@ def _deliver_claim(
             "event_sha256": claim["event_sha256"],
             "error": _redact_token(str(exc), token),
         }
-    loop.finish_review_notification(
+    finished = loop.finish_review_notification(
         event_sha256=claim["event_sha256"],
         delivery_token=token,
         delivered=True,
         turn_id=turn_id,
     )
+    if finished["state"] != "delivered":
+        return {
+            "status": "failed",
+            "delivered": False,
+            "classification": finished["retry_class"],
+            "turn_id": turn_id,
+            "event_sha256": claim["event_sha256"],
+            "error": finished["last_error"],
+        }
     return {
         "status": "delivered",
         "delivered": True,

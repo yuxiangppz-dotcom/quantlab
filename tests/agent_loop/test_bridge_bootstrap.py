@@ -398,16 +398,17 @@ def test_dedicated_thread_completes_a_later_review_turn(
 
     result = kick_reviewer_notification(loop, synchronous=True)
 
-    assert result["status"] == "delivered"
+    assert result["status"] == "failed"
+    assert "completed_without_mailbox_ack" in result["error"]
     assert result["turn_id"].startswith("review-turn-")
     pending = loop.pending_review_notification()
     assert pending is not None
-    assert pending["state"] == "delivered"
+    assert pending["state"] == "failed"
     with sqlite3.connect(loop.database) as connection:
         attempts = connection.execute(
             "SELECT state, turn_id FROM delivery_attempts"
         ).fetchall()
-    assert attempts == [("delivered", result["turn_id"])]
+    assert attempts == [("failed_transient", result["turn_id"])]
     unsubscribed = executable.with_suffix(".unsubscribed").read_text(
         encoding="utf-8"
     ).splitlines()
@@ -438,7 +439,8 @@ def test_new_probed_configuration_resumes_delivery_after_block(
 
     result = kick_reviewer_notification(loop, synchronous=True)
 
-    assert result["status"] == "delivered"
+    assert result["status"] == "failed"
+    assert "completed_without_mailbox_ack" in result["error"]
 
 
 def test_recover_bridge_delivery_clears_blocked_fingerprint(
@@ -521,7 +523,8 @@ def test_backoff_expiry_via_recovery_allows_delivery(
     )
 
     result = kick_reviewer_notification(loop, synchronous=True)
-    assert result["status"] == "delivered"
+    assert result["status"] == "failed"
+    assert "completed_without_mailbox_ack" in result["error"]
 
 
 def test_stale_worker_cannot_finish_or_overwrite_newer_attempt(
@@ -555,6 +558,14 @@ def test_stale_worker_cannot_finish_or_overwrite_newer_attempt(
             turn_id="stale-turn",
         )
 
+    second_loop.record_review_turn_started(
+        event_sha256=str(second["event_sha256"]),
+        delivery_token=str(second["delivery_token"]),
+        turn_id="review-turn-2",
+    )
+    review = tmp_path / "review.md"
+    review.write_text("accepted\n", encoding="utf-8")
+    second_loop.submit_review(review, decision="complete", title="Complete")
     finished = second_loop.finish_review_notification(
         event_sha256=str(second["event_sha256"]),
         delivery_token=str(second["delivery_token"]),

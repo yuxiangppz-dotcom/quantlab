@@ -208,6 +208,14 @@ def test_delivery_claim_is_idempotent_and_private_token_is_cas_bound(
             delivery_token="wrong",
             delivered=True,
         )
+    loop.record_review_turn_started(
+        event_sha256=str(claimed["event_sha256"]),
+        delivery_token=str(claimed["delivery_token"]),
+        turn_id="turn-1",
+    )
+    review = tmp_path / "review.md"
+    review.write_text("accepted\n", encoding="utf-8")
+    loop.submit_review(review, decision="complete", title="Complete")
     finished = loop.finish_review_notification(
         event_sha256=str(claimed["event_sha256"]),
         delivery_token=str(claimed["delivery_token"]),
@@ -217,6 +225,180 @@ def test_delivery_claim_is_idempotent_and_private_token_is_cas_bound(
     assert finished["state"] == "delivered"
     assert finished["delivery_token"] == ""
     assert _claim_direct(loop) is None
+
+
+def test_completed_turn_without_mailbox_review_remains_retryable(
+    repository: Path, tmp_path: Path
+) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    _review_ready(loop, tmp_path)
+    claimed = _claim_direct(loop)
+    assert claimed is not None
+    loop.record_review_turn_started(
+        event_sha256=str(claimed["event_sha256"]),
+        delivery_token=str(claimed["delivery_token"]),
+        turn_id="turn-without-review",
+    )
+
+    finished = loop.finish_review_notification(
+        event_sha256=str(claimed["event_sha256"]),
+        delivery_token=str(claimed["delivery_token"]),
+        delivered=True,
+        turn_id="turn-without-review",
+        backoff_base_seconds=0,
+        backoff_max_seconds=0,
+    )
+
+    assert finished["state"] == "failed"
+    assert finished["retry_class"] == "transient"
+    assert "completed_without_mailbox_ack" in finished["last_error"]
+    assert _claim_direct(loop) is not None
+
+
+def test_delivery_succeeds_only_after_exact_review_transition(
+    repository: Path, tmp_path: Path
+) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    _review_ready(loop, tmp_path)
+    claimed = _claim_direct(loop)
+    assert claimed is not None
+    loop.record_review_turn_started(
+        event_sha256=str(claimed["event_sha256"]),
+        delivery_token=str(claimed["delivery_token"]),
+        turn_id="reviewed-turn",
+    )
+    review = tmp_path / "review.md"
+    review.write_text("accepted\n", encoding="utf-8")
+    loop.submit_review(review, decision="complete", title="Complete")
+
+    finished = loop.finish_review_notification(
+        event_sha256=str(claimed["event_sha256"]),
+        delivery_token=str(claimed["delivery_token"]),
+        delivered=True,
+        turn_id="reviewed-turn",
+    )
+
+    assert finished["state"] == "delivered"
+
+
+def test_failed_delivery_retains_started_turn_in_public_status(
+    repository: Path, tmp_path: Path
+) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    _review_ready(loop, tmp_path)
+    claimed = _claim_direct(loop)
+    assert claimed is not None
+    loop.record_review_turn_started(
+        event_sha256=str(claimed["event_sha256"]),
+        delivery_token=str(claimed["delivery_token"]),
+        turn_id="failed-review-turn",
+    )
+
+    loop.finish_review_notification(
+        event_sha256=str(claimed["event_sha256"]),
+        delivery_token=str(claimed["delivery_token"]),
+        delivered=False,
+        error="injected turn failure",
+        backoff_base_seconds=0,
+        backoff_max_seconds=0,
+    )
+
+    notification = loop.status(role="reviewer")["review_notification"]
+    assert notification["turn_id"] == "failed-review-turn"
+    assert notification["attempt_state"] == "failed_transient"
+    assert notification["attempt_classification"] == "transient"
+
+
+def test_delivered_turn_must_have_been_recorded_at_start(
+    repository: Path, tmp_path: Path
+) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    _review_ready(loop, tmp_path)
+    claimed = _claim_direct(loop)
+    assert claimed is not None
+    review = tmp_path / "review.md"
+    review.write_text("accepted\n", encoding="utf-8")
+    loop.submit_review(review, decision="complete", title="Complete")
+
+    with pytest.raises(AgentLoopError, match="started reviewer turn"):
+        loop.finish_review_notification(
+            event_sha256=str(claimed["event_sha256"]),
+            delivery_token=str(claimed["delivery_token"]),
+            delivered=True,
+            turn_id="unrecorded-turn",
+        )
+
+
+def test_bridge_reports_failure_when_completed_turn_has_no_mailbox_ack(
+    repository: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    _review_ready(loop, tmp_path)
+    claimed = _claim_direct(loop)
+    assert claimed is not None
+    config = CodexBridgeConfig(
+        thread_id=_DIRECT_THREAD,
+        codex_executable=tmp_path / "codex",
+        reviewer_kind="dedicated",
+        config_fingerprint=_DIRECT_FINGERPRINT,
+        bootstrapped_at=_utc_now(),
+        probe_status="verified",
+        probe_evidence={},
+        turn_timeout_seconds=60,
+        stale_delivery_seconds=120,
+    )
+
+    def completed_without_review(*args, on_turn_started, **kwargs):
+        on_turn_started("turn-without-ack")
+        return "turn-without-ack"
+
+    monkeypatch.setattr(
+        codex_bridge, "deliver_review_event", completed_without_review
+    )
+
+    result = codex_bridge._deliver_claim(loop, config=config, claim=claimed)
+
+    assert result["status"] == "failed"
+    assert result["delivered"] is False
+    assert "completed_without_mailbox_ack" in result["error"]
+
+
+def test_unsubscribe_failure_retains_started_turn_id(
+    repository: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    _review_ready(loop, tmp_path)
+    claimed = _claim_direct(loop)
+    assert claimed is not None
+    config = CodexBridgeConfig(
+        thread_id=_DIRECT_THREAD,
+        codex_executable=tmp_path / "codex",
+        reviewer_kind="dedicated",
+        config_fingerprint=_DIRECT_FINGERPRINT,
+        bootstrapped_at=_utc_now(),
+        probe_status="verified",
+        probe_evidence={},
+        turn_timeout_seconds=60,
+        stale_delivery_seconds=120,
+    )
+
+    def unsubscribe_failure(*args, on_turn_started, **kwargs):
+        on_turn_started("turn-before-unsubscribe-failure")
+        raise CodexBridgeError("injected unsubscribe failure")
+
+    monkeypatch.setattr(codex_bridge, "deliver_review_event", unsubscribe_failure)
+
+    result = codex_bridge._deliver_claim(loop, config=config, claim=claimed)
+
+    assert result["status"] == "failed"
+    notification = loop.status(role="reviewer")["review_notification"]
+    assert notification["turn_id"] == "turn-before-unsubscribe-failure"
 
 
 def test_turn_start_marker_distinguishes_starting_from_reviewing(

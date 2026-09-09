@@ -1130,9 +1130,21 @@ class AgentLoop:
                 return None
             row = connection.execute(
                 """
-                SELECT * FROM review_notifications
-                WHERE generation = ?
-                ORDER BY created_at DESC, event_sha256 DESC
+                SELECT n.*,
+                       COALESCE(a.turn_id, '') AS turn_id,
+                       COALESCE(a.state, '') AS attempt_state,
+                       COALESCE(a.classification, '') AS attempt_classification
+                FROM review_notifications AS n
+                LEFT JOIN delivery_attempts AS a
+                  ON a.attempt_id = (
+                    SELECT latest.attempt_id
+                    FROM delivery_attempts AS latest
+                    WHERE latest.event_sha256 = n.event_sha256
+                    ORDER BY latest.attempt_number DESC, latest.created_at DESC
+                    LIMIT 1
+                  )
+                WHERE n.generation = ?
+                ORDER BY n.created_at DESC, n.event_sha256 DESC
                 LIMIT 1
                 """,
                 (int(metadata["generation"]),),
@@ -1574,7 +1586,6 @@ class AgentLoop:
             raise AgentLoopError(f"invalid delivery failure classification: {classification!r}")
         if backoff_base_seconds < 0 or backoff_max_seconds < backoff_base_seconds:
             raise AgentLoopError("invalid backoff bounds")
-        detail = "" if delivered else (error.strip() or "unspecified delivery failure")
         token_sha256 = _sha256_text(delivery_token)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -1624,10 +1635,46 @@ class AgentLoop:
                         )
                     if turn_id == "":
                         raise AgentLoopError("delivered attempts must record their turn id")
-                    if attempt["turn_id"] not in {"", turn_id}:
+                    if attempt["turn_id"] != turn_id:
                         raise AgentLoopError(
-                            "delivered turn id does not match the started reviewer turn"
+                            "delivered turn id does not match the exact started reviewer turn"
                         )
+                    review = connection.execute(
+                        """
+                        SELECT sha256 FROM artifacts
+                        WHERE kind = 'review' AND generation = ?
+                        """,
+                        (int(row["generation"]),),
+                    ).fetchone()
+                    review_events = connection.execute(
+                        """
+                        SELECT payload_json FROM events
+                        WHERE action = 'review_submitted' AND generation = ?
+                        ORDER BY sequence DESC
+                        """,
+                        (int(row["generation"]),),
+                    ).fetchall()
+                    acknowledged = review is not None and any(
+                        json.loads(event["payload_json"]).get("review_sha256")
+                        == review["sha256"]
+                        for event in review_events
+                    )
+                    if not acknowledged:
+                        delivered = False
+                        classification = "transient"
+                        error = (
+                            "completed_without_mailbox_ack: reviewer turn completed "
+                            "without an exact committed review transition"
+                        )
+                detail = (
+                    "" if delivered
+                    else (error.strip() or "unspecified delivery failure")
+                )
+                stored_turn_id = str(attempt["turn_id"] or turn_id)
+                if turn_id and attempt["turn_id"] and attempt["turn_id"] != turn_id:
+                    raise AgentLoopError(
+                        "terminal turn id does not match the exact started reviewer turn"
+                    )
                 now = _utc_now()
                 if delivered:
                     attempt_state = "delivered"
@@ -1696,7 +1743,7 @@ class AgentLoop:
                     """,
                     (
                         attempt_state,
-                        turn_id,
+                        stored_turn_id,
                         stored_class,
                         detail[:4000],
                         now,
@@ -2045,14 +2092,22 @@ class AgentLoop:
                        n.next_retry_at, n.blocked_fingerprint, n.thread_id,
                        n.process_id, n.last_error, n.created_at, n.updated_at,
                        COALESCE(a.turn_id, '') AS turn_id,
+                       COALESCE(a.state, '') AS attempt_state,
+                       COALESCE(a.classification, '') AS attempt_classification,
                        CASE
-                           WHEN a.turn_id IS NOT NULL AND a.turn_id != '' THEN 'reviewing'
+                           WHEN a.state = 'live' AND a.turn_id != '' THEN 'reviewing'
                            WHEN n.state = 'launching' THEN 'starting'
                            ELSE n.state
                        END AS delivery_stage
                 FROM review_notifications AS n
                 LEFT JOIN delivery_attempts AS a
-                  ON a.event_sha256 = n.event_sha256 AND a.state = 'live'
+                  ON a.attempt_id = (
+                    SELECT latest.attempt_id
+                    FROM delivery_attempts AS latest
+                    WHERE latest.event_sha256 = n.event_sha256
+                    ORDER BY latest.attempt_number DESC, latest.created_at DESC
+                    LIMIT 1
+                  )
                 WHERE n.generation = ?
                 ORDER BY n.created_at DESC, n.event_sha256 DESC
                 LIMIT 1
