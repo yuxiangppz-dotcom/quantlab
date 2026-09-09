@@ -96,7 +96,7 @@ def test_full_advance_cycle_is_head_bound_and_append_only(
     assert loop.doctor()["healthy"] is True
 
 
-def test_review_accepts_clean_pushed_control_plane_descendant(
+def test_review_rejects_unreviewed_runtime_control_plane_descendant(
     repository: Path, tmp_path: Path
 ) -> None:
     loop = AgentLoop(repository)
@@ -111,26 +111,19 @@ def test_review_accepts_clean_pushed_control_plane_descendant(
     _git(repository, "add", str(control_file.relative_to(repository)))
     _git(repository, "commit", "-m", "agent-loop maintenance")
     _git(repository, "push")
-    continuation_head = _git(repository, "rev-parse", "HEAD")
-
     review = _write(tmp_path / "review.md", "# Review\n\nAccepted exact range.\n")
     next_task = _write(tmp_path / "next.md", "# Next\n\nContinue.\n")
-    result = loop.submit_review(
-        review,
-        decision="advance",
-        title="Review",
-        next_task_file=next_task,
-        next_task_title="Next task",
-    )
-
-    assert result["expected_head"] == continuation_head
-    assert result["artifacts"]["task"]["git_head"] == continuation_head
-    with sqlite3.connect(loop.database) as connection:
-        stored_review_head = connection.execute(
-            "SELECT git_head FROM artifacts WHERE kind = 'review' AND generation = 1"
-        ).fetchone()[0]
-    assert stored_review_head == report_head
-    assert loop.doctor()["healthy"] is True
+    with pytest.raises(AgentLoopError, match="exact report HEAD"):
+        loop.submit_review(
+            review,
+            decision="advance",
+            title="Review",
+            next_task_file=next_task,
+            next_task_title="Next task",
+        )
+    with pytest.raises(AgentLoopError, match="missing review artifact"):
+        loop.artifact_content("review", generation=1)
+    assert report_head != _git(repository, "rev-parse", "HEAD")
 
 
 def test_review_rejects_descendant_outside_control_plane(
@@ -149,8 +142,74 @@ def test_review_rejects_descendant_outside_control_plane(
     _git(repository, "push")
     review = _write(tmp_path / "review.md", "# Review\n\nAccepted.\n")
 
-    with pytest.raises(AgentLoopError, match="escape the agent-loop control plane"):
+    with pytest.raises(AgentLoopError, match="exact report HEAD"):
         loop.submit_review(review, decision="complete", title="Review")
+
+
+def test_review_rolls_back_if_workspace_becomes_dirty_before_commit(
+    repository: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    token, _ = _publish_and_claim(loop, tmp_path)
+    _commit_and_push(repository)
+    report = _write(tmp_path / "report.md", "report\n")
+    loop.submit_report(report, claim_token=token, title="Report")
+    review = _write(tmp_path / "review.md", "review\n")
+    original = loop._insert_artifact
+    dirtied = False
+
+    def dirty_then_insert(*args, **kwargs):
+        nonlocal dirtied
+        if not dirtied:
+            (repository / "race.txt").write_text("dirty\n", encoding="utf-8")
+            dirtied = True
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(loop, "_insert_artifact", dirty_then_insert)
+
+    with pytest.raises(AgentLoopError, match="Git snapshot changed"):
+        loop.submit_review(review, decision="complete", title="Review")
+
+    with pytest.raises(AgentLoopError, match="missing review artifact"):
+        loop.artifact_content("review", generation=1)
+    with sqlite3.connect(loop.database) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM events WHERE action = 'review_submitted'"
+        ).fetchone()[0] == 0
+
+
+def test_review_rolls_back_if_head_moves_before_commit(
+    repository: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    token, _ = _publish_and_claim(loop, tmp_path)
+    _commit_and_push(repository)
+    report = _write(tmp_path / "report.md", "report\n")
+    loop.submit_report(report, claim_token=token, title="Report")
+    review = _write(tmp_path / "review.md", "review\n")
+    original = loop._insert_artifact
+    moved = False
+
+    def move_head_then_insert(*args, **kwargs):
+        nonlocal moved
+        if not moved:
+            _commit_and_push(repository, message="concurrent head movement")
+            moved = True
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(loop, "_insert_artifact", move_head_then_insert)
+
+    with pytest.raises(AgentLoopError, match="Git snapshot changed"):
+        loop.submit_review(review, decision="complete", title="Review")
+
+    with pytest.raises(AgentLoopError, match="missing review artifact"):
+        loop.artifact_content("review", generation=1)
+    with sqlite3.connect(loop.database) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM events WHERE action = 'review_submitted'"
+        ).fetchone()[0] == 0
 
 
 def test_two_executors_cannot_claim_the_same_task(repository: Path, tmp_path: Path) -> None:

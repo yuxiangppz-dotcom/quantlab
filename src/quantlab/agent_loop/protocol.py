@@ -41,18 +41,6 @@ DELIVERY_ATTEMPT_STATES = {
 }
 RETRY_BACKOFF_BASE_SECONDS = 60
 RETRY_BACKOFF_MAX_SECONDS = 3_600
-REVIEW_CONTROL_PLANE_PATHS = {
-    "docs/agent_loop.md",
-    "docs/agent_loop_zcode_prompt.md",
-    "scripts/agent_loop.py",
-    "scripts/agent_loop_notify.py",
-}
-REVIEW_CONTROL_PLANE_PREFIXES = (
-    "src/quantlab/agent_loop/",
-    "tests/agent_loop/",
-)
-
-
 class AgentLoopError(RuntimeError):
     """A fail-closed protocol or repository validation error."""
 
@@ -154,40 +142,15 @@ def git_snapshot(repo_root: Path) -> GitSnapshot:
 def _review_descendant_control_paths(
     repo_root: Path, *, report_head: str, current_head: str
 ) -> list[str]:
-    """Return audited control-plane drift or reject any unsafe review HEAD drift."""
+    """Require review to run against the exact reported implementation HEAD."""
 
-    if report_head == current_head:
-        return []
-    ancestor = _git(
-        repo_root,
-        "merge-base",
-        "--is-ancestor",
-        report_head,
-        current_head,
-        check=False,
-    )
-    if ancestor.returncode != 0:
+    if report_head != current_head:
         raise AgentLoopError(
             f"reviewed HEAD drifted: report={report_head}, current={current_head}; "
-            "the report HEAD is not an ancestor"
+            "review requires the exact report HEAD so unreviewed runtime or "
+            "control-plane code cannot authorize itself"
         )
-    raw_paths = _git(
-        repo_root, "diff", "--name-only", "-z", f"{report_head}..{current_head}"
-    ).stdout
-    paths = [path for path in raw_paths.split("\0") if path]
-    unsafe = [
-        path
-        for path in paths
-        if path not in REVIEW_CONTROL_PLANE_PATHS
-        and not path.startswith(REVIEW_CONTROL_PLANE_PREFIXES)
-    ]
-    if unsafe:
-        raise AgentLoopError(
-            f"reviewed HEAD drifted: report={report_head}, current={current_head}; "
-            "descendant changes escape the agent-loop control plane: "
-            + ", ".join(sorted(unsafe))
-        )
-    return sorted(paths)
+    return []
 
 
 class AgentLoop:
@@ -952,6 +915,12 @@ class AgentLoop:
                     payload=payload,
                     occurred_at=now,
                 )
+                commit_snapshot = git_snapshot(self.repo_root)
+                if commit_snapshot != snapshot:
+                    raise AgentLoopError(
+                        "Git snapshot changed during review commit; refusing to "
+                        "publish review or next task"
+                    )
                 connection.commit()
             except BaseException:
                 connection.rollback()
