@@ -16,6 +16,7 @@ from quantlab.execution.artifacts import (
     EXECUTION_READINESS_SCHEMA_V0_2_1,
     READINESS_CHECK_COLUMNS,
     execution_readiness_artifact_contract,
+    execution_readiness_semantic_failures,
     verify_execution_readiness_artifact,
 )
 from quantlab.execution.readiness import (
@@ -289,6 +290,43 @@ def test_clean_v021_artifact_verifies(tmp_path) -> None:
         expected_schema=EXECUTION_READINESS_SCHEMA_V0_2_1,
     )
     assert result["complete"] is True
+
+
+def test_v021_missing_header_fails_without_rebinding_exception(tmp_path) -> None:
+    final = _publish(tmp_path)
+    checks_path = final / "readiness_checks.csv"
+    with checks_path.open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    fieldnames = tuple(
+        column for column in READINESS_CHECK_COLUMNS if column != "check_id"
+    )
+    with checks_path.open("w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+    failures = execution_readiness_semantic_failures(
+        final, schema=EXECUTION_READINESS_SCHEMA_V0_2_1
+    )
+
+    assert any("columns are non-canonical" in failure for failure in failures)
+
+
+def test_v021_missing_cell_fails_without_rebinding_exception(tmp_path) -> None:
+    final = _publish(tmp_path)
+    checks_path = final / "readiness_checks.csv"
+    lines = checks_path.read_text().splitlines()
+    lines[1] = lines[1].rsplit(",", 1)[0]
+    checks_path.write_text("\n".join(lines) + "\n")
+
+    failures = execution_readiness_semantic_failures(
+        final, schema=EXECUTION_READINESS_SCHEMA_V0_2_1
+    )
+
+    assert any(
+        "row 1" in failure and "usable strings" in failure
+        for failure in failures
+    )
 
 
 @pytest.mark.parametrize(

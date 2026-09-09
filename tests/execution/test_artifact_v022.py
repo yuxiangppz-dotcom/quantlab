@@ -470,6 +470,36 @@ def test_malformed_readiness_csv_bytes_are_a_deterministic_failure(
     assert any("readiness CSV" in failure for failure in failures)
 
 
+def test_missing_canonical_csv_header_is_a_deterministic_failure(tmp_path) -> None:
+    final = _publish(tmp_path)
+    checks_path = final / "readiness_checks.csv"
+    with checks_path.open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    fieldnames = tuple(
+        column for column in READINESS_CHECK_COLUMNS if column != "critical_for"
+    )
+    with checks_path.open("w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+    failures = _failures(final)
+
+    assert any("columns are non-canonical" in failure for failure in failures)
+
+
+def test_missing_csv_cell_is_a_deterministic_failure(tmp_path) -> None:
+    final = _publish(tmp_path)
+    checks_path = final / "readiness_checks.csv"
+    lines = checks_path.read_text().splitlines()
+    lines[1] = lines[1].rsplit(",", 1)[0]
+    checks_path.write_text("\n".join(lines) + "\n")
+
+    failures = _failures(final)
+
+    assert any("row 1" in failure and "usable strings" in failure for failure in failures)
+
+
 def test_ready_row_with_a_non_required_false_field_is_rejected(tmp_path) -> None:
     """A framework READY row whose evidence carries a FALSE field that is
     not part of any required_subconditions disclosure is contradictory
@@ -529,6 +559,47 @@ def test_retyped_evidence_value_is_rejected(tmp_path) -> None:
     )
     failures = _failures(final)
     assert any("atomic_share_reservation" in failure for failure in failures)
+
+
+def test_numeric_one_cannot_impersonate_boolean_true(tmp_path) -> None:
+    final = _publish(tmp_path)
+
+    def retype(evidence: dict) -> None:
+        evidence["contention_blocked"] = 1
+
+    _rewrite_row(
+        final, "atomic_share_reservation", _mutate_evidence(retype)
+    )
+    failures = _failures(final)
+    assert any("atomic_share_reservation" in failure for failure in failures)
+
+
+def test_numeric_zero_cannot_impersonate_boolean_false(tmp_path) -> None:
+    final = _publish(tmp_path)
+
+    def retype(evidence: dict) -> None:
+        evidence["external_broker_submission"] = 0
+
+    _rewrite_row(final, "plan_to_order_lineage", _mutate_evidence(retype))
+    failures = _failures(final)
+    assert any("plan_to_order_lineage" in failure for failure in failures)
+
+
+def test_nested_numeric_boolean_cannot_match_special_evidence(tmp_path) -> None:
+    final = _publish(tmp_path)
+
+    def retype(evidence: dict) -> None:
+        evidence["fault_injection_matrix"][
+            "batch_first_submission_runtimeerror_restored"
+        ] = 1
+
+    _rewrite_row(
+        final, "transactional_submission_atomicity", _mutate_evidence(retype)
+    )
+    failures = _failures(final)
+    assert any(
+        "transactional_submission_atomicity" in failure for failure in failures
+    )
 
 
 def test_reordered_required_subconditions_are_rejected(tmp_path) -> None:

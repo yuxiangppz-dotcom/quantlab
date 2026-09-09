@@ -154,6 +154,51 @@ def _walk_keys(value: Any):
             yield from _walk_keys(nested)
 
 
+def _json_exact_equal(actual: Any, expected: Any) -> bool:
+    """Compare JSON-domain values without Python's bool/int coercion."""
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return set(actual) == set(expected) and all(
+            _json_exact_equal(actual[key], value)
+            for key, value in expected.items()
+        )
+    if isinstance(expected, list):
+        return len(actual) == len(expected) and all(
+            _json_exact_equal(left, right)
+            for left, right in zip(actual, expected, strict=True)
+        )
+    return actual == expected
+
+
+def _read_readiness_rows(
+    run_dir: Path,
+) -> tuple[list[dict[str, str]], tuple[str, ...]]:
+    """Parse CSV rows only when the complete canonical shape is usable."""
+    checks_path = run_dir / "readiness_checks.csv"
+    try:
+        with checks_path.open(newline="", encoding="utf-8") as fh:
+            reader = csv.DictReader(fh)
+            rows = list(reader)
+            columns = tuple(reader.fieldnames or ())
+    except (OSError, UnicodeError, csv.Error) as exc:
+        return [], (f"readiness CSV semantic parse failed: {exc}",)
+    if columns != READINESS_CHECK_COLUMNS:
+        return [], ("readiness check columns are non-canonical",)
+    if not rows:
+        return [], ("readiness CSV contains no data rows",)
+    for row_number, row in enumerate(rows, start=1):
+        if tuple(row) != READINESS_CHECK_COLUMNS or any(
+            not isinstance(row.get(column), str)
+            for column in READINESS_CHECK_COLUMNS
+        ):
+            return [], (
+                "readiness CSV row "
+                f"{row_number} must contain exactly canonical usable strings",
+            )
+    return rows, ()
+
+
 _V022_EXTRA_TRUE_FIELDS = (
     "same_state_batch_committed",
     "sell_share_reservation",
@@ -307,15 +352,16 @@ def _v021_handoff_failures(run_dir: Path) -> tuple[str, ...]:
     return tuple(failures)
 
 
-def _v021_rebinding_failures(run_dir: Path) -> tuple[str, ...]:
+def _v021_rebinding_failures(
+    run_dir: Path,
+    rows: list[dict[str, str]] | None = None,
+) -> tuple[str, ...]:
     """Re-bind composite readiness rows to the smoke sub-conditions."""
     failures: list[str] = []
-    checks_path = run_dir / "readiness_checks.csv"
-    try:
-        with checks_path.open(newline="") as fh:
-            rows = list(csv.DictReader(fh))
-    except (OSError, ValueError, csv.Error, KeyError) as exc:
-        return (f"readiness CSV parse failed during rebinding: {exc}",)
+    if rows is None:
+        rows, structural_failures = _read_readiness_rows(run_dir)
+        if structural_failures:
+            return structural_failures
 
     try:
         smoke = json.loads((run_dir / "order_path_smoke.json").read_text())
@@ -673,7 +719,7 @@ def _v022_deep_failures(
                 f"smoke-derived) evidence keys: {extra}"
             )
         for key, value in consts.items():
-            if evidence.get(key) != value:
+            if not _json_exact_equal(evidence.get(key), value):
                 failures.append(
                     f"readiness row {check_id} evidence field {key} "
                     "contradicts the canonical value (extra, missing, or "
@@ -685,13 +731,15 @@ def _v022_deep_failures(
                     f"readiness row {check_id} discloses {key} but the "
                     f"smoke evidence lacks scenario {scenario_key}"
                 )
-            elif evidence.get(key) != scenarios[scenario_key]:
+            elif not _json_exact_equal(
+                evidence.get(key), scenarios[scenario_key]
+            ):
                 failures.append(
                     f"readiness row {check_id} evidence field {key} "
                     f"contradicts smoke scenario {scenario_key}"
                 )
-        if required is not None and (
-            evidence.get("required_subconditions") != list(required)
+        if required is not None and not _json_exact_equal(
+            evidence.get("required_subconditions"), list(required)
         ):
             failures.append(
                 f"readiness row {check_id} required_subconditions "
@@ -714,14 +762,17 @@ def _v022_deep_failures(
             expected_gates = (
                 sorted(gate_matrix) if isinstance(gate_matrix, dict) else None
             )
-            if evidence.get("gates_rechecked") != expected_gates:
+            if not _json_exact_equal(
+                evidence.get("gates_rechecked"), expected_gates
+            ):
                 failures.append(
                     f"readiness row {check_id} gates_rechecked does not "
                     "match the smoke submission gate matrix"
                 )
         if check_id == "transactional_submission_atomicity":
-            if evidence.get("fault_injection_matrix") != scenarios.get(
-                "fault_injection_matrix"
+            if not _json_exact_equal(
+                evidence.get("fault_injection_matrix"),
+                scenarios.get("fault_injection_matrix"),
             ):
                 failures.append(
                     f"readiness row {check_id} fault_injection_matrix "
@@ -822,14 +873,9 @@ def execution_readiness_semantic_failures(
     # malformed readiness_checks.csv must surface as deterministic
     # semantic failures below, never as an UnboundLocalError or an
     # incidental UnicodeDecodeError escaping this verifier
-    rows: list[dict[str, str]] = []
-    try:
-        checks_path = run_dir / "readiness_checks.csv"
-        with checks_path.open(newline="") as fh:
-            rows = list(csv.DictReader(fh))
-        columns = tuple(rows[0].keys()) if rows else ()
-        if columns != READINESS_CHECK_COLUMNS:
-            failures.append("readiness check columns are non-canonical")
+    rows, csv_structure_failures = _read_readiness_rows(run_dir)
+    failures.extend(csv_structure_failures)
+    if not csv_structure_failures:
         allowed = {status.value for status in ReadinessStatus}
         if any(row["status"] not in allowed for row in rows):
             failures.append("readiness check contains an invalid status")
@@ -883,8 +929,6 @@ def execution_readiness_semantic_failures(
         }
         if gates != derived_gates:
             failures.append("summary readiness gates do not match check evidence")
-    except (OSError, ValueError, csv.Error, KeyError) as exc:
-        failures.append(f"readiness CSV semantic parse failed: {exc}")
 
     handoff = payloads.get("handoff_smoke.json", {})
     handoff_variants = (
@@ -910,7 +954,8 @@ def execution_readiness_semantic_failures(
     ):
         failures.extend(_v021_smoke_failures(run_dir, schema))
         failures.extend(_v021_handoff_failures(run_dir))
-        failures.extend(_v021_rebinding_failures(run_dir))
+        if not csv_structure_failures:
+            failures.extend(_v021_rebinding_failures(run_dir, rows))
         fault = payloads.get("transaction_fault_injection.json", {})
         if not isinstance(fault, dict) or fault.get("all_passed") is not True:
             failures.append(
@@ -922,7 +967,10 @@ def execution_readiness_semantic_failures(
                 "fee/reservation reconciliation evidence must show "
                 "reconciled=true"
             )
-    if schema == EXECUTION_READINESS_SCHEMA_V0_2_2:
+    if (
+        schema == EXECUTION_READINESS_SCHEMA_V0_2_2
+        and not csv_structure_failures
+    ):
         failures.extend(
             _v022_deep_failures(run_dir, payloads, summary, rows)
         )
