@@ -157,6 +157,7 @@ def import_account_csv(
 def create_demo_account(
     account_id: str = "demo_200k",
     *,
+    cash_cny: str = "200000.00",
     account_root: Path = DEFAULT_ACCOUNT_ROOT,
     now: datetime | None = None,
 ) -> Path:
@@ -164,7 +165,7 @@ def create_demo_account(
     content = "\n".join(
         [
             ",".join(REQUIRED_COLUMNS),
-            f"{account_id},demo_simulation,{local_now.isoformat()},200000.00,,0,0,,none_declared",
+            f"{account_id},demo_simulation,{local_now.isoformat()},{cash_cny},,0,0,,none_declared",
             "",
         ]
     ).encode()

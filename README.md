@@ -204,6 +204,7 @@ uv run quantlab portfolio plan --account-id demo_200k
 uv run quantlab portfolio fills-preview --account-id my_account --file fills.csv
 uv run quantlab portfolio fills-import --account-id my_account --file fills.csv
 uv run quantlab portfolio track --account-id my_account
+uv run quantlab accept --account-id demo_200k
 uv run quantlab ui
 ```
 
@@ -235,6 +236,13 @@ without writing. Import commits the complete deduplicated journal atomically;
 re-importing the same broker trade is a no-op, while altered economics under the
 same trade id are rejected. These facts update the local manual-tracking ledger
 only—they never submit an order or change Canonical market data.
+
+The UI can create immutable user configuration versions for the frozen
+return-20D reversal example or the unpromoted transparent multi-factor
+candidate, with user-selected target count, per-name cap and board subset.
+These variants are stored separately and explicitly lose direct comparability
+with the frozen baseline artifact. See [the v1 user guide](docs/user_guide.md)
+for the complete daily, account, plan and fill workflow.
 
 The UI listens on `127.0.0.1:8501` and has four pages: data/report, rankings,
 formal baseline comparison, and account/reference-plan status. From Windows,

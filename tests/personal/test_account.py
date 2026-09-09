@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from quantlab.personal.account import import_account_csv, load_account
+from quantlab.personal.account import create_demo_account, import_account_csv, load_account
 
 HEADER = (
     "account_id,account_mode,as_of,cash_cny,instrument_id,quantity,"
@@ -72,3 +72,10 @@ def test_stored_account_tampering_is_rejected(tmp_path: Path) -> None:
     path.write_text(json.dumps(payload))
     with pytest.raises(ValueError, match="fingerprint mismatch"):
         load_account("mine", account_root=tmp_path)
+
+
+def test_demo_cash_is_user_adjustable_but_remains_demo_mode(tmp_path: Path) -> None:
+    create_demo_account("demo", cash_cny="345678.90", account_root=tmp_path)
+    account = load_account("demo", account_root=tmp_path)
+    assert account["cash_fen"] == 34_567_890
+    assert account["account_mode"] == "demo_simulation"

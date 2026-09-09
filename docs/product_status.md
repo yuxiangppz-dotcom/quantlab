@@ -11,7 +11,7 @@ It is evidence notes, not a substitute for tests or an investment claim.
 | M2 Multi-factor + optional Qlib/ML | Bounded factor batch implemented; Qlib/LightGBM locally blocked | 10-candidate registry, transparent combination, 81 monthly signal dates / 384,319 rows; optional Qlib adapter; fixed LightGBM config | Do not promote before cost/Control evaluation; install missing optional runtimes only with explicit system authority |
 | M3 Account input + reference rebalance | Implemented and locally verified | Strict account CSV import, 200k demo, raw-close reference plan, BUY/SELL/HOLD/NO_TRADE UI + CSV export | Add manual-fill journal and portfolio tracking |
 | M4 Manual fills + tracking | Implemented and locally verified | Preview/commit broker-fill CSV, durable fingerprinted journal, same ExecutionLedger cash/T+1 replay, plan-vs-fill comparison, conservative reference valuation | Run final end-to-end acceptance |
-| M5 v1 acceptance | Not run | — | End-to-end acceptance after M1–M4 |
+| M5 v1 acceptance | Implemented with clean-HEAD acceptance gate | `quantlab accept`, local-only UI health, versioned configs and outputs | Hand off local Daily v1; keep strategy promotion user-controlled |
 
 ## M1 exercised facts
 

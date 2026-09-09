@@ -43,6 +43,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "daily_mvp_v1.json"
 DEFAULT_PRODUCT_ROOT = PROJECT_ROOT / "data" / "products" / "daily"
 CORE_DATASETS = ("daily", "adj_factor", "daily_basic")
+SUPPORTED_BOARDS = ("主板", "创业板", "科创板")
 
 
 @dataclass(frozen=True)
@@ -165,9 +166,7 @@ def inspect_data_status(
     for entry in calendar:
         calendar_by_date.setdefault(entry.trade_date, []).append(entry.is_open)
     open_dates = sorted(
-        day
-        for day, flags in calendar_by_date.items()
-        if day <= requested and any(flags)
+        day for day, flags in calendar_by_date.items() if day <= requested and any(flags)
     )
     latest_expected = open_dates[-1] if open_dates else None
 
@@ -178,9 +177,7 @@ def inspect_data_status(
             f"{requested} are unknown"
         )
     else:
-        requested_session_status = (
-            "open" if any(calendar_by_date.get(requested, [])) else "closed"
-        )
+        requested_session_status = "open" if any(calendar_by_date.get(requested, [])) else "closed"
 
     datasets: dict[str, dict] = {}
     for name in (*CORE_DATASETS, "index_daily"):
@@ -257,9 +254,7 @@ def inspect_data_status(
         "status": status,
         "effective_as_of": effective.isoformat() if effective else None,
         "latest_calendar_date": latest_calendar_date.isoformat(),
-        "latest_expected_open_session": (
-            latest_expected.isoformat() if latest_expected else None
-        ),
+        "latest_expected_open_session": (latest_expected.isoformat() if latest_expected else None),
         "requested_session_status": requested_session_status,
         "stale_open_sessions": stale_open_sessions,
         "datasets": datasets,
@@ -286,10 +281,22 @@ def _load_config(path: Path) -> dict:
     missing = required - set(config)
     if missing:
         raise DataValidationError(f"daily config missing fields: {sorted(missing)}")
-    if config["score_definition"] != "return_20d":
-        raise DataValidationError("daily_mvp_v1 only supports score_definition=return_20d")
-    if config["score_direction"] != "lower_is_better":
-        raise DataValidationError("daily_mvp_v1 baseline direction must remain lower_is_better")
+    supported_scores = {
+        "return_20d": "lower_is_better",
+        "transparent_combo_v1": "higher_is_better",
+    }
+    if config["score_definition"] not in supported_scores:
+        raise DataValidationError("unsupported daily score_definition")
+    if config["score_direction"] != supported_scores[config["score_definition"]]:
+        raise DataValidationError("score direction does not match its registered definition")
+    boards = config.setdefault("allowed_boards", list(SUPPORTED_BOARDS))
+    if (
+        not isinstance(boards, list)
+        or not boards
+        or len(boards) != len(set(boards))
+        or not set(boards).issubset(SUPPORTED_BOARDS)
+    ):
+        raise DataValidationError("allowed_boards must be a non-empty supported subset")
     count = config["target_count"]
     cap = config["max_weight_per_name"]
     gross = config["gross_exposure"]
@@ -399,27 +406,18 @@ def generate_daily_snapshot(
         ["instrument_id", "trade_date", "close", "return_1d", "return_5d", "return_20d"]
     ].merge(alpha, on=["instrument_id", "trade_date"], validate="one_to_one")
 
-    basics = pd.DataFrame(
-        [asdict(item) for item in storage.load_daily_basic_by_date(effective)]
-    )
+    basics = pd.DataFrame([asdict(item) for item in storage.load_daily_basic_by_date(effective)])
     ranking = ranking.merge(
         basics[["instrument_id", "turnover_rate", "total_mv", "circ_mv"]],
         on="instrument_id",
         how="left",
         validate="one_to_one",
     )
-    raw = pd.DataFrame(
-        [asdict(item) for item in storage.load_daily_bars_by_date(effective)]
-    )
+    raw = pd.DataFrame([asdict(item) for item in storage.load_daily_bars_by_date(effective)])
     ranking = ranking.merge(
         raw[["instrument_id", "open", "high", "low", "amount"]],
         on="instrument_id",
         validate="one_to_one",
-    )
-    ranking = build_factor_columns(ranking)
-    ranking = add_transparent_combination(
-        ranking,
-        ["reversal_20d", "low_amplitude", "small_size", "intraday_strength"],
     )
     securities = {item.instrument_id: item for item in storage.load_securities()}
     ranking["name"] = ranking["instrument_id"].map(
@@ -428,9 +426,17 @@ def generate_daily_snapshot(
     ranking["board"] = ranking["instrument_id"].map(
         lambda value: securities[value].board if value in securities else None
     )
+    ranking = ranking[ranking["board"].isin(config["allowed_boards"])].copy()
+    ranking = build_factor_columns(ranking)
+    ranking = add_transparent_combination(
+        ranking,
+        ["reversal_20d", "low_amplitude", "small_size", "intraday_strength"],
+    )
+    ranking["alpha_score"] = ranking[config["score_definition"]]
+    ascending = config["score_direction"] == "lower_is_better"
     ranking = ranking.sort_values(
         ["alpha_score", "instrument_id"],
-        ascending=[True, True],
+        ascending=[ascending, True],
         na_position="last",
         kind="mergesort",
     ).reset_index(drop=True)
@@ -452,7 +458,8 @@ def generate_daily_snapshot(
         ranking.loc[: selected_count - 1, "target_weight"] = per_name
     ranking["selection_reason"] = ranking.apply(
         lambda row: (
-            "RESEARCH_TARGET: lowest 20-session adjusted return under frozen example baseline"
+            f"RESEARCH_TARGET: {config['score_definition']} / "
+            f"{config['score_direction']} under {config['model_status']}"
             if row["selected"]
             else (
                 "NO_TARGET: outside deterministic top target_count"
@@ -508,18 +515,12 @@ def generate_daily_snapshot(
         "calendar": storage.calendar_path,
         "config": config_path,
     }
-    input_fingerprints = {
-        name: _sha256_file(path) for name, path in input_paths.items()
-    }
+    input_fingerprints = {name: _sha256_file(path) for name, path in input_paths.items()}
     code_paths = {
         "daily_service": Path(__file__),
         "momentum_alpha": PROJECT_ROOT / "src" / "quantlab" / "alpha" / "momentum.py",
         "research_dataset": PROJECT_ROOT / "src" / "quantlab" / "research" / "dataset.py",
-        "factor_registry": PROJECT_ROOT
-        / "src"
-        / "quantlab"
-        / "research"
-        / "factor_registry.py",
+        "factor_registry": PROJECT_ROOT / "src" / "quantlab" / "research" / "factor_registry.py",
         "universe": PROJECT_ROOT / "src" / "quantlab" / "research" / "universe.py",
     }
     next_session = _next_open_session(storage, effective)
@@ -537,14 +538,14 @@ def generate_daily_snapshot(
             "selected_rows": selected_count,
             "tie_policy": config["tie_policy"],
             "score_interpretation": (
-                "lower return_20d ranks first because this frozen example baseline tests "
-                "short-horizon reversal; it is test-observed and not a profit claim"
+                f"{config['score_definition']} is ranked {config['score_direction']}; "
+                f"model status is {config['model_status']} and this is not a profit claim"
             ),
             "factor_detail_columns": [item.factor_id for item in FACTOR_REGISTRY]
             + ["transparent_combo_v1"],
             "factor_selection_note": (
-                "factor columns are diagnostics; daily_mvp_v1 still selects on the frozen "
-                "return_20d reversal example"
+                "baseline selects frozen return_20d reversal; transparent_combo_v1 is an "
+                "unpromoted candidate without cost/Control closure"
             ),
         },
         "target": {
@@ -587,9 +588,7 @@ def generate_daily_snapshot(
     fingerprint_report = {
         **report_core,
         "data_status": {
-            key: value
-            for key, value in report_core["data_status"].items()
-            if key != "inspected_at"
+            key: value for key, value in report_core["data_status"].items() if key != "inspected_at"
         },
     }
     content_fingerprint = _canonical_hash(
@@ -599,7 +598,8 @@ def generate_daily_snapshot(
             "target_sha256": hashlib.sha256(target_text.encode()).hexdigest(),
         }
     )
-    out_dir = product_root / effective.isoformat()
+    config_version = f"{config['config_id']}-{input_fingerprints['config'][:12]}"
+    out_dir = product_root / effective.isoformat() / config_version
     report_path = out_dir / "report.json"
     ranking_path = out_dir / "ranking.csv"
     target_path = out_dir / "target_portfolio.csv"
@@ -610,9 +610,8 @@ def generate_daily_snapshot(
     if outputs_exist:
         existing = json.loads(report_path.read_text(encoding="utf-8"))
         if existing.get("content_fingerprint") == content_fingerprint:
-            return DailySnapshot(
-                report_path, ranking_path, target_path, html_path, existing, True
-            )
+            _activate_snapshot(product_root, report_path, content_fingerprint)
+            return DailySnapshot(report_path, ranking_path, target_path, html_path, existing, True)
 
     report = {
         **report_core,
@@ -627,20 +626,57 @@ def generate_daily_snapshot(
         report_path,
         json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
     )
+    _activate_snapshot(product_root, report_path, content_fingerprint)
     return DailySnapshot(report_path, ranking_path, target_path, html_path, report, False)
+
+
+def _activate_snapshot(product_root: Path, report_path: Path, fingerprint: str) -> None:
+    pointer = {
+        "schema": "quantlab_daily_active_v1",
+        "report_path": str(report_path.relative_to(product_root)),
+        "content_fingerprint": fingerprint,
+    }
+    _atomic_write_text(
+        product_root / "ACTIVE.json",
+        json.dumps(pointer, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+    )
 
 
 def load_latest_snapshot(product_root: Path = DEFAULT_PRODUCT_ROOT) -> DailySnapshot | None:
     """Load the newest committed local daily snapshot without recomputing it."""
     if not product_root.exists():
         return None
-    candidates = sorted(
-        path for path in product_root.iterdir() if path.is_dir() and (path / "report.json").exists()
-    )
+    active_path = product_root / "ACTIVE.json"
+    if active_path.exists():
+        pointer = json.loads(active_path.read_text(encoding="utf-8"))
+        report_path = (product_root / pointer["report_path"]).resolve()
+        if not report_path.is_relative_to(product_root.resolve()):
+            raise ValueError("active daily pointer escapes the product root")
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        if report.get("content_fingerprint") != pointer.get("content_fingerprint"):
+            raise ValueError("active daily pointer fingerprint mismatch")
+        out_dir = report_path.parent
+        return DailySnapshot(
+            report_path=report_path,
+            ranking_path=out_dir / "ranking.csv",
+            target_path=out_dir / "target_portfolio.csv",
+            html_path=out_dir / "report.html",
+            report=report,
+            reused=True,
+        )
+    candidates = list(product_root.glob("**/report.json"))
     if not candidates:
         return None
-    out_dir = candidates[-1]
-    report = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+    loaded = [(path, json.loads(path.read_text(encoding="utf-8"))) for path in candidates]
+    report_path, report = max(
+        loaded,
+        key=lambda item: (
+            item[1]["effective_as_of"],
+            item[1].get("generated_at", ""),
+            str(item[0]),
+        ),
+    )
+    out_dir = report_path.parent
     return DailySnapshot(
         report_path=out_dir / "report.json",
         ranking_path=out_dir / "ranking.csv",

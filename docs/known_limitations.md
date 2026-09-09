@@ -2,8 +2,8 @@
 
 ## Product
 
-- QuantLab Daily v1 now covers daily research, account reference planning, and
-  manual-fill tracking. Final end-to-end acceptance remains in M5.
+- QuantLab Daily v1 covers daily research, versioned user configurations,
+  account reference planning, manual-fill tracking, export and local acceptance.
 - A cached report is viewable offline, but its exact `effective_as_of` remains
   prominent. Offline availability is not evidence of fresh market data.
 - The local UI binds only to `127.0.0.1`; it has no authentication and must not

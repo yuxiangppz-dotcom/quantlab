@@ -29,7 +29,7 @@ def _doctor(as_json: bool) -> int:
     status = inspect_data_status()
     payload = {
         "product": "QuantLab Daily",
-        "version": "v1-development",
+        "version": "1.0.0",
         "project_root": str(PROJECT_ROOT),
         "python": sys.version.split()[0],
         "tushare_token_available": bool(os.environ.get("TUSHARE_TOKEN")),
@@ -121,7 +121,17 @@ def _ui(port: int) -> int:
         return 130
 
 
-def _portfolio(action: str, account_id: str, source: str | None) -> int:
+def _accept(account_id: str) -> int:
+    from quantlab.daily.acceptance import run_v1_acceptance
+
+    json_path, html_path, payload = run_v1_acceptance(account_id)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    print(f"acceptance JSON: {json_path}")
+    print(f"acceptance HTML: {html_path}")
+    return 0 if payload["product_ready"] else 2
+
+
+def _portfolio(action: str, account_id: str, source: str | None, cash: str | None) -> int:
     from quantlab.personal import (
         build_reference_plan,
         build_tracking_valuation,
@@ -133,7 +143,7 @@ def _portfolio(action: str, account_id: str, source: str | None) -> int:
     )
 
     if action == "demo":
-        path = create_demo_account(account_id)
+        path = create_demo_account(account_id, cash_cny=cash or "200000.00")
         print(f"created demo account snapshot: {path}")
     elif action == "import":
         if source is None:  # pragma: no cover - argparse enforces this
@@ -191,6 +201,7 @@ def _parser() -> argparse.ArgumentParser:
     portfolio_sub = portfolio.add_subparsers(dest="portfolio_action", required=True)
     portfolio_demo = portfolio_sub.add_parser("demo", help="Create/reset the 200k demo account.")
     portfolio_demo.add_argument("--account-id", default="demo_200k")
+    portfolio_demo.add_argument("--cash", default="200000.00", help="Initial demo cash in CNY.")
     portfolio_import = portfolio_sub.add_parser(
         "import", help="Validate and import an account CSV."
     )
@@ -208,6 +219,8 @@ def _parser() -> argparse.ArgumentParser:
     portfolio_track.add_argument("--account-id", required=True)
     ui = sub.add_parser("ui", help="Start the local-only Streamlit UI.")
     ui.add_argument("--port", type=int, default=8501)
+    accept = sub.add_parser("accept", help="Run local Daily v1 end-to-end acceptance.")
+    accept.add_argument("--account-id", default="demo_200k")
     return parser
 
 
@@ -226,9 +239,12 @@ def main() -> None:
             args.portfolio_action,
             getattr(args, "account_id", ""),
             getattr(args, "file", None),
+            getattr(args, "cash", None),
         )
     elif args.command == "ui":
         code = _ui(args.port)
+    elif args.command == "accept":
+        code = _accept(args.account_id)
     else:  # pragma: no cover - argparse enforces this
         raise AssertionError(args.command)
     raise SystemExit(code)

@@ -25,8 +25,15 @@ class FakeProvider(DataProvider):
     def get_securities(self):
         return [
             Security(
-                "000001.SZ", "000001", "平安银行", "SZSE", "SZ", "主板", "L",
-                date(1991, 4, 3), None,
+                "000001.SZ",
+                "000001",
+                "平安银行",
+                "SZSE",
+                "SZ",
+                "主板",
+                "L",
+                date(1991, 4, 3),
+                None,
             )
         ]
 

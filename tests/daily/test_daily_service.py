@@ -7,7 +7,11 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from quantlab.daily.service import generate_daily_snapshot, inspect_data_status
+from quantlab.daily.service import (
+    generate_daily_snapshot,
+    inspect_data_status,
+    load_latest_snapshot,
+)
 from quantlab.data.models import AdjFactor, DailyBar, DailyBasic, Security, TradingCalendar
 from quantlab.data.storage import ParquetStorage
 
@@ -153,11 +157,7 @@ def test_snapshot_is_deterministic_idempotent_and_future_isolated(tmp_path: Path
 
     future = effective + timedelta(days=1)
     storage.save_daily_bars_by_date(
-        [
-            DailyBar(
-                "000001.SZ", future, 999, 1000, 998, 999, 10, 1000, 999000
-            )
-        ],
+        [DailyBar("000001.SZ", future, 999, 1000, 998, 999, 10, 1000, 999000)],
         future,
     )
     third = generate_daily_snapshot(
@@ -169,3 +169,53 @@ def test_snapshot_is_deterministic_idempotent_and_future_isolated(tmp_path: Path
     )
     pd.testing.assert_frame_equal(ranking_before, pd.read_csv(third.ranking_path))
     assert third.reused
+
+
+def test_distinct_user_config_does_not_overwrite_same_day_baseline(tmp_path: Path) -> None:
+    storage, sessions = _seed_storage(tmp_path)
+    effective = sessions[-1]
+    baseline_path = _config(tmp_path / "baseline.json")
+    candidate = json.loads(baseline_path.read_text())
+    candidate.update(
+        {
+            "config_id": "candidate",
+            "strategy_id": "transparent_combo_v1_candidate",
+            "model_status": "candidate_not_promoted_no_cost_control_closure",
+            "score_definition": "transparent_combo_v1",
+            "score_direction": "higher_is_better",
+            "allowed_boards": ["主板"],
+        }
+    )
+    candidate_path = tmp_path / "candidate.json"
+    candidate_path.write_text(json.dumps(candidate))
+    product_root = tmp_path / "products"
+    now = datetime(2026, 2, 1, 18, tzinfo=SHANGHAI)
+    baseline = generate_daily_snapshot(
+        effective,
+        storage=storage,
+        config_path=baseline_path,
+        product_root=product_root,
+        now=now,
+    )
+    custom = generate_daily_snapshot(
+        effective,
+        storage=storage,
+        config_path=candidate_path,
+        product_root=product_root,
+        now=now + timedelta(seconds=1),
+    )
+    assert baseline.report_path != custom.report_path
+    assert baseline.report_path.exists() and custom.report_path.exists()
+    ranking = pd.read_csv(custom.ranking_path)
+    assert ranking["alpha_score"].equals(ranking["transparent_combo_v1"])
+    assert ranking["alpha_score"].is_monotonic_decreasing
+    assert load_latest_snapshot(product_root).report_path == custom.report_path
+    activated_baseline = generate_daily_snapshot(
+        effective,
+        storage=storage,
+        config_path=baseline_path,
+        product_root=product_root,
+        now=now + timedelta(seconds=2),
+    )
+    assert activated_baseline.reused
+    assert load_latest_snapshot(product_root).report_path == baseline.report_path

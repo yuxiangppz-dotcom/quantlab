@@ -39,9 +39,7 @@ def _path_metrics(frame: pd.DataFrame) -> dict[str, float | int]:
     total_return = float(nav.iloc[-1] / nav.iloc[0] - 1) if len(nav) else math.nan
     cagr = float((nav.iloc[-1] / nav.iloc[0]) ** (1 / years) - 1) if years > 0 else math.nan
     standard_deviation = returns.std(ddof=0)
-    volatility = (
-        float(standard_deviation * math.sqrt(252)) if len(returns) > 1 else math.nan
-    )
+    volatility = float(standard_deviation * math.sqrt(252)) if len(returns) > 1 else math.nan
     sharpe = (
         float(returns.mean() / standard_deviation * math.sqrt(252))
         if len(returns) > 1 and standard_deviation > 0
@@ -90,9 +88,7 @@ def load_baseline_view(run_dir: Path | None = None) -> dict | None:
     )
     relative = joined["nav_net_strategy"] / joined["nav_net_control"]
     active_drawdown = relative / relative.cummax() - 1
-    curve = joined.rename(
-        columns={"nav_net_strategy": "strategy", "nav_net_control": "control"}
-    )
+    curve = joined.rename(columns={"nav_net_strategy": "strategy", "nav_net_control": "control"})
     return {
         "run_dir": str(run_dir),
         "schema": marker["schema"],

@@ -65,9 +65,7 @@ def _load_or_fetch_core(
             f"{sorted(daily_ids - factor_ids)[:5]}"
         )
     if daily_ids != basic_ids:
-        raise DataValidationError(
-            f"daily/daily_basic instrument coverage mismatch on {trade_date}"
-        )
+        raise DataValidationError(f"daily/daily_basic instrument coverage mismatch on {trade_date}")
     return bars, factors, basics
 
 
@@ -156,9 +154,7 @@ def run_incremental_update(
         context = sync_lifecycle_context(
             provider, storage, min(completed_dates), max(completed_dates)
         )
-        context_status["datasets"] = {
-            name: asdict(result) for name, result in context.items()
-        }
+        context_status["datasets"] = {name: asdict(result) for name, result in context.items()}
 
     return IncrementalUpdateResult(
         requested_through=through,

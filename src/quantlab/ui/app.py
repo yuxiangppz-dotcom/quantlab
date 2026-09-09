@@ -10,6 +10,7 @@ from decimal import Decimal
 import pandas as pd
 import streamlit as st
 
+from quantlab.daily.configuration import create_daily_user_config
 from quantlab.daily.experiments import load_baseline_view, load_latest_factor_view
 from quantlab.daily.service import (
     generate_daily_snapshot,
@@ -84,6 +85,38 @@ if page == "数据状态与日报":
             created = generate_daily_snapshot(date.fromisoformat(status["requested_as_of"]))
         st.success("已复用相同输入的缓存" if created.reused else "日报已生成")
         st.rerun()
+    with st.expander("新建版本化日频配置"):
+        strategy = st.selectbox(
+            "策略",
+            ("baseline_reversal", "transparent_combo_candidate"),
+            format_func=lambda value: {
+                "baseline_reversal": "研究示例 baseline（已观察）",
+                "transparent_combo_candidate": "透明多因子 candidate（未晋级）",
+            }[value],
+        )
+        target_count = st.number_input("目标股票数", min_value=1, max_value=100, value=20)
+        cap_pct = st.number_input(
+            "单票目标上限（%）", min_value=0.1, max_value=20.0, value=5.0, step=0.1
+        )
+        allowed_boards = st.multiselect(
+            "允许板块", ("主板", "创业板", "科创板"), default=("主板", "创业板", "科创板")
+        )
+        st.caption("每次保存生成不可变配置版本；不覆盖 frozen baseline，也不冒充历史可比结果。")
+        if st.button("保存新配置并生成日报"):
+            try:
+                config_path = create_daily_user_config(
+                    strategy=strategy,
+                    target_count=int(target_count),
+                    max_weight_per_name=float(cap_pct) / 100,
+                    allowed_boards=list(allowed_boards),
+                )
+                created = generate_daily_snapshot(
+                    date.fromisoformat(status["requested_as_of"]), config_path=config_path
+                )
+                st.success(f"配置 {created.report['model']['config_id']} 已生成")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"配置或日报生成失败：{exc}")
     snapshot, _, target = _latest()
     if snapshot is None:
         st.info("尚无日报缓存。点击上方按钮后生成；页面刷新本身不会同步或重算。")
@@ -209,8 +242,11 @@ else:
                     st.rerun()
             except Exception as exc:
                 st.error(f"CSV 无法导入：{exc}")
-        if st.button("创建/重置 20 万元演示账户"):
-            path = create_demo_account()
+        demo_cash = st.number_input(
+            "演示账户初始现金（CNY）", min_value=0.0, value=200000.0, step=10000.0
+        )
+        if st.button("创建/重置演示账户"):
+            path = create_demo_account(cash_cny=f"{demo_cash:.2f}")
             st.success(f"演示账户已写入 {path}")
             st.rerun()
 
