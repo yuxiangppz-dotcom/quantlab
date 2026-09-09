@@ -8,5 +8,8 @@ def test_version() -> None:
 
 def test_product_cli_exposes_real_commands() -> None:
     parser = _parser()
-    for command in ("doctor", "update", "daily", "research", "ui"):
-        assert parser.parse_args([command]).command == command
+    for command in ("doctor", "update", "daily", "research", "portfolio", "ui"):
+        arguments = [command]
+        if command == "portfolio":
+            arguments.append("demo")
+        assert parser.parse_args(arguments).command == command

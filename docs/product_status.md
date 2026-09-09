@@ -9,7 +9,7 @@ It is evidence notes, not a substitute for tests or an investment claim.
 |---|---|---|---|
 | M1 Daily workflow + local UI | Implemented and locally verified | `quantlab doctor`, controlled Provider update, idempotent `quantlab daily`, four-page Streamlit UI, CSV/HTML cache, 926-test regression | Continue to bounded M2 research capability |
 | M2 Multi-factor + optional Qlib/ML | Bounded factor batch implemented; Qlib/LightGBM locally blocked | 10-candidate registry, transparent combination, 81 monthly signal dates / 384,319 rows; optional Qlib adapter; fixed LightGBM config | Do not promote before cost/Control evaluation; install missing optional runtimes only with explicit system authority |
-| M3 Account input + reference rebalance | Not implemented | Execution contracts exist; UI keeps research targets separate | Add local account snapshot and plan |
+| M3 Account input + reference rebalance | Implemented and locally verified | Strict account CSV import, 200k demo, raw-close reference plan, BUY/SELL/HOLD/NO_TRADE UI + CSV export | Add manual-fill journal and portfolio tracking |
 | M4 Manual fills + tracking | Not implemented | Transactional in-memory execution ledger exists | Add durable user-import adapter without parallel truth |
 | M5 v1 acceptance | Not run | — | End-to-end acceptance after M1–M4 |
 
@@ -58,3 +58,23 @@ Git-ignored. They are local cache/output, not Canonical truth.
 - LightGBM 4.7.0 is locked in the `research` extra, but its Linux wheel cannot
   load because the host lacks `libgomp.so.1`. The run records the OSError and
   produces no fake predictions or substitute model.
+
+## M3 exercised facts
+
+- Account snapshots accept a complete, timezone-aware CSV and store CNY as
+  integer fen. Duplicate instruments, unsafe account IDs, sub-fen currency,
+  `sellable_quantity > quantity`, and partial invalid imports fail before the
+  existing snapshot is replaced.
+- The local `demo_200k` account is explicitly marked `demo_simulation`; it is
+  never shown as the user's assets. Re-import and plan generation are
+  fingerprinted and idempotent.
+- The plan values the complete account using the daily report's raw signal-date
+  close. A held instrument without that close blocks the complete valuation.
+  Buys use current cash only; anticipated sell proceeds never fund another leg.
+- The plan distinguishes BUY, SELL, HOLD and NO_TRADE. It respects imported
+  sellable quantity, treats ST/suspension context conservatively, and identifies
+  target budgets below minimum quantity as NO_TRADE rather than falsely saying
+  the position is already at target.
+- Every plan remains `reference_only_pending_review`: the signal-date close is
+  not an order limit, next-session status is unknown, and the displayed fee is
+  only the user-reported commission estimate—not a verified all-in charge.

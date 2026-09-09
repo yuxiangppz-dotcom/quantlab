@@ -2,9 +2,8 @@
 
 ## Product
 
-- QuantLab Daily v1 is under staged implementation. M1 supplies local data
-  status, ranking, research targets, baseline comparison, and export. Account
-  planning and manual tracking arrive in M3/M4.
+- QuantLab Daily v1 is under staged implementation. Daily research and account
+  reference planning are available; durable manual-fill tracking arrives in M4.
 - A cached report is viewable offline, but its exact `effective_as_of` remains
   prominent. Offline availability is not evidence of fresh market data.
 - The local UI binds only to `127.0.0.1`; it has no authentication and must not
@@ -36,8 +35,12 @@
 - Absence of an ST/suspension context row is not proof that a stock is tradable.
 - Daily close data is not next-session quote, queue, auction, or fill evidence.
 - Exact account-specific all-in commission and effective-dated statutory fee
-  composition are not yet verified. This blocks execution confirmation, but
-  not research ranking or a clearly labelled reference plan.
+  composition are not yet verified. The reference plan estimates only the
+  user-reported commission (0.86/10000 up to CNY 500k, 0.80/10000 above it,
+  CNY 5 minimum). This blocks execution confirmation, not research ranking or
+  the clearly labelled reference plan.
+- 2026 quantity-grid rules are engineering assumptions in the reference plan;
+  all legs remain pending next-session rule and market-status review.
 - Historical, paper, and live execution readiness remain false. There is no
   broker gateway and QuantLab does not submit orders.
 - Corporate-action share/cash postings are not yet supported in a real account

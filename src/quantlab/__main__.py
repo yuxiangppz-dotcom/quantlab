@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 from datetime import date, datetime
+from pathlib import Path
 
 from quantlab.daily.service import (
     PROJECT_ROOT,
@@ -120,6 +121,34 @@ def _ui(port: int) -> int:
         return 130
 
 
+def _portfolio(action: str, account_id: str, source: str | None) -> int:
+    from quantlab.personal import (
+        build_reference_plan,
+        create_demo_account,
+        import_account_csv,
+    )
+
+    if action == "demo":
+        path = create_demo_account(account_id)
+        print(f"created demo account snapshot: {path}")
+    elif action == "import":
+        if source is None:  # pragma: no cover - argparse enforces this
+            raise ValueError("--file is required")
+        path = import_account_csv(Path(source))
+        print(f"imported account snapshot: {path}")
+    elif action == "plan":
+        json_path, csv_path, payload = build_reference_plan(account_id)
+        print("generated reference-only plan")
+        print(f"  signal date: {payload['signal_date']}")
+        print(f"  intended next session: {payload['intended_next_session']}")
+        print(f"  status: {payload['status']}")
+        print(f"  plan: {json_path}")
+        print(f"  csv: {csv_path}")
+    else:  # pragma: no cover - argparse enforces this
+        raise AssertionError(action)
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="quantlab", description="Local A-share daily research and decision tool."
@@ -138,6 +167,16 @@ def _parser() -> argparse.ArgumentParser:
     research_choice = research.add_mutually_exclusive_group()
     research_choice.add_argument("--alpha", choices=("momentum_20d",))
     research_choice.add_argument("--config", help="Versioned Daily v1 research config.")
+    portfolio = sub.add_parser("portfolio", help="Import an account or build a reference plan.")
+    portfolio_sub = portfolio.add_subparsers(dest="portfolio_action", required=True)
+    portfolio_demo = portfolio_sub.add_parser("demo", help="Create/reset the 200k demo account.")
+    portfolio_demo.add_argument("--account-id", default="demo_200k")
+    portfolio_import = portfolio_sub.add_parser(
+        "import", help="Validate and import an account CSV."
+    )
+    portfolio_import.add_argument("--file", required=True)
+    portfolio_plan = portfolio_sub.add_parser("plan", help="Build a next-session reference plan.")
+    portfolio_plan.add_argument("--account-id", required=True)
     ui = sub.add_parser("ui", help="Start the local-only Streamlit UI.")
     ui.add_argument("--port", type=int, default=8501)
     return parser
@@ -153,6 +192,12 @@ def main() -> None:
         code = _daily(args.as_of)
     elif args.command == "research":
         code = _research(args.alpha, args.config)
+    elif args.command == "portfolio":
+        code = _portfolio(
+            args.portfolio_action,
+            getattr(args, "account_id", ""),
+            getattr(args, "file", None),
+        )
     elif args.command == "ui":
         code = _ui(args.port)
     else:  # pragma: no cover - argparse enforces this

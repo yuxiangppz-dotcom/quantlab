@@ -199,6 +199,8 @@ The product entry point now exposes real commands rather than a placeholder:
 uv run quantlab doctor
 uv run quantlab update
 uv run quantlab daily --as-of 2026-09-10
+uv run quantlab portfolio demo
+uv run quantlab portfolio plan --account-id demo_200k
 uv run quantlab ui
 ```
 
@@ -209,6 +211,19 @@ lookback, and writes an idempotent local cache under `data/products/daily/`.
 If the requested date is newer than local calendar/data coverage, both CLI and
 UI show the older `effective_as_of` as stale instead of calling it today's
 result.
+
+Personal accounts can be imported with:
+
+```bash
+uv run quantlab portfolio import --file /path/to/complete_account_snapshot.csv
+```
+
+The CSV requires one row per position and repeats the account-level fields on
+every row: `account_id`, `account_mode`, timezone-aware `as_of`, `cash_cny`,
+`instrument_id`, `quantity`, `sellable_quantity`, `reference_cost_cny`, and
+`open_orders_declaration`. Generated plans are reference-only. They use the
+signal day's raw close, current cash, imported sellable quantity, and a visibly
+incomplete user-reported commission estimate; they are not executable orders.
 
 The UI listens on `127.0.0.1:8501` and has four pages: data/report, rankings,
 formal baseline comparison, and account/reference-plan status. From Windows,
