@@ -41,6 +41,16 @@ DELIVERY_ATTEMPT_STATES = {
 }
 RETRY_BACKOFF_BASE_SECONDS = 60
 RETRY_BACKOFF_MAX_SECONDS = 3_600
+REVIEW_CONTROL_PLANE_PATHS = {
+    "docs/agent_loop.md",
+    "docs/agent_loop_zcode_prompt.md",
+    "scripts/agent_loop.py",
+    "scripts/agent_loop_notify.py",
+}
+REVIEW_CONTROL_PLANE_PREFIXES = (
+    "src/quantlab/agent_loop/",
+    "tests/agent_loop/",
+)
 
 
 class AgentLoopError(RuntimeError):
@@ -139,6 +149,45 @@ def git_snapshot(repo_root: Path) -> GitSnapshot:
         upstream_head=upstream_head,
         clean=not status.strip(),
     )
+
+
+def _review_descendant_control_paths(
+    repo_root: Path, *, report_head: str, current_head: str
+) -> list[str]:
+    """Return audited control-plane drift or reject any unsafe review HEAD drift."""
+
+    if report_head == current_head:
+        return []
+    ancestor = _git(
+        repo_root,
+        "merge-base",
+        "--is-ancestor",
+        report_head,
+        current_head,
+        check=False,
+    )
+    if ancestor.returncode != 0:
+        raise AgentLoopError(
+            f"reviewed HEAD drifted: report={report_head}, current={current_head}; "
+            "the report HEAD is not an ancestor"
+        )
+    raw_paths = _git(
+        repo_root, "diff", "--name-only", "-z", f"{report_head}..{current_head}"
+    ).stdout
+    paths = [path for path in raw_paths.split("\0") if path]
+    unsafe = [
+        path
+        for path in paths
+        if path not in REVIEW_CONTROL_PLANE_PATHS
+        and not path.startswith(REVIEW_CONTROL_PLANE_PREFIXES)
+    ]
+    if unsafe:
+        raise AgentLoopError(
+            f"reviewed HEAD drifted: report={report_head}, current={current_head}; "
+            "descendant changes escape the agent-loop control plane: "
+            + ", ".join(sorted(unsafe))
+        )
+    return sorted(paths)
 
 
 class AgentLoop:
@@ -836,24 +885,27 @@ class AgentLoop:
                 ).fetchone()
                 if report is None:
                     raise AgentLoopError("current report artifact is missing")
-                if snapshot.head != report["git_head"]:
-                    raise AgentLoopError(
-                        "reviewed HEAD drifted: "
-                        f"report={report['git_head']}, current={snapshot.head}"
-                    )
+                reviewed_head = str(report["git_head"])
+                control_plane_paths = _review_descendant_control_paths(
+                    self.repo_root,
+                    report_head=reviewed_head,
+                    current_head=snapshot.head,
+                )
                 review_digest = self._insert_artifact(
                     connection,
                     kind="review",
                     generation=generation,
                     title=title,
                     content=review_content,
-                    git_head=snapshot.head,
+                    git_head=reviewed_head,
                 )
                 now = _utc_now()
                 payload: dict[str, Any] = {
                     "decision": decision,
                     "review_sha256": review_digest,
-                    "reviewed_head": snapshot.head,
+                    "reviewed_head": reviewed_head,
+                    "continuation_head": snapshot.head,
+                    "control_plane_paths_after_report": control_plane_paths,
                 }
                 if needs_task:
                     next_generation = generation + 1

@@ -96,6 +96,63 @@ def test_full_advance_cycle_is_head_bound_and_append_only(
     assert loop.doctor()["healthy"] is True
 
 
+def test_review_accepts_clean_pushed_control_plane_descendant(
+    repository: Path, tmp_path: Path
+) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    token, _ = _publish_and_claim(loop, tmp_path)
+    report_head = _commit_and_push(repository)
+    report_file = _write(tmp_path / "report.md", "# Report\n\nReady.\n")
+    loop.submit_report(report_file, claim_token=token, title="Report")
+
+    control_file = repository / "src/quantlab/agent_loop/maintenance.py"
+    _write(control_file, "# control-plane maintenance\n")
+    _git(repository, "add", str(control_file.relative_to(repository)))
+    _git(repository, "commit", "-m", "agent-loop maintenance")
+    _git(repository, "push")
+    continuation_head = _git(repository, "rev-parse", "HEAD")
+
+    review = _write(tmp_path / "review.md", "# Review\n\nAccepted exact range.\n")
+    next_task = _write(tmp_path / "next.md", "# Next\n\nContinue.\n")
+    result = loop.submit_review(
+        review,
+        decision="advance",
+        title="Review",
+        next_task_file=next_task,
+        next_task_title="Next task",
+    )
+
+    assert result["expected_head"] == continuation_head
+    assert result["artifacts"]["task"]["git_head"] == continuation_head
+    with sqlite3.connect(loop.database) as connection:
+        stored_review_head = connection.execute(
+            "SELECT git_head FROM artifacts WHERE kind = 'review' AND generation = 1"
+        ).fetchone()[0]
+    assert stored_review_head == report_head
+    assert loop.doctor()["healthy"] is True
+
+
+def test_review_rejects_descendant_outside_control_plane(
+    repository: Path, tmp_path: Path
+) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    token, _ = _publish_and_claim(loop, tmp_path)
+    _commit_and_push(repository)
+    report_file = _write(tmp_path / "report.md", "# Report\n\nReady.\n")
+    loop.submit_report(report_file, claim_token=token, title="Report")
+
+    (repository / "README.md").write_text("unreviewed product change\n", encoding="utf-8")
+    _git(repository, "add", "README.md")
+    _git(repository, "commit", "-m", "unreviewed product change")
+    _git(repository, "push")
+    review = _write(tmp_path / "review.md", "# Review\n\nAccepted.\n")
+
+    with pytest.raises(AgentLoopError, match="escape the agent-loop control plane"):
+        loop.submit_review(review, decision="complete", title="Review")
+
+
 def test_two_executors_cannot_claim_the_same_task(repository: Path, tmp_path: Path) -> None:
     loop = AgentLoop(repository)
     loop.initialize()

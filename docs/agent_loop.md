@@ -121,6 +121,13 @@ uv run python scripts/agent_loop.py submit-review \
 ```
 
 `rework` also requires a next-task file. `blocked` and `complete` forbid one.
+Normally review requires `HEAD == report.git_head`. A narrow exception permits
+a clean, pushed descendant when every path changed after the report is confined
+to the agent-loop control plane (`src/quantlab/agent_loop/`,
+`tests/agent_loop/`, its two scripts, and its two documentation files). The
+review artifact remains bound to the report HEAD and the next task is bound to
+the audited descendant HEAD. Any intervening research, backtest, data,
+portfolio, or execution change still fails closed.
 An executing lease is never silently stolen; after expiry the reviewer may run
 `expire-claim --reason ...`, which moves the loop to `BLOCKED`.
 
