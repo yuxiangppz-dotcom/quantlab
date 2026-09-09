@@ -8,6 +8,7 @@ and only validated on the happy path, so a mid-batch failure (or an
 invariant failure after mutation) left the ledger inconsistent.
 """
 
+from dataclasses import replace
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -24,6 +25,7 @@ from quantlab.execution.ledger import (
     ExecutionLedger,
     FillRecorded,
     LedgerAccountingError,
+    OrderCanceled,
     OrderIntended,
     OrderSubmitted,
 )
@@ -239,8 +241,9 @@ def _quote() -> "object":
         account_id="txn-account",
         trade_date=FRI,
         cap_fen=FEE_CAP,
-        evidence_id="txn-fee-quote",
-        source_fingerprint="6" * 64,
+        # the quote's evidence IS the synthetic schedule it derives from
+        evidence_id="synthetic-txn-fee",
+        source_fingerprint="b" * 64,
         synthetic=True,
     )
 
@@ -434,3 +437,143 @@ def test_cancel_after_batch_failure_releases_nothing_extra() -> None:
     assert ledger.reservations == ()
     assert ledger.reserved_cash_fen() == 0
     assert _state(ledger) == before  # zero residue versus the pre-batch state
+
+
+# ---------------------------------------- event-index commit boundary ----
+# The two index writes that commit an event (ordered list append and
+# event-id map insert) must sit INSIDE the same snapshot/restore boundary
+# as apply and invariant validation: a BaseException at either write
+# leaves no applied mutation and no half-indexed event behind.
+
+
+class _PoisonEventList(list):
+    """Ordered event log whose append raises (first index write)."""
+
+    def __init__(self, items, error: BaseException) -> None:
+        super().__init__(items)
+        self._error = error
+
+    def append(self, _item) -> None:
+        raise self._error
+
+
+class _PoisonEventIndex(dict):
+    """Event-id index whose insert raises (second index write)."""
+
+    def __init__(self, items, error: BaseException) -> None:
+        super().__init__(items)
+        self._error = error
+
+    def __setitem__(self, _key, _value) -> None:
+        raise self._error
+
+
+def _direct_mutation_event(mutation: str, ledger: ExecutionLedger):
+    """A representative direct-append event for each mutation family."""
+    if mutation == "submission":
+        # a validated order's bound submission appended DIRECTLY (not via
+        # submit_orders) on the still-unmutated pre-batch state
+        intent = ledger.order("txn-b").intent
+        return _submit_event(
+            intent, minute=41, authority=object(), ledger=ledger
+        )
+    if mutation == "fill":
+        ledger.submit_orders([( _events_for(ledger)[0], _quote())])
+        return FillRecorded(
+            event_id="txn-inject-fill",
+            fill_id="txn-inject-fill",
+            occurred_at=_instant(FRI, 45),
+            order_id="txn-a",
+            trade_date=FRI,
+            quantity=100,
+            price=PRICE,
+            gross_notional_fen=100_000,
+            fee_fen=500,
+            buy_lot_sellable_from=MON,
+        )
+    if mutation == "terminal":
+        ledger.submit_orders([(_events_for(ledger)[0], _quote())])
+        return OrderCanceled(
+            "txn-inject-cancel", _instant(FRI, 45), "txn-a", "injected"
+        )
+    raise AssertionError(f"unknown mutation {mutation!r}")
+
+
+def _events_for(ledger: ExecutionLedger) -> list:
+    """Bound submission events for the ledger's validated orders."""
+    events = []
+    for index, order_id in enumerate(("txn-a", "txn-b", "txn-c")):
+        intent = ledger.order(order_id).intent
+        events.append(
+            _submit_event(
+                intent, minute=40 + index, authority=object(), ledger=ledger
+            )
+        )
+    return events
+
+
+@pytest.mark.parametrize("mutation", ["submission", "fill", "terminal"])
+def test_event_list_append_injection_restores_exact_state(mutation) -> None:
+    """BaseException at self._events.append(event) must restore everything."""
+    ledger, _ = _prepared_batch_ledger(None)
+    event = _direct_mutation_event(mutation, ledger)
+    before = _state(ledger)
+    ledger._events = _PoisonEventList(  # noqa: SLF001
+        ledger._events, KeyboardInterrupt()
+    )
+    with pytest.raises(KeyboardInterrupt):
+        ledger.append(event)
+    assert _state(ledger) == before
+
+
+@pytest.mark.parametrize("mutation", ["submission", "fill", "terminal"])
+def test_event_index_insert_injection_restores_exact_state(mutation) -> None:
+    """BaseException at the event-id insert (after the ordered append
+    succeeded) must restore everything, including the ordered log."""
+    ledger, _ = _prepared_batch_ledger(None)
+    event = _direct_mutation_event(mutation, ledger)
+    before = _state(ledger)
+    ledger._events_by_id = _PoisonEventIndex(  # noqa: SLF001
+        ledger._events_by_id, KeyboardInterrupt()
+    )
+    with pytest.raises(KeyboardInterrupt):
+        ledger.append(event)
+    assert _state(ledger) == before
+
+
+def test_batch_event_index_injection_rolls_back_and_stays_retryable() -> None:
+    """Nested boundaries: an index-write failure inside a bound batch is
+    restored by BOTH the append boundary and the batch boundary, and the
+    restored containers stay healthy for a retry."""
+    ledger, events = _prepared_batch_ledger(None)
+    before = _state(ledger)
+    ledger._events_by_id = _PoisonEventIndex(  # noqa: SLF001
+        ledger._events_by_id, KeyboardInterrupt()
+    )
+    with pytest.raises(KeyboardInterrupt):
+        ledger.submit_orders([(event, _quote()) for event in events])
+    assert _state(ledger) == before
+    # the rollback restored plain containers: the same batch commits
+    ledger.submit_orders([(event, _quote()) for event in events])
+    assert all(order.status.value == "submitted" for order in ledger.orders)
+    assert len(ledger.events) == len(before[4]) + 3
+
+
+def test_event_index_boundary_preserves_duplicate_semantics() -> None:
+    """Moving the index writes inside the boundary must not weaken the
+    exact-duplicate idempotency or different-payload rejection."""
+    ledger, events = _prepared_batch_ledger(None)
+    ledger.submit_orders([(events[0], _quote())])
+    committed = ledger.events[-1]
+    # exact duplicate: idempotent no-op
+    assert ledger.append(committed) is False
+    # same event_id with a different payload: rejected, nothing changes
+    before = _state(ledger)
+    with pytest.raises(Exception, match="reused with different payload"):
+        ledger.append(
+            replace(
+                committed,
+                worst_case_fee_fen=committed.worst_case_fee_fen + 1,
+            )
+        )
+    assert _state(ledger) == before

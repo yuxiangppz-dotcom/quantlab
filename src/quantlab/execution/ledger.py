@@ -648,11 +648,15 @@ class ExecutionLedger:
             else:  # pragma: no cover - closed union and defensive runtime guard
                 raise TypeError(f"unsupported ledger event: {type(event).__name__}")
             self._check_invariants()
+            # both event-index commits sit inside the same snapshot/restore
+            # boundary as apply and invariant validation: a BaseException
+            # at either write restores the ordered log AND the id index
+            # together with every applied mutation
+            self._events.append(event)
+            self._events_by_id[event.event_id] = event
         except BaseException:
             self._restore(snapshot)
             raise
-        self._events.append(event)
-        self._events_by_id[event.event_id] = event
         return True
 
     def _check_invariants(self) -> None:
@@ -1026,6 +1030,45 @@ class ExecutionLedger:
                 raise LedgerTransitionError(
                     "submission fee quote fingerprint differs from the "
                     "validated intent"
+                )
+            # -- fee quote to assessment-authority binding: the typed quote
+            # must derive from the EXACT fee schedule the stored
+            # assessment authorized, and the intent and request must both
+            # carry the embedded quote's canonical fingerprint. None ==
+            # None is not fee lineage, and no fee is inferred or defaulted
+            # from incomplete evidence.
+            if (
+                quote.evidence_id != authority.fee_schedule_evidence_id
+                or quote.source_fingerprint
+                != authority.fee_schedule_source_fingerprint
+            ):
+                raise LedgerAccountingError(
+                    "submission fee quote does not derive from the fee "
+                    "schedule authorized by the stored assessment: quote "
+                    f"evidence {quote.evidence_id!r}/"
+                    f"{quote.source_fingerprint!r} vs authority "
+                    f"{authority.fee_schedule_evidence_id!r}/"
+                    f"{authority.fee_schedule_source_fingerprint!r}"
+                )
+            if (
+                state.intent.fee_quote_fingerprint is None
+                or state.intent.fee_quote_fingerprint != quote_fingerprint
+            ):
+                raise LedgerAccountingError(
+                    "submission intent lacks the typed fee quote lineage "
+                    "fingerprint or it differs from the embedded quote's "
+                    "canonical fingerprint; a missing fingerprint is not "
+                    "fee lineage"
+                )
+            if (
+                request.fee_quote_fingerprint is None
+                or request.fee_quote_fingerprint != quote_fingerprint
+            ):
+                raise LedgerAccountingError(
+                    "submission request lacks the typed fee quote lineage "
+                    "fingerprint or it differs from the embedded quote's "
+                    "canonical fingerprint; a missing fingerprint is not "
+                    "fee lineage"
                 )
         if (
             request.availability_fingerprint is not None

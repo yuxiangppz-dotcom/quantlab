@@ -142,8 +142,9 @@ def _fee_quote():
         account_id="state-account",
         trade_date=FRI,
         cap_fen=FEE_CAP,
-        evidence_id="state-fee-quote",
-        source_fingerprint="f" * 64,
+        # the quote's evidence IS the synthetic schedule it derives from
+        evidence_id="synthetic-state-fee-schedule",
+        source_fingerprint="b" * 64,
         synthetic=True,
     )
 
@@ -337,8 +338,8 @@ def test_planner_funds_buys_from_available_cash_only() -> None:
             account_id="state-account",
             trade_date=MON,
             cap_fen=FEE_CAP,
-            evidence_id="state-fee-quote",
-            source_fingerprint="f" * 64,
+            evidence_id="synthetic-state-fee-schedule",
+            source_fingerprint="b" * 64,
             synthetic=True,
         )
     }

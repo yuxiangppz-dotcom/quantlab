@@ -171,13 +171,15 @@ def _intent(
 def _fee_cap(
     trade_date: date = SMOKE_FRI, instrument_id: str = SMOKE_INSTRUMENT
 ) -> FeeCapQuote:
+    # the quote's evidence IS the synthetic schedule (_smoke_fee) it
+    # claims to derive from: the submission boundary binds them exactly
     return FeeCapQuote(
         instrument_id=instrument_id,
         account_id="smoke-account",
         trade_date=trade_date,
         cap_fen=SMOKE_FEE_CAP_FEN,
-        evidence_id="synthetic-smoke-fee-quote",
-        source_fingerprint="4" * 64,
+        evidence_id="synthetic-fee-schedule-test-only",
+        source_fingerprint="f" * 64,
         synthetic=True,
     )
 
@@ -211,8 +213,8 @@ def _assess_and_submit(
         account_id="smoke-account",
         trade_date=intent.intended_trade_date,
         cap_fen=fee_cap_fen or SMOKE_FEE_CAP_FEN,
-        evidence_id="synthetic-smoke-fee-quote",
-        source_fingerprint="4" * 64,
+        evidence_id="synthetic-fee-schedule-test-only",
+        source_fingerprint="f" * 64,
         synthetic=True,
     )
     request = materialize_bound_request(
@@ -873,8 +875,8 @@ def run_order_path_smoke() -> dict:
         account_id="smoke-account",
         trade_date=SMOKE_FRI,
         cap_fen=RECON_FEE_CAP_FEN,
-        evidence_id="synthetic-smoke-fee-quote",
-        source_fingerprint="4" * 64,
+        evidence_id="synthetic-fee-schedule-test-only",
+        source_fingerprint="f" * 64,
         synthetic=True,
     )
     recon_intent = _intent(
@@ -1037,8 +1039,10 @@ def run_transaction_fault_injection() -> dict:
         account_id="fault-account",
         trade_date=SMOKE_FRI,
         cap_fen=SMOKE_FEE_CAP_FEN,
-        evidence_id="fault-fee-quote",
-        source_fingerprint="7" * 64,
+        # the fault fixtures assess against _smoke_fee(): the quote's
+        # evidence must be that same synthetic schedule
+        evidence_id="synthetic-fee-schedule-test-only",
+        source_fingerprint="f" * 64,
         synthetic=True,
     )
 

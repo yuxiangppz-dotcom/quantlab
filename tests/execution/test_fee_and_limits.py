@@ -68,6 +68,8 @@ def _account(cash_fen: int = 10_000_000, lots: tuple[PositionLot, ...] = ()):
 
 
 def _intent(order_id: str, side: Side, quantity: int) -> OrderIntent:
+    from quantlab.execution.planning import fingerprint_fee_cap_quote
+
     return OrderIntent(
         order_id=order_id,
         instruction_id="fee-instruction",
@@ -78,6 +80,7 @@ def _intent(order_id: str, side: Side, quantity: int) -> OrderIntent:
         limit_price=LIMIT,
         intended_trade_date=FRI,
         created_at=_instant(FRI, 1),
+        fee_quote_fingerprint=fingerprint_fee_cap_quote(_quote()),
         limit_price_basis=PriceBasis.RAW,
         limit_price_source_id="fee-price",
         time_in_force=TimeInForce.DAY,
@@ -93,6 +96,8 @@ def _submit_event(
     fingerprint: str | None = None,
     authority=None,
 ) -> OrderSubmitted:
+    from quantlab.execution.planning import fingerprint_fee_cap_quote
+
     intent = _intent(order_id, side, quantity)
     request = OrderRequest(
         request_id=f"fee-request-{order_id}",
@@ -118,6 +123,11 @@ def _submit_event(
         ),
         availability_fingerprint=(
             authority.availability_fingerprint if authority else None
+        ),
+        fee_quote_fingerprint=(
+            fingerprint
+            if fingerprint is not None
+            else fingerprint_fee_cap_quote(_quote())
         ),
     )
     return OrderSubmitted(
@@ -171,8 +181,8 @@ def _prepare(ledger: ExecutionLedger, order_id: str, side: Side, quantity: int):
         dimension_statuses=tuple(
             (item.dimension.value, item.status.value) for item in dimensions
         ),
-        fee_schedule_evidence_id=None,
-        fee_schedule_source_fingerprint=None,
+        fee_schedule_evidence_id=_quote().evidence_id,
+        fee_schedule_source_fingerprint=_quote().source_fingerprint,
         instruction_id=intent.instruction_id,
     )
     ledger.append(
@@ -194,7 +204,8 @@ def _quote() -> FeeCapQuote:
         account_id="fee-account",
         trade_date=FRI,
         cap_fen=CAP,
-        evidence_id="fee-quote-1",
+        # the quote's evidence IS the synthetic schedule it derives from
+        evidence_id="synthetic-fee-test-schedule",
         source_fingerprint="c" * 64,
         synthetic=True,
     )

@@ -147,8 +147,9 @@ def _fee_quote() -> FeeCapQuote:
         account_id="authority-account",
         trade_date=MON,
         cap_fen=30_000,
-        evidence_id="authority-fee-quote",
-        source_fingerprint="4" * 64,
+        # the quote's evidence IS the synthetic schedule it derives from
+        evidence_id="authority-fee-schedule",
+        source_fingerprint="9" * 64,
         synthetic=True,
     )
 
@@ -641,3 +642,154 @@ def test_blocked_authority_cannot_materialize_a_request() -> None:
             fee_quote=_fee_quote(),
             stored_authority=ledger.order(intent.order_id).authority,
         )
+
+
+# ----------------------- fee quote to assessment-authority binding -------
+# The typed quote a submission reserves cash from must derive from the
+# EXACT fee schedule the stored assessment authorized, and the intent and
+# request must both carry that quote's canonical fingerprint (a missing
+# None fingerprint is not fee lineage).
+
+
+def _submit_with_quote(quote: FeeCapQuote, *, intent: OrderIntent | None = None):
+    """Assess through the real engine with _fee_schedule(), then submit
+    ``quote`` (with fully consistent fingerprints) via direct append."""
+    from quantlab.execution.orchestration import materialize_bound_request
+
+    calendar = _calendar()
+    ledger = ExecutionLedger(_account(), calendar=calendar)
+    engine = _engine(calendar)
+    intent = intent or _intent("authority-binding")
+    ledger.append(
+        OrderIntended("ev-binding-intent", intent.created_at, intent)
+    )
+    result = _assess(ledger, engine, intent, minute=2)
+    ledger.append(result.event)
+    stored = ledger.order(intent.order_id).authority
+    request = materialize_bound_request(
+        intent, stored, fee_quote=quote, stored_authority=stored
+    )
+    event = OrderSubmitted(
+        f"ev-{intent.order_id}-submitted",
+        request.created_at,
+        request,
+        worst_case_fee_fen=quote.cap_fen,
+        availability_fingerprint=request.availability_fingerprint,
+        fee_quote_fingerprint=fingerprint_fee_cap_quote(quote),
+        fee_quote=quote,
+    )
+    ledger.append(event)
+    return ledger, intent
+
+
+def test_submission_quote_must_match_the_assessed_fee_schedule_id() -> None:
+    """A quote whose evidence id names a DIFFERENT schedule than the one
+    the stored assessment authorized cannot reserve cash."""
+    foreign_schedule_quote = replace(
+        _fee_quote(), evidence_id="authority-other-schedule"
+    )
+    intent = _intent("authority-binding")
+    intent = replace(
+        intent,
+        fee_quote_fingerprint=fingerprint_fee_cap_quote(foreign_schedule_quote),
+    )
+    with pytest.raises(Exception, match="fee schedule"):
+        _submit_with_quote(foreign_schedule_quote, intent=intent)
+
+
+def test_submission_quote_must_match_the_assessed_fee_schedule_source() -> None:
+    """A quote whose source fingerprint differs from the authorized
+    schedule's bytes is contradictory fee evidence."""
+    foreign_source_quote = replace(_fee_quote(), source_fingerprint="5" * 64)
+    intent = _intent("authority-binding")
+    intent = replace(
+        intent,
+        fee_quote_fingerprint=fingerprint_fee_cap_quote(foreign_source_quote),
+    )
+    with pytest.raises(Exception, match="fee schedule"):
+        _submit_with_quote(foreign_source_quote, intent=intent)
+
+
+def test_submission_rejects_a_missing_intent_fee_quote_fingerprint() -> None:
+    """None == None on intent and request is NOT fee lineage: the quote
+    must be canonically bound end to end or the submission fails closed."""
+    from quantlab.execution.orchestration import materialize_bound_request
+
+    calendar = _calendar()
+    ledger = ExecutionLedger(_account(), calendar=calendar)
+    engine = _engine(calendar)
+    intent = replace(_intent("authority-nolineage"), fee_quote_fingerprint=None)
+    ledger.append(
+        OrderIntended("ev-nolineage-intent", intent.created_at, intent)
+    )
+    result = _assess(ledger, engine, intent, minute=2)
+    ledger.append(result.event)
+    stored = ledger.order(intent.order_id).authority
+    request = replace(
+        materialize_bound_request(
+            intent, stored, fee_quote=_fee_quote(), stored_authority=stored
+        ),
+        fee_quote_fingerprint=None,
+    )
+    with pytest.raises(Exception, match="fingerprint"):
+        ledger.append(
+            OrderSubmitted(
+                "ev-nolineage-submitted",
+                request.created_at,
+                request,
+                worst_case_fee_fen=_fee_quote().cap_fen,
+                availability_fingerprint=request.availability_fingerprint,
+                fee_quote_fingerprint=fingerprint_fee_cap_quote(_fee_quote()),
+                fee_quote=_fee_quote(),
+            )
+        )
+    assert ledger.order(intent.order_id).status.value == "validated"
+
+
+def test_submission_rejects_a_missing_request_fee_quote_fingerprint() -> None:
+    """A tampered request without its quote fingerprint cannot pass the
+    boundary even when every other lineage field is intact."""
+    from quantlab.execution.orchestration import materialize_bound_request
+
+    calendar = _calendar()
+    ledger = ExecutionLedger(_account(), calendar=calendar)
+    engine = _engine(calendar)
+    intent = _intent("authority-norequest")
+    ledger.append(
+        OrderIntended("ev-norequest-intent", intent.created_at, intent)
+    )
+    result = _assess(ledger, engine, intent, minute=2)
+    ledger.append(result.event)
+    stored = ledger.order(intent.order_id).authority
+    request = replace(
+        materialize_bound_request(
+            intent, stored, fee_quote=_fee_quote(), stored_authority=stored
+        ),
+        fee_quote_fingerprint=None,
+    )
+    with pytest.raises(Exception, match="fingerprint"):
+        ledger.append(
+            OrderSubmitted(
+                "ev-norequest-submitted",
+                request.created_at,
+                request,
+                worst_case_fee_fen=_fee_quote().cap_fen,
+                availability_fingerprint=request.availability_fingerprint,
+                fee_quote_fingerprint=fingerprint_fee_cap_quote(_fee_quote()),
+                fee_quote=_fee_quote(),
+            )
+        )
+
+
+def test_fully_matching_quote_authority_chain_reserves_cash() -> None:
+    """Happy path: quote evidence equals the assessed schedule and the
+    intent, request, and event all carry the quote's canonical
+    fingerprint; the reservation is created exactly."""
+    ledger, intent = _submit_with_quote(_fee_quote())
+    assert ledger.order(intent.order_id).status.value == "submitted"
+    authority = ledger.order(intent.order_id).authority
+    quote = _fee_quote()
+    assert quote.evidence_id == authority.fee_schedule_evidence_id
+    assert quote.source_fingerprint == authority.fee_schedule_source_fingerprint
+    reservation = ledger._reservations[intent.order_id]  # noqa: SLF001
+    assert reservation.reserved_cash_fen == 100 * 1000 + quote.cap_fen

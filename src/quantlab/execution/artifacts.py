@@ -314,7 +314,7 @@ def _v021_rebinding_failures(run_dir: Path) -> tuple[str, ...]:
     try:
         with checks_path.open(newline="") as fh:
             rows = list(csv.DictReader(fh))
-    except (OSError, KeyError) as exc:
+    except (OSError, ValueError, csv.Error, KeyError) as exc:
         return (f"readiness CSV parse failed during rebinding: {exc}",)
 
     try:
@@ -357,6 +357,149 @@ _V022_SUMMARY_CLAIMS = (
     "canonical_data_written",
     "external_provider_called",
 )
+# -- canonical value-binding contract for every framework READY/PARTIAL
+# row's evidence: fixed canonical values, evidence fields bound field by
+# field to the smoke scenario they claim to derive from, and the exact
+# required_subconditions disclosure for composite rows. Any missing,
+# extra (undeclared smoke-derived), retyped, reordered, or contradictory
+# value is a semantic failure; a READY claim requires every bound child
+# to hold its ready value.
+_V022_ROW_CONST_BINDINGS: dict[str, dict[str, Any]] = {
+    "artifact_protocol": {
+        "publication": "staging -> manifest -> preflight -> promotion -> "
+                       "marker",
+    },
+    "target_portfolio_handoff": {"price_role": "planning_only"},
+    "order_and_ledger_contracts": {
+        "money_unit": "integer_fen",
+        "timestamp_policy": "timezone_aware",
+    },
+    "production_submission_path_reachable": {
+        "engine": "AShareConstraintEngine",
+        "derived_status": "validated",
+        "fillability_unknown_allowed": True,
+    },
+    "calendar_derived_t_plus_one": {"calendar_bound": True},
+    "fee_budget_limit_protection": {
+        "fee_cap_semantics": "cumulative_order_lifetime",
+        "typed_fee_quote_required": True,
+    },
+    "t_plus_one_sellability": {
+        "model": "position_lot",
+        "same_day_sale_blocked": True,
+        "calendar_bound_next_session_derivation": True,
+    },
+}
+_V022_ROW_SMOKE_BINDINGS: dict[str, dict[str, str]] = {
+    "account_aware_order_planning": {
+        "plan_id_deterministic": "order_plan_deterministic",
+        "independent_order_price_evidence": "buy_limit_from_order_price_evidence",
+        "omitted_held_name_exits": "omitted_held_name_exits",
+        "non_conforming_delta_blocks": "non_conforming_delta_blocks",
+        "buys_funded_from_available_cash_only": "buys_funded_from_available_cash_only",
+    },
+    "atomic_cash_reservation": {
+        "contention_blocked": "aggregate_cash_contention_blocked",
+        "partial_fill_drawdown": "partial_fill_drawdown",
+        "full_fill_release": "full_fill_release",
+        "cancel_release": "cancel_release",
+        "multi_partial_fee_reconciliation": "multi_partial_fee_reconciliation",
+        "batch_rollback_preserves_state": "batch_rollback_preserves_state",
+    },
+    "atomic_share_reservation": {
+        "contention_blocked": "share_contention_blocked",
+    },
+    "stale_assessment_rejection": {
+        "stale_rejected": "stale_assessment_rejected",
+    },
+    "day_trade_date_binding": {
+        "wrong_trade_date_rejected": "wrong_trade_date_rejected",
+    },
+    "calendar_derived_t_plus_one": {
+        "weekend_exact": "weekend_t_plus_one_exact",
+        "holiday_exact": "holiday_t_plus_one_exact",
+        "incomplete_coverage_fail_closed": "missing_next_session_fail_closed",
+    },
+    "t_plus_one_sellability": {
+        "weekend_exact": "weekend_t_plus_one_exact",
+        "holiday_exact": "holiday_t_plus_one_exact",
+        "incomplete_coverage_fail_closed": "missing_next_session_fail_closed",
+    },
+    "transactional_submission_atomicity": {
+        "batch_rollback_preserves_state": "batch_rollback_preserves_state",
+        "transactional_submission_committed": "transactional_submission_committed",
+    },
+    "fee_budget_limit_protection": {
+        "multi_partial_fee_reconciliation": "multi_partial_fee_reconciliation",
+        "full_fill_release": "full_fill_release",
+    },
+    "plan_to_order_lineage": {
+        "plan_to_order_lineage": "plan_to_order_lineage",
+        "transactional_submission_committed": "transactional_submission_committed",
+        "external_broker_submission": "external_broker_submission",
+    },
+    "submission_authority_and_day_binding": {
+        "authority_lineage_bound": "authority_lineage_bound",
+        "day_submission_date_bound": "day_submission_date_bound",
+        "same_state_batch_committed": "same_state_batch_committed",
+        "stale_batch_rejected": "stale_batch_rejected",
+        "typed_quote_lineage": "typed_quote_lineage",
+    },
+}
+# children whose READY value is explicitly False (denials stay denials)
+_V022_FALSE_WHEN_READY = frozenset({"external_broker_submission"})
+# composite rows that must disclose exactly this ordered subcondition set
+_V022_ROW_REQUIRED_SUBCONDITIONS: dict[str, tuple[str, ...]] = {
+    "account_aware_order_planning": (
+        "order_plan_deterministic",
+        "buy_limit_from_order_price_evidence",
+        "omitted_held_name_exits",
+        "non_conforming_delta_blocks",
+        "buys_funded_from_available_cash_only",
+    ),
+    "atomic_cash_reservation": (
+        "aggregate_cash_contention_blocked",
+        "partial_fill_drawdown",
+        "full_fill_release",
+        "cancel_release",
+        "multi_partial_fee_reconciliation",
+        "batch_rollback_preserves_state",
+    ),
+    "calendar_derived_t_plus_one": (
+        "weekend_t_plus_one_exact",
+        "holiday_t_plus_one_exact",
+        "missing_next_session_fail_closed",
+    ),
+    "submission_authority_and_day_binding": (
+        "authority_lineage_bound",
+        "day_submission_date_bound",
+        "same_state_batch_committed",
+        "stale_batch_rejected",
+        "typed_quote_lineage",
+    ),
+    "t_plus_one_sellability": (
+        "weekend_t_plus_one_exact",
+        "holiday_t_plus_one_exact",
+        "missing_next_session_fail_closed",
+    ),
+}
+# rows whose evidence carries a derived non-boolean binding handled
+# specially: the handoff row binds to the deep handoff validation, the
+# submission row to the smoke gate-matrix keys, and the transaction row
+# embeds the full smoke fault-injection matrix
+_V022_ROW_SPECIAL_KEYS: dict[str, tuple[str, ...]] = {
+    "target_portfolio_handoff": ("smoke_valid",),
+    "production_submission_path_reachable": ("gates_rechecked",),
+    "transactional_submission_atomicity": ("fault_injection_matrix",),
+}
+# status-only children: scenarios a READY claim requires even though the
+# row's evidence does not carry them as fields
+_V022_ROW_STATUS_SCENARIOS: dict[str, tuple[str, ...]] = {
+    "production_submission_path_reachable": (
+        "production_submission_path_reachable",
+        "gating_dimensions_fail_closed",
+    ),
+}
 _V022_FAULT_KEYS = (
     "synthetic",
     "non_trading",
@@ -482,33 +625,126 @@ def _v022_deep_failures(
         if scenarios.get(key) is not True:
             failures.append(f"smoke scenario {key} must be true")
 
-    # -- readiness CSV: every framework row's evidence must bind the exact
-    # sub-conditions it discloses, field by field, to the smoke evidence
+    # -- readiness CSV: every framework READY/PARTIAL row's evidence must
+    # satisfy the canonical value-binding contract, field by field,
+    # against the smoke evidence it claims to derive from
     for row in rows:
         if "framework" not in row["critical_for"].split("|"):
+            continue
+        if row["status"] not in {"ready", "partial"}:
+            continue
+        check_id = row["check_id"]
+        consts = _V022_ROW_CONST_BINDINGS.get(check_id, {})
+        smoke_bindings = _V022_ROW_SMOKE_BINDINGS.get(check_id, {})
+        required = _V022_ROW_REQUIRED_SUBCONDITIONS.get(check_id)
+        special_keys = _V022_ROW_SPECIAL_KEYS.get(check_id, ())
+        if not consts and not smoke_bindings and not special_keys:
+            failures.append(
+                f"readiness row {check_id} claims {row['status']} without "
+                "a canonical evidence binding contract"
+            )
             continue
         try:
             evidence = json.loads(row["evidence_json"])
         except ValueError:
             failures.append(
-                f"readiness evidence_json is invalid for {row['check_id']}"
+                f"readiness evidence_json is invalid for {check_id}"
             )
             continue
-        required = evidence.get("required_subconditions")
-        if not isinstance(required, list) or not required:
-            # non-composite framework rows (protocol/contract checks) are
-            # not smoke-bound; composite rows must disclose their set
+        if not isinstance(evidence, dict):
+            failures.append(
+                f"readiness evidence_json must be an object for {check_id}"
+            )
             continue
-        for sub in required:
-            if sub not in scenarios:
+        expected_keys = set(consts) | set(smoke_bindings) | set(special_keys)
+        if required is not None:
+            expected_keys.add("required_subconditions")
+        missing = sorted(expected_keys - set(evidence))
+        extra = sorted(set(evidence) - expected_keys)
+        if missing:
+            failures.append(
+                f"readiness row {check_id} evidence is missing canonical "
+                f"keys (missing required subconditions or fields): "
+                f"{missing}"
+            )
+        if extra:
+            failures.append(
+                f"readiness row {check_id} carries undeclared (extra or "
+                f"smoke-derived) evidence keys: {extra}"
+            )
+        for key, value in consts.items():
+            if evidence.get(key) != value:
                 failures.append(
-                    f"readiness row {row['check_id']} discloses "
-                    f"{sub} but the smoke evidence lacks it"
+                    f"readiness row {check_id} evidence field {key} "
+                    "contradicts the canonical value (extra, missing, or "
+                    "retyped values are rejected)"
                 )
-            elif scenarios.get(sub) is not True and row["status"] == "ready":
+        for key, scenario_key in smoke_bindings.items():
+            if scenario_key not in scenarios:
                 failures.append(
-                    f"readiness row {row['check_id']} claims ready while "
-                    f"its disclosed subcondition {sub} is false"
+                    f"readiness row {check_id} discloses {key} but the "
+                    f"smoke evidence lacks scenario {scenario_key}"
+                )
+            elif evidence.get(key) != scenarios[scenario_key]:
+                failures.append(
+                    f"readiness row {check_id} evidence field {key} "
+                    f"contradicts smoke scenario {scenario_key}"
+                )
+        if required is not None and (
+            evidence.get("required_subconditions") != list(required)
+        ):
+            failures.append(
+                f"readiness row {check_id} required_subconditions "
+                "disclosure is missing, incomplete, extended, or reordered"
+            )
+        if check_id == "target_portfolio_handoff":
+            handoff_ok = not _v021_handoff_failures(run_dir)
+            if evidence.get("smoke_valid") is not handoff_ok:
+                failures.append(
+                    f"readiness row {check_id} smoke_valid contradicts "
+                    "the deep handoff evidence"
+                )
+            if row["status"] == "ready" and not handoff_ok:
+                failures.append(
+                    f"readiness row {check_id} claims ready while its "
+                    "handoff smoke is invalid"
+                )
+        if check_id == "production_submission_path_reachable":
+            gate_matrix = scenarios.get("submission_gate_matrix")
+            expected_gates = (
+                sorted(gate_matrix) if isinstance(gate_matrix, dict) else None
+            )
+            if evidence.get("gates_rechecked") != expected_gates:
+                failures.append(
+                    f"readiness row {check_id} gates_rechecked does not "
+                    "match the smoke submission gate matrix"
+                )
+        if check_id == "transactional_submission_atomicity":
+            if evidence.get("fault_injection_matrix") != scenarios.get(
+                "fault_injection_matrix"
+            ):
+                failures.append(
+                    f"readiness row {check_id} fault_injection_matrix "
+                    "does not match the smoke fault-injection matrix"
+                )
+        if row["status"] == "ready":
+            children = tuple(smoke_bindings.values()) + (
+                _V022_ROW_STATUS_SCENARIOS.get(check_id, ())
+            )
+            not_ready = sorted(
+                scenario_key
+                for scenario_key in children
+                if scenarios.get(scenario_key)
+                is not (
+                    False
+                    if scenario_key in _V022_FALSE_WHEN_READY
+                    else True
+                )
+            )
+            if not_ready:
+                failures.append(
+                    f"readiness row {check_id} claims ready while its "
+                    f"disclosed children are not all true: {not_ready}"
                 )
 
     return tuple(failures)
@@ -582,6 +818,11 @@ def execution_readiness_semantic_failures(
         if claims.get(claim) is not False:
             failures.append(f"summary claim {claim} must be explicitly false")
 
+    # CSV state is initialized up front: a missing, unreadable, empty, or
+    # malformed readiness_checks.csv must surface as deterministic
+    # semantic failures below, never as an UnboundLocalError or an
+    # incidental UnicodeDecodeError escaping this verifier
+    rows: list[dict[str, str]] = []
     try:
         checks_path = run_dir / "readiness_checks.csv"
         with checks_path.open(newline="") as fh:
@@ -642,7 +883,7 @@ def execution_readiness_semantic_failures(
         }
         if gates != derived_gates:
             failures.append("summary readiness gates do not match check evidence")
-    except (OSError, KeyError) as exc:
+    except (OSError, ValueError, csv.Error, KeyError) as exc:
         failures.append(f"readiness CSV semantic parse failed: {exc}")
 
     handoff = payloads.get("handoff_smoke.json", {})

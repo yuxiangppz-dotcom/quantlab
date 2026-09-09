@@ -42,6 +42,35 @@ verifying under their own schemas:
   claims, fault-injection, and fee-reconciliation files; both aggregate
   booleans recomputed from their children; every composite readiness row
   field-bound to its disclosed smoke sub-conditions.
+- **Correctness closure (post-v0.2.2 review).** Three boundaries were
+  tightened without changing financial scope. (1) Both event-index
+  commits — the ordered event log append and the event-id map insert —
+  sit inside the same snapshot/restore boundary as apply and invariant
+  validation, so an injected `BaseException` at either write restores
+  cash, lots, order states, reservations, both event indexes, fill ids,
+  and request ids exactly; direct appends and bound batches share the
+  guarantee without nested-state regressions. (2) At the production
+  submission boundary the typed fee quote's `evidence_id` and
+  `source_fingerprint` must equal the stored assessment authority's
+  `fee_schedule_evidence_id` and `fee_schedule_source_fingerprint`, and
+  the intent, request, and submission event must all carry the embedded
+  quote's canonical fingerprint — `None == None` is not fee lineage, no
+  fee is defaulted or inferred, and synthetic fixtures quote the exact
+  synthetic schedule they derive from. (3) The readiness reader is
+  fail-closed on its own inputs: a missing, unreadable, empty, or
+  malformed `readiness_checks.csv` yields deterministic semantic
+  failures (never an `UnboundLocalError` or `UnicodeDecodeError`), and
+  every framework READY/PARTIAL row's evidence must satisfy a canonical
+  value-binding contract — exact declared key set (no undeclared
+  smoke-derived or extra keys, nothing missing), canonical constant and
+  smoke-bound values with strict typing (retyped values rejected), the
+  exact ordered `required_subconditions` disclosure for composite rows,
+  deep equality for the embedded fault-injection matrix and gate-matrix
+  key set, the handoff row's `smoke_valid` bound to the deep handoff
+  validation, and READY claims allowed only when every bound child holds
+  its ready value. The completed v0.2.2 artifact
+  (`20260907T230224`, head `dd52590`) satisfies this clarified contract
+  and still verifies formally against it, unmodified.
 
 ## Freeze status of prior artifacts (v0.2.1 review record)
 
