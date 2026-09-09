@@ -610,12 +610,15 @@ def test_app_server_polls_terminal_turn_when_completion_notification_is_lost(
     tmp_path: Path,
 ) -> None:
     executable = tmp_path / "fake-codex"
-    executable.write_text(
+    read_log = tmp_path / "thread-read-modes.jsonl"
+    script = (
         """#!/usr/bin/env python3
 import json
 import sys
+from pathlib import Path
 
 reads = 0
+READ_LOG = Path(@READ_LOG@)
 for line in sys.stdin:
     message = json.loads(line)
     request_id = message.get("id")
@@ -631,18 +634,27 @@ for line in sys.stdin:
     elif method == "turn/start":
         result = {"turn": {"id": "turn-1"}}
     elif method == "thread/read":
-        reads += 1
-        status = "inProgress" if reads == 1 else "interrupted"
-        result = {"thread": {
-            "id": "01a0749b-b253-7133-87d7-683ace12c634",
-            "turns": [{"id": "turn-1", "status": status}],
-        }}
+        include_turns = message["params"]["includeTurns"]
+        with READ_LOG.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(include_turns) + "\\n")
+        if include_turns:
+            result = {"thread": {
+                "id": "01a0749b-b253-7133-87d7-683ace12c634",
+                "status": {"type": "idle"},
+                "turns": [{"id": "turn-1", "status": "interrupted"}],
+            }}
+        else:
+            reads += 1
+            result = {"thread": {
+                "id": "01a0749b-b253-7133-87d7-683ace12c634",
+                "status": {"type": "active" if reads == 1 else "idle"},
+            }}
     elif method == "thread/unsubscribe":
         result = {"status": "unsubscribed"}
     print(json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result}), flush=True)
-""",
-        encoding="utf-8",
-    )
+"""
+    ).replace("@READ_LOG@", repr(str(read_log)))
+    executable.write_text(script, encoding="utf-8")
     os.chmod(executable, 0o755)
     config = CodexBridgeConfig(
         thread_id="01a0749b-b253-7133-87d7-683ace12c634",
@@ -669,6 +681,70 @@ for line in sys.stdin:
         )
 
     assert heartbeats == ["turn-1"]
+    assert [
+        json.loads(line) for line in read_log.read_text(encoding="utf-8").splitlines()
+    ] == [False, False, True]
+
+
+@pytest.mark.parametrize("thread_status", ["active", "systemError", "notLoaded", "future"])
+def test_delivery_requires_exact_idle_thread_state(
+    tmp_path: Path, thread_status: str
+) -> None:
+    executable = tmp_path / f"fake-codex-{thread_status}"
+    executable.write_text(
+        f"""#!/usr/bin/env python3
+import json
+import sys
+
+for line in sys.stdin:
+    message = json.loads(line)
+    request_id = message.get("id")
+    if request_id is None:
+        continue
+    method = message.get("method")
+    result = {{}}
+    if method == "thread/resume":
+        result = {{"thread": {{
+            "id": "{_DIRECT_THREAD}",
+            "status": {{"type": "{thread_status}"}},
+        }}}}
+    if method == "thread/unsubscribe":
+        result = {{"status": "unsubscribed"}}
+    print(json.dumps({{"jsonrpc": "2.0", "id": request_id, "result": result}}), flush=True)
+""",
+        encoding="utf-8",
+    )
+    os.chmod(executable, 0o755)
+    config = CodexBridgeConfig(
+        thread_id=_DIRECT_THREAD,
+        codex_executable=executable,
+        reviewer_kind="dedicated",
+        config_fingerprint="f" * 64,
+        bootstrapped_at=_utc_now(),
+        probe_status="verified",
+        probe_evidence={},
+        turn_timeout_seconds=60,
+        stale_delivery_seconds=120,
+    )
+
+    with pytest.raises(CodexBridgeError, match="must be exactly idle"):
+        deliver_review_event(
+            config,
+            repo_root=tmp_path,
+            generation=3,
+            event_action="report_submitted",
+            event_sha256="a" * 64,
+        )
+
+
+def test_zcode_prompt_requires_bounded_previous_generation_context() -> None:
+    prompt = (
+        Path(__file__).resolve().parents[2] / "docs" / "agent_loop_zcode_prompt.md"
+    ).read_text(encoding="utf-8")
+
+    assert "show review --generation <generation-1>" in prompt
+    assert "show report --generation <generation-1>" in prompt
+    assert "cannot expand or override the current task" in prompt
 
 
 def test_config_rejects_stale_timeout_not_larger_than_turn_timeout(

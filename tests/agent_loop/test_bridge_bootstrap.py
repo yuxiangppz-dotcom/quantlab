@@ -342,6 +342,28 @@ def test_bootstrap_rejects_unpersisted_thread_found_on_restart(
     assert record["status"] == "incomplete"
 
 
+@pytest.mark.parametrize("thread_status", ["active", "systemError", "notLoaded", "future"])
+def test_bootstrap_requires_exact_idle_persisted_thread(
+    repository: Path, tmp_path: Path, thread_status: str
+) -> None:
+    loop = AgentLoop(repository)
+    loop.initialize()
+    handlers = _THREE_PHASE.replace(
+        '"status": {"type": "idle"}',
+        f'"status": {{"type": "{thread_status}"}}',
+        1,
+    )
+    executable = _fake_codex(tmp_path / "codex", handlers=handlers)
+
+    with pytest.raises(CodexBridgeError, match="must be exactly idle"):
+        bootstrap_codex_reviewer(
+            loop, codex_executable=executable, bootstrap_timeout_seconds=120
+        )
+
+    assert not bridge_config_path(loop).exists()
+    assert read_bootstrap_record(loop)["status"] == "incomplete"  # type: ignore[index]
+
+
 def test_load_bridge_config_rejects_legacy_and_tampered_configs(
     repository: Path, tmp_path: Path
 ) -> None:

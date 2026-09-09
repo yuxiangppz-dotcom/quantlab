@@ -377,9 +377,10 @@ def bootstrap_codex_reviewer(
         ) as verifier:
             verifier.read_thread(thread_id=thread_id)
             resumed_status = verifier.resume_thread(thread_id=thread_id)
-            if resumed_status == "active":
+            if resumed_status != "idle":
                 raise CodexBridgeError(
-                    "freshly resumed dedicated thread already reports an active writer"
+                    "freshly resumed dedicated thread must be exactly idle; "
+                    f"got {resumed_status!r}"
                 )
             verifier.unsubscribe_thread(thread_id=thread_id)
             persistence["verifier_unsubscribed"] = True
@@ -817,10 +818,10 @@ def deliver_review_event(
         timeout_seconds=config.turn_timeout_seconds,
     ) as session:
         thread_status = session.resume_thread(thread_id=config.thread_id)
-        if thread_status == "active":
+        if thread_status != "idle":
             raise CodexBridgeError(
-                "dedicated reviewer thread is busy with an active turn; "
-                "refusing to steer or mix turns"
+                "dedicated reviewer thread must be exactly idle before turn/start; "
+                f"got {thread_status!r}"
             )
         turn_id = session.start_turn(
             thread_id=config.thread_id,
@@ -1014,7 +1015,15 @@ class _AppServerSession:
                 )
             if predicate(message):
                 return message
+            if "method" in message and "id" not in message:
+                # Delta/progress notifications are not future request results.
+                # Keep only terminal turns, which may arrive while another RPC
+                # response is in flight; discard all other stream noise.
+                if message.get("method") != "turn/completed":
+                    continue
             self._pending.append(message)
+            if len(self._pending) > 128:
+                del self._pending[0 : len(self._pending) - 128]
 
     def request(
         self,
@@ -1091,6 +1100,22 @@ class _AppServerSession:
                     or time.monotonic() >= self._deadline
                 ):
                     raise
+                snapshot = self.read_thread(thread_id=thread_id, include_turns=False)
+                thread_status = snapshot.get("thread", {}).get("status", {}).get(
+                    "type"
+                )
+                if thread_status == "active":
+                    if on_heartbeat is not None:
+                        on_heartbeat()
+                    continue
+                if thread_status != "idle":
+                    raise CodexBridgeError(
+                        "metadata-only thread/read returned a non-idle, "
+                        f"non-active reviewer state: {thread_status!r}"
+                    ) from exc
+                # The thread is terminal/idle. Read accumulated turns once to
+                # bind the exact target turn when its completion notification
+                # was lost; never reload full history during active polling.
                 snapshot = self.read_thread(thread_id=thread_id, include_turns=True)
                 turns = snapshot.get("thread", {}).get("turns", [])
                 matching = [
@@ -1106,9 +1131,10 @@ class _AppServerSession:
                     status = matching[0].get("status")
                     if status in terminal:
                         return str(status)
-                if on_heartbeat is not None:
-                    on_heartbeat()
-                continue
+                raise CodexBridgeError(
+                    "idle reviewer thread does not contain a terminal record "
+                    f"for turn {turn_id}"
+                ) from exc
             status = completed.get("params", {}).get("turn", {}).get("status")
             if not isinstance(status, str):
                 raise CodexBridgeError("turn/completed carried no turn status")
