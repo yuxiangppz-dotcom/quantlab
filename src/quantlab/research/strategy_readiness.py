@@ -12,18 +12,33 @@ import hashlib
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 
 from quantlab.data.models import DataValidationError
 from quantlab.research.evidence_catalog import EvidenceCatalog
 from quantlab.research.forward_shadow_analytics import ShadowDiagnosticSummary
+from quantlab.research.strategy_forward_binding import (
+    StrategyForwardBinding,
+    validate_strategy_forward_binding,
+)
 from quantlab.research.strategy_registry import (
     ELIGIBLE_FOR_USER_REVIEW,
+    FORWARD_EVIDENCE_ACCUMULATING,
+    FORWARD_SHADOW,
     IDEA,
     REJECTED,
     STATUSES,
     USER_APPROVED,
     StrategyRegistryEntry,
+    load_strategy_registry,
 )
+
+_FORWARD_STATES = {
+    FORWARD_SHADOW,
+    FORWARD_EVIDENCE_ACCUMULATING,
+    ELIGIBLE_FOR_USER_REVIEW,
+    USER_APPROVED,
+}
 
 
 @dataclass(frozen=True)
@@ -32,6 +47,8 @@ class StrategyReadinessReport:
     version: str
     role: str
     registry_status: str
+    forward_model_id: str | None
+    strategy_forward_binding_fingerprint: str | None
     evidence_ref_count: int
     catalog_evidence_id_match_count: int
     catalog_path_match_count: int
@@ -84,12 +101,18 @@ def _validate_registry_entry(entry: StrategyRegistryEntry) -> None:
                 "USER_APPROVED readiness requires explicit_user_decision authority"
             )
     elif entry.user_approved or entry.approval_source is not None:
-        raise DataValidationError("non-approved readiness entry cannot carry approval authority")
+        raise DataValidationError(
+            "non-approved readiness entry cannot carry approval authority"
+        )
     if entry.status == REJECTED:
         if not isinstance(entry.rejection_reason, str) or not entry.rejection_reason.strip():
-            raise DataValidationError("REJECTED readiness entry requires rejection_reason")
+            raise DataValidationError(
+                "REJECTED readiness entry requires rejection_reason"
+            )
     elif entry.rejection_reason is not None:
-        raise DataValidationError("non-rejected readiness entry cannot carry rejection_reason")
+        raise DataValidationError(
+            "non-rejected readiness entry cannot carry rejection_reason"
+        )
 
 
 def _shadow_by_key(
@@ -104,6 +127,25 @@ def _shadow_by_key(
                 f"{summary.model_id}/{summary.model_version}"
             )
         result[key] = summary
+    return result
+
+
+def _binding_by_strategy(
+    bindings: Iterable[StrategyForwardBinding],
+) -> dict[tuple[str, str], StrategyForwardBinding]:
+    result: dict[tuple[str, str], StrategyForwardBinding] = {}
+    claimed_models: set[tuple[str, str]] = set()
+    for binding in bindings:
+        if binding.strategy_key in result:
+            raise DataValidationError(
+                "duplicate strategy identity in readiness forward bindings"
+            )
+        if binding.model_key in claimed_models:
+            raise DataValidationError(
+                "duplicate Forward Shadow model ownership in readiness bindings"
+            )
+        result[binding.strategy_key] = binding
+        claimed_models.add(binding.model_key)
     return result
 
 
@@ -124,17 +166,26 @@ def _build_one(
     entry: StrategyRegistryEntry,
     shadow: ShadowDiagnosticSummary | None,
     catalog: EvidenceCatalog | None,
+    *,
+    forward_model_id: str | None,
+    binding_fingerprint: str | None,
+    binding_required: bool,
 ) -> StrategyReadinessReport:
     _validate_registry_entry(entry)
     prediction_count = 0 if shadow is None else shadow.prediction_count
     complete_count = 0 if shadow is None else shadow.complete_evaluation_count
     incomplete_count = 0 if shadow is None else shadow.incomplete_evaluation_count
     pending_count = 0 if shadow is None else shadow.pending_prediction_count
-    catalog_id_count, catalog_path_count, catalog_fingerprint = _catalog_matches(entry, catalog)
+    catalog_id_count, catalog_path_count, catalog_fingerprint = _catalog_matches(
+        entry,
+        catalog,
+    )
 
     blockers: list[str] = []
     if entry.status not in {ELIGIBLE_FOR_USER_REVIEW, USER_APPROVED}:
         blockers.append("REGISTRY_STAGE_NOT_ELIGIBLE_FOR_USER_REVIEW")
+    if binding_required and forward_model_id is None:
+        blockers.append("FORWARD_MODEL_BINDING_NOT_FOUND")
     if shadow is None:
         blockers.append("FORWARD_SHADOW_SUMMARY_NOT_FOUND")
     else:
@@ -147,6 +198,7 @@ def _build_one(
 
     ready_for_user_review = (
         entry.status == ELIGIBLE_FOR_USER_REVIEW
+        and (not binding_required or forward_model_id is not None)
         and shadow is not None
         and prediction_count > 0
         and complete_count > 0
@@ -158,6 +210,8 @@ def _build_one(
         "version": entry.version,
         "role": entry.role,
         "registry_status": entry.status,
+        "forward_model_id": forward_model_id,
+        "strategy_forward_binding_fingerprint": binding_fingerprint,
         "evidence_ref_count": len(entry.evidence_refs),
         "catalog_evidence_id_match_count": catalog_id_count,
         "catalog_path_match_count": catalog_path_count,
@@ -183,15 +237,18 @@ def build_strategy_readiness(
     *,
     shadow_summaries: Iterable[ShadowDiagnosticSummary] = (),
     evidence_catalog: EvidenceCatalog | None = None,
+    forward_bindings: Iterable[StrategyForwardBinding] | None = None,
+    binding_fingerprint: str | None = None,
 ) -> tuple[StrategyReadinessReport, ...]:
     """Build deterministic, claim-neutral readiness reports for registry entries.
 
-    Forward Shadow counts are structural evidence only. In particular,
-    ``ready_for_user_review`` is not a promotion and never changes the registry.
-    ``broker_order_authority`` is always false because strategy governance does
-    not authorize execution or brokerage activity.
+    Passing ``forward_bindings`` disables the legacy identity assumption and
+    resolves diagnostics through explicit strategy → Forward Shadow ownership.
+    Canonical repository workflows should use ``build_registered_strategy_readiness``.
     """
     shadow_map = _shadow_by_key(shadow_summaries)
+    binding_required = forward_bindings is not None
+    binding_map = _binding_by_strategy(forward_bindings or ())
     seen: set[tuple[str, str]] = set()
     reports = []
     for entry in entries:
@@ -200,8 +257,54 @@ def build_strategy_readiness(
                 f"duplicate strategy readiness identity: {entry.strategy_id}/{entry.version}"
             )
         seen.add(entry.key)
-        reports.append(_build_one(entry, shadow_map.get(entry.key), evidence_catalog))
+        binding = binding_map.get(entry.key)
+        if binding is not None and binding.role != entry.role:
+            raise DataValidationError(
+                "strategy readiness binding role differs from registry role"
+            )
+        if binding is not None:
+            forward_model_id = binding.forward_model_id
+            shadow_key = binding.model_key
+        elif binding_required and entry.status in _FORWARD_STATES:
+            forward_model_id = None
+            shadow_key = None
+        else:
+            forward_model_id = entry.strategy_id
+            shadow_key = entry.key
+        shadow = shadow_map.get(shadow_key) if shadow_key is not None else None
+        reports.append(
+            _build_one(
+                entry,
+                shadow,
+                evidence_catalog,
+                forward_model_id=forward_model_id,
+                binding_fingerprint=binding_fingerprint,
+                binding_required=binding_required and entry.status in _FORWARD_STATES,
+            )
+        )
     return tuple(sorted(reports, key=lambda item: (item.strategy_id, item.version)))
+
+
+def build_registered_strategy_readiness(
+    registry_path: Path,
+    forward_config_path: Path,
+    *,
+    shadow_summaries: Iterable[ShadowDiagnosticSummary] = (),
+    evidence_catalog: EvidenceCatalog | None = None,
+) -> tuple[StrategyReadinessReport, ...]:
+    """Build readiness through the validated repository strategy/shadow binding."""
+    binding_audit = validate_strategy_forward_binding(
+        registry_path,
+        forward_config_path,
+    )
+    entries = load_strategy_registry(registry_path)
+    return build_strategy_readiness(
+        entries,
+        shadow_summaries=shadow_summaries,
+        evidence_catalog=evidence_catalog,
+        forward_bindings=binding_audit.bindings,
+        binding_fingerprint=binding_audit.binding_fingerprint,
+    )
 
 
 def readiness_summary(reports: Iterable[StrategyReadinessReport]) -> dict:
@@ -213,9 +316,17 @@ def readiness_summary(reports: Iterable[StrategyReadinessReport]) -> dict:
     core = {
         "schema": "quantlab_strategy_readiness_summary_v1",
         "strategy_count": len(items),
-        "ready_for_user_review_count": sum(item.ready_for_user_review for item in items),
-        "user_approved_count": sum(item.strategy_approval_authority for item in items),
-        "broker_order_authority_count": sum(item.broker_order_authority for item in items),
-        "claim": "structural_evidence_readiness_only_not_performance_or_execution_authority",
+        "ready_for_user_review_count": sum(
+            item.ready_for_user_review for item in items
+        ),
+        "user_approved_count": sum(
+            item.strategy_approval_authority for item in items
+        ),
+        "broker_order_authority_count": sum(
+            item.broker_order_authority for item in items
+        ),
+        "claim": (
+            "structural_evidence_readiness_only_not_performance_or_execution_authority"
+        ),
     }
     return {**core, "summary_fingerprint": _canonical_hash(core)}

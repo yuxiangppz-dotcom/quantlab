@@ -28,8 +28,14 @@ from quantlab.research.forward_shadow_analytics import (
 from quantlab.research.models import ResearchDailyPrice
 from quantlab.research.price import build_prices, filter_point_in_time, prices_to_frame
 from quantlab.research.returns import calculate_forward_returns, calculate_returns
+from quantlab.research.strategy_forward_binding import (
+    StrategyForwardBinding,
+    StrategyForwardBindingAudit,
+    validate_strategy_forward_binding,
+)
 from quantlab.research.strategy_readiness import (
     StrategyReadinessReport,
+    build_registered_strategy_readiness,
     build_strategy_readiness,
     readiness_summary,
 )
@@ -62,12 +68,15 @@ __all__ = [
     "RESEARCHED",
     "ResearchDailyPrice",
     "ShadowDiagnosticSummary",
+    "StrategyForwardBinding",
+    "StrategyForwardBindingAudit",
     "StrategyReadinessReport",
     "StrategyRegistryEntry",
     "USER_APPROVED",
     "alpha158_subset_rows",
     "build_evidence_catalog",
     "build_prices",
+    "build_registered_strategy_readiness",
     "build_research_dataset",
     "build_strategy_readiness",
     "calculate_alpha158_exact_subset",
@@ -87,4 +96,5 @@ __all__ = [
     "summarize_ic",
     "summarize_quantiles",
     "transition_strategy",
+    "validate_strategy_forward_binding",
 ]
