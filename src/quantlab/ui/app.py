@@ -228,7 +228,7 @@ elif page == "股票排名与因子":
             st.subheader("有限因子研究批次")
             st.caption(
                 f"run {research['run_id']} · signal end {research['signal_end']} · "
-                "仅 RankIC 诊断，尚未完成成本与 Control 晋级"
+                "RankIC 诊断；成本与 Control 的回溯审计在下方单独展示，仍未晋级"
             )
             rows = []
             for item in research["registry"]:

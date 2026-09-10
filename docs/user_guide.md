@@ -1,4 +1,4 @@
-# QuantLab Daily v1 User Guide
+# QuantLab Daily v1.1 User Guide
 
 QuantLab Daily is a local research and assisted-decision tool. It does not send
 orders, move cash, or infer fills from daily bars.
@@ -28,9 +28,26 @@ provider, train a model, generate a report, or import a fill.
    only normal Daily command that calls Tushare and writes Canonical data.
 3. Click **生成/刷新日频报告**, or run `uv run quantlab daily`.
 4. Review data date, model status, risks, ranking, factors and research targets.
+   Signal-date provider-reported up/down limits are context only; the next
+   session still requires review.
 5. Optionally create a new immutable configuration in the UI. The baseline and
    transparent-combination candidate are labelled separately; changing count,
    cap or boards creates a new version and does not overwrite the frozen result.
+
+After a completed signal-date report, freeze forward evidence with:
+
+```bash
+uv run quantlab shadow
+```
+
+The same fingerprint is reused exactly. A model/config/code or Daily-content
+change creates a separate immutable prediction. Mature 20-session diagnostics
+are appended outside the prediction directory; this is not a backtest or fill.
+
+Optional Qlib research support is installed with `uv sync --extra qlib`. The
+verified integration sends QuantLab Canonical-derived DataFrames to Qlib's
+`StaticDataLoader`; it does not download Qlib market data or use Qlib's
+portfolio accounting.
 
 ## Account and plan
 

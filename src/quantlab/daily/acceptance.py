@@ -51,15 +51,12 @@ def run_v1_acceptance(
             plan_binding_error = str(exc)
     plan = plan_item[1] if plan_item else None
     plan_account_bound = bool(
-        plan
-        and account
-        and plan.get("account_fingerprint") == account.get("account_fingerprint")
+        plan and account and plan.get("account_fingerprint") == account.get("account_fingerprint")
     )
     plan_daily_bound = bool(
         plan
         and snapshot
-        and plan.get("daily_content_fingerprint")
-        == snapshot.report.get("content_fingerprint")
+        and plan.get("daily_content_fingerprint") == snapshot.report.get("content_fingerprint")
     )
     plan_csv_bound = bool(plan and plan.get("csv_sha256"))
     checks = {
@@ -100,7 +97,7 @@ def run_v1_acceptance(
     checks["ranking_has_user_columns"] = required_columns.issubset(ranking_columns)
     core = {
         "schema": "quantlab_daily_v1_acceptance",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "git_head": _git("rev-parse HEAD"),
         "checks": checks,
         "product_ready": all(checks.values()),

@@ -21,7 +21,7 @@ def test_user_daily_config_is_versioned_and_idempotent(tmp_path: Path) -> None:
     assert second.read_bytes() == before
     config = json.loads(first.read_text())
     assert config["score_definition"] == "transparent_combo_v1"
-    assert config["model_status"] == "candidate_not_promoted_no_cost_control_closure"
+    assert config["model_status"] == "candidate_not_promoted_test_observed_portfolio_audited"
     assert config["allowed_boards"] == ["主板", "科创板"]
     assert config["performance_claim"] is False
 

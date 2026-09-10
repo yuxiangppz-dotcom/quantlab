@@ -191,14 +191,17 @@ uv run pytest
 uv run ruff check .
 ```
 
-## QuantLab Daily local tool
+## QuantLab Daily v1.1 local tool
 
 The product entry point now exposes real commands rather than a placeholder:
 
 ```bash
 uv run quantlab doctor
 uv run quantlab update
+uv run quantlab update --through 2026-09-09 --no-context --enrichment \
+  --financial-period 2024-12-31 --dividend-instrument 000001.SZ
 uv run quantlab daily --as-of 2026-09-10
+uv run quantlab shadow
 uv run quantlab portfolio demo
 uv run quantlab portfolio plan --account-id demo_200k
 uv run quantlab portfolio fills-preview --account-id my_account --file fills.csv
@@ -215,6 +218,13 @@ lookback, and writes an idempotent local cache under `data/products/daily/`.
 If the requested date is newer than local calendar/data coverage, both CLI and
 UI show the older `effective_as_of` as stale instead of calling it today's
 result.
+
+The opt-in `--enrichment` path stores provider-reported signal-date price
+limits plus explicitly scoped, first-observed financial/dividend snapshots.
+Financial versions are prospective-only because the endpoint does not expose a
+revision timestamp; they are not retroactively joined to historical research.
+`shadow` freezes immutable forward-only scores and targets for the baseline and
+transparent candidate, without creating orders or fills.
 
 Personal accounts can be imported with:
 

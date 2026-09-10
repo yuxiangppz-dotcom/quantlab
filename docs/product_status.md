@@ -8,7 +8,7 @@ It is evidence notes, not a substitute for tests or an investment claim.
 | Milestone | Status | Local evidence | Next action |
 |---|---|---|---|
 | M1 Daily workflow + local UI | Implemented and locally verified | `quantlab doctor`, controlled Provider update, idempotent `quantlab daily`, four-page Streamlit UI, CSV/HTML cache, 926-test regression | Continue to bounded M2 research capability |
-| M2 Multi-factor + optional Qlib/ML | Bounded factor batch implemented; Qlib/LightGBM locally blocked | 10-candidate registry, transparent combination, 81 monthly signal dates / 384,319 rows; optional Qlib adapter; fixed LightGBM config | Do not promote before cost/Control evaluation; install missing optional runtimes only with explicit system authority |
+| M2 Multi-factor + optional Qlib/ML | Portfolio audit and Qlib adapter exercised; LightGBM system runtime blocked | 10-candidate batch, daily/weekly cadence audit, six-candidate Portfolio Translation Audit, exact KMID/KLEN subset mapping, real Qlib StaticDataLoader smoke | Keep candidates unpromoted; install `libgomp1` only with user system authority |
 | M3 Account input + reference rebalance | Implemented and locally verified | Strict account CSV import, 200k demo, raw-close reference plan, BUY/SELL/HOLD/NO_TRADE UI + CSV export | Add manual-fill journal and portfolio tracking |
 | M4 Manual fills + tracking | Implemented and locally verified | Preview/commit broker-fill CSV, durable fingerprinted journal, same ExecutionLedger cash/T+1 replay, plan-vs-fill comparison, conservative reference valuation | Run final end-to-end acceptance |
 | M5 v1 acceptance | Implemented with clean-HEAD acceptance gate | `quantlab accept`, local-only UI health, versioned configs and outputs | Hand off local Daily v1; keep strategy promotion user-controlled |
@@ -51,13 +51,49 @@ Git-ignored. They are local cache/output, not Canonical truth.
   `low_amplitude`, `float_ratio`); the transparent combination had validation
   mean RankIC about 0.031 across 24 monthly observations. These are research
   diagnostics, not strategy profitability or promotion evidence.
-- Qlib 0.9.7 is locked as an optional extra and the official
-  `StaticDataLoader(DataFrame)` adapter is implemented, but the large optional
-  dependency download timed out locally. The run records
-  `qlib_available=false`; no fallback is called Qlib.
+- `daily_factor_research_v1/20260910T103631` reran the fixed batch in about 145
+  seconds with about 2.17 GiB peak RSS. Qlib 0.9.7 installed successfully and
+  its real `StaticDataLoader(DataFrame)` accepted 1,000 QuantLab-derived rows.
+  A separate 200-row smoke also passed. No Qlib sample market data or Qlib
+  backtest was used.
+- The explicitly named Alpha158 subset contains only two verified mappings:
+  `KMID == intraday_strength` and `KLEN == -low_amplitude`. It is not presented
+  as the complete Alpha158 feature set.
 - LightGBM 4.7.0 is locked in the `research` extra, but its Linux wheel cannot
   load because the host lacks `libgomp.so.1`. The run records the OSError and
   produces no fake predictions or substitute model.
+
+## Daily v1.1 Alpha & Data upgrade evidence
+
+- The reference plan now consumes constrained cash by target alpha rank and
+  only then by instrument id; it never funds buys from expected sale proceeds.
+  Acceptance binds the current account fingerprint, Daily content fingerprint,
+  and plan CSV hash, and includes a pure manual-tracking fixture smoke.
+- Real capability probes succeeded for `stk_limit`, `fina_indicator_vip`, and
+  `dividend`. Controlled enrichment stored 5,217 SH/SZ A-share limit rows for
+  2026-09-09, 6,078 financial version rows for 2024-12-31, and 97 explicitly
+  scoped dividend rows for `000001.SZ`. An identical rerun reused the paths.
+- Financial version history is not strict historical PIT: 944 instrument-period
+  groups had multiple versions and the endpoint supplies `update_flag` but no
+  revision timestamp. No fundamental alpha was added. Observations may become
+  prospective features only from their first local `available_from`.
+- `portfolio_translation_audit_v1_1/20260910T100701` compared six fixed
+  candidates with the true equal-weight control for 2020–2024. All 1,211 return
+  intervals were covered and symmetry checks passed. `float_ratio` had active
+  CAGR about 2.13%, while transparent combo had about 0.93%; both remain
+  retrospective/test-observed and unpromoted.
+- The Discovery-only daily/weekly cadence audit kept the sign of mean RankIC for
+  all six fixed candidates. It did not use Validation/Test for tuning.
+- Forward Shadow began at signal date 2026-09-09 for the return-20D baseline
+  and transparent combo. Predictions are content-addressed and immutable; no
+  20-session evaluation is mature and no broker execution is implied.
+
+Official semantics were checked against the Tushare documentation for
+[`stk_limit`](https://tushare.pro/document/2?doc_id=183),
+[`fina_indicator`](https://tushare.pro/document/2?doc_id=79), and
+[`dividend`](https://tushare.pro/document/2?doc_id=103). The exact Alpha158
+mapping is tied to Microsoft Qlib's
+[`Alpha158DL` source](https://github.com/microsoft/qlib/blob/main/qlib/contrib/data/loader.py).
 
 ## M3 exercised facts
 

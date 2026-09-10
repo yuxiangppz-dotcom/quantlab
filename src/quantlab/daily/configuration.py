@@ -35,7 +35,7 @@ def create_daily_user_config(
     elif strategy == "transparent_combo_candidate":
         strategy_fields = {
             "strategy_id": "transparent_combo_v1_candidate",
-            "model_status": "candidate_not_promoted_no_cost_control_closure",
+            "model_status": "candidate_not_promoted_test_observed_portfolio_audited",
             "score_definition": "transparent_combo_v1",
             "score_direction": "higher_is_better",
             "test_observed": True,

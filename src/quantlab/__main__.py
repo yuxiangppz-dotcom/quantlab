@@ -33,7 +33,7 @@ def _doctor(as_json: bool) -> int:
     effective = date.fromisoformat(status["effective_as_of"]) if status["effective_as_of"] else None
     payload = {
         "product": "QuantLab Daily",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "project_root": str(PROJECT_ROOT),
         "python": sys.version.split()[0],
         "tushare_token_available": bool(os.environ.get("TUSHARE_TOKEN")),

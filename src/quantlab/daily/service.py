@@ -602,7 +602,7 @@ def generate_daily_snapshot(
             ],
             "factor_selection_note": (
                 "baseline selects frozen return_20d reversal; transparent_combo_v1 is an "
-                "unpromoted candidate without cost/Control closure"
+                "unpromoted, test-observed candidate with retrospective portfolio audit"
             ),
         },
         "target": {
