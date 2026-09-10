@@ -87,14 +87,23 @@ def test_repository_registry_explicitly_binds_baseline_name_mismatch() -> None:
     )
 
     by_strategy = {item.strategy_id: item for item in audit.bindings}
-    assert by_strategy["momentum_20d_reversal_example"].forward_model_id == "return_20d_baseline"
-    assert by_strategy["transparent_combo_v1"].forward_model_id == "transparent_combo_v1"
+    assert (
+        by_strategy["momentum_20d_reversal_example"].forward_model_id
+        == "return_20d_baseline"
+    )
+    assert (
+        by_strategy["transparent_combo_v1"].forward_model_id
+        == "transparent_combo_v1"
+    )
     assert audit.forward_config_id == "forward_shadow_v1"
     assert len(audit.binding_fingerprint) == 64
 
 
 def test_missing_forward_model_id_fails_closed(tmp_path: Path) -> None:
-    registry, forward = _write_pair(tmp_path, strategies=[_strategy(forward_model_id=None)])
+    registry, forward = _write_pair(
+        tmp_path,
+        strategies=[_strategy(forward_model_id=None)],
+    )
 
     with pytest.raises(DataValidationError, match="forward_model_id"):
         validate_strategy_forward_binding(registry, forward)
@@ -151,7 +160,21 @@ def test_score_source_or_direction_drift_fails_closed(
 
 
 def test_forward_config_ref_must_identify_the_exact_file(tmp_path: Path) -> None:
-    registry, forward = _write_pair(tmp_path, forward_ref="config/not-forward.json")
+    registry, forward = _write_pair(
+        tmp_path,
+        forward_ref="config/not-forward.json",
+    )
 
     with pytest.raises(DataValidationError, match="does not match"):
+        validate_strategy_forward_binding(registry, forward)
+
+
+@pytest.mark.parametrize("forward_ref", [".", "../forward.json", "/tmp/forward.json"])
+def test_forward_config_ref_rejects_unsafe_paths(
+    tmp_path: Path,
+    forward_ref: str,
+) -> None:
+    registry, forward = _write_pair(tmp_path, forward_ref=forward_ref)
+
+    with pytest.raises(DataValidationError, match="safe repository-relative path"):
         validate_strategy_forward_binding(registry, forward)
