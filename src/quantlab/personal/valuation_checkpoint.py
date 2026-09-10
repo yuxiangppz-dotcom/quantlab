@@ -21,10 +21,13 @@ from quantlab.daily.integrity import load_validated_latest_snapshot
 from quantlab.daily.service import DEFAULT_PRODUCT_ROOT, PROJECT_ROOT, SHANGHAI
 from quantlab.data.storage import ParquetStorage
 from quantlab.personal.account import DEFAULT_ACCOUNT_ROOT, atomic_json
+from quantlab.personal.cash_flow import CashFlowTimingQuality
 from quantlab.personal.tracking import load_effective_account
 
-_SCHEMA = "quantlab_account_valuation_checkpoint_v1"
+_SCHEMA_V1 = "quantlab_account_valuation_checkpoint_v1"
+_SCHEMA_V2 = "quantlab_account_valuation_checkpoint_v2"
 _ACTIVE_SCHEMA = "quantlab_account_valuation_active_v1"
+_NO_CASH_FLOW_TIMING = "not_applicable_no_external_cash_flows"
 
 
 def _canonical_hash(payload: object) -> str:
@@ -86,6 +89,61 @@ def _checkpoint_core(payload: dict) -> dict:
     }
 
 
+def _parse_aware(value: object, field: str) -> datetime:
+    if not isinstance(value, str):
+        raise ValueError(f"valuation checkpoint {field} must be an ISO timestamp")
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"valuation checkpoint {field} is invalid") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(f"valuation checkpoint {field} must be timezone-aware")
+    return parsed
+
+
+def _validate_timing_metadata(payload: dict, schema: str) -> datetime:
+    account_as_of = _parse_aware(payload.get("account_as_of"), "account_as_of")
+    if schema == _SCHEMA_V1:
+        return account_as_of
+
+    latest_economic = _parse_aware(
+        payload.get("latest_economic_account_fact_at"),
+        "latest_economic_account_fact_at",
+    )
+    latest_reported = _parse_aware(payload.get("latest_reported_at"), "latest_reported_at")
+    if latest_reported < latest_economic:
+        # A report can precede a later independent fill, so only require the
+        # aggregate reported watermark not to precede its own account as-of
+        # when there are no later economic facts. The per-flow invariant is
+        # enforced in ExternalCashFlow. This field is informational provenance.
+        pass
+    if account_as_of != latest_economic:
+        raise ValueError("valuation checkpoint account_as_of must equal latest economic fact")
+
+    quality = payload.get("cash_flow_timing_quality")
+    eligible = payload.get("cash_flow_timing_performance_eligible")
+    status = payload.get("performance_input_status")
+    allowed_quality = {
+        _NO_CASH_FLOW_TIMING,
+        CashFlowTimingQuality.EXACT_EFFECTIVE_TIME.value,
+        CashFlowTimingQuality.LEGACY_REPORTED_AS_EFFECTIVE_UNVERIFIED.value,
+    }
+    if quality not in allowed_quality:
+        raise ValueError("valuation checkpoint cash-flow timing quality is invalid")
+    if not isinstance(eligible, bool):
+        raise ValueError("valuation checkpoint timing eligibility must be boolean")
+    if quality == CashFlowTimingQuality.LEGACY_REPORTED_AS_EFFECTIVE_UNVERIFIED.value:
+        if eligible or status != "blocked_legacy_cash_flow_timing":
+            raise ValueError("legacy cash-flow timing cannot be performance-eligible")
+    elif quality == CashFlowTimingQuality.EXACT_EFFECTIVE_TIME.value:
+        if not eligible or status != "timing_eligible_no_performance_method":
+            raise ValueError("exact cash-flow timing readiness metadata is inconsistent")
+    else:
+        if not eligible or status != _NO_CASH_FLOW_TIMING:
+            raise ValueError("no-cash-flow timing metadata is inconsistent")
+    return latest_economic
+
+
 def validate_valuation_checkpoint(
     path: Path,
     *,
@@ -96,7 +154,10 @@ def validate_valuation_checkpoint(
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("valuation checkpoint is unreadable or invalid JSON") from exc
-    if not isinstance(payload, dict) or payload.get("schema") != _SCHEMA:
+    if not isinstance(payload, dict):
+        raise ValueError("valuation checkpoint must be an object")
+    schema = payload.get("schema")
+    if schema not in {_SCHEMA_V1, _SCHEMA_V2}:
         raise ValueError("unsupported valuation checkpoint schema")
     account_id = payload.get("account_id")
     if not isinstance(account_id, str) or not account_id:
@@ -105,12 +166,10 @@ def validate_valuation_checkpoint(
         raise ValueError("valuation checkpoint account binding mismatch")
     try:
         price_date = date.fromisoformat(payload["price_date"])
-        account_as_of = datetime.fromisoformat(payload["account_as_of"])
     except (KeyError, TypeError, ValueError) as exc:
-        raise ValueError("valuation checkpoint date metadata is invalid") from exc
-    if account_as_of.tzinfo is None or account_as_of.utcoffset() is None:
-        raise ValueError("valuation checkpoint account_as_of must be timezone-aware")
-    if price_date < account_as_of.astimezone(SHANGHAI).date():
+        raise ValueError("valuation checkpoint price_date is invalid") from exc
+    latest_economic = _validate_timing_metadata(payload, schema)
+    if price_date < latest_economic.astimezone(SHANGHAI).date():
         raise ValueError("valuation checkpoint price date predates account state")
 
     for field in ("account_fingerprint", "daily_content_fingerprint"):
@@ -259,6 +318,30 @@ def _assert_inputs_unchanged(
         raise ValueError("raw daily-bar partition drifted during valuation materialization")
 
 
+def _account_timing(account: dict) -> tuple[str, str, bool, str]:
+    latest_economic = account.get("latest_economic_fact_at", account["as_of"])
+    latest_reported = account.get("latest_reported_at", account["as_of"])
+    quality = account.get("cash_flow_timing_quality", _NO_CASH_FLOW_TIMING)
+    eligible = account.get("cash_flow_timing_performance_eligible", True)
+    if not isinstance(eligible, bool):
+        raise ValueError("effective account timing eligibility must be boolean")
+    if quality == CashFlowTimingQuality.LEGACY_REPORTED_AS_EFFECTIVE_UNVERIFIED.value:
+        if eligible:
+            raise ValueError("legacy cash-flow timing cannot be performance-eligible")
+        status = "blocked_legacy_cash_flow_timing"
+    elif quality == CashFlowTimingQuality.EXACT_EFFECTIVE_TIME.value:
+        if not eligible:
+            raise ValueError("exact cash-flow timing unexpectedly marked ineligible")
+        status = "timing_eligible_no_performance_method"
+    elif quality == _NO_CASH_FLOW_TIMING:
+        if not eligible:
+            raise ValueError("no-cash-flow account unexpectedly marked timing-ineligible")
+        status = _NO_CASH_FLOW_TIMING
+    else:
+        raise ValueError("effective account cash-flow timing quality is unknown")
+    return latest_economic, latest_reported, eligible, status
+
+
 def materialize_valuation_checkpoint(
     account_id: str,
     *,
@@ -271,13 +354,15 @@ def materialize_valuation_checkpoint(
     storage = storage or ParquetStorage(PROJECT_ROOT / "data" / "canonical")
     generated_at = (now or datetime.now(SHANGHAI)).astimezone(SHANGHAI)
     account = load_effective_account(account_id, account_root=account_root, storage=storage)
+    latest_economic, latest_reported, timing_eligible, performance_input_status = (
+        _account_timing(account)
+    )
     snapshot = load_validated_latest_snapshot(product_root)
     if snapshot is None:
         raise FileNotFoundError("no validated Daily snapshot available for account valuation")
     price_date = date.fromisoformat(snapshot.report["effective_as_of"])
-    account_as_of = datetime.fromisoformat(account["as_of"])
-    account_local_date = account_as_of.astimezone(SHANGHAI).date()
-    if price_date < account_local_date:
+    economic_at = _parse_aware(latest_economic, "latest_economic_account_fact_at")
+    if price_date < economic_at.astimezone(SHANGHAI).date():
         raise ValueError(
             "Daily price date predates the latest effective account fact; regenerate Daily first"
         )
@@ -315,10 +400,14 @@ def materialize_valuation_checkpoint(
             }
         )
 
+    timing_quality = account.get("cash_flow_timing_quality", _NO_CASH_FLOW_TIMING)
     account_state = {
         "account_id": account_id,
         "account_fingerprint": account["account_fingerprint"],
-        "account_as_of": account["as_of"],
+        "account_as_of": latest_economic,
+        "latest_reported_at": latest_reported,
+        "cash_flow_timing_quality": timing_quality,
+        "cash_flow_timing_performance_eligible": timing_eligible,
         "cash_fen": account["cash_fen"],
         "positions": [
             {
@@ -333,10 +422,15 @@ def materialize_valuation_checkpoint(
     partition_sha = _sha256_file(partition_path) if positions else None
     daily_fingerprint = snapshot.report["content_fingerprint"]
     core = {
-        "schema": _SCHEMA,
+        "schema": _SCHEMA_V2,
         "account_id": account_id,
         "account_fingerprint": account["account_fingerprint"],
-        "account_as_of": account["as_of"],
+        "account_as_of": latest_economic,
+        "latest_economic_account_fact_at": latest_economic,
+        "latest_reported_at": latest_reported,
+        "cash_flow_timing_quality": timing_quality,
+        "cash_flow_timing_performance_eligible": timing_eligible,
+        "performance_input_status": performance_input_status,
         "price_date": price_date.isoformat(),
         "daily_content_fingerprint": daily_fingerprint,
         "cash_fen": account["cash_fen"],
@@ -354,7 +448,12 @@ def materialize_valuation_checkpoint(
         "known_limitations": [
             "this is a valuation evidence checkpoint, not an investment return",
             "raw daily close is a mark, not executable price or fill evidence",
-            "corporate-action cash/share postings remain outside v1 account truth",
+            (
+                "legacy cash-flow economic timing is unverified for performance"
+                if not timing_eligible
+                else "cash-flow timing alone does not constitute a performance method"
+            ),
+            "corporate-action cash/share postings remain outside account truth",
         ],
     }
     fingerprint = _canonical_hash(core)
