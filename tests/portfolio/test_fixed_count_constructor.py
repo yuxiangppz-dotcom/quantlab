@@ -4,10 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from quantlab.portfolio import (
-    construct_fixed_count_portfolio,
-    FixedCountPortfolioConfig,
-)
+from quantlab.portfolio import construct_fixed_count_portfolio, FixedCountPortfolioConfig
 
 
 DAY = date(2026, 1, 5)
