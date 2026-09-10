@@ -52,6 +52,7 @@ _EVIDENCE_REQUIRED_TARGETS = {
     FORWARD_EVIDENCE_ACCUMULATING,
     ELIGIBLE_FOR_USER_REVIEW,
 }
+_ADVANCED_EVIDENCE_STATUSES = _EVIDENCE_REQUIRED_TARGETS | {USER_APPROVED}
 
 
 @dataclass(frozen=True)
@@ -90,6 +91,12 @@ def _validate_entry(entry: StrategyRegistryEntry) -> StrategyRegistryEntry:
         raise DataValidationError("strategy registry evidence_refs must be unique")
     if any(not isinstance(item, str) or not item.strip() for item in entry.evidence_refs):
         raise DataValidationError("strategy registry evidence_refs must be non-empty strings")
+    if entry.status in _ADVANCED_EVIDENCE_STATUSES and not entry.evidence_refs:
+        raise DataValidationError(f"strategy status {entry.status} requires evidence_refs")
+    if not isinstance(entry.user_approved, bool):
+        raise DataValidationError("strategy registry user_approved must be boolean")
+    if entry.notes is not None and not isinstance(entry.notes, str):
+        raise DataValidationError("strategy registry notes must be a string or null")
 
     if entry.status == USER_APPROVED:
         if not entry.user_approved:
@@ -138,6 +145,8 @@ def load_strategy_registry(path: Path) -> tuple[StrategyRegistryEntry, ...]:
     items = payload.get("strategies")
     if not isinstance(items, list) or not items:
         raise DataValidationError("strategy registry must contain at least one strategy")
+    if any(not isinstance(item, dict) for item in items):
+        raise DataValidationError("strategy registry entries must be objects")
     entries = tuple(_entry_from_dict(item) for item in items)
     keys = [entry.key for entry in entries]
     if len(keys) != len(set(keys)):
