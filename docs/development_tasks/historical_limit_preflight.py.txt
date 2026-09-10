@@ -1,0 +1,93 @@
+"""Issue #56: five explicitly commissioned provider reads, no canonical writes."""
+import hashlib
+import json
+import math
+import subprocess
+import time
+from dataclasses import asdict
+from datetime import UTC, date, datetime
+from pathlib import Path
+
+from quantlab.data.enrichment import _daily_v1_security_ids
+from quantlab.data.security_history import load_security_code_changes
+from quantlab.data.storage import ParquetStorage
+from quantlab.data.tushare_provider import TushareProvider
+
+storage = ParquetStorage('data/canonical')
+days = [date.fromisoformat(d) for d in (
+    '2020-01-02', '2023-01-03', '2025-02-14', '2025-02-17', '2026-09-03'
+)]
+assert not subprocess.check_output(['git', 'status', '--porcelain'], text=True).strip()
+head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+assert head == '9117a795f8868c4ff30ad324e9b5ddb9acf611c5'
+open_dates = {c.trade_date for c in storage.load_trading_calendar() if c.is_open}
+assert set(days) <= open_dates
+changes_path = Path('config/security_code_changes.csv')
+source_paths = [storage.calendar_path, storage.securities_path, changes_path]
+source_paths += [storage.daily_bars_path(day) for day in days]
+sources = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in source_paths}
+original_limits = {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+                   for p in storage.base_dir.glob('daily_price_limit/year=*/month=*/*.parquet')}
+current_ids = _daily_v1_security_ids(storage)
+changes = load_security_code_changes(changes_path)
+out = Path('data/products/price_limit_preflight/20260911')
+out.mkdir(parents=True, exist_ok=False)
+provider = TushareProvider()
+results = []
+
+def safe(value):
+    if isinstance(value, float) and not math.isfinite(value):
+        return {'nonfinite': str(value)}
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {k: safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [safe(v) for v in value]
+    return value
+
+for day in days:
+    time.sleep(0.4)
+    requested_at = datetime.now(UTC).isoformat()
+    rows = provider.get_daily_price_limits_by_date(day)
+    observed_at = datetime.now(UTC).isoformat()
+    payload = safe([asdict(row) for row in rows])
+    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()
+    raw_path = out / f'{day}.json'
+    raw_path.write_bytes(encoded)
+    daily_ids = {row.instrument_id for row in storage.load_daily_bars_by_date(day)}
+    old_ids = {c.old_instrument_id for c in changes
+               if c.original_list_date <= day < c.effective_date}
+    expected = daily_ids & (current_ids | old_ids)
+    ids = {row.instrument_id for row in rows}
+    invalid = [asdict(r) for r in rows if r.instrument_id in (current_ids | old_ids)
+               and (not math.isfinite(r.up_limit) or not math.isfinite(r.down_limit)
+                    or r.down_limit <= 0 or r.up_limit <= 0 or r.down_limit > r.up_limit)]
+    item = {
+        'date': str(day), 'requested_at': requested_at, 'observed_at': observed_at,
+        'normalized_response_path': str(raw_path), 'normalized_response_sha256': hashlib.sha256(encoded).hexdigest(),
+        'provider_rows': len(rows), 'unique_instruments': len(ids),
+        'wrong_date_count': sum(r.trade_date != day for r in rows),
+        'expected_current_scope': len(daily_ids & current_ids),
+        'expected_with_known_history': len(expected),
+        'active_old_codes_in_daily': sorted(old_ids & daily_ids),
+        'missing_current_scope': sorted((daily_ids & current_ids) - ids),
+        'missing_with_known_history': sorted(expected - ids),
+        'invalid_in_known_scope': safe(invalid),
+    }
+    results.append(item)
+    print(json.dumps({k: v for k, v in item.items() if k != 'invalid_in_known_scope'} | {
+        'invalid_in_known_scope_count': len(invalid), 'invalid_sample': safe(invalid[:3])
+    }, ensure_ascii=False), flush=True)
+assert all(hashlib.sha256(Path(p).read_bytes()).hexdigest() == h for p, h in sources.items())
+assert original_limits == {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+                          for p in storage.base_dir.glob('daily_price_limit/year=*/month=*/*.parquet')}
+report = {'code_head': head, 'source_manifest': sources, 'results': results,
+          'original_limits_unchanged': original_limits, 'canonical_writes': False,
+          'historical_revision_status': 'unverified', 'performance_eligible': False,
+          'source': 'https://tushare.pro/document/2?doc_id=183',
+          'script_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
+encoded = json.dumps(report, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()
+report['fingerprint'] = hashlib.sha256(encoded).hexdigest()
+(out / 'report.json').write_text(json.dumps(report, sort_keys=True, ensure_ascii=False), encoding='utf-8')
+print(json.dumps({'report': str(out / 'report.json'), 'fingerprint': report['fingerprint']}))
