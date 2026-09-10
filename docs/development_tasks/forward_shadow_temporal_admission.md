@@ -5,6 +5,8 @@ one bounded correctness task, tests, push, PR, CI, merge and next-task publicati
 This is outside the paused agent loop. Expected starting HEAD:
 `41dd5ee3dd41db2b5b262d263194d01dc19bd09c`, clean and pushed.
 
+Tracking issue: https://github.com/yuxiangppz-dotcom/quantlab/issues/33.
+
 ## Problem and scope
 
 At the starting HEAD, a synthetic January 26 signal generated March 1 was counted
@@ -30,6 +32,6 @@ Run focused regressions, full `uv run pytest -q`, `uv run ruff check .`,
 No provider request, Canonical write, real account journal mutation, new research
 experiment, broker action, strategy promotion or performance claim is authorized.
 
-GitHub Issue/PR publication and remote CI require an authenticated GitHub API or
-browser session; SSH Git access alone does not expose those operations. Track the
-actual publication state in the takeover review rather than inventing an Issue ID.
+GitHub authentication was restored through the normal device-login flow, using
+the host's existing proxy for the CLI process. Issue #33 was then published;
+the PR must pass both remote CI jobs before merge.

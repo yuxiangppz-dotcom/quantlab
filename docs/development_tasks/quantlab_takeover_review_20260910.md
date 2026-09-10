@@ -23,6 +23,11 @@ every module, a rerun of historical research, or an investment performance claim
   `e5ea7c1641d26034f9bb2240ff35daddb99ba59f`, two commits above master. Its entire
   net change is a 71-line `personal/fill_fact.py`; no parser, journal/replay or
   test integration. The earlier commit was `032cb43`. Preserve that branch.
+- `chatgpt/research-status-cli-v1` exists at
+  `42a9f8747158fad75215c4b5738a375a762f87e3`, with three unmerged commits
+  (`17726a0`, `1c6fade`, `42a9f87`) for Issue #18. Its net change touches the CLI,
+  a new research status service and its tests: three files, 276 insertions.
+  This separate incomplete mainline was inspected and preserved.
 - Existing desktop writer task was idle, reviewer automation was PAUSED, and
   process inspection found no active WSL coding executor/reviewer. Old loop
   state was observed but not claimed, resumed or edited; this direct commission
@@ -32,8 +37,25 @@ every module, a rerun of historical research, or an investment performance claim
 SSH exposes branch/commit and PR-head refs but does not establish whether a PR
 is currently open or what its CI result is. Initial unauthenticated GitHub REST
 access returned 404, GitHub CLI was absent/unlogged, and browser connection failed.
-The current online Issue, PR and Actions status must be populated from an
-authenticated GitHub response, not inferred from commit titles or the handoff.
+The user completed device login; using the host's existing proxy for the CLI
+resolved its stalled direct connection. Authenticated GitHub checks then confirmed:
+
+- Private repository, default branch master at the exact `41dd5ee` baseline.
+- No open PR before this task's PR creation.
+- Two existing open Issues: #32, Manual Fill Effective-Time Semantics v2, and #18,
+  expose strategy evidence status in CLI. Their live acceptance text was read.
+- 31 remote branches including master and this newly pushed branch; 29 pre-existing
+  feature branches were listed with exact heads. No old branches were deleted.
+- Master CI run `34463949538` succeeded on exact `41dd5ee`; the successful preceding
+  PR run was `34463803328`. Earlier failure runs are superseded, not current green
+  evidence for this task's branch.
+- Failed run `34463620920` was inspected directly: Ruff E501 on a 103-character
+  cash-flow sorting line in `personal/tracking_core.py`; its pytest step passed.
+  The later successful cash-flow PR and merged baseline already contain the fix.
+- This fix is tracked by Issue #33. Creating that issue occurred after implementation
+  because API authentication was initially unavailable; the local immutable starting
+  HEAD and task scope were already recorded. This workflow deviation did not bypass
+  testing or authorize a merge without CI.
 
 ## Financial architecture findings
 
@@ -156,9 +178,9 @@ The previous positive fixture used a retrospectively generated signal; it now
 uses a valid same-day observation, with its old late behavior retained as an
 explicit rejection/exclusion regression. No valid test was removed or relaxed.
 
-Commit/push and authenticated GitHub results are recorded in the task handoff/PR.
-If API authentication remains unavailable, report
-that blocker explicitly and leave master unmerged; never infer green CI from
-local tests. Prohibited actions not taken: provider calls, canonical writes,
+Implementation commit `3bf0ef28f2d8065eff4a47a917c0017a834ae248` was pushed
+to the feature branch. Authenticated PR, CI, merge and final-HEAD evidence will
+be recorded in the task handoff/PR; local tests do not establish remote CI status.
+Prohibited actions not taken: provider calls, canonical writes,
 real account journal changes, brokerage actions, synthetic facts presented as real,
 strategy promotion, performance claims, secret output, force pushes or loop edits.
