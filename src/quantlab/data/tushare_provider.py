@@ -389,6 +389,15 @@ class TushareProvider(DataProvider):
         )
         return [index_daily_from_row(row) for row in frame.to_dict("records")]
 
+    def get_index_metadata(self, instrument_id: str) -> list[dict[str, Any]]:
+        """Read a bounded SSE index identity response without inferring its suffix."""
+        frame = self._pro.index_basic(
+            ts_code=instrument_id,
+            market="SSE",
+            fields="ts_code,name,fullname,market,publisher,base_date,list_date",
+        )
+        return frame.to_dict("records")
+
     def get_daily_price_limits_by_date(self, trade_date: date) -> list[DailyPriceLimit]:
         frame = self._pro.stk_limit(
             trade_date=format_yyyymmdd(trade_date),
