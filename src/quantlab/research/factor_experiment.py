@@ -48,12 +48,30 @@ def _monthly_signal_dates(open_dates: list[date], start: date, end: date) -> lis
     return list(selected.values())
 
 
+def _cadence_signal_dates(
+    open_dates: list[date], start: date, end: date, cadence: str
+) -> list[date]:
+    in_range = [day for day in open_dates if start <= day <= end]
+    if cadence == "daily":
+        return in_range
+    if cadence == "weekly":
+        selected: dict[tuple[int, int], date] = {}
+        for day in in_range:
+            iso = day.isocalendar()
+            selected.setdefault((iso.year, iso.week), day)
+        return list(selected.values())
+    if cadence == "monthly":
+        return _monthly_signal_dates(open_dates, start, end)
+    raise ValueError(f"unsupported evaluation cadence: {cadence}")
+
+
 def _year_frame(
     storage: ParquetStorage,
     year: int,
     start: date,
     end: date,
     open_dates: list[date],
+    cadence: str = "monthly",
 ) -> pd.DataFrame:
     year_start = max(start, date(year, 1, 1))
     year_end = min(end, date(year, 12, 31))
@@ -66,15 +84,13 @@ def _year_frame(
             forward_horizons=(5,),
         )
     )
-    signals = _monthly_signal_dates(open_dates, year_start, year_end)
+    signals = _cadence_signal_dates(open_dates, year_start, year_end, cadence)
     dataset = dataset[dataset["trade_date"].isin(signals)]
     raw_rows = []
     basic_rows = []
     for signal_date in signals:
         raw_rows.extend(asdict(item) for item in storage.load_daily_bars_by_date(signal_date))
-        basic_rows.extend(
-            asdict(item) for item in storage.load_daily_basic_by_date(signal_date)
-        )
+        basic_rows.extend(asdict(item) for item in storage.load_daily_basic_by_date(signal_date))
     raw = pd.DataFrame(raw_rows)
     basics = pd.DataFrame(basic_rows)
     joined = dataset.merge(
@@ -97,11 +113,7 @@ def build_experiment_frame(storage: ParquetStorage, config: dict) -> tuple[pd.Da
     effective = date.fromisoformat(status["effective_as_of"])
     calendar = storage.load_trading_calendar()
     open_dates = sorted(
-        {
-            item.trade_date
-            for item in calendar
-            if item.is_open and item.trade_date <= effective
-        }
+        {item.trade_date for item in calendar if item.is_open and item.trade_date <= effective}
     )
     effective_index = open_dates.index(effective)
     horizon = int(config["label_horizon_sessions"])
@@ -136,11 +148,15 @@ def _train_lightgbm(frame: pd.DataFrame, config: dict) -> tuple[dict, pd.DataFra
     try:
         from lightgbm import LGBMRegressor
     except (ImportError, OSError) as exc:
-        return {
-            "status": "runtime_dependency_unavailable",
-            "error_class": type(exc).__name__,
-            "note": "LightGBM was not run; no fallback model is presented as LightGBM",
-        }, pd.DataFrame(), None
+        return (
+            {
+                "status": "runtime_dependency_unavailable",
+                "error_class": type(exc).__name__,
+                "note": "LightGBM was not run; no fallback model is presented as LightGBM",
+            },
+            pd.DataFrame(),
+            None,
+        )
 
     train = _period(frame, config["discovery"]).dropna(subset=["future_return_5d"])
     validation = _period(frame, config["validation"])
