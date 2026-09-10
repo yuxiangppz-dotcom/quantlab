@@ -28,6 +28,11 @@ from quantlab.research.forward_shadow_analytics import (
 from quantlab.research.models import ResearchDailyPrice
 from quantlab.research.price import build_prices, filter_point_in_time, prices_to_frame
 from quantlab.research.returns import calculate_forward_returns, calculate_returns
+from quantlab.research.strategy_readiness import (
+    StrategyReadinessReport,
+    build_strategy_readiness,
+    readiness_summary,
+)
 from quantlab.research.strategy_registry import (
     ELIGIBLE_FOR_USER_REVIEW,
     FORWARD_EVIDENCE_ACCUMULATING,
@@ -57,12 +62,14 @@ __all__ = [
     "RESEARCHED",
     "ResearchDailyPrice",
     "ShadowDiagnosticSummary",
+    "StrategyReadinessReport",
     "StrategyRegistryEntry",
     "USER_APPROVED",
     "alpha158_subset_rows",
     "build_evidence_catalog",
     "build_prices",
     "build_research_dataset",
+    "build_strategy_readiness",
     "calculate_alpha158_exact_subset",
     "calculate_forward_returns",
     "calculate_returns",
@@ -74,6 +81,7 @@ __all__ = [
     "paired_shadow_diagnostics",
     "prices_to_frame",
     "quantile_returns",
+    "readiness_summary",
     "summarize_evidence_catalog",
     "summarize_forward_shadow",
     "summarize_ic",
