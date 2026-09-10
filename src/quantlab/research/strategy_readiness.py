@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Iterable
 
 from quantlab.data.models import DataValidationError
@@ -18,6 +18,9 @@ from quantlab.research.evidence_catalog import EvidenceCatalog
 from quantlab.research.forward_shadow_analytics import ShadowDiagnosticSummary
 from quantlab.research.strategy_registry import (
     ELIGIBLE_FOR_USER_REVIEW,
+    IDEA,
+    REJECTED,
+    STATUSES,
     USER_APPROVED,
     StrategyRegistryEntry,
 )
@@ -54,6 +57,28 @@ def _canonical_hash(payload: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _validate_registry_entry(entry: StrategyRegistryEntry) -> None:
+    if not entry.strategy_id or not entry.version:
+        raise DataValidationError("strategy readiness requires non-empty strategy identity")
+    if entry.role not in {"baseline", "candidate"}:
+        raise DataValidationError("strategy readiness role must be baseline or candidate")
+    if entry.status not in STATUSES:
+        raise DataValidationError(f"unknown strategy readiness status: {entry.status!r}")
+    if entry.status not in {IDEA, REJECTED} and not entry.evidence_refs:
+        raise DataValidationError(
+            f"strategy readiness status {entry.status} requires evidence references"
+        )
+    if not isinstance(entry.user_approved, bool):
+        raise DataValidationError("strategy readiness user_approved must be boolean")
+    if entry.status == USER_APPROVED:
+        if not entry.user_approved or entry.approval_source != "explicit_user_decision":
+            raise DataValidationError(
+                "USER_APPROVED readiness requires explicit_user_decision authority"
+            )
+    elif entry.user_approved or entry.approval_source is not None:
+        raise DataValidationError("non-approved readiness entry cannot carry approval authority")
+
+
 def _shadow_by_key(
     summaries: Iterable[ShadowDiagnosticSummary],
 ) -> dict[tuple[str, str], ShadowDiagnosticSummary]:
@@ -62,7 +87,8 @@ def _shadow_by_key(
         key = (summary.model_id, summary.model_version)
         if key in result:
             raise DataValidationError(
-                f"duplicate Forward Shadow diagnostic identity: {summary.model_id}/{summary.model_version}"
+                "duplicate Forward Shadow diagnostic identity: "
+                f"{summary.model_id}/{summary.model_version}"
             )
         result[key] = summary
     return result
@@ -73,10 +99,7 @@ def _catalog_bound_refs(entry: StrategyRegistryEntry, catalog: EvidenceCatalog |
         return 0
     evidence_ids = {item.evidence_id for item in catalog.entries}
     relative_paths = {item.relative_path for item in catalog.entries}
-    return sum(
-        ref in evidence_ids or ref in relative_paths
-        for ref in entry.evidence_refs
-    )
+    return sum(ref in evidence_ids or ref in relative_paths for ref in entry.evidence_refs)
 
 
 def _build_one(
@@ -84,6 +107,7 @@ def _build_one(
     shadow: ShadowDiagnosticSummary | None,
     catalog: EvidenceCatalog | None,
 ) -> StrategyReadinessReport:
+    _validate_registry_entry(entry)
     prediction_count = 0 if shadow is None else shadow.prediction_count
     complete_count = 0 if shadow is None else shadow.complete_evaluation_count
     incomplete_count = 0 if shadow is None else shadow.incomplete_evaluation_count
