@@ -170,8 +170,10 @@ def _portfolio(action: str, account_id: str, source: str | None, cash: str | Non
         build_tracking_valuation,
         create_demo_account,
         import_account_csv,
+        import_manual_cash_flows,
         import_manual_fills,
         load_tracking_summary,
+        preview_manual_cash_flows,
         preview_manual_fills,
     )
 
@@ -196,9 +198,17 @@ def _portfolio(action: str, account_id: str, source: str | None, cash: str | Non
             raise ValueError("--file is required")
         if action == "fills-preview":
             payload = preview_manual_fills(account_id, Path(source))
-            payload.pop("events", None)
         else:
             path, payload = import_manual_fills(account_id, Path(source))
+            payload["journal_path"] = str(path)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    elif action in {"cash-preview", "cash-import"}:
+        if source is None:  # pragma: no cover - argparse enforces this
+            raise ValueError("--file is required")
+        if action == "cash-preview":
+            payload = preview_manual_cash_flows(account_id, Path(source))
+        else:
+            path, payload = import_manual_cash_flows(account_id, Path(source))
             payload["journal_path"] = str(path)
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     elif action == "track":
@@ -260,10 +270,12 @@ def _parser() -> argparse.ArgumentParser:
     for action, help_text in (
         ("fills-preview", "Validate a broker-fill CSV without writing."),
         ("fills-import", "Atomically import a validated broker-fill CSV."),
+        ("cash-preview", "Validate an external cash-flow CSV without writing."),
+        ("cash-import", "Atomically import validated external cash-flow facts."),
     ):
-        fill_parser = portfolio_sub.add_parser(action, help=help_text)
-        fill_parser.add_argument("--account-id", required=True)
-        fill_parser.add_argument("--file", required=True)
+        import_parser = portfolio_sub.add_parser(action, help=help_text)
+        import_parser.add_argument("--account-id", required=True)
+        import_parser.add_argument("--file", required=True)
     portfolio_track = portfolio_sub.add_parser("track", help="Show replayed account state.")
     portfolio_track.add_argument("--account-id", required=True)
     ui = sub.add_parser("ui", help="Start the local-only Streamlit UI.")
