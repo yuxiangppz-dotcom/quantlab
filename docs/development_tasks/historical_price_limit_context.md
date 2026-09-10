@@ -136,3 +136,48 @@ both optional runtime checks, Ruff and diff check passed. The task now includes
 31 new checks and eight changed files. The added checks cover inactive-code
 backcasts, explicit interruption, pinned offline replay, source tampering/drift,
 unchanged observation times and deterministic response-version selection.
+
+## Completed recovery, acquisition and verification
+
+Both successful phases ran from clean pushed
+`81b88570d63d4d454204cabbe0723662de9bdebf`.
+
+| Phase | Local time on 2026-09-11 | Accepted partitions | Rows | Canonical bytes | Provider attempts |
+|---|---|---:|---:|---:|---:|
+| Revalidate saved responses | 02:02:01.128044–02:02:32.616286 | 247 | 970,182 | 84,182,466 | 0 |
+| Remaining missing dates | 02:03:20.806659–02:22:10.778820 | 1,371 | 6,736,848 | 585,446,880 | 1,371 |
+
+All 1,618 missing partitions were accepted: 7,707,030 rows and 669,629,346 bytes.
+There were no remaining invalid/rejected dates or detected source-hash changes
+in either successful phase. The initial 244 attempts plus the final 1,371 equal
+1,615 additional attempts, within the authorized ceiling of 1,618 (the five
+separately authorized preflight reads are separate). The interrupted in-flight
+attempt is conservatively included. All earlier responses/reports remain intact.
+
+The offline report is
+`data/products/limit_response_replay/8c054fcf19a842728887afac23fe8282/report.json`,
+fingerprint `546abce06d7d4a7e2452e0784fc5c74c79ee79880a442c981b9980f7e2ede238`.
+The completed download report is
+`data/products/limit_backfill/e80dc7610e734a94bb5cb8b4943d6525/report.json`,
+fingerprint `a4e123ea9243206e8054092a0187777c44b0456a8fca37a917135aa92dc5d426`.
+
+Independent verification recomputed both final report fingerprints, all 1,618
+accepted-file hashes and all 252 limit files that preceded the final phase,
+including the five original recent partitions. All matched. Calendar comparison
+confirmed all **1,623 target sessions from 2020-01-01 through 2026-09-10** have a
+price-limit partition. A zero-budget rerun completed with zero provider calls,
+zero accepted/rejected files and zero missing dates; its report is
+`data/products/limit_backfill/19d649bfed634742aa772e760a4b6302/report.json`.
+
+Direct reads also confirmed 300114.SZ present and 302132.SZ absent in the accepted
+2020-01-02, 2023-01-03 and 2025-02-14 partitions, with the reverse on 2025-02-17.
+Original raw daily files were not renamed or rewritten. This is date-correct
+local data selection and source coverage, not proof that every recorded limit
+constituted an enforceable exchange restriction or that every stock was tradable.
+
+Freeze the corrected bounded acquisition/replay after green final CI. The actual
+bulk-run defect, safe interruption and recovery are fully recorded above; no
+failed attempt is hidden or relabelled successful. The eight files, all code and
+evidence commits are pushed. Final report commit and PR/master CI are recorded
+in the PR. The mainline now proceeds to the preregistered research features and
+model diagnostics; financial and execution limitations remain unchanged.
