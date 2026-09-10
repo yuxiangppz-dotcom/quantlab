@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -164,6 +165,35 @@ def test_forward_shadow_is_immutable_idempotent_and_separate_from_evaluation(
         )
         == []
     )
+
+
+def test_forward_shadow_binds_core_fixed_count_portfolio_contract(tmp_path: Path) -> None:
+    _, products, config, _ = _seed(tmp_path)
+    payload = json.loads(config.read_text())
+    payload["max_weight_per_name"] = 0.4
+    config.write_text(json.dumps(payload))
+
+    result = generate_forward_shadow(
+        product_root=products,
+        shadow_root=tmp_path / "shadow",
+        config_path=config,
+    )[0]
+    manifest = json.loads((result.prediction_dir / "prediction.json").read_text())
+    rows = list(csv.DictReader((result.prediction_dir / "target_portfolio.csv").open()))
+
+    assert manifest["portfolio_contract"] == {
+        "constructor": "fixed_count_v1",
+        "requested_target_count": 1,
+        "score_direction": "lower_is_better",
+        "gross_exposure": 1.0,
+        "max_weight_per_name": 0.4,
+        "tie_policy": "alpha_score_then_instrument_id",
+    }
+    assert manifest["target_count"] == 1
+    assert manifest["target_weight_sum"] == pytest.approx(0.4)
+    assert manifest["cash_weight"] == pytest.approx(0.6)
+    assert len(rows) == 1
+    assert float(rows[0]["target_weight"]) == pytest.approx(0.4)
 
 
 def test_forward_shadow_tampering_fails_closed(tmp_path: Path) -> None:
