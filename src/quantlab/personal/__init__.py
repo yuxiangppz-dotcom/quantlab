@@ -11,6 +11,7 @@ from quantlab.personal.cash_flow import (
     CashFlowTimingQuality,
     ExternalCashFlow,
 )
+from quantlab.personal.fill_fact import ManualFillFact, ManualFillTimingQuality
 from quantlab.personal.plan import build_reference_plan, load_latest_plan
 from quantlab.personal.tracking import (
     build_plan_fill_comparison,
@@ -33,6 +34,8 @@ __all__ = [
     "CashFlowDirection",
     "CashFlowTimingQuality",
     "ExternalCashFlow",
+    "ManualFillFact",
+    "ManualFillTimingQuality",
     "build_plan_fill_comparison",
     "build_reference_plan",
     "build_tracking_valuation",

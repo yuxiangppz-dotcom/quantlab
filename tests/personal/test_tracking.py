@@ -24,7 +24,7 @@ ACCOUNT_HEADER = (
     "sellable_quantity,reference_cost_cny,open_orders_declaration\n"
 )
 FILL_HEADER = (
-    "account_id,broker_trade_id,trade_date,reported_at,instrument_id,side,"
+    "account_id,broker_trade_id,trade_date,executed_at,reported_at,instrument_id,side,"
     "quantity,price_cny,gross_notional_cny,fee_cny\n"
 )
 
@@ -65,8 +65,10 @@ def _seed(tmp_path: Path) -> tuple[Path, ParquetStorage]:
 
 def _fills() -> bytes:
     return (
-        FILL_HEADER + "mine,B1,2026-09-07,2026-09-07T15:00:00+08:00,000001.SZ,BUY,"
-        "100,10.00,1000.00,5.00\n" + "mine,S1,2026-09-07,2026-09-07T15:01:00+08:00,000001.SZ,SELL,"
+        FILL_HEADER + "mine,B1,2026-09-07,2026-09-07T15:00:00+08:00,"
+        "2026-09-07T15:00:00+08:00,000001.SZ,BUY,100,10.00,1000.00,5.00\n"
+        "mine,S1,2026-09-07,2026-09-07T15:01:00+08:00,"
+        "2026-09-07T15:01:00+08:00,000001.SZ,SELL,"
         "100,12.00,1200.00,5.00\n"
     ).encode()
 
@@ -104,8 +106,10 @@ def test_preview_is_read_only_then_import_and_reimport_are_idempotent(tmp_path: 
 def test_invalid_batch_never_creates_journal(tmp_path: Path) -> None:
     account_root, storage = _seed(tmp_path)
     invalid = (
-        FILL_HEADER + "mine,B1,2026-09-07,2026-09-07T15:00:00+08:00,000001.SZ,BUY,"
-        "100,10.00,1000.00,5.00\n" + "mine,S1,2026-09-07,2026-09-07T15:01:00+08:00,000001.SZ,SELL,"
+        FILL_HEADER + "mine,B1,2026-09-07,2026-09-07T15:00:00+08:00,"
+        "2026-09-07T15:00:00+08:00,000001.SZ,BUY,100,10.00,1000.00,5.00\n"
+        "mine,S1,2026-09-07,2026-09-07T15:01:00+08:00,"
+        "2026-09-07T15:01:00+08:00,000001.SZ,SELL,"
         "999,12.00,11988.00,5.00\n"
     ).encode()
     with pytest.raises(Exception, match="oversell"):
@@ -116,7 +120,7 @@ def test_invalid_batch_never_creates_journal(tmp_path: Path) -> None:
 def test_same_broker_trade_id_with_changed_economics_is_rejected(tmp_path: Path) -> None:
     account_root, storage = _seed(tmp_path)
     first = FILL_HEADER + (
-        "mine,B1,2026-09-07,2026-09-07T15:00:00+08:00,000001.SZ,BUY,100,10.00,1000.00,5.00\n"
+        "mine,B1,2026-09-07,2026-09-07T15:00:00+08:00,2026-09-07T15:00:00+08:00,000001.SZ,BUY,100,10.00,1000.00,5.00\n"
     )
     import_manual_fills("mine", first.encode(), account_root=account_root, storage=storage)
     changed = first.replace("1000.00", "1100.00").replace("10.00", "11.00")

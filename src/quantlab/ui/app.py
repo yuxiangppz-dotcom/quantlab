@@ -413,9 +413,11 @@ else:
         else:
             with st.expander("人工成交：预览后导入"):
                 fill_template = (
-                    "account_id,broker_trade_id,trade_date,reported_at,instrument_id,side,"
+                    "account_id,broker_trade_id,trade_date,executed_at,reported_at,"
+                    "instrument_id,side,"
                     "quantity,price_cny,gross_notional_cny,fee_cny\n"
                     f"{account_id},broker_trade_001,2026-09-10,"
+                    "2026-09-10T14:30:00+08:00,"
                     "2026-09-10T15:10:00+08:00,000001.SZ,BUY,100,10.00,1000.00,5.00\n"
                 )
                 st.download_button(
@@ -450,6 +452,9 @@ else:
                                 for key in (
                                     "fill_id",
                                     "trade_date",
+                                    "executed_at",
+                                    "reported_at",
+                                    "timing_quality",
                                     "instrument_id",
                                     "side",
                                     "quantity",
@@ -458,7 +463,7 @@ else:
                                     "fee_fen",
                                 )
                             }
-                            for item in preview["events"]
+                            for item in preview["fills"]
                         ]
                         st.dataframe(pd.DataFrame(preview_rows), width="stretch", hide_index=True)
                         if st.button("确认导入已预览成交"):
