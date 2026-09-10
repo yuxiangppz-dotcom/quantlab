@@ -254,9 +254,6 @@ def _cash_flow_from_payload(item: dict) -> ExternalCashFlow:
             source_row_sha256=item["source_row_sha256"],
         )
 
-    # v2 carried only ``occurred_at``. At the time that field represented the
-    # reporting timestamp and was also used as the assumed economic timestamp.
-    # Preserve replay, but disclose that the economic time is unverified.
     legacy_at = datetime.fromisoformat(item["occurred_at"])
     return ExternalCashFlow(
         event_id=item["event_id"],
@@ -593,6 +590,10 @@ def _summary(account: dict, replay: _TrackingReplay, duplicate_count: int) -> di
         "fill_ids": sorted(event.fill_id for event in replay.fills),
     }
     if replay.cash_flows:
+        ordered_flows = sorted(
+            replay.cash_flows,
+            key=lambda item: (item.effective_at, item.event_id),
+        )
         state["cash_flows"] = [
             {
                 "flow_id": event.flow_id,
@@ -602,7 +603,7 @@ def _summary(account: dict, replay: _TrackingReplay, duplicate_count: int) -> di
                 "amount_fen": event.amount_fen,
                 "timing_quality": event.timing_quality.value,
             }
-            for event in sorted(replay.cash_flows, key=lambda item: (item.effective_at, item.event_id))
+            for event in ordered_flows
         ]
     tracking_fingerprint = hashlib.sha256(
         json.dumps(state, sort_keys=True, separators=(",", ":")).encode()
