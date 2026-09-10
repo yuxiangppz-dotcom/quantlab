@@ -144,12 +144,16 @@ def _shadow() -> int:
         evaluate_matured_forward_shadows,
         generate_forward_shadow,
     )
+    from quantlab.research.shadow_timing import prediction_timing
 
     results = generate_forward_shadow()
     evaluations = evaluate_matured_forward_shadows()
     for result in results:
         action = "reused" if result.reused else "created"
         print(f"{action} {result.model_id}: {result.prediction_dir}")
+        manifest = json.loads((result.prediction_dir / "prediction.json").read_text())
+        timing = prediction_timing(manifest)
+        print(f"  timing: {timing['status']}; forward eligible: {timing['forward_eligible']}")
     print(f"new matured evaluations: {len(evaluations)}")
     return 0
 

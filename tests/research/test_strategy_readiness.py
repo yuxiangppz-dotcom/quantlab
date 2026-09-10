@@ -89,6 +89,17 @@ def test_accumulating_strategy_reports_pending_forward_blockers() -> None:
     assert len(report.report_fingerprint) == 64
 
 
+def test_timing_excluded_predictions_do_not_make_strategy_ready() -> None:
+    shadow = replace(_shadow(predictions=3, pending=0), excluded_prediction_count=3)
+    report = build_strategy_readiness(
+        [_entry(ELIGIBLE_FOR_USER_REVIEW)], shadow_summaries=[shadow],
+    )[0]
+    assert report.ready_for_user_review is False
+    assert report.strategy_approval_authority is False
+    assert report.broker_order_authority is False
+    assert "ALL_FORWARD_PREDICTIONS_EXCLUDED_BY_TIMING" in report.blockers
+
+
 def test_eligible_strategy_with_mature_forward_evidence_still_requires_user_approval() -> None:
     entry = _entry(ELIGIBLE_FOR_USER_REVIEW)
     report = build_strategy_readiness(

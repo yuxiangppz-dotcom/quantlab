@@ -25,6 +25,13 @@ from quantlab.portfolio.product import (
     construct_daily_fixed_count_portfolio,
 )
 from quantlab.research.dataset import build_research_dataset
+from quantlab.research.shadow_timing import (
+    PREDICTION_V1,
+    PREDICTION_V2,
+    aware_timestamp,
+    prediction_timing,
+    temporal_admission,
+)
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "forward_shadow_v1.json"
@@ -89,6 +96,9 @@ def _load_config(path: Path) -> dict:
         raise DataValidationError("forward-shadow target_count must be positive")
     if not isinstance(cap, int | float) or not 0 < cap <= 1:
         raise DataValidationError("forward-shadow max_weight_per_name is invalid")
+    horizon = payload.get("label_horizon_sessions")
+    if isinstance(horizon, bool) or not isinstance(horizon, int) or horizon <= 0:
+        raise DataValidationError("forward-shadow label horizon must be a positive integer")
     return payload
 
 
@@ -99,13 +109,24 @@ def _validate_existing(path: Path, fingerprint: str) -> None:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("prediction_fingerprint") != fingerprint:
         raise DataValidationError("forward-shadow destination fingerprint mismatch")
+    excluded = {"prediction_fingerprint", "files_sha256", "claims"}
+    if manifest.get("schema") == PREDICTION_V1:
+        excluded.add("created_at")
     core = {
         key: value
         for key, value in manifest.items()
-        if key not in {"prediction_fingerprint", "created_at", "files_sha256", "claims"}
+        if key not in excluded
     }
     if _canonical_hash({"core": core, "files_sha256": manifest.get("files_sha256")}) != fingerprint:
         raise DataValidationError("immutable forward-shadow manifest content mismatch")
+    prediction_timing(manifest)
+    if manifest.get("schema") == PREDICTION_V2 and (
+        path.name != fingerprint
+        or path.parent.name != manifest["trade_date"]
+        or path.parent.parent.name != manifest["model"]["version"]
+        or path.parent.parent.parent.name != manifest["model"]["model_id"]
+    ):
+        raise DataValidationError("forward-shadow path identity mismatch")
     if manifest.get("claims") != {
         "broker_order": False,
         "fill": False,
@@ -132,6 +153,46 @@ def _publish_prediction(
         "scores.csv": _sha256_bytes(scores_bytes),
         "target_portfolio.csv": _sha256_bytes(target_bytes),
     }
+    # Reuse the first bound observation time on retry, including a later-day
+    # retry. A changed configuration/code/score for the same model/date is a
+    # conflict, never another opportunity to select a favorable prediction.
+    identity_dir = root / core["model"]["model_id"] / core["model"]["version"] / core["trade_date"]
+    existing_v2 = []
+    for marker in sorted(identity_dir.glob("*/prediction.json")):
+        prior = json.loads(marker.read_text(encoding="utf-8"))
+        _validate_existing(marker.parent, prior["prediction_fingerprint"])
+        if prior.get("schema") == PREDICTION_V2:
+            existing_v2.append((marker, prior))
+    if len(existing_v2) > 1:
+        raise DataValidationError(
+            "multiple bound predictions exist for the same model/version/date"
+        )
+    if existing_v2:
+        marker, prior = existing_v2[0]
+        retry_core = {
+            key: value for key, value in prior.items()
+            if key not in {
+                "prediction_fingerprint", "files_sha256", "claims", "created_at",
+                "temporal_admission",
+            }
+        }
+        if retry_core != core or prior["files_sha256"] != files_sha:
+            raise DataValidationError(
+                "forward-shadow model/version/date already frozen with other inputs"
+            )
+        if created_at < aware_timestamp(prior["created_at"], "created_at"):
+            raise DataValidationError("forward-shadow retry predates the frozen prediction")
+        return ShadowResult(
+            core["model"]["model_id"], marker.parent, prior["prediction_fingerprint"], True
+        )
+    created_text = created_at.astimezone(SHANGHAI).isoformat()
+    core = {
+        **core,
+        "created_at": created_text,
+        "temporal_admission": temporal_admission(
+            core["trade_date"], created_text, core["source_daily_generated_at"],
+        ),
+    }
     fingerprint = _canonical_hash({"core": core, "files_sha256": files_sha})
     path = (
         root
@@ -151,7 +212,6 @@ def _publish_prediction(
         manifest = {
             **core,
             "prediction_fingerprint": fingerprint,
-            "created_at": created_at.astimezone(SHANGHAI).isoformat(),
             "files_sha256": files_sha,
             "claims": {
                 "broker_order": False,
@@ -185,7 +245,20 @@ def generate_forward_shadow(
     snapshot = load_validated_latest_snapshot(product_root)
     if snapshot is None:
         raise FileNotFoundError("no active Daily snapshot; run `quantlab daily` first")
-    ranking = pd.read_csv(snapshot.ranking_path)
+    ranking_bytes = snapshot.ranking_path.read_bytes()
+    report_bytes = snapshot.report_path.read_bytes()
+    if json.loads(report_bytes) != snapshot.report:
+        raise DataValidationError("Daily source changed before forward-shadow capture")
+    # Bind the bytes consumed below, not a later reread of a mutable path.
+    from quantlab.daily.integrity import validate_daily_snapshot_bundle
+
+    validate_daily_snapshot_bundle(snapshot)
+    if (
+        snapshot.ranking_path.read_bytes() != ranking_bytes
+        or snapshot.report_path.read_bytes() != report_bytes
+    ):
+        raise DataValidationError("Daily source changed during forward-shadow capture")
+    ranking = pd.read_csv(io.BytesIO(ranking_bytes))
     config = _load_config(config_path)
     head = _git_head()
     config_fingerprint = _sha256_file(config_path)
@@ -232,13 +305,15 @@ def generate_forward_shadow(
         ].copy()
         selected = len(portfolio.positions)
         core = {
-            "schema": "quantlab_forward_shadow_prediction_v1",
+            "schema": PREDICTION_V2,
             "trade_date": snapshot.report["effective_as_of"],
+            "source_daily_generated_at": snapshot.report["generated_at"],
+            "daily_report_sha256": _sha256_bytes(report_bytes),
             "model": model,
             "config_id": config["config_id"],
             "config_fingerprint": config_fingerprint,
             "daily_content_fingerprint": snapshot.report["content_fingerprint"],
-            "daily_ranking_sha256": _sha256_file(snapshot.ranking_path),
+            "daily_ranking_sha256": _sha256_bytes(ranking_bytes),
             "universe": config["universe"],
             "universe_rows": len(scored),
             "target_count": selected,
@@ -296,6 +371,8 @@ def evaluate_matured_forward_shadows(
         if not isinstance(fingerprint, str) or not fingerprint:
             raise DataValidationError("forward-shadow prediction fingerprint is missing or invalid")
         _validate_existing(manifest_path.parent, fingerprint)
+        if not prediction_timing(manifest)["forward_eligible"]:
+            continue
 
         signal_date = date.fromisoformat(manifest["trade_date"])
         horizon = int(manifest["label"]["horizon_sessions"])
@@ -392,7 +469,11 @@ def latest_forward_shadow(
     for manifest_path in shadow_root.glob("*/*/*/*/prediction.json"):
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
         _validate_existing(manifest_path.parent, payload["prediction_fingerprint"])
-        rows.append({**payload, "prediction_dir": str(manifest_path.parent)})
+        rows.append({
+            **payload,
+            "temporal_admission": prediction_timing(payload),
+            "prediction_dir": str(manifest_path.parent),
+        })
     latest: dict[tuple[str, str], dict] = {}
     for row in rows:
         key = (row["model"]["model_id"], row["model"]["version"])
