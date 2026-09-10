@@ -13,6 +13,7 @@ import streamlit as st
 from quantlab.daily.service import SHANGHAI
 from quantlab.personal import (
     import_manual_cash_flows,
+    inspect_performance_inputs,
     list_accounts,
     load_effective_account,
     load_latest_valuation_checkpoint,
@@ -264,6 +265,45 @@ def render_cash_and_valuation():
     except Exception as exc:
         st.error(f"已保存估值无法校验：{public_error(exc)}")
     render_historical_account(account_id, account)
+    render_performance_inputs(account_id, account)
+
+
+def render_performance_inputs(account_id, account):
+    with st.expander("为什么目前还不能计算可信收益"):
+        st.write("检查成交、出入金、估值和对账证据。单项通过不代表收益记录已经完整。")
+        query_key = (account_id, account["account_fingerprint"])
+        if st.button("检查收益计算条件"):
+            st.session_state.pop("performance_inputs_result", None)
+            try:
+                st.session_state["performance_inputs_result"] = inspect_performance_inputs(
+                    account_id
+                )
+                st.session_state["performance_inputs_query"] = query_key
+            except Exception as exc:
+                st.error(f"收益证据无法校验：{public_error(exc)}")
+        result = st.session_state.get("performance_inputs_result")
+        if result and st.session_state.get("performance_inputs_query") == query_key:
+            st.warning("目前不能生成可信的账户收益率。请按下面的具体缺口补齐证据。")
+            st.caption(f"上次检查时间：{result['checked_at']}；记录变化后请重新检查。")
+            names = {"pass": "本项通过", "unknown": "证据缺失", "blocked": "尚未满足"}
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {"状态": names[row["status"]], "说明": row["detail"]}
+                        for row in result["checks"]
+                    ]
+                ),
+                hide_index=True,
+                width="stretch",
+            )
+            import json
+
+            st.download_button(
+                "下载收益条件检查",
+                json.dumps(result, ensure_ascii=False, indent=2).encode(),
+                "quantlab_performance_inputs.json",
+                "application/json",
+            )
 
 
 def render_historical_account(account_id, account):
