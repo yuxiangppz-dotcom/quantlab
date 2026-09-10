@@ -24,6 +24,12 @@ from quantlab.research.factor_registry import (
     build_factor_columns,
     registry_rows,
 )
+from quantlab.research.label_period import (
+    LABEL_PERIOD_POLICY,
+    PERIOD_NAMES,
+    select_period_labels,
+    validate_factor_periods,
+)
 from quantlab.research.qlib_adapter import qlib_integration_status, to_qlib_static_loader
 from quantlab.research.universe import filter_v1_universe
 
@@ -107,6 +113,7 @@ def _year_frame(
 
 
 def build_experiment_frame(storage: ParquetStorage, config: dict) -> tuple[pd.DataFrame, date]:
+    validate_factor_periods(config)
     status = inspect_data_status(storage, datetime.now(SHANGHAI).date())
     if status["effective_as_of"] is None:
         raise DataValidationError("factor experiment requires a complete local data date")
@@ -130,21 +137,49 @@ def build_experiment_frame(storage: ParquetStorage, config: dict) -> tuple[pd.Da
     return frame, signal_end
 
 
-def _period(frame: pd.DataFrame, bounds: list[str]) -> pd.DataFrame:
-    start, end = (date.fromisoformat(value) for value in bounds)
-    return frame[(frame["trade_date"] >= start) & (frame["trade_date"] <= end)]
+def _experiment_periods(
+    frame: pd.DataFrame, config: dict, open_dates: list[date],
+) -> tuple[dict[str, pd.DataFrame], dict]:
+    validate_factor_periods(config)
+    periods = {}
+    counts = {}
+    for name in PERIOD_NAMES:
+        periods[name], counts[name] = select_period_labels(
+            frame, config[name], open_dates,
+            horizon=config["label_horizon_sessions"], label_column="future_return_5d",
+        )
+    calendar_text = "\n".join(day.isoformat() for day in sorted(set(open_dates)))
+    return periods, {
+        "policy": LABEL_PERIOD_POLICY,
+        "horizon_sessions": config["label_horizon_sessions"],
+        "label_column": "future_return_5d",
+        "open_calendar_sha256": hashlib.sha256(calendar_text.encode()).hexdigest(),
+        "periods": counts,
+    }
 
 
 def _factor_metrics(frame: pd.DataFrame, column: str) -> tuple[dict, pd.DataFrame]:
     alpha = frame[["instrument_id", "trade_date", "future_return_5d"]].copy()
     alpha["alpha_score"] = frame[column].to_numpy()
-    daily = daily_rank_ic(alpha, "future_return_5d")
+    daily = (
+        daily_rank_ic(alpha, "future_return_5d") if not alpha.empty
+        else pd.Series(dtype=float, index=pd.Index([], name="trade_date"))
+    )
     rows = daily.rename("rank_ic").reset_index()
     rows["factor_id"] = column
     return summarize_ic(daily), rows
 
 
-def _train_lightgbm(frame: pd.DataFrame, config: dict) -> tuple[dict, pd.DataFrame, object | None]:
+def _train_lightgbm(
+    frame: pd.DataFrame, config: dict, open_dates: list[date],
+) -> tuple[dict, pd.DataFrame, object | None]:
+    periods, selection = _experiment_periods(frame, config, open_dates)
+    train = periods["discovery"]
+    if train.empty:
+        return (
+            {"status": "no_contained_training_labels", "label_selection": selection},
+            pd.DataFrame(), None,
+        )
     try:
         from lightgbm import LGBMRegressor
     except (ImportError, OSError) as exc:
@@ -153,14 +188,12 @@ def _train_lightgbm(frame: pd.DataFrame, config: dict) -> tuple[dict, pd.DataFra
                 "status": "runtime_dependency_unavailable",
                 "error_class": type(exc).__name__,
                 "note": "LightGBM was not run; no fallback model is presented as LightGBM",
+                "label_selection": selection,
             },
             pd.DataFrame(),
             None,
         )
 
-    train = _period(frame, config["discovery"]).dropna(subset=["future_return_5d"])
-    validation = _period(frame, config["validation"])
-    observed = _period(frame, config["test_observed"])
     medians = train[FEATURE_COLUMNS].median()
     params = config["lightgbm"]
     model = LGBMRegressor(verbosity=-1, deterministic=True, **params)
@@ -173,12 +206,18 @@ def _train_lightgbm(frame: pd.DataFrame, config: dict) -> tuple[dict, pd.DataFra
         "feature_columns": FEATURE_COLUMNS,
         "preprocessing": "median values fitted on discovery only",
         "params": params,
+        "label_selection": selection,
     }
-    for name, subset in (("validation", validation), ("test_observed", observed)):
-        scored = subset[["instrument_id", "trade_date", "future_return_5d"]].copy()
-        scored["alpha_score"] = model.predict(subset[FEATURE_COLUMNS].fillna(medians))
-        ic = daily_rank_ic(scored, "future_return_5d")
-        metrics[name] = summarize_ic(ic)
+    for name in ("validation", "test_observed"):
+        subset = periods[name]
+        scored = subset[
+            ["instrument_id", "trade_date", "label_end_date", "future_return_5d"]
+        ].copy()
+        scored["alpha_score"] = (
+            model.predict(subset[FEATURE_COLUMNS].fillna(medians)) if not subset.empty
+            else pd.Series(dtype=float)
+        )
+        metrics[name], _ = _factor_metrics(scored, "alpha_score")
         scored["period"] = name
         prediction_parts.append(scored)
     predictions = pd.concat(prediction_parts, ignore_index=True)
@@ -193,6 +232,7 @@ def run_factor_experiment(
     output_root: Path | None = None,
 ) -> Path:
     config = json.loads(config_path.read_text(encoding="utf-8"))
+    validate_factor_periods(config)
     if config["candidate_budget"] != len(FACTOR_REGISTRY):
         raise DataValidationError("candidate budget must exactly bind the registry inventory")
     if len(FACTOR_REGISTRY) > 12:
@@ -201,18 +241,22 @@ def run_factor_experiment(
     output_root = output_root or PROJECT_ROOT / "data" / "experiments"
     started = time.perf_counter()
     frame, signal_end = build_experiment_frame(storage, config)
+    open_dates = sorted({
+        item.trade_date for item in storage.load_trading_calendar() if item.is_open
+    })
+    periods, selection = _experiment_periods(frame, config, open_dates)
 
     threshold = config["promotion_threshold"]
     registry = registry_rows()
     daily_rows = []
     for row in registry:
         factor_id = row["factor_id"]
-        discovery, daily = _factor_metrics(_period(frame, config["discovery"]), factor_id)
+        discovery, daily = _factor_metrics(periods["discovery"], factor_id)
         validation, validation_daily = _factor_metrics(
-            _period(frame, config["validation"]), factor_id
+            periods["validation"], factor_id
         )
         observed, observed_daily = _factor_metrics(
-            _period(frame, config["test_observed"]), factor_id
+            periods["test_observed"], factor_id
         )
         row["discovery"] = discovery
         row["validation"] = validation
@@ -230,13 +274,13 @@ def run_factor_experiment(
         )
 
     combo_metrics = {}
-    for period_name in ("discovery", "validation", "test_observed"):
+    for period_name in PERIOD_NAMES:
         combo_metrics[period_name], daily = _factor_metrics(
-            _period(frame, config[period_name]), "transparent_combo_v1"
+            periods[period_name], "transparent_combo_v1"
         )
         daily_rows.extend(daily.to_dict("records"))
 
-    ml_metrics, predictions, model = _train_lightgbm(frame, config)
+    ml_metrics, predictions, model = _train_lightgbm(frame, config, open_dates)
     qlib_status = qlib_integration_status()
     if qlib_status["qlib_available"]:
         loader = to_qlib_static_loader(frame.head(1000), FEATURE_COLUMNS)
@@ -263,6 +307,7 @@ def run_factor_experiment(
         "signal_end": signal_end.isoformat(),
         "signal_rows": len(frame),
         "signal_dates": frame["trade_date"].nunique(),
+        "label_selection": selection,
         "independent_candidate_count": len(FACTOR_REGISTRY),
         "alpha158_input_feature_count": len(FEATURE_COLUMNS),
         "alpha158_scope": "style subset only; not the complete official Alpha158 handler",
