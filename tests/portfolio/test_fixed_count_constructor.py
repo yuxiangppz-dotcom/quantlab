@@ -5,8 +5,8 @@ import pandas as pd
 import pytest
 
 from quantlab.portfolio import (
-    FixedCountPortfolioConfig,
     construct_fixed_count_portfolio,
+    FixedCountPortfolioConfig,
 )
 
 
