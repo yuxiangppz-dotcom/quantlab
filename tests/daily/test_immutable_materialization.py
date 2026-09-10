@@ -173,7 +173,8 @@ def test_changed_content_creates_sibling_and_preserves_previous_bundle(tmp_path:
     assert second.reused is False
     assert second.report_path.parent != first.report_path.parent
     assert second.report["content_fingerprint"] != first.report["content_fingerprint"]
-    assert {path.name: path.read_bytes() for path in first.report_path.parent.iterdir()} == first_bytes
+    preserved = {path.name: path.read_bytes() for path in first.report_path.parent.iterdir()}
+    assert preserved == first_bytes
     active = load_latest_snapshot(product_root)
     assert active is not None
     assert active.report_path == second.report_path
