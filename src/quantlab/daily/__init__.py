@@ -3,6 +3,7 @@
 from quantlab.daily.integrity import (
     load_validated_latest_snapshot,
     validate_daily_snapshot_bundle,
+    validate_daily_snapshot_semantics,
 )
 from quantlab.daily.service import (
     DailySnapshot,
@@ -18,4 +19,5 @@ __all__ = [
     "load_latest_snapshot",
     "load_validated_latest_snapshot",
     "validate_daily_snapshot_bundle",
+    "validate_daily_snapshot_semantics",
 ]
