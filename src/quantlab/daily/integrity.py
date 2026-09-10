@@ -6,12 +6,12 @@ import hashlib
 import json
 from pathlib import Path
 
-from quantlab.data.models import DataValidationError
 from quantlab.daily.service import (
     DEFAULT_PRODUCT_ROOT,
     DailySnapshot,
     load_latest_snapshot,
 )
+from quantlab.data.models import DataValidationError
 
 
 def _sha256_bytes(value: bytes) -> str:
