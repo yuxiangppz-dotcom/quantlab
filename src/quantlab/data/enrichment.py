@@ -5,10 +5,14 @@ from __future__ import annotations
 import math
 from dataclasses import asdict, dataclass
 from datetime import date
+from pathlib import Path
 
-from quantlab.data.models import DataValidationError
+from quantlab.data.models import DataValidationError, SecurityCodeChange, parse_instrument_id
 from quantlab.data.provider import DataProvider
+from quantlab.data.security_history import load_security_code_changes
 from quantlab.data.storage import ParquetStorage
+
+_CODE_HISTORY = Path(__file__).resolve().parents[3] / "config/security_code_changes.csv"
 
 
 @dataclass(frozen=True)
@@ -33,7 +37,11 @@ def _daily_v1_security_ids(storage: ParquetStorage) -> set[str]:
 
 
 def sync_daily_price_limits(
-    provider: DataProvider, storage: ParquetStorage, trade_date: date
+    provider: DataProvider,
+    storage: ParquetStorage,
+    trade_date: date,
+    *,
+    security_code_changes: list[SecurityCodeChange] | None = None,
 ) -> EnrichmentDatasetResult:
     if storage.daily_price_limit_exists(trade_date):
         rows = storage.load_daily_price_limits_by_date(trade_date)
@@ -42,6 +50,23 @@ def sync_daily_price_limits(
         )
     rows = provider.get_daily_price_limits_by_date(trade_date)
     security_ids = _daily_v1_security_ids(storage)
+    changes = (
+        load_security_code_changes(_CODE_HISTORY)
+        if security_code_changes is None
+        else security_code_changes
+    )
+    # Code validity is already established by the shared history authority.
+    # Preserve the old identifier rather than rewriting it to today's code.
+    for change in changes:
+        old_symbol, old_market = parse_instrument_id(change.old_instrument_id)
+        if old_market not in {"SH", "SZ"} or old_symbol.startswith(("900", "200")):
+            continue
+        if change.original_list_date <= trade_date < change.effective_date:
+            security_ids.add(change.old_instrument_id)
+        else:
+            security_ids.discard(change.old_instrument_id)
+        if trade_date < change.effective_date:
+            security_ids.discard(change.new_instrument_id)
     rows = [item for item in rows if item.instrument_id in security_ids]
     if not rows:
         raise DataValidationError(f"stk_limit has no canonical A-share rows for {trade_date}")
@@ -58,8 +83,15 @@ def sync_daily_price_limits(
     daily_ids = {
         item.instrument_id
         for item in storage.load_daily_bars_by_date(trade_date)
-        if item.instrument_id in security_ids
+        if item.instrument_id.endswith((".SH", ".SZ"))
+        and not item.instrument_id.startswith(("900", "200"))
     }
+    unknown = daily_ids - security_ids
+    if unknown:
+        raise DataValidationError(
+            f"stk_limit daily scope has {len(unknown)} unverified historical A-share identifiers "
+            f"on {trade_date}"
+        )
     limit_ids = {item.instrument_id for item in rows}
     missing = daily_ids - limit_ids
     if missing:
