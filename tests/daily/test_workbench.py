@@ -270,3 +270,34 @@ def test_historical_ui_reads_real_temporary_ledger_without_writing(tmp_path, mon
     assert app.metric[0].value == "¥995.00"
     assert "1 笔是在截止时间之后补录" in app.caption[0].value
     assert journal.read_bytes() == before
+
+
+def _performance_screen():
+    from quantlab.ui.workbench_pages import render_performance_inputs
+
+    render_performance_inputs("mine", {"account_fingerprint": "synthetic-ui-basis"})
+
+
+def test_performance_ui_explains_real_temporary_evidence_gaps(tmp_path, monkeypatch):
+    from quantlab.personal import inspect_performance_inputs
+    from quantlab.personal import performance_inputs as module
+
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "personal"))
+    from test_performance_inputs import FixedDatetime, _valued
+
+    root, storage, checkpoint, _ = _valued(tmp_path)
+    before = checkpoint.read_bytes()
+    monkeypatch.setattr(module, "datetime", FixedDatetime)
+    monkeypatch.setattr(
+        workbench_pages,
+        "inspect_performance_inputs",
+        lambda account_id: inspect_performance_inputs(
+            account_id, account_root=root, storage=storage
+        ),
+    )
+    app = AppTest.from_function(_performance_screen).run()
+    next(button for button in app.button if button.label == "检查收益计算条件").click().run()
+    assert not app.exception
+    assert "不能生成可信的账户收益率" in app.warning[0].value
+    assert "分红、送转" in app.dataframe[0].value.to_string()
+    assert checkpoint.read_bytes() == before
