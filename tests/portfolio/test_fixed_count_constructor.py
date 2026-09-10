@@ -6,7 +6,6 @@ import pytest
 
 from quantlab.portfolio import FixedCountPortfolioConfig, construct_fixed_count_portfolio
 
-
 DAY = date(2026, 1, 5)
 
 
