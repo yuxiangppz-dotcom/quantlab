@@ -1,0 +1,31 @@
+{
+  "schema": "quantlab_strategy_registry_v1",
+  "strategies": [
+    {
+      "strategy_id": "momentum_20d_reversal_example",
+      "version": "daily_mvp_v1",
+      "role": "baseline",
+      "score_source": "return_20d lower_is_better",
+      "status": "FORWARD_EVIDENCE_ACCUMULATING",
+      "evidence_refs": [
+        "research-backtest-v1.0",
+        "config/forward_shadow_v1.json"
+      ],
+      "user_approved": false,
+      "notes": "Research example baseline; historical results were already observed and are not a profitability claim."
+    },
+    {
+      "strategy_id": "transparent_combo_v1",
+      "version": "v1_frozen_forward_candidate",
+      "role": "candidate",
+      "score_source": "transparent_combo_v1 higher_is_better",
+      "status": "FORWARD_EVIDENCE_ACCUMULATING",
+      "evidence_refs": [
+        "config/portfolio_translation_audit_v1_1.json",
+        "config/forward_shadow_v1.json"
+      ],
+      "user_approved": false,
+      "notes": "Unpromoted candidate under immutable Forward Shadow observation."
+    }
+  ]
+}
