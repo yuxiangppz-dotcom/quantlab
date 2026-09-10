@@ -16,7 +16,7 @@ from pathlib import Path, PurePosixPath
 from quantlab.data.models import DataValidationError
 from quantlab.research.strategy_registry import (
     ELIGIBLE_FOR_USER_REVIEW,
-    FORWARD_EVIDENCE_ACCUMATING,
+    FORWARD_EVIDENCE_ACCUMULATING,
     FORWARD_SHADOW,
     USER_APPROVED,
     load_strategy_registry,
@@ -24,7 +24,7 @@ from quantlab.research.strategy_registry import (
 
 _FORWARD_STATES = {
     FORWARD_SHADOW,
-    FORWARD_EVIDENCE_ACCUMATING,
+    FORWARD_EVIDENCE_ACCUMULATING,
     ELIGIBLE_FOR_USER_REVIEW,
     USER_APPROVED,
 }
@@ -227,9 +227,7 @@ def validate_strategy_forward_binding(
             )
         claimed_models.add(model_key)
 
-        expected_score_source = (
-            f"{model['source_column']} {model['direction']}"
-        )
+        expected_score_source = f"{model['source_column']} {model['direction']}"
         if entry.score_source != expected_score_source:
             raise DataValidationError(
                 "strategy score_source does not match Forward Shadow model contract: "
