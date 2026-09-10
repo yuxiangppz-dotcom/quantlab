@@ -248,6 +248,9 @@ def evaluate_matured_forward_shadows(
 
     Evaluations live outside prediction directories. Missing target labels make
     the diagnostic incomplete rather than silently dropping the instrument.
+    Every prediction is integrity-checked before any maturity or return
+    calculation so a mutated manifest, score file, or target portfolio can never
+    become evaluation evidence.
     """
     storage = storage or ParquetStorage(PROJECT_ROOT / "data" / "canonical")
     evaluation_root = evaluation_root or shadow_root / "evaluations"
@@ -257,6 +260,11 @@ def evaluate_matured_forward_shadows(
     dataset_cache: dict[tuple[date, int], pd.DataFrame] = {}
     for manifest_path in manifests:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        fingerprint = manifest.get("prediction_fingerprint")
+        if not isinstance(fingerprint, str) or not fingerprint:
+            raise DataValidationError("forward-shadow prediction fingerprint is missing or invalid")
+        _validate_existing(manifest_path.parent, fingerprint)
+
         signal_date = date.fromisoformat(manifest["trade_date"])
         horizon = int(manifest["label"]["horizon_sessions"])
         if signal_date not in sessions:

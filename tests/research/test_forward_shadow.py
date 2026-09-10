@@ -185,3 +185,38 @@ def test_forward_shadow_manifest_tampering_fails_closed(tmp_path: Path) -> None:
     marker.write_text(json.dumps(payload))
     with pytest.raises(DataValidationError, match="manifest content mismatch"):
         generate_forward_shadow(product_root=products, shadow_root=root, config_path=config)
+
+
+def test_matured_evaluation_rejects_tampered_prediction_target(tmp_path: Path) -> None:
+    storage, products, config, _ = _seed(tmp_path)
+    root = tmp_path / "shadow"
+    result = generate_forward_shadow(product_root=products, shadow_root=root, config_path=config)[0]
+    target = result.prediction_dir / "target_portfolio.csv"
+    target.write_text("instrument_id,target_weight\n000001.SZ,1.0\n", encoding="utf-8")
+
+    with pytest.raises(
+        DataValidationError,
+        match="immutable forward-shadow file mismatch: target_portfolio.csv",
+    ):
+        evaluate_matured_forward_shadows(
+            storage=storage,
+            shadow_root=root,
+            evaluation_root=tmp_path / "evaluations",
+        )
+
+
+def test_matured_evaluation_rejects_tampered_prediction_manifest(tmp_path: Path) -> None:
+    storage, products, config, _ = _seed(tmp_path)
+    root = tmp_path / "shadow"
+    result = generate_forward_shadow(product_root=products, shadow_root=root, config_path=config)[0]
+    marker = result.prediction_dir / "prediction.json"
+    payload = json.loads(marker.read_text())
+    payload["code_head"] = "f" * 40
+    marker.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(DataValidationError, match="manifest content mismatch"):
+        evaluate_matured_forward_shadows(
+            storage=storage,
+            shadow_root=root,
+            evaluation_root=tmp_path / "evaluations",
+        )
