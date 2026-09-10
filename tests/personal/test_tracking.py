@@ -183,14 +183,34 @@ def test_reference_plan_rejects_daily_snapshot_stale_relative_to_fills(
     product_root = tmp_path / "daily"
     out = product_root / "2026-09-04"
     out.mkdir(parents=True)
-    ranking = b"instrument_id,selected,target_weight,risk_context\n"
-    target = b"instrument_id,target_weight\n"
+    ranking = (
+        b"instrument_id,trade_date,alpha_score,rank,selected,target_weight,risk_context\n"
+    )
+    target = b"instrument_id,rank,alpha_score,target_weight\n"
     (out / "ranking.csv").write_bytes(ranking)
     (out / "target_portfolio.csv").write_bytes(target)
     (out / "report.html").write_text("ok")
     report_core = {
         "effective_as_of": "2026-09-04",
         "next_known_open_session": "2026-09-07",
+        "model": {
+            "target_count": 1,
+            "score_direction": "higher_is_better",
+            "gross_exposure": 1.0,
+            "max_weight_per_name": 1.0,
+            "tie_policy": "alpha_score_then_instrument_id",
+        },
+        "ranking": {
+            "universe_rows": 0,
+            "valid_score_rows": 0,
+            "selected_rows": 0,
+            "tie_policy": "alpha_score_then_instrument_id",
+        },
+        "target": {
+            "position_weight": 0.0,
+            "position_weight_sum": 0.0,
+            "cash_weight": 1.0,
+        },
     }
     fingerprint = hashlib.sha256(
         json.dumps(
