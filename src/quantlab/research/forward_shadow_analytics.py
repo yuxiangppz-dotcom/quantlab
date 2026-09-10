@@ -71,16 +71,21 @@ def _median(values: list[float]) -> float:
     return (ordered[middle - 1] + ordered[middle]) / 2
 
 
-def summarize_forward_shadow(
-    shadow_root: Path,
-    *,
-    evaluation_root: Path | None = None,
-) -> list[ShadowDiagnosticSummary]:
-    """Summarize prediction/evaluation coverage without inventing a NAV series."""
-    evaluation_root = evaluation_root or shadow_root / "evaluations"
+def _valid_return(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError("complete forward-shadow evaluation has invalid return")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError("complete forward-shadow evaluation has invalid return")
+    return result
+
+
+def _load_prediction_index(shadow_root: Path) -> tuple[
+    dict[tuple[str, str], list[dict]],
+    dict[tuple[str, str, str], str],
+]:
     predictions_by_model: dict[tuple[str, str], list[dict]] = defaultdict(list)
     prediction_keys: dict[tuple[str, str, str], str] = {}
-
     for path in sorted(shadow_root.glob("*/*/*/*/prediction.json")):
         payload = _load_prediction(path)
         model = payload.get("model") or {}
@@ -90,7 +95,6 @@ def summarize_forward_shadow(
         fingerprint = payload.get("prediction_fingerprint")
         if not all(isinstance(value, str) and value for value in (model_id, version, signal_date)):
             raise ValueError(f"forward-shadow prediction identity is incomplete: {path}")
-        key = (model_id, version)
         identity = (model_id, version, signal_date)
         previous = prediction_keys.get(identity)
         if previous is not None and previous != fingerprint:
@@ -98,19 +102,43 @@ def summarize_forward_shadow(
                 "multiple immutable predictions exist for the same model/version/signal date"
             )
         prediction_keys[identity] = fingerprint
-        predictions_by_model[key].append(payload)
+        predictions_by_model[(model_id, version)].append(payload)
+    return predictions_by_model, prediction_keys
 
+
+def _load_evaluation_index(
+    evaluation_root: Path,
+    known_prediction_fingerprints: set[str],
+) -> dict[str, dict]:
     evaluations_by_prediction: dict[str, dict] = {}
-    if evaluation_root.exists():
-        for path in sorted(evaluation_root.glob("*/*/*/*/*.json")):
-            payload = _load_evaluation(path)
-            prediction_fingerprint = payload.get("prediction_fingerprint")
-            if not isinstance(prediction_fingerprint, str) or not prediction_fingerprint:
-                raise ValueError(f"evaluation is not bound to a prediction: {path}")
-            previous = evaluations_by_prediction.get(prediction_fingerprint)
-            if previous is not None and previous != payload:
-                raise ValueError("multiple different evaluations exist for one prediction")
-            evaluations_by_prediction[prediction_fingerprint] = payload
+    if not evaluation_root.exists():
+        return evaluations_by_prediction
+    for path in sorted(evaluation_root.glob("*/*/*/*/*.json")):
+        payload = _load_evaluation(path)
+        prediction_fingerprint = payload.get("prediction_fingerprint")
+        if not isinstance(prediction_fingerprint, str) or not prediction_fingerprint:
+            raise ValueError(f"evaluation is not bound to a prediction: {path}")
+        if prediction_fingerprint not in known_prediction_fingerprints:
+            raise ValueError("forward-shadow evaluation references an unknown prediction")
+        previous = evaluations_by_prediction.get(prediction_fingerprint)
+        if previous is not None and previous != payload:
+            raise ValueError("multiple different evaluations exist for one prediction")
+        evaluations_by_prediction[prediction_fingerprint] = payload
+    return evaluations_by_prediction
+
+
+def summarize_forward_shadow(
+    shadow_root: Path,
+    *,
+    evaluation_root: Path | None = None,
+) -> list[ShadowDiagnosticSummary]:
+    """Summarize prediction/evaluation coverage without inventing a NAV series."""
+    evaluation_root = evaluation_root or shadow_root / "evaluations"
+    predictions_by_model, prediction_keys = _load_prediction_index(shadow_root)
+    evaluations_by_prediction = _load_evaluation_index(
+        evaluation_root,
+        set(prediction_keys.values()),
+    )
 
     summaries = []
     for (model_id, version), predictions in sorted(predictions_by_model.items()):
@@ -131,12 +159,11 @@ def summarize_forward_shadow(
                 raise ValueError("forward-shadow evaluation identity does not match prediction")
             status = evaluation.get("status")
             if status == "complete":
-                value = evaluation.get("weighted_target_return")
-                if not isinstance(value, int | float) or not math.isfinite(float(value)):
-                    raise ValueError("complete forward-shadow evaluation has invalid return")
-                complete_returns.append(float(value))
-            else:
+                complete_returns.append(_valid_return(evaluation.get("weighted_target_return")))
+            elif status == "incomplete_missing_target_label":
                 incomplete += 1
+            else:
+                raise ValueError(f"unsupported forward-shadow evaluation status: {status!r}")
 
         summaries.append(
             ShadowDiagnosticSummary(
@@ -177,22 +204,18 @@ def paired_shadow_diagnostics(
     not active return, information ratio, CAGR, or a tradable portfolio claim.
     """
     evaluation_root = evaluation_root or shadow_root / "evaluations"
-    predictions: dict[tuple[str, str, str], str] = {}
-    for path in sorted(shadow_root.glob("*/*/*/*/prediction.json")):
-        payload = _load_prediction(path)
-        model = payload["model"]
-        predictions[(model["model_id"], model["version"], payload["trade_date"])] = payload[
-            "prediction_fingerprint"
-        ]
+    _, predictions = _load_prediction_index(shadow_root)
+    evaluations = _load_evaluation_index(evaluation_root, set(predictions.values()))
 
     complete_by_fingerprint = {}
-    if evaluation_root.exists():
-        for path in sorted(evaluation_root.glob("*/*/*/*/*.json")):
-            payload = _load_evaluation(path)
-            if payload.get("status") == "complete":
-                value = payload.get("weighted_target_return")
-                if isinstance(value, int | float) and math.isfinite(float(value)):
-                    complete_by_fingerprint[payload["prediction_fingerprint"]] = float(value)
+    for fingerprint, payload in evaluations.items():
+        status = payload.get("status")
+        if status == "complete":
+            complete_by_fingerprint[fingerprint] = _valid_return(
+                payload.get("weighted_target_return")
+            )
+        elif status != "incomplete_missing_target_label":
+            raise ValueError(f"unsupported forward-shadow evaluation status: {status!r}")
 
     left_dates = {
         signal_date: fingerprint
