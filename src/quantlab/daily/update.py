@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from quantlab.data.enrichment import (
     sync_daily_price_limits,
@@ -36,6 +37,10 @@ class IncrementalUpdateResult:
     enrichment_status: dict
     stopped_at: str | None
     stop_reason: str | None
+    data_window_start: date | None
+    calendar_requested_through: date
+    older_missing_partition_sessions: int
+    older_missing_partition_examples: tuple[str, ...]
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -85,6 +90,8 @@ def run_incremental_update(
     include_enrichment: bool = False,
     financial_period: date | None = None,
     dividend_instruments: tuple[str, ...] = (),
+    lookback_sessions: int = 5,
+    calendar_lookahead_days: int = 35,
 ) -> IncrementalUpdateResult:
     """Update missing daily partitions through a requested local date.
 
@@ -93,15 +100,17 @@ def run_incremental_update(
     published a complete close stops the run cleanly; the common complete date
     therefore never advances on partial data.  Existing partitions are reused.
     """
-    existing_calendar = storage.load_trading_calendar()
-    calendar_start = (
-        min(through, max(item.trade_date for item in existing_calendar) + timedelta(days=1))
-        if existing_calendar
-        else through - timedelta(days=45)
-    )
-    if calendar_start > through:
-        calendar_start = through
-    fresh_calendar = provider.get_trading_calendar(calendar_start, through)
+    if type(lookback_sessions) is not int or not 1 <= lookback_sessions <= 60:
+        raise DataValidationError("lookback_sessions must be an integer in [1, 60]")
+    if type(calendar_lookahead_days) is not int or not 0 <= calendar_lookahead_days <= 366:
+        raise DataValidationError("calendar_lookahead_days must be an integer in [0, 366]")
+    if type(through) is not date or through > datetime.now(ZoneInfo("Asia/Shanghai")).date():
+        raise DataValidationError("daily update through must be a date no later than today")
+    # Calendar publication and daily-bar publication progress independently.
+    # Refresh a bounded calendar range, then resume from actual missing files.
+    calendar_start = through - timedelta(days=max(45, lookback_sessions * 4))
+    calendar_end = through + timedelta(days=calendar_lookahead_days)
+    fresh_calendar = provider.get_trading_calendar(calendar_start, calendar_end)
     if fresh_calendar:
         storage.upsert_trading_calendar(fresh_calendar)
     securities = provider.get_securities()
@@ -109,13 +118,22 @@ def run_incremental_update(
         storage.upsert_securities(securities)
 
     calendar = storage.load_trading_calendar()
-    open_dates = sorted(
+    all_open_dates = sorted(
         {
             item.trade_date
             for item in calendar
-            if item.is_open and calendar_start <= item.trade_date <= through
+            if item.is_open and item.trade_date <= through
         }
     )
+    open_dates = all_open_dates[-lookback_sessions:]
+    exists = (
+        storage.daily_bars_exists, storage.adj_factor_exists,
+        storage.daily_basic_exists, storage.index_daily_exists,
+    )
+    older_missing = [
+        day for day in all_open_dates[:-lookback_sessions]
+        if not all(check(day) for check in exists)
+    ]
     synced: list[str] = []
     skipped: list[str] = []
     index_synced: list[str] = []
@@ -151,11 +169,16 @@ def run_incremental_update(
             index_rows = []
             for instrument_id in index_instruments:
                 index_rows.extend(provider.get_index_daily(instrument_id, trade_date, trade_date))
-            validate_index_daily_bars(index_rows, trade_date)
-            found = {item.instrument_id for item in index_rows}
-            if found == set(index_instruments):
-                storage.save_index_daily_by_date(index_rows, trade_date)
-                index_synced.append(trade_date.isoformat())
+            try:
+                validate_index_daily_bars(index_rows, trade_date)
+                if {item.instrument_id for item in index_rows} != set(index_instruments):
+                    raise DataValidationError("required index instrument coverage is incomplete")
+            except DataValidationError as exc:
+                stopped_at = trade_date.isoformat()
+                stop_reason = f"provider index close not complete or invalid: {exc}"
+                break
+            storage.save_index_daily_by_date(index_rows, trade_date)
+            index_synced.append(trade_date.isoformat())
 
     context_status: dict = {"requested": include_context, "datasets": {}}
     completed_dates = [date.fromisoformat(value) for value in (*skipped, *synced)]
@@ -188,4 +211,8 @@ def run_incremental_update(
         enrichment_status=enrichment_status,
         stopped_at=stopped_at,
         stop_reason=stop_reason,
+        data_window_start=open_dates[0] if open_dates else None,
+        calendar_requested_through=calendar_end,
+        older_missing_partition_sessions=len(older_missing),
+        older_missing_partition_examples=tuple(day.isoformat() for day in older_missing[:10]),
     )

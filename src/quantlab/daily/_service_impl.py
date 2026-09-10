@@ -181,6 +181,9 @@ def inspect_data_status(
             f"calendar coverage ends at {latest_calendar_date}; sessions through "
             f"{requested} are unknown"
         )
+    elif requested not in calendar_by_date:
+        requested_session_status = "unknown_calendar_missing_date"
+        issues.append(f"calendar has no record for requested date {requested}")
     else:
         requested_session_status = "open" if any(calendar_by_date.get(requested, [])) else "closed"
 
@@ -239,7 +242,7 @@ def inspect_data_status(
         issues.append("no open session has all required daily model datasets")
     else:
         stale_open_sessions = sum(day > effective for day in open_dates)
-        if requested > latest_calendar_date:
+        if requested_session_status.startswith("unknown_calendar"):
             status = "stale_calendar_unknown"
             stale_open_sessions = None
         elif effective != latest_expected:
