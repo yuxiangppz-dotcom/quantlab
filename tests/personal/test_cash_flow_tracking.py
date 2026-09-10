@@ -23,7 +23,9 @@ ACCOUNT_HEADER = (
     "account_id,account_mode,as_of,cash_cny,instrument_id,quantity,"
     "sellable_quantity,reference_cost_cny,open_orders_declaration\n"
 )
-FLOW_HEADER = "account_id,external_flow_id,reported_at,direction,amount_cny\n"
+FLOW_HEADER = (
+    "account_id,external_flow_id,effective_at,reported_at,direction,amount_cny\n"
+)
 FILL_HEADER = (
     "account_id,broker_trade_id,trade_date,reported_at,instrument_id,side,"
     "quantity,price_cny,gross_notional_cny,fee_cny\n"
@@ -70,10 +72,13 @@ def _flow(
     reported_at: str,
     direction: str,
     amount: str,
+    *,
+    effective_at: str | None = None,
 ) -> bytes:
+    effective = effective_at or reported_at
     return (
         FLOW_HEADER
-        + f"mine,{flow_id},{reported_at},{direction},{amount}\n"
+        + f"mine,{flow_id},{effective},{reported_at},{direction},{amount}\n"
     ).encode()
 
 
@@ -102,6 +107,8 @@ def test_deposit_preview_is_read_only_then_updates_effective_cash_only(tmp_path:
     assert preview["accepted_count"] == 1
     assert preview["cash_fen"] == 250_000
     assert preview["external_cash_flow_net_fen"] == 50_000
+    assert preview["cash_flow_timing_quality"] == "exact_effective_time"
+    assert preview["cash_flow_timing_performance_eligible"] is True
     assert preview["positions"] == [
         {"instrument_id": "000001.SZ", "quantity": 200, "sellable_quantity": 200}
     ]
@@ -115,8 +122,10 @@ def test_deposit_preview_is_read_only_then_updates_effective_cash_only(tmp_path:
         storage=storage,
     )
     payload = json.loads(path.read_text())
-    assert payload["schema"] == "quantlab_manual_tracking_journal_v2"
+    assert payload["schema"] == "quantlab_manual_tracking_journal_v3"
     assert payload["events"][0]["event_type"] == "external_cash_flow"
+    assert payload["events"][0]["effective_at"] == "2026-09-07T14:00:00+08:00"
+    assert payload["events"][0]["reported_at"] == "2026-09-07T14:00:00+08:00"
     assert committed["cash_fen"] == 250_000
 
     effective = load_effective_account("mine", account_root=account_root, storage=storage)
@@ -124,6 +133,7 @@ def test_deposit_preview_is_read_only_then_updates_effective_cash_only(tmp_path:
     assert effective["positions"][0]["quantity"] == 200
     assert effective["external_cash_flow_net_fen"] == 50_000
     assert effective["source"] == "opening_snapshot_plus_manual_tracking_journal"
+    assert effective["cash_flow_timing_quality"] == "exact_effective_time"
 
 
 def test_withdrawal_is_replayed_and_insufficient_withdrawal_is_atomic(tmp_path: Path) -> None:
@@ -184,10 +194,28 @@ def test_cash_flow_duplicate_is_idempotent_and_changed_economics_conflicts(tmp_p
             "mine", changed, account_root=account_root, storage=storage
         )
 
+    changed_time = _flow(
+        "D1",
+        "2026-09-07T14:00:00+08:00",
+        "DEPOSIT",
+        "500.00",
+        effective_at="2026-09-07T13:59:00+08:00",
+    )
+    with pytest.raises(ValueError, match="reused with different economics"):
+        preview_manual_cash_flows(
+            "mine", changed_time, account_root=account_root, storage=storage
+        )
 
-def test_cash_flow_and_fill_replay_follow_event_time_not_import_order(tmp_path: Path) -> None:
+
+def test_cash_flow_and_fill_replay_follow_effective_time_not_import_order(tmp_path: Path) -> None:
     account_root, storage = _seed(tmp_path, cash_cny="1000.00")
-    deposit = _flow("D1", "2026-09-07T14:00:00+08:00", "DEPOSIT", "1000.00")
+    deposit = _flow(
+        "D1",
+        "2026-09-07T16:00:00+08:00",
+        "DEPOSIT",
+        "1000.00",
+        effective_at="2026-09-07T14:00:00+08:00",
+    )
     import_manual_cash_flows(
         "mine",
         deposit,
@@ -208,9 +236,17 @@ def test_cash_flow_and_fill_replay_follow_event_time_not_import_order(tmp_path: 
     assert summary["fill_event_count"] == 1
     assert summary["cash_flow_event_count"] == 1
     assert summary["positions"][0]["quantity"] == 350
+    assert summary["latest_economic_fact_at"] == "2026-09-07T15:00:00+08:00"
+    assert summary["latest_reported_at"] == "2026-09-07T16:00:00+08:00"
 
     account_root2, storage2 = _seed(tmp_path / "late", cash_cny="1000.00")
-    late_deposit = _flow("D1", "2026-09-07T16:00:00+08:00", "DEPOSIT", "1000.00")
+    late_deposit = _flow(
+        "D1",
+        "2026-09-07T16:30:00+08:00",
+        "DEPOSIT",
+        "1000.00",
+        effective_at="2026-09-07T16:00:00+08:00",
+    )
     import_manual_cash_flows(
         "mine",
         late_deposit,
@@ -249,7 +285,7 @@ def test_fill_only_journal_stays_v1_and_upgrades_without_losing_fill(tmp_path: P
         storage=storage,
     )
     payload = json.loads(path.read_text())
-    assert payload["schema"] == "quantlab_manual_tracking_journal_v2"
+    assert payload["schema"] == "quantlab_manual_tracking_journal_v3"
     assert {item["event_type"] for item in payload["events"]} == {
         "manual_fill",
         "external_cash_flow",
@@ -273,6 +309,18 @@ def test_combined_journal_tampering_is_rejected(tmp_path: Path) -> None:
     path.write_text(json.dumps(payload))
     with pytest.raises(ValueError, match="event fingerprint mismatch"):
         load_tracking_summary("mine", account_root=account_root, storage=storage)
+
+
+def test_old_cash_flow_csv_contract_is_rejected_instead_of_silent_downgrade(
+    tmp_path: Path,
+) -> None:
+    account_root, storage = _seed(tmp_path)
+    old = (
+        b"account_id,external_flow_id,reported_at,direction,amount_cny\n"
+        b"mine,D1,2026-09-07T14:00:00+08:00,DEPOSIT,100.00\n"
+    )
+    with pytest.raises(ValueError, match="columns must exactly equal"):
+        preview_manual_cash_flows("mine", old, account_root=account_root, storage=storage)
 
 
 def test_valuation_with_external_cash_flow_never_emits_simple_return(tmp_path: Path) -> None:
@@ -309,5 +357,6 @@ def test_valuation_with_external_cash_flow_never_emits_simple_return(tmp_path: P
     assert valued["status"] == "complete_mark_to_market_external_cash_flows_unadjusted"
     assert valued["current_nav_fen"] == 430_000
     assert valued["external_cash_flow_net_fen"] == 50_000
+    assert valued["cash_flow_timing_quality"] == "exact_effective_time"
     assert "reference_return" not in valued
     assert valued["performance_claim"] is False
