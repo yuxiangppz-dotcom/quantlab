@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import date
 from pathlib import Path
@@ -182,11 +183,32 @@ def test_reference_plan_rejects_daily_snapshot_stale_relative_to_fills(
     product_root = tmp_path / "daily"
     out = product_root / "2026-09-04"
     out.mkdir(parents=True)
+    ranking = b"instrument_id,selected,target_weight,risk_context\n"
+    target = b"instrument_id,target_weight\n"
+    (out / "ranking.csv").write_bytes(ranking)
+    (out / "target_portfolio.csv").write_bytes(target)
+    (out / "report.html").write_text("ok")
+    report_core = {
+        "effective_as_of": "2026-09-04",
+        "next_known_open_session": "2026-09-07",
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {
+                "report": report_core,
+                "ranking_sha256": hashlib.sha256(ranking).hexdigest(),
+                "target_sha256": hashlib.sha256(target).hexdigest(),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            default=str,
+        ).encode()
+    ).hexdigest()
     (out / "report.json").write_text(
-        '{"effective_as_of":"2026-09-04","next_known_open_session":"2026-09-07",'
-        '"content_fingerprint":"old"}'
+        json.dumps({**report_core, "content_fingerprint": fingerprint}),
+        encoding="utf-8",
     )
-    (out / "ranking.csv").write_text("instrument_id,selected,target_weight,risk_context\n")
     with pytest.raises(ValueError, match="stale relative to imported fills"):
         build_reference_plan(
             "mine", account_root=account_root, product_root=product_root, storage=storage
