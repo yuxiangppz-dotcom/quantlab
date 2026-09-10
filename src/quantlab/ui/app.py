@@ -532,6 +532,10 @@ else:
             path = None
             payload = None
         if path is not None and payload is not None:
+            if snapshot is None or payload.get("daily_content_fingerprint") != (
+                snapshot.report.get("content_fingerprint")
+            ):
+                st.warning("这份已保存计划对应旧日报或无法核对当前日报，请重新生成后再使用。")
             st.error(
                 f"状态：{payload['status']}；execution_confirmed=false；"
                 f"信号日 {payload['signal_date']}，拟用于 "

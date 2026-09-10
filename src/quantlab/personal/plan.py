@@ -5,14 +5,14 @@ from __future__ import annotations
 import hashlib
 import io
 import json
-from datetime import date
+from datetime import date, datetime
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 import pandas as pd
 
 from quantlab.daily.integrity import load_validated_latest_snapshot
-from quantlab.daily.service import DEFAULT_PRODUCT_ROOT, PROJECT_ROOT
+from quantlab.daily.service import DEFAULT_PRODUCT_ROOT, PROJECT_ROOT, SHANGHAI
 from quantlab.data.storage import ParquetStorage
 from quantlab.personal.account import (
     DEFAULT_ACCOUNT_ROOT,
@@ -38,6 +38,13 @@ def _estimated_commission_fen(notional_fen: int) -> int:
     rate = Decimal("0.000086") if notional_fen <= 50_000_000 else Decimal("0.00008")
     variable = (Decimal(notional_fen) * rate).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     return max(500, int(variable))
+
+
+def _account_economic_date(value: str) -> date:
+    timestamp = datetime.fromisoformat(value)
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        raise ValueError("account economic time must include an explicit timezone")
+    return timestamp.astimezone(SHANGHAI).date()
 
 
 def load_latest_plan(
@@ -97,6 +104,14 @@ def build_reference_plan(
             "daily snapshot is stale relative to imported fills; update and regenerate daily first"
         )
     account_as_of = account["as_of"]
+    latest_flow = account.get("latest_external_cash_flow_effective_at")
+    if latest_flow is not None and _account_economic_date(latest_flow) >= intended_session:
+        raise ValueError(
+            "daily snapshot is stale relative to imported cash flows; "
+            "update and regenerate daily first"
+        )
+    if _account_economic_date(account_as_of) > intended_session:
+        raise ValueError("account basis is later than intended session; regenerate daily first")
     ranking = pd.read_csv(snapshot.ranking_path)
     target_rows = ranking[ranking["selected"]]
     if target_rows["instrument_id"].duplicated().any():
