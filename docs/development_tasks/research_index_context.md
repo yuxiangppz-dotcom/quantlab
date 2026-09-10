@@ -71,3 +71,33 @@ real coverage verification and CI. Next: repair demonstrated historical
 ST/suspension/price-limit gaps, preserving missing/uncertain evidence, then use
 the preregistered feature/model comparisons. Twenty percent drawdown remains a
 research objective, not a verified result or live guarantee.
+
+## Authorized real acquisition
+
+Executed from clean pushed `e66867785ee5b7614ff3ed84541dc7a90bd0aaf7` at
+2026-09-11 01:12:25.534441 through 01:12:27.537640 Asia/Shanghai. Two index_basic
+identity requests and 15 calendar-year index_daily requests completed. Provider
+metadata confirmed SSE codes, names, base dates and publication dates.
+
+| Series | Retained dates | Rows | Rows on/after index publication |
+|---|---|---:|---:|
+| SSE Composite 000001.SH | 2019-07-09–2026-09-10 | 1,743 | 1,743 |
+| STAR50 000688.SH | 2020-01-02–2026-09-10 | 1,623 | 1,490 |
+
+All requested SSE sessions matched; no optional volume/amount was missing. The
+133 STAR50 backcast rows remain marked as prepublication history. No provider
+failure or validation exception occurred. The snapshot is 797,736 bytes at
+`data/canonical/research_index_context_v1/162764d675283a4eb8d42e1f621ea262fde9054b37a14bb6f4383a135bc623f2.json`,
+with complete content fingerprint
+`5fb766a57484af176254a8352d6ea54f14bcffb009a0854a379d5ff460497829`.
+An immediate rerun returned the identical verified snapshot with `reused=true`
+and no provider construction. A separate byte-hash comparison of **all 4,054**
+original index partitions passed; the ignored preservation receipt is
+`data/products/delivery/20260911/index_context_preservation.json`.
+
+This repairs the two source gaps in a separate namespace. The original input
+audit still describes the original benchmark namespace; downstream research
+must explicitly select and pin this supplemental snapshot. No existing daily,
+forward, model or performance artifact is relabelled as having used these data.
+Actual code, verification and evidence report are committed and pushed; final
+report commit, PR and merge/master CI identifiers are recorded in the PR.
