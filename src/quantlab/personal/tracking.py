@@ -1,4 +1,9 @@
-"""Preview, import, and replay user-reported fills through the execution ledger."""
+"""Preview, import, and replay user-reported account facts.
+
+Broker fills remain execution-ledger facts. External deposits and withdrawals are
+account-truth facts layered around that ledger; they never become orders, fills,
+or broker authority.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +11,7 @@ import csv
 import hashlib
 import io
 import json
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -27,6 +33,7 @@ from quantlab.execution import (
     exchange_date,
 )
 from quantlab.personal.account import DEFAULT_ACCOUNT_ROOT, atomic_json, load_account
+from quantlab.personal.cash_flow import CashFlowDirection, ExternalCashFlow
 
 FILL_COLUMNS = (
     "account_id",
@@ -40,6 +47,23 @@ FILL_COLUMNS = (
     "gross_notional_cny",
     "fee_cny",
 )
+CASH_FLOW_COLUMNS = (
+    "account_id",
+    "external_flow_id",
+    "reported_at",
+    "direction",
+    "amount_cny",
+)
+_JOURNAL_V1 = "quantlab_manual_fill_journal_v1"
+_JOURNAL_V2 = "quantlab_manual_tracking_journal_v2"
+
+
+@dataclass(frozen=True)
+class _TrackingReplay:
+    ledger: ExecutionLedger
+    fills: tuple[ManualFillImported, ...]
+    cash_flows: tuple[ExternalCashFlow, ...]
+    latest_occurred_at: datetime
 
 
 def _fen(value: str, field: str, *, positive: bool = False) -> int:
@@ -123,8 +147,8 @@ def _opening_snapshot(account: dict, calendar: TradingCalendar) -> AccountSnapsh
     return AccountSnapshot(account["account_id"], as_of, account["cash_fen"], tuple(lots))
 
 
-def _event_payload(event: ManualFillImported) -> dict:
-    return {
+def _fill_payload(event: ManualFillImported, *, tagged: bool = False) -> dict:
+    payload = {
         "event_id": event.event_id,
         "fill_id": event.fill_id,
         "occurred_at": event.occurred_at.isoformat(),
@@ -142,9 +166,12 @@ def _event_payload(event: ManualFillImported) -> dict:
         "source_sha256": event.source_sha256,
         "source_row_sha256": event.source_row_sha256,
     }
+    return {"event_type": "manual_fill", **payload} if tagged else payload
 
 
-def _event_from_payload(item: dict) -> ManualFillImported:
+def _fill_from_payload(item: dict) -> ManualFillImported:
+    if item.get("event_type", "manual_fill") != "manual_fill":
+        raise ValueError("journal event is not a manual fill")
     return ManualFillImported(
         event_id=item["event_id"],
         fill_id=item["fill_id"],
@@ -167,10 +194,48 @@ def _event_from_payload(item: dict) -> ManualFillImported:
     )
 
 
-def _same_economics(left: ManualFillImported, right: ManualFillImported) -> bool:
+def _cash_flow_payload(event: ExternalCashFlow) -> dict:
+    return {
+        "event_type": "external_cash_flow",
+        "event_id": event.event_id,
+        "flow_id": event.flow_id,
+        "occurred_at": event.occurred_at.isoformat(),
+        "account_id": event.account_id,
+        "direction": event.direction.value,
+        "amount_fen": event.amount_fen,
+        "source_sha256": event.source_sha256,
+        "source_row_sha256": event.source_row_sha256,
+    }
+
+
+def _cash_flow_from_payload(item: dict) -> ExternalCashFlow:
+    if item.get("event_type") != "external_cash_flow":
+        raise ValueError("journal event is not an external cash flow")
+    return ExternalCashFlow(
+        event_id=item["event_id"],
+        flow_id=item["flow_id"],
+        occurred_at=datetime.fromisoformat(item["occurred_at"]),
+        account_id=item["account_id"],
+        direction=CashFlowDirection(item["direction"]),
+        amount_fen=item["amount_fen"],
+        source_sha256=item["source_sha256"],
+        source_row_sha256=item["source_row_sha256"],
+    )
+
+
+def _same_fill_economics(left: ManualFillImported, right: ManualFillImported) -> bool:
     excluded = {"source_sha256", "source_row_sha256"}
-    return {key: value for key, value in _event_payload(left).items() if key not in excluded} == {
-        key: value for key, value in _event_payload(right).items() if key not in excluded
+    return {key: value for key, value in _fill_payload(left).items() if key not in excluded} == {
+        key: value for key, value in _fill_payload(right).items() if key not in excluded
+    }
+
+
+def _same_cash_flow_economics(left: ExternalCashFlow, right: ExternalCashFlow) -> bool:
+    excluded = {"source_sha256", "source_row_sha256"}
+    return {
+        key: value for key, value in _cash_flow_payload(left).items() if key not in excluded
+    } == {
+        key: value for key, value in _cash_flow_payload(right).items() if key not in excluded
     }
 
 
@@ -189,10 +254,17 @@ def _load_journal(account: dict, account_root: Path) -> dict | None:
     if not path.exists():
         return None
     payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("schema") not in {_JOURNAL_V1, _JOURNAL_V2}:
+        raise ValueError("unsupported manual tracking journal schema")
+    if payload.get("account_id") != account["account_id"]:
+        raise ValueError("manual journal account binding mismatch")
     if payload.get("opening_account_fingerprint") != account["account_fingerprint"]:
         raise ValueError("manual journal opening-account fingerprint mismatch")
+    events = payload.get("events")
+    if not isinstance(events, list):
+        raise ValueError("manual journal events must be a list")
     expected = hashlib.sha256(
-        json.dumps(payload["events"], sort_keys=True, separators=(",", ":")).encode()
+        json.dumps(events, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     if payload.get("events_fingerprint") != expected:
         raise ValueError("manual journal event fingerprint mismatch")
@@ -205,9 +277,37 @@ def _load_journal(account: dict, account_root: Path) -> dict | None:
     return payload
 
 
-def _load_events(account: dict, account_root: Path) -> list[ManualFillImported]:
-    payload = _load_journal(account, account_root)
-    return [] if payload is None else [_event_from_payload(item) for item in payload["events"]]
+def _decode_journal(payload: dict | None) -> tuple[list[ManualFillImported], list[ExternalCashFlow]]:
+    if payload is None:
+        return [], []
+    fills: list[ManualFillImported] = []
+    flows: list[ExternalCashFlow] = []
+    if payload["schema"] == _JOURNAL_V1:
+        fills = [_fill_from_payload(item) for item in payload["events"]]
+    else:
+        for item in payload["events"]:
+            event_type = item.get("event_type")
+            if event_type == "manual_fill":
+                fills.append(_fill_from_payload(item))
+            elif event_type == "external_cash_flow":
+                flows.append(_cash_flow_from_payload(item))
+            else:
+                raise ValueError(f"unknown manual tracking event_type: {event_type!r}")
+    identities = [event.event_id for event in (*fills, *flows)]
+    if len(identities) != len(set(identities)):
+        raise ValueError("duplicate event_id in manual tracking journal")
+    ordered = sorted((*fills, *flows), key=lambda event: (event.occurred_at, event.event_id))
+    if [event.event_id for event in ordered] != [
+        item.get("event_id") for item in payload["events"]
+    ]:
+        raise ValueError("manual tracking journal events are not deterministically ordered")
+    return fills, flows
+
+
+def _load_events(
+    account: dict, account_root: Path
+) -> tuple[list[ManualFillImported], list[ExternalCashFlow]]:
+    return _decode_journal(_load_journal(account, account_root))
 
 
 def _close_fen(value: object) -> int:
@@ -247,7 +347,7 @@ def _opening_mark(
     }
 
 
-def _parse_events(
+def _parse_fill_events(
     raw: bytes,
     account: dict,
     calendar: TradingCalendar,
@@ -284,44 +384,397 @@ def _parse_events(
             json.dumps(row_payload, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
         fill_id = f"{trade_date.isoformat()}:{broker_id}"
-        event = ManualFillImported(
-            event_id=f"manual:{account['account_id']}:{fill_id}",
-            fill_id=fill_id,
-            occurred_at=reported_at.astimezone(SHANGHAI),
-            account_id=account["account_id"],
-            instrument_id=instrument,
-            side=side,
-            trade_date=trade_date,
-            quantity=quantity,
-            price=price,
-            gross_notional_fen=gross,
-            fee_fen=fee,
-            buy_lot_sellable_from=(calendar.next_session(trade_date) if side is Side.BUY else None),
-            source_sha256=source_sha,
-            source_row_sha256=row_sha,
+        events.append(
+            ManualFillImported(
+                event_id=f"manual:{account['account_id']}:{fill_id}",
+                fill_id=fill_id,
+                occurred_at=reported_at.astimezone(SHANGHAI),
+                account_id=account["account_id"],
+                instrument_id=instrument,
+                side=side,
+                trade_date=trade_date,
+                quantity=quantity,
+                price=price,
+                gross_notional_fen=gross,
+                fee_fen=fee,
+                buy_lot_sellable_from=(
+                    calendar.next_session(trade_date) if side is Side.BUY else None
+                ),
+                source_sha256=source_sha,
+                source_row_sha256=row_sha,
+            )
         )
-        events.append(event)
     if not events:
         raise ValueError("fill CSV has no rows")
     return events
 
 
-def _replay(
+def _parse_cash_flow_events(raw: bytes, account: dict) -> list[ExternalCashFlow]:
+    source_sha = hashlib.sha256(raw).hexdigest()
+    reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
+    if tuple(reader.fieldnames or ()) != CASH_FLOW_COLUMNS:
+        raise ValueError(f"cash-flow CSV columns must exactly equal {CASH_FLOW_COLUMNS}")
+    events = []
+    for index, row in enumerate(reader, start=1):
+        if row["account_id"].strip() != account["account_id"]:
+            raise ValueError(f"row {index} account_id does not match selected account")
+        flow_id = row["external_flow_id"].strip()
+        if not flow_id:
+            raise ValueError(f"row {index} external_flow_id is required")
+        reported_at = datetime.fromisoformat(row["reported_at"].strip())
+        if reported_at.tzinfo is None or reported_at.utcoffset() is None:
+            raise ValueError(f"row {index} reported_at must include timezone")
+        direction_text = row["direction"].strip().lower()
+        try:
+            direction = CashFlowDirection(direction_text)
+        except ValueError as exc:
+            raise ValueError(f"row {index} direction must be DEPOSIT or WITHDRAWAL") from exc
+        amount_fen = _fen(row["amount_cny"].strip(), "amount_cny", positive=True)
+        row_payload = {key: row[key].strip() for key in CASH_FLOW_COLUMNS}
+        row_sha = hashlib.sha256(
+            json.dumps(row_payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        events.append(
+            ExternalCashFlow(
+                event_id=f"cashflow:{account['account_id']}:{flow_id}",
+                flow_id=flow_id,
+                occurred_at=reported_at.astimezone(SHANGHAI),
+                account_id=account["account_id"],
+                direction=direction,
+                amount_fen=amount_fen,
+                source_sha256=source_sha,
+                source_row_sha256=row_sha,
+            )
+        )
+    if not events:
+        raise ValueError("cash-flow CSV has no rows")
+    return events
+
+
+def _replay_tracking(
     account: dict,
     calendar: TradingCalendar,
-    events: list[ManualFillImported],
-) -> ExecutionLedger:
+    fills: list[ManualFillImported],
+    flows: list[ExternalCashFlow],
+) -> _TrackingReplay:
+    opening_at = datetime.fromisoformat(account["as_of"])
     ledger = ExecutionLedger(_opening_snapshot(account, calendar), calendar=calendar)
-    ledger.append_manual_imports(sorted(events, key=lambda item: (item.occurred_at, item.event_id)))
-    return ledger
+    combined = sorted((*fills, *flows), key=lambda event: (event.occurred_at, event.event_id))
+    ids = [event.event_id for event in combined]
+    if len(ids) != len(set(ids)):
+        raise ValueError("duplicate manual tracking event_id")
+    for event in combined:
+        if event.occurred_at < opening_at:
+            raise ValueError("manual tracking event precedes opening account snapshot")
+        if isinstance(event, ManualFillImported):
+            ledger.append_manual_imports([event])
+            continue
+        cash = ledger.cash_fen + event.signed_amount_fen
+        if cash < 0:
+            raise ValueError(
+                f"external withdrawal {event.flow_id} exceeds settled cash at its event time"
+            )
+        # Cash flows are account truth, not execution events. Rebase the
+        # execution ledger on the exact post-flow cash and unchanged lots so
+        # subsequent fills still use the normal fill/T+1 accounting path.
+        ledger = ExecutionLedger(
+            AccountSnapshot(account["account_id"], event.occurred_at, cash, ledger.lots),
+            calendar=calendar,
+        )
+    latest = combined[-1].occurred_at if combined else opening_at
+    return _TrackingReplay(ledger, tuple(fills), tuple(flows), latest)
+
+
+def _summary(account: dict, replay: _TrackingReplay, duplicate_count: int) -> dict:
+    valuation_date = exchange_date(replay.latest_occurred_at)
+    instruments = sorted({lot.instrument_id for lot in replay.ledger.lots})
+    positions = [
+        {
+            "instrument_id": instrument,
+            "quantity": replay.ledger.position_quantity(instrument),
+            "sellable_quantity": replay.ledger.sellable_quantity(instrument, valuation_date),
+        }
+        for instrument in instruments
+        if replay.ledger.position_quantity(instrument)
+    ]
+    state = {
+        "opening_account_fingerprint": account["account_fingerprint"],
+        "as_of": replay.latest_occurred_at.isoformat(),
+        "cash_fen": replay.ledger.cash_fen,
+        "positions": positions,
+        "fill_ids": sorted(event.fill_id for event in replay.fills),
+    }
+    if replay.cash_flows:
+        state["cash_flow_ids"] = sorted(event.flow_id for event in replay.cash_flows)
+    tracking_fingerprint = hashlib.sha256(
+        json.dumps(state, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    net_external = sum(event.signed_amount_fen for event in replay.cash_flows)
+    return {
+        "account_id": account["account_id"],
+        "opening_account_fingerprint": account["account_fingerprint"],
+        "event_count": len(replay.fills) + len(replay.cash_flows),
+        "fill_event_count": len(replay.fills),
+        "cash_flow_event_count": len(replay.cash_flows),
+        "duplicate_count": duplicate_count,
+        "as_of": replay.latest_occurred_at.isoformat(),
+        "cash_fen": replay.ledger.cash_fen,
+        "total_fee_fen": sum(event.fee_fen for event in replay.fills),
+        "external_cash_flow_net_fen": net_external,
+        "latest_fill_trade_date": (
+            max(event.trade_date for event in replay.fills).isoformat() if replay.fills else None
+        ),
+        "latest_external_cash_flow_at": (
+            max(event.occurred_at for event in replay.cash_flows).isoformat()
+            if replay.cash_flows
+            else None
+        ),
+        "positions": positions,
+        "tracking_fingerprint": tracking_fingerprint,
+        "fills": [_fill_payload(event) for event in replay.fills],
+        "cash_flows": [_cash_flow_payload(event) for event in replay.cash_flows],
+        "mode": account["account_mode"],
+        "broker_submission": False,
+    }
+
+
+def _journal_events(
+    fills: list[ManualFillImported], flows: list[ExternalCashFlow]
+) -> tuple[str, list[dict]]:
+    if not flows:
+        ordered = sorted(fills, key=lambda event: (event.occurred_at, event.event_id))
+        return _JOURNAL_V1, [_fill_payload(event) for event in ordered]
+    combined = sorted((*fills, *flows), key=lambda event: (event.occurred_at, event.event_id))
+    payloads = [
+        _fill_payload(event, tagged=True)
+        if isinstance(event, ManualFillImported)
+        else _cash_flow_payload(event)
+        for event in combined
+    ]
+    return _JOURNAL_V2, payloads
+
+
+def _write_journal(
+    account: dict,
+    account_root: Path,
+    *,
+    fills: list[ManualFillImported],
+    flows: list[ExternalCashFlow],
+    opening_mark: dict,
+    import_kind: str,
+    source_sha256: str,
+    accepted_count: int,
+    duplicate_count: int,
+) -> Path:
+    schema, events = _journal_events(fills, flows)
+    payload = {
+        "schema": schema,
+        "account_id": account["account_id"],
+        "opening_account_fingerprint": account["account_fingerprint"],
+        "events": events,
+        "events_fingerprint": hashlib.sha256(
+            json.dumps(events, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
+        "opening_mark": opening_mark,
+        "latest_import": {
+            "kind": import_kind,
+            "source_sha256": source_sha256,
+            "accepted_count": accepted_count,
+            "duplicate_count": duplicate_count,
+        },
+    }
+    payload["journal_fingerprint"] = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    path = _journal_path(account, account_root)
+    atomic_json(path, payload)
+    return path
+
+
+def _preview_fills_internal(
+    account_id: str,
+    source: Path | bytes,
+    *,
+    account_root: Path,
+    storage: ParquetStorage,
+) -> tuple[dict, list[ManualFillImported], list[ExternalCashFlow]]:
+    account = load_account(account_id, account_root=account_root)
+    if account["account_mode"] != "manual_tracking":
+        raise ValueError("manual fills may only be imported into a manual_tracking account")
+    calendar = _calendar(storage)
+    raw = source.read_bytes() if isinstance(source, Path) else source
+    incoming = _parse_fill_events(
+        raw, account, calendar, {item.instrument_id for item in storage.load_securities()}
+    )
+    existing_fills, flows = _load_events(account, account_root)
+    combined = {event.fill_id: event for event in existing_fills}
+    duplicate_count = 0
+    accepted = []
+    for event in incoming:
+        previous = combined.get(event.fill_id)
+        if previous is not None:
+            if not _same_fill_economics(previous, event):
+                raise ValueError(
+                    f"broker trade id reused with different economics: {event.fill_id}"
+                )
+            duplicate_count += 1
+            continue
+        combined[event.fill_id] = event
+        accepted.append(event)
+    fills = list(combined.values())
+    replay = _replay_tracking(account, calendar, fills, flows)
+    preview = {
+        **_summary(account, replay, duplicate_count),
+        "accepted_count": len(accepted),
+        "source_sha256": hashlib.sha256(raw).hexdigest(),
+    }
+    return preview, fills, flows
+
+
+def _preview_cash_flows_internal(
+    account_id: str,
+    source: Path | bytes,
+    *,
+    account_root: Path,
+    storage: ParquetStorage,
+) -> tuple[dict, list[ManualFillImported], list[ExternalCashFlow]]:
+    account = load_account(account_id, account_root=account_root)
+    if account["account_mode"] != "manual_tracking":
+        raise ValueError("cash flows may only be imported into a manual_tracking account")
+    calendar = _calendar(storage)
+    raw = source.read_bytes() if isinstance(source, Path) else source
+    incoming = _parse_cash_flow_events(raw, account)
+    fills, existing_flows = _load_events(account, account_root)
+    combined = {event.flow_id: event for event in existing_flows}
+    duplicate_count = 0
+    accepted = []
+    for event in incoming:
+        previous = combined.get(event.flow_id)
+        if previous is not None:
+            if not _same_cash_flow_economics(previous, event):
+                raise ValueError(
+                    f"external flow id reused with different economics: {event.flow_id}"
+                )
+            duplicate_count += 1
+            continue
+        combined[event.flow_id] = event
+        accepted.append(event)
+    flows = list(combined.values())
+    replay = _replay_tracking(account, calendar, fills, flows)
+    preview = {
+        **_summary(account, replay, duplicate_count),
+        "accepted_count": len(accepted),
+        "source_sha256": hashlib.sha256(raw).hexdigest(),
+    }
+    return preview, fills, flows
+
+
+def preview_manual_fills(
+    account_id: str,
+    source: Path | bytes,
+    *,
+    account_root: Path = DEFAULT_ACCOUNT_ROOT,
+    storage: ParquetStorage | None = None,
+) -> dict:
+    """Validate fills against the complete account-fact stream without writing."""
+    storage = storage or ParquetStorage(PROJECT_ROOT / "data" / "canonical")
+    preview, _, _ = _preview_fills_internal(
+        account_id, source, account_root=account_root, storage=storage
+    )
+    return preview
+
+
+def preview_manual_cash_flows(
+    account_id: str,
+    source: Path | bytes,
+    *,
+    account_root: Path = DEFAULT_ACCOUNT_ROOT,
+    storage: ParquetStorage | None = None,
+) -> dict:
+    """Validate deposits/withdrawals without writing account truth."""
+    storage = storage or ParquetStorage(PROJECT_ROOT / "data" / "canonical")
+    preview, _, _ = _preview_cash_flows_internal(
+        account_id, source, account_root=account_root, storage=storage
+    )
+    return preview
+
+
+def import_manual_fills(
+    account_id: str,
+    source: Path | bytes,
+    *,
+    account_root: Path = DEFAULT_ACCOUNT_ROOT,
+    product_root: Path = DEFAULT_PRODUCT_ROOT,
+    storage: ParquetStorage | None = None,
+) -> tuple[Path, dict]:
+    """Atomically commit fills while preserving any external cash-flow facts."""
+    storage = storage or ParquetStorage(PROJECT_ROOT / "data" / "canonical")
+    preview, fills, flows = _preview_fills_internal(
+        account_id, source, account_root=account_root, storage=storage
+    )
+    account = load_account(account_id, account_root=account_root)
+    path = _journal_path(account, account_root)
+    if preview["accepted_count"] == 0 and path.exists():
+        return path, preview
+    existing_journal = _load_journal(account, account_root)
+    opening_mark = (
+        existing_journal.get("opening_mark")
+        if existing_journal
+        else _opening_mark(account, storage, product_root)
+    )
+    path = _write_journal(
+        account,
+        account_root,
+        fills=fills,
+        flows=flows,
+        opening_mark=opening_mark,
+        import_kind="manual_fill",
+        source_sha256=preview["source_sha256"],
+        accepted_count=preview["accepted_count"],
+        duplicate_count=preview["duplicate_count"],
+    )
+    return path, preview
+
+
+def import_manual_cash_flows(
+    account_id: str,
+    source: Path | bytes,
+    *,
+    account_root: Path = DEFAULT_ACCOUNT_ROOT,
+    product_root: Path = DEFAULT_PRODUCT_ROOT,
+    storage: ParquetStorage | None = None,
+) -> tuple[Path, dict]:
+    """Atomically commit validated external cash-flow facts."""
+    storage = storage or ParquetStorage(PROJECT_ROOT / "data" / "canonical")
+    preview, fills, flows = _preview_cash_flows_internal(
+        account_id, source, account_root=account_root, storage=storage
+    )
+    account = load_account(account_id, account_root=account_root)
+    path = _journal_path(account, account_root)
+    if preview["accepted_count"] == 0 and path.exists():
+        return path, preview
+    existing_journal = _load_journal(account, account_root)
+    opening_mark = (
+        existing_journal.get("opening_mark")
+        if existing_journal
+        else _opening_mark(account, storage, product_root)
+    )
+    path = _write_journal(
+        account,
+        account_root,
+        fills=fills,
+        flows=flows,
+        opening_mark=opening_mark,
+        import_kind="external_cash_flow",
+        source_sha256=preview["source_sha256"],
+        accepted_count=preview["accepted_count"],
+        duplicate_count=preview["duplicate_count"],
+    )
+    return path, preview
 
 
 def manual_tracking_fixture_smoke() -> bool:
-    """Exercise the manual-fill ledger path entirely in memory.
-
-    Acceptance uses this fixture rather than touching a user's account or
-    journal.  It deliberately checks cash, position, and the T+1 boundary.
-    """
+    """Exercise the manual-fill ledger path entirely in memory."""
     monday = date(2026, 9, 7)
     tuesday = date(2026, 9, 8)
     calendar = TradingCalendar(
@@ -358,148 +811,6 @@ def manual_tracking_fixture_smoke() -> bool:
     )
 
 
-def _summary(
-    account: dict,
-    ledger: ExecutionLedger,
-    events: list[ManualFillImported],
-    duplicate_count: int,
-) -> dict:
-    latest = max(
-        (event.occurred_at for event in events), default=datetime.fromisoformat(account["as_of"])
-    )
-    valuation_date = exchange_date(latest)
-    instruments = sorted({lot.instrument_id for lot in ledger.lots})
-    positions = [
-        {
-            "instrument_id": instrument,
-            "quantity": ledger.position_quantity(instrument),
-            "sellable_quantity": ledger.sellable_quantity(instrument, valuation_date),
-        }
-        for instrument in instruments
-        if ledger.position_quantity(instrument)
-    ]
-    state = {
-        "opening_account_fingerprint": account["account_fingerprint"],
-        "as_of": latest.isoformat(),
-        "cash_fen": ledger.cash_fen,
-        "positions": positions,
-        "fill_ids": sorted(event.fill_id for event in events),
-    }
-    tracking_fingerprint = hashlib.sha256(
-        json.dumps(state, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
-    return {
-        "account_id": account["account_id"],
-        "opening_account_fingerprint": account["account_fingerprint"],
-        "event_count": len(events),
-        "duplicate_count": duplicate_count,
-        "as_of": latest.isoformat(),
-        "cash_fen": ledger.cash_fen,
-        "total_fee_fen": sum(event.fee_fen for event in events),
-        "latest_fill_trade_date": (
-            max(event.trade_date for event in events).isoformat() if events else None
-        ),
-        "positions": positions,
-        "tracking_fingerprint": tracking_fingerprint,
-        "fills": [_event_payload(event) for event in events],
-        "mode": account["account_mode"],
-        "broker_submission": False,
-    }
-
-
-def preview_manual_fills(
-    account_id: str,
-    source: Path | bytes,
-    *,
-    account_root: Path = DEFAULT_ACCOUNT_ROOT,
-    storage: ParquetStorage | None = None,
-) -> dict:
-    """Validate the complete combined journal without writing anything."""
-    storage = storage or ParquetStorage(PROJECT_ROOT / "data" / "canonical")
-    account = load_account(account_id, account_root=account_root)
-    if account["account_mode"] != "manual_tracking":
-        raise ValueError("manual fills may only be imported into a manual_tracking account")
-    calendar = _calendar(storage)
-    raw = source.read_bytes() if isinstance(source, Path) else source
-    incoming = _parse_events(
-        raw, account, calendar, {item.instrument_id for item in storage.load_securities()}
-    )
-    existing = _load_events(account, account_root)
-    combined = {event.fill_id: event for event in existing}
-    duplicate_count = 0
-    accepted = []
-    for event in incoming:
-        previous = combined.get(event.fill_id)
-        if previous is not None:
-            if not _same_economics(previous, event):
-                raise ValueError(
-                    f"broker trade id reused with different economics: {event.fill_id}"
-                )
-            duplicate_count += 1
-            continue
-        combined[event.fill_id] = event
-        accepted.append(event)
-    events = list(combined.values())
-    ledger = _replay(account, calendar, events)
-    return {
-        **_summary(account, ledger, events, duplicate_count),
-        "accepted_count": len(accepted),
-        "source_sha256": hashlib.sha256(raw).hexdigest(),
-        "events": [
-            _event_payload(event)
-            for event in sorted(events, key=lambda item: (item.occurred_at, item.event_id))
-        ],
-    }
-
-
-def import_manual_fills(
-    account_id: str,
-    source: Path | bytes,
-    *,
-    account_root: Path = DEFAULT_ACCOUNT_ROOT,
-    product_root: Path = DEFAULT_PRODUCT_ROOT,
-    storage: ParquetStorage | None = None,
-) -> tuple[Path, dict]:
-    """Atomically commit only a fully replayable, deduplicated journal."""
-    preview = preview_manual_fills(account_id, source, account_root=account_root, storage=storage)
-    account = load_account(account_id, account_root=account_root)
-    events = preview.pop("events")
-    path = _journal_path(account, account_root)
-    if preview["accepted_count"] == 0 and path.exists():
-        return path, preview
-    event_fingerprint = hashlib.sha256(
-        json.dumps(events, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
-    existing_journal = _load_journal(account, account_root)
-    opening_mark = (
-        existing_journal.get("opening_mark")
-        if existing_journal
-        else _opening_mark(
-            account,
-            storage or ParquetStorage(PROJECT_ROOT / "data" / "canonical"),
-            product_root,
-        )
-    )
-    payload = {
-        "schema": "quantlab_manual_fill_journal_v1",
-        "account_id": account_id,
-        "opening_account_fingerprint": account["account_fingerprint"],
-        "events": events,
-        "events_fingerprint": event_fingerprint,
-        "opening_mark": opening_mark,
-        "latest_import": {
-            "source_sha256": preview["source_sha256"],
-            "accepted_count": preview["accepted_count"],
-            "duplicate_count": preview["duplicate_count"],
-        },
-    }
-    payload["journal_fingerprint"] = hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
-    atomic_json(path, payload)
-    return path, preview
-
-
 def load_tracking_summary(
     account_id: str,
     *,
@@ -509,9 +820,9 @@ def load_tracking_summary(
     storage = storage or ParquetStorage(PROJECT_ROOT / "data" / "canonical")
     account = load_account(account_id, account_root=account_root)
     calendar = _calendar(storage)
-    events = _load_events(account, account_root)
-    ledger = _replay(account, calendar, events)
-    summary = _summary(account, ledger, events, 0)
+    fills, flows = _load_events(account, account_root)
+    replay = _replay_tracking(account, calendar, fills, flows)
+    summary = _summary(account, replay, 0)
     journal = _load_journal(account, account_root)
     summary["opening_mark"] = journal.get("opening_mark") if journal else None
     return summary
@@ -523,7 +834,7 @@ def load_effective_account(
     account_root: Path = DEFAULT_ACCOUNT_ROOT,
     storage: ParquetStorage | None = None,
 ) -> dict:
-    """Overlay committed manual fills on the immutable imported opening snapshot."""
+    """Overlay committed manual account facts on the immutable opening snapshot."""
     account = load_account(account_id, account_root=account_root)
     if _load_journal(account, account_root) is None:
         return account
@@ -532,12 +843,10 @@ def load_effective_account(
         item["instrument_id"]: item["reference_cost_fen"] for item in account["positions"]
     }
     positions = [
-        {
-            **item,
-            "reference_cost_fen": original_cost.get(item["instrument_id"]),
-        }
+        {**item, "reference_cost_fen": original_cost.get(item["instrument_id"])}
         for item in summary["positions"]
     ]
+    has_flows = summary["cash_flow_event_count"] > 0
     return {
         "schema": "quantlab_tracked_account_view_v1",
         "account_id": account_id,
@@ -546,10 +855,16 @@ def load_effective_account(
         "cash_fen": summary["cash_fen"],
         "open_orders_declaration": account["open_orders_declaration"],
         "positions": positions,
-        "source": "opening_snapshot_plus_manual_fill_journal",
+        "source": (
+            "opening_snapshot_plus_manual_tracking_journal"
+            if has_flows
+            else "opening_snapshot_plus_manual_fill_journal"
+        ),
         "account_fingerprint": summary["tracking_fingerprint"],
         "opening_account_fingerprint": account["account_fingerprint"],
         "latest_fill_trade_date": summary["latest_fill_trade_date"],
+        "latest_external_cash_flow_at": summary["latest_external_cash_flow_at"],
+        "external_cash_flow_net_fen": summary["external_cash_flow_net_fen"],
     }
 
 
@@ -564,10 +879,10 @@ def build_plan_fill_comparison(
         return None
     _, plan = plan_item
     account = load_account(account_id, account_root=account_root)
-    events = _load_events(account, account_root)
+    fills, _ = _load_events(account, account_root)
     intended = date.fromisoformat(plan["intended_next_session"])
     actual: dict[tuple[str, str], int] = {}
-    for event in events:
+    for event in fills:
         if event.trade_date == intended:
             key = (event.instrument_id, event.side.value.upper())
             actual[key] = actual.get(key, 0) + event.quantity
@@ -587,7 +902,7 @@ def build_plan_fill_comparison(
                 "planned_quantity": planned_quantity,
                 "actual_quantity": actual_quantity,
                 "difference_quantity": actual_quantity - planned_quantity,
-                "status": ("MATCHED" if planned_quantity == actual_quantity else "DIFFERENT"),
+                "status": "MATCHED" if planned_quantity == actual_quantity else "DIFFERENT",
             }
         )
     return {
@@ -604,7 +919,7 @@ def build_tracking_valuation(
     product_root: Path = DEFAULT_PRODUCT_ROOT,
     storage: ParquetStorage | None = None,
 ) -> dict:
-    """Mark the replayed account; calculate return only after prices cover all fills."""
+    """Mark the replayed account without misclassifying external cash as P&L."""
     storage = storage or ParquetStorage(PROJECT_ROOT / "data" / "canonical")
     account = load_account(account_id, account_root=account_root)
     journal = _load_journal(account, account_root)
@@ -615,23 +930,32 @@ def build_tracking_valuation(
     if snapshot is None:
         return {"status": "unavailable_no_daily_snapshot", "opening_mark": opening_mark}
     mark_date = date.fromisoformat(snapshot.report["effective_as_of"])
-    events = [_event_from_payload(item) for item in journal["events"]]
-    last_trade_date = max((event.trade_date for event in events), default=date.min)
+    fills, flows = _decode_journal(journal)
+    last_trade_date = max((event.trade_date for event in fills), default=date.min)
+    last_flow_date = max((exchange_date(event.occurred_at) for event in flows), default=date.min)
     effective = load_effective_account(account_id, account_root=account_root, storage=storage)
     bars = {item.instrument_id: item for item in storage.load_daily_bars_by_date(mark_date)}
     missing = sorted(
-        item["instrument_id"]
-        for item in effective["positions"]
-        if item["instrument_id"] not in bars
+        item["instrument_id"] for item in effective["positions"] if item["instrument_id"] not in bars
     )
     base = {
         "price_date": mark_date.isoformat(),
-        "last_fill_trade_date": last_trade_date.isoformat() if events else None,
+        "last_fill_trade_date": last_trade_date.isoformat() if fills else None,
+        "latest_external_cash_flow_at": (
+            max(event.occurred_at for event in flows).isoformat() if flows else None
+        ),
         "opening_mark": opening_mark,
         "missing_prices": missing,
     }
     if mark_date < last_trade_date:
-        return {**base, "status": "unavailable_prices_before_latest_fill"}
+        status = (
+            "unavailable_prices_before_latest_account_event"
+            if flows
+            else "unavailable_prices_before_latest_fill"
+        )
+        return {**base, "status": status}
+    if flows and mark_date < last_flow_date:
+        return {**base, "status": "unavailable_prices_before_latest_account_event"}
     if missing:
         return {**base, "status": "unavailable_missing_current_prices"}
     current_nav = effective["cash_fen"] + sum(
@@ -644,6 +968,19 @@ def build_tracking_valuation(
             "status": "unavailable_incomplete_opening_mark",
             "current_nav_fen": current_nav,
         }
+    if flows:
+        return {
+            **base,
+            "status": "complete_mark_to_market_external_cash_flows_unadjusted",
+            "current_nav_fen": current_nav,
+            "external_cash_flow_net_fen": sum(event.signed_amount_fen for event in flows),
+            "performance_claim": False,
+            "limitations": [
+                "opening snapshot is marked at the latest prior raw daily close",
+                "external cash flows are account truth but cash-flow-aware performance is not implemented",
+                "corporate-action cash and share postings are not modeled",
+            ],
+        }
     opening_nav = opening_mark["nav_fen"]
     return {
         **base,
@@ -653,7 +990,6 @@ def build_tracking_valuation(
         "performance_claim": False,
         "limitations": [
             "opening snapshot is marked at the latest prior raw daily close",
-            "cash deposits and withdrawals are not modeled",
             "corporate-action cash and share postings are not modeled",
         ],
     }
