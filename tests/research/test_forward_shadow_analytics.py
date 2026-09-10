@@ -198,3 +198,44 @@ def test_tampered_evaluation_fails_closed(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="evaluation fingerprint mismatch"):
         summarize_forward_shadow(shadow, evaluation_root=evaluations)
+
+
+def test_orphan_evaluation_fails_closed(tmp_path: Path) -> None:
+    shadow = tmp_path / "shadow"
+    evaluations = tmp_path / "evaluations"
+    _write_prediction(shadow, model_id="candidate", version="v1", signal_date="2026-09-01")
+    _write_evaluation(
+        evaluations,
+        model_id="candidate",
+        version="v1",
+        signal_date="2026-09-02",
+        prediction_fingerprint="f" * 64,
+        status="complete",
+        value=0.1,
+    )
+
+    with pytest.raises(ValueError, match="unknown prediction"):
+        summarize_forward_shadow(shadow, evaluation_root=evaluations)
+
+
+def test_unknown_evaluation_status_fails_closed(tmp_path: Path) -> None:
+    shadow = tmp_path / "shadow"
+    evaluations = tmp_path / "evaluations"
+    fingerprint = _write_prediction(
+        shadow,
+        model_id="candidate",
+        version="v1",
+        signal_date="2026-09-01",
+    )
+    _write_evaluation(
+        evaluations,
+        model_id="candidate",
+        version="v1",
+        signal_date="2026-09-01",
+        prediction_fingerprint=fingerprint,
+        status="mystery",
+        value=None,
+    )
+
+    with pytest.raises(ValueError, match="unsupported forward-shadow evaluation status"):
+        summarize_forward_shadow(shadow, evaluation_root=evaluations)
