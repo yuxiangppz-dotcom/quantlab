@@ -16,7 +16,8 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from quantlab.daily.service import DEFAULT_PRODUCT_ROOT, PROJECT_ROOT, load_latest_snapshot
+from quantlab.daily.integrity import load_validated_latest_snapshot
+from quantlab.daily.service import DEFAULT_PRODUCT_ROOT, PROJECT_ROOT
 from quantlab.data.models import DataValidationError
 from quantlab.data.storage import ParquetStorage
 from quantlab.portfolio.product import (
@@ -181,7 +182,7 @@ def generate_forward_shadow(
     created_at = now or datetime.now(SHANGHAI)
     if created_at.tzinfo is None or created_at.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
-    snapshot = load_latest_snapshot(product_root)
+    snapshot = load_validated_latest_snapshot(product_root)
     if snapshot is None:
         raise FileNotFoundError("no active Daily snapshot; run `quantlab daily` first")
     ranking = pd.read_csv(snapshot.ranking_path)
