@@ -200,6 +200,12 @@ def load_account(account_id: str, *, account_root: Path = DEFAULT_ACCOUNT_ROOT) 
     if not path.exists():
         raise FileNotFoundError(f"account snapshot not found: {account_id}")
     payload = json.loads(path.read_text(encoding="utf-8"))
+    return _validate_account_payload(payload, account_id)
+
+
+def _validate_account_payload(payload: dict, account_id: str) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("account snapshot must be an object")
     if payload.get("schema") != "quantlab_account_snapshot_v1":
         raise ValueError("unsupported account snapshot schema")
     if payload.get("account_id") != account_id:
@@ -214,6 +220,29 @@ def load_account(account_id: str, *, account_root: Path = DEFAULT_ACCOUNT_ROOT) 
     ).hexdigest()
     if payload.get("account_fingerprint") != expected:
         raise ValueError("account snapshot fingerprint mismatch")
+    return payload
+
+
+def load_account_basis(
+    account_id: str, fingerprint: str | None = None, *, account_root: Path = DEFAULT_ACCOUNT_ROOT
+) -> dict:
+    """Read an explicitly selected opening basis without changing the active account."""
+    if fingerprint is None:
+        return load_account(account_id, account_root=account_root)
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", account_id):
+        raise ValueError("unsafe account_id")
+    if not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
+        raise ValueError("opening fingerprint must be lowercase SHA-256")
+    path = account_root / account_id / "snapshots" / f"{fingerprint}.json"
+    if path.exists():
+        payload = _validate_account_payload(
+            json.loads(path.read_text(encoding="utf-8")), account_id
+        )
+    else:
+        # Accounts imported before archival support may still be the active basis.
+        payload = load_account(account_id, account_root=account_root)
+    if payload["account_fingerprint"] != fingerprint:
+        raise ValueError("requested opening fingerprint does not match the saved basis")
     return payload
 
 
