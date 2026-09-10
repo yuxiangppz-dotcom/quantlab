@@ -121,6 +121,17 @@ def _research(alpha: str | None, config: str | None) -> int:
         return 130
 
 
+def _research_status(as_json: bool) -> int:
+    from quantlab.research.status_service import build_research_status, format_research_status
+
+    payload = build_research_status()
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+    else:
+        print(format_research_status(payload))
+    return 0
+
+
 def _ui(port: int) -> int:
     command = [
         sys.executable,
@@ -246,6 +257,15 @@ def _parser() -> argparse.ArgumentParser:
     research_choice = research.add_mutually_exclusive_group()
     research_choice.add_argument("--alpha", choices=("momentum_20d",))
     research_choice.add_argument("--config", help="Versioned Daily v1 research config.")
+    research_status = sub.add_parser(
+        "research-status",
+        help="Inspect strategy, evidence, and Forward Shadow readiness without mutation.",
+    )
+    research_status.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit machine-readable evidence/readiness JSON.",
+    )
     portfolio = sub.add_parser("portfolio", help="Import an account or build a reference plan.")
     portfolio_sub = portfolio.add_subparsers(dest="portfolio_action", required=True)
     portfolio_demo = portfolio_sub.add_parser("demo", help="Create/reset the 200k demo account.")
@@ -290,6 +310,8 @@ def main() -> None:
         code = _daily(args.as_of)
     elif args.command == "research":
         code = _research(args.alpha, args.config)
+    elif args.command == "research-status":
+        code = _research_status(args.json)
     elif args.command == "portfolio":
         code = _portfolio(
             args.portfolio_action,
