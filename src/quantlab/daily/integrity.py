@@ -7,7 +7,11 @@ import json
 from pathlib import Path
 
 from quantlab.data.models import DataValidationError
-from quantlab.daily.service import DailySnapshot
+from quantlab.daily.service import (
+    DEFAULT_PRODUCT_ROOT,
+    DailySnapshot,
+    load_latest_snapshot,
+)
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -83,3 +87,13 @@ def validate_daily_snapshot_bundle(snapshot: DailySnapshot) -> str:
     if actual != fingerprint:
         raise DataValidationError("Daily snapshot content fingerprint mismatch")
     return fingerprint
+
+
+def load_validated_latest_snapshot(
+    product_root: Path = DEFAULT_PRODUCT_ROOT,
+) -> DailySnapshot | None:
+    """Load the active/newest Daily snapshot and fail closed on bundle drift."""
+    snapshot = load_latest_snapshot(product_root)
+    if snapshot is not None:
+        validate_daily_snapshot_bundle(snapshot)
+    return snapshot
