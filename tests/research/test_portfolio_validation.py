@@ -1,7 +1,6 @@
 from datetime import date
 
 import pandas as pd
-
 import pytest
 
 from quantlab.research.portfolio_validation import _require_comparable, _targets
