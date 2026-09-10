@@ -14,6 +14,7 @@ from quantlab.research.strategy_readiness import (
 from quantlab.research.strategy_registry import (
     ELIGIBLE_FOR_USER_REVIEW,
     FORWARD_EVIDENCE_ACCUMULATING,
+    REJECTED,
     USER_APPROVED,
     StrategyRegistryEntry,
 )
@@ -21,6 +22,7 @@ from quantlab.research.strategy_registry import (
 
 def _entry(status: str = FORWARD_EVIDENCE_ACCUMULATING) -> StrategyRegistryEntry:
     approved = status == USER_APPROVED
+    rejected = status == REJECTED
     return StrategyRegistryEntry(
         strategy_id="candidate",
         version="v1",
@@ -30,6 +32,7 @@ def _entry(status: str = FORWARD_EVIDENCE_ACCUMULATING) -> StrategyRegistryEntry
         evidence_refs=("factor/run-1/summary.json", "config/forward_shadow_v1.json"),
         user_approved=approved,
         approval_source="explicit_user_decision" if approved else None,
+        rejection_reason="hypothesis rejected" if rejected else None,
     )
 
 
@@ -140,6 +143,13 @@ def test_forged_approval_and_missing_advanced_evidence_fail_closed() -> None:
     missing_evidence = replace(_entry(), evidence_refs=())
     with pytest.raises(DataValidationError, match="requires evidence references"):
         build_strategy_readiness([missing_evidence], shadow_summaries=[_shadow()])
+
+
+def test_rejected_entry_requires_reason_even_if_constructed_directly() -> None:
+    forged = replace(_entry(REJECTED), rejection_reason=None)
+
+    with pytest.raises(DataValidationError, match="requires rejection_reason"):
+        build_strategy_readiness([forged])
 
 
 def test_duplicate_shadow_or_strategy_identity_fails_closed() -> None:
