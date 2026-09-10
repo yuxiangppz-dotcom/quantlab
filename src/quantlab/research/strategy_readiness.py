@@ -69,7 +69,9 @@ def _validate_registry_entry(entry: StrategyRegistryEntry) -> None:
     if len(entry.evidence_refs) != len(set(entry.evidence_refs)):
         raise DataValidationError("strategy readiness evidence references must be unique")
     if any(not isinstance(ref, str) or not ref.strip() for ref in entry.evidence_refs):
-        raise DataValidationError("strategy readiness evidence references must be non-empty strings")
+        raise DataValidationError(
+            "strategy readiness evidence references must be non-empty strings"
+        )
     if entry.status not in {IDEA, REJECTED} and not entry.evidence_refs:
         raise DataValidationError(
             f"strategy readiness status {entry.status} requires evidence references"
