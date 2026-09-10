@@ -137,7 +137,8 @@ def test_withdrawal_is_replayed_and_insufficient_withdrawal_is_atomic(tmp_path: 
         storage=storage,
     )
     before = path.read_bytes()
-    assert load_effective_account("mine", account_root=account_root, storage=storage)["cash_fen"] == 150_000
+    effective = load_effective_account("mine", account_root=account_root, storage=storage)
+    assert effective["cash_fen"] == 150_000
 
     impossible = _flow("W2", "2026-09-07T15:00:00+08:00", "WITHDRAWAL", "2000.00")
     with pytest.raises(ValueError, match="exceeds settled cash"):
@@ -149,7 +150,8 @@ def test_withdrawal_is_replayed_and_insufficient_withdrawal_is_atomic(tmp_path: 
             storage=storage,
         )
     assert path.read_bytes() == before
-    assert load_effective_account("mine", account_root=account_root, storage=storage)["cash_fen"] == 150_000
+    effective = load_effective_account("mine", account_root=account_root, storage=storage)
+    assert effective["cash_fen"] == 150_000
 
 
 def test_cash_flow_duplicate_is_idempotent_and_changed_economics_conflicts(tmp_path: Path) -> None:
