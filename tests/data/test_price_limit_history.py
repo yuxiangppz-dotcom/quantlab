@@ -66,6 +66,22 @@ def test_missing_old_code_limit_cannot_be_silently_ignored(storage):
     assert not storage.daily_price_limit_exists(day)
 
 
+@pytest.mark.parametrize(
+    "day,expected", [(date(2025, 2, 14), "300114.SZ"), (date(2025, 2, 17), "302132.SZ")]
+)
+def test_known_inactive_code_bars_follow_shared_pit_dates(storage, day, expected):
+    # Real provider history may retain both codes. Only the effective identity
+    # belongs to this date's expected scope; the inactive code is not unknown.
+    storage.save_daily_bars_by_date(
+        [DailyBar(code, day, 10, 10, 10, 10, 10, 100, 1000) for code in ("300114.SZ", "302132.SZ")],
+        day,
+    )
+    provider = Mock()
+    provider.get_daily_price_limits_by_date.return_value = [_limit(expected, day)]
+    sync_daily_price_limits(provider, storage, day, security_code_changes=[CHANGE])
+    assert [row.instrument_id for row in storage.load_daily_price_limits_by_date(day)] == [expected]
+
+
 def test_unverified_old_code_does_not_gain_identity_authority(storage):
     day = date(2025, 2, 14)
     provider = Mock()

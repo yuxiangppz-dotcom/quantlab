@@ -14,7 +14,7 @@ Its concrete script is retained as `historical_limit_preflight.py.txt`; the
 script's fixed starting HEAD and output-directory checks prevent accidental
 reruns from a changed revision or silent replacement of its evidence.
 
-| Date | Provider rows | Daily current-master A-share scope | Daily scope including valid old codes |
+| Date | Provider rows | Raw daily/current-master overlap | Raw overlap plus known old codes |
 |---|---:|---:|---:|
 | 2020-01-02 | 3,801 | 3,740 | 3,741 |
 | 2023-01-03 | 5,110 | 4,899 | 4,900 |
@@ -33,7 +33,9 @@ checking**. The probe therefore established a concrete data-selection defect.
 Probe output `data/products/price_limit_preflight/20260911/report.json`,
 fingerprint `9fdf77752fe832a67d8d954700999147c946275166f7298ff671bcd5c515406a`.
 Normalized responses, exact observation times and local daily/master/calendar/
-code-history hashes are bound. The five original canonical limit partitions
+code-history hashes are bound. These preliminary overlap counts still include
+known successor-code backcast bars; they are not the final PIT coverage set.
+The five original canonical limit partitions
 were byte-unchanged. No canonical data was written during the probe.
 
 ## Correction and bounded acquisition
@@ -90,3 +92,47 @@ downloads, labels, models, return claims, account changes, fills, orders,
 strategy promotion or C-drive cleanup. Next: predeclared wick/MACD/index feature
 and bounded model diagnostics, explicitly masking unresolved data; executable
 net-return and 20% drawdown conclusions remain blocked by missing evidence.
+
+## First bulk run: failed scope check and correction
+
+The first bulk attempt ran from pushed
+`7aa70894995d1c8cb2c6552733bc8f61318e9106`. It made 244 provider attempts, retained
+243 responses through 2020-12-31, and accepted **zero** canonical partitions.
+The worker was explicitly interrupted after repeated identity-scope rejections;
+the final in-flight attempt has unknown response outcome and counts against the
+request budget. Report:
+`data/products/limit_backfill/f1ff6c6489f94bc1b42f7966152e4639/report.json`,
+fingerprint `5b27f86c9c5090dce3860c001bfe15e3731e76e500a82c4be29523abea204c58`.
+All bound sources and original limit files remained unchanged. The original
+report's status `complete_with_unresolved_dates` failed to distinguish operator
+interruption; that limitation is recorded here without altering its fingerprint.
+
+The live diagnostic exposed a mistake in the newly added unknown-identity guard:
+raw daily history retains both 300114.SZ and its successor's backcast 302132.SZ
+before 2025-02-17. The shared research PIT builder already excludes that inactive
+successor by its effective date. The new guard incorrectly treated it as unknown.
+The correction applies the same explicit code-validity dates to **both** returned
+limits and the expected daily identities. Known inactive codes are excluded;
+genuinely unverified identifiers still block acceptance. Tests now include both
+raw codes on either side of the date boundary, matching the actual data shape.
+
+Interruptions are now explicitly recorded, including unknown in-flight outcomes;
+an unverified identity stops for review instead of downloading hundreds more
+dates with the same structural issue. `limit_response_replay` revalidates pinned
+saved responses without a provider connection, preserves their original request
+and observation times, and records separate revalidation/publication receipts.
+It verifies source report/response hashes, original fixed/daily inputs and final
+outputs, and retains strict rejection behavior. Source-report order determines
+duplicate-date selection explicitly; no automatic fallback to a favorable version.
+
+Recovery will first use the 243 retained bulk responses and four additional
+nonduplicate preflight dates. The January 2020 duplicate uses the first-listed
+bulk report. At most **1,374 additional provider attempts** remain after the
+244-attempt interruption; the CLI now accepts a smaller explicit call budget.
+No failed normalized response or original report is deleted or rewritten.
+
+Recovery-code verification: **1,378 tests passed, two default optional skips**;
+both optional runtime checks, Ruff and diff check passed. The task now includes
+31 new checks and eight changed files. The added checks cover inactive-code
+backcasts, explicit interruption, pinned offline replay, source tampering/drift,
+unchanged observation times and deterministic response-version selection.

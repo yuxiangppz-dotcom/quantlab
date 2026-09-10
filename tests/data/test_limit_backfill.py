@@ -114,6 +114,13 @@ def test_provider_error_stops_and_has_no_favorable_fallback(setup):
     assert not storage.daily_price_limit_exists(DAYS[0])
 
 
+def test_interrupted_provider_attempt_is_reported_as_interrupted(setup):
+    setup[2].get_daily_price_limits_by_date.side_effect = KeyboardInterrupt
+    _, report = _run(setup)
+    assert report["status"] == "interrupted" and report["provider_calls"] == 1
+    assert len(report["missing_after"]) == 2
+
+
 @pytest.mark.parametrize(
     "options",
     [

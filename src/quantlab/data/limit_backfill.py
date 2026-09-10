@@ -126,6 +126,9 @@ def backfill_price_limits(
             report["provider_calls"] += 1
             try:
                 rows = provider.get_daily_price_limits_by_date(day)
+            except KeyboardInterrupt:
+                receipt.update(status="interrupted_request_outcome_unknown")
+                raise
             except Exception as exc:
                 receipt.update(status="provider_failed", error_type=type(exc).__name__)
                 raise RuntimeError(f"stk_limit provider request failed on {day}") from None
@@ -172,8 +175,14 @@ def backfill_price_limits(
                         "error": str(exc),
                     }
                 )
+                if "unverified historical A-share identifiers" in str(exc):
+                    raise RuntimeError(
+                        "unverified historical identity requires scope review"
+                    ) from exc
             if progress and report["provider_calls"] % 50 == 0:
                 progress(report["provider_calls"], len(missing), len(report["rejected"]))
+    except KeyboardInterrupt:
+        report.update(status="interrupted", error_type="KeyboardInterrupt")
     except Exception as exc:
         report.update(status="partial_failed", error_type=type(exc).__name__)
         if isinstance(exc, (DataValidationError, RuntimeError)):
@@ -207,7 +216,8 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--authorized-provider-write", action="store_true", required=True)
-    parser.parse_args()
+    parser.add_argument("--max-provider-calls", type=int, default=MAX_CALLS)
+    args = parser.parse_args()
     root = Path(__file__).resolve().parents[3]
     if subprocess.check_output(["git", "status", "--porcelain"], cwd=root, text=True).strip():
         raise RuntimeError("price-limit backfill requires a clean worktree")
@@ -223,6 +233,7 @@ def main() -> None:
         root / "config/security_code_changes.csv",
         root / "data/products/limit_backfill",
         code_head=head,
+        max_calls=args.max_provider_calls,
         progress=lambda done, total, rejected: print(
             f"Limit requests: {done}/{total}; unresolved: {rejected}", flush=True
         ),

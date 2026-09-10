@@ -57,6 +57,7 @@ def sync_daily_price_limits(
     )
     # Code validity is already established by the shared history authority.
     # Preserve the old identifier rather than rewriting it to today's code.
+    inactive_code_ids: set[str] = set()
     for change in changes:
         old_symbol, old_market = parse_instrument_id(change.old_instrument_id)
         if old_market not in {"SH", "SZ"} or old_symbol.startswith(("900", "200")):
@@ -65,8 +66,10 @@ def sync_daily_price_limits(
             security_ids.add(change.old_instrument_id)
         else:
             security_ids.discard(change.old_instrument_id)
+            inactive_code_ids.add(change.old_instrument_id)
         if trade_date < change.effective_date:
             security_ids.discard(change.new_instrument_id)
+            inactive_code_ids.add(change.new_instrument_id)
     rows = [item for item in rows if item.instrument_id in security_ids]
     if not rows:
         raise DataValidationError(f"stk_limit has no canonical A-share rows for {trade_date}")
@@ -85,6 +88,7 @@ def sync_daily_price_limits(
         for item in storage.load_daily_bars_by_date(trade_date)
         if item.instrument_id.endswith((".SH", ".SZ"))
         and not item.instrument_id.startswith(("900", "200"))
+        and item.instrument_id not in inactive_code_ids
     }
     unknown = daily_ids - security_ids
     if unknown:
