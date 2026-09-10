@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
+import shutil
 from datetime import date
 from pathlib import Path
 
@@ -200,6 +202,33 @@ def test_existing_content_addressed_bundle_is_never_repaired_in_place(tmp_path: 
         commit_staged_daily_snapshot(staged, product_root)
 
     assert published.ranking_path.read_bytes() == tampered
+
+
+def test_concurrent_valid_winner_is_reused_without_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    product_root = tmp_path / "products"
+    staged = _staged(
+        tmp_path / "stage",
+        scores={"000001.SZ": 3.0, "000002.SZ": 2.0},
+        generated_at="2026-09-09T18:00:00+08:00",
+    )
+    original_rename = __import__("os").rename
+
+    def concurrent_rename(source: str | Path, destination: str | Path) -> None:
+        source_path = Path(source)
+        destination_path = Path(destination)
+        shutil.copytree(source_path, destination_path)
+        raise OSError(errno.ENOTEMPTY, "simulated concurrent winner")
+
+    monkeypatch.setattr("quantlab.daily.materialization.os.rename", concurrent_rename)
+    published = commit_staged_daily_snapshot(staged, product_root)
+    monkeypatch.setattr("quantlab.daily.materialization.os.rename", original_rename)
+
+    assert published.reused is True
+    assert published.report_path.parent.name == staged.report["content_fingerprint"]
+    assert published.report_path.read_bytes() == staged.report_path.read_bytes()
 
 
 def test_legacy_loader_remains_compatible_with_nested_active_pointer(tmp_path: Path) -> None:
