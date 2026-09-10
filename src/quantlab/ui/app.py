@@ -320,6 +320,9 @@ elif page == "股票排名与因子":
         )
 
 elif page == "回测与基准":
+    from quantlab.ui.research_controls import render_research_costs
+
+    render_research_costs()
     view = _baseline_view()
     if view is None:
         st.error("未找到通过 COMPLETED 标记的正式 baseline artifact。")

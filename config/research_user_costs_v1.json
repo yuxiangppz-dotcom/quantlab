@@ -1,0 +1,28 @@
+{
+  "schema": "quantlab_research_user_costs_v1",
+  "profile_id": "user_reported_20260911_ex_stamp",
+  "commission_rate": "0.000086",
+  "commission_quote_interpretation": "0.86 per 10000; user-reported, unit not independently broker verified",
+  "stock_minimum_commission_fen": 500,
+  "etf_minimum_commission_fen": 10,
+  "commission_includes_stamp_duty": false,
+  "broker_verified": false,
+  "historical_commission_mode": "constant_current_quote_comparison_scenario_not_actual_historical_broker_fees",
+  "stock_stamp_duty_rule": "cn_a_sell_20230828_half",
+  "etf_scope": "secondary_market_units_only_no_primary_redemption",
+  "supported_start": "2020-01-01",
+  "rules_reviewed_through": "2026-09-11",
+  "aggregation": "single_hypothetical_order_aggregate_filled_notional",
+  "rounding": "each_component_half_up_to_integer_fen",
+  "additional_fee_coverage": "unverified",
+  "slippage_spread_impact": "not_included_unknown",
+  "dividend_tax": "not_included_requires_holding_and_corporate_action_evidence",
+  "sources": [
+    "https://fgk.chinatax.gov.cn/zcfgk/c100009/c5193058/content.html",
+    "https://fgk.chinatax.gov.cn/zcfgk/c102416/c5211343/content.html",
+    "https://www.mof.gov.cn/zhengwuxinxi/caizhengxinwen/200809/t20080919_76432.htm",
+    "https://etf.sse.com.cn/fund/learning/download/c/10055610/files/776995d1eb3b47d09cca95b9468f0c5e.pdf"
+  ],
+  "execution_authority": false,
+  "performance_claim": false
+}
