@@ -10,6 +10,7 @@ from quantlab.research.forward_shadow_analytics import (
     paired_shadow_diagnostics,
     summarize_forward_shadow,
 )
+from quantlab.research.shadow_timing import PREDICTION_V2, temporal_admission
 
 
 def _hash(payload: object) -> str:
@@ -37,8 +38,14 @@ def _write_prediction(
         "target_portfolio.csv": hashlib.sha256(target).hexdigest(),
     }
     core = {
-        "schema": "quantlab_forward_shadow_prediction_v1",
+        "schema": PREDICTION_V2,
         "trade_date": signal_date,
+        "created_at": f"{signal_date}T18:00:00+08:00",
+        "source_daily_generated_at": f"{signal_date}T17:00:00+08:00",
+        "daily_report_sha256": "a" * 64,
+        "temporal_admission": temporal_admission(
+            signal_date, f"{signal_date}T18:00:00+08:00", f"{signal_date}T17:00:00+08:00",
+        ),
         "model": {"model_id": model_id, "version": version, "status": "candidate"},
         "config_id": "test",
         "label": {"name": "diagnostic_future_return_20d", "horizon_sessions": 20},

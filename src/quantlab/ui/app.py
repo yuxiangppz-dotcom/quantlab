@@ -275,6 +275,7 @@ elif page == "股票排名与因子":
                             "trade_date": item["trade_date"],
                             "target_count": item["target_count"],
                             "label_status": item["label"]["status"],
+                            "前瞻时间资格": item["temporal_admission"]["status"],
                             "fingerprint": item["prediction_fingerprint"][:12],
                         }
                         for item in shadows

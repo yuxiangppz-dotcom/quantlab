@@ -193,6 +193,8 @@ def _build_one(
             blockers.append("NO_FORWARD_PREDICTIONS")
         if complete_count == 0:
             blockers.append("NO_MATURE_FORWARD_EVALUATIONS")
+        if prediction_count > 0 and shadow.excluded_prediction_count == prediction_count:
+            blockers.append("ALL_FORWARD_PREDICTIONS_EXCLUDED_BY_TIMING")
     if entry.status == ELIGIBLE_FOR_USER_REVIEW and not entry.user_approved:
         blockers.append("EXPLICIT_USER_APPROVAL_REQUIRED")
 

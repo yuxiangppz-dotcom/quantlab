@@ -94,7 +94,7 @@ def _seed(tmp_path: Path) -> tuple[ParquetStorage, Path, Path, date]:
         storage=storage,
         config_path=config,
         product_root=products,
-        now=datetime(2026, 3, 1, 18, tzinfo=SHANGHAI),
+        now=datetime.combine(signal, datetime.min.time(), SHANGHAI).replace(hour=18),
     )
     shadow_config = tmp_path / "shadow.json"
     shadow_config.write_text(
@@ -137,7 +137,7 @@ def test_forward_shadow_is_immutable_idempotent_and_separate_from_evaluation(
         product_root=products,
         shadow_root=root,
         config_path=config,
-        now=datetime(2026, 3, 1, 19, tzinfo=SHANGHAI),
+        now=datetime.combine(signal, datetime.min.time(), SHANGHAI).replace(hour=19),
     )
     second = generate_forward_shadow(
         product_root=products,

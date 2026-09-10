@@ -14,6 +14,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
+from quantlab.research.shadow_timing import prediction_timing
+
 
 @dataclass(frozen=True)
 class ShadowDiagnosticSummary:
@@ -28,6 +30,7 @@ class ShadowDiagnosticSummary:
     mean_weighted_target_return: float | None
     median_weighted_target_return: float | None
     positive_rate: float | None
+    excluded_prediction_count: int = 0
 
 
 def _canonical_hash(payload: object) -> str:
@@ -96,13 +99,15 @@ def _load_prediction_index(shadow_root: Path) -> tuple[
         if not all(isinstance(value, str) and value for value in (model_id, version, signal_date)):
             raise ValueError(f"forward-shadow prediction identity is incomplete: {path}")
         identity = (model_id, version, signal_date)
+        predictions_by_model[(model_id, version)].append(payload)
+        if not prediction_timing(payload)["forward_eligible"]:
+            continue
         previous = prediction_keys.get(identity)
         if previous is not None and previous != fingerprint:
             raise ValueError(
                 "multiple immutable predictions exist for the same model/version/signal date"
             )
         prediction_keys[identity] = fingerprint
-        predictions_by_model[(model_id, version)].append(payload)
     return predictions_by_model, prediction_keys
 
 
@@ -137,7 +142,10 @@ def summarize_forward_shadow(
     predictions_by_model, prediction_keys = _load_prediction_index(shadow_root)
     evaluations_by_prediction = _load_evaluation_index(
         evaluation_root,
-        set(prediction_keys.values()),
+        {
+            item["prediction_fingerprint"]
+            for group in predictions_by_model.values() for item in group
+        },
     )
 
     summaries = []
@@ -146,7 +154,11 @@ def summarize_forward_shadow(
         complete_returns: list[float] = []
         incomplete = 0
         pending = 0
+        excluded = 0
         for prediction in predictions:
+            if not prediction_timing(prediction)["forward_eligible"]:
+                excluded += 1
+                continue
             evaluation = evaluations_by_prediction.get(prediction["prediction_fingerprint"])
             if evaluation is None:
                 pending += 1
@@ -186,6 +198,7 @@ def summarize_forward_shadow(
                     if complete_returns
                     else None
                 ),
+                excluded_prediction_count=excluded,
             )
         )
     return summaries
@@ -204,11 +217,24 @@ def paired_shadow_diagnostics(
     not active return, information ratio, CAGR, or a tradable portfolio claim.
     """
     evaluation_root = evaluation_root or shadow_root / "evaluations"
-    _, predictions = _load_prediction_index(shadow_root)
-    evaluations = _load_evaluation_index(evaluation_root, set(predictions.values()))
+    predictions_by_model, predictions = _load_prediction_index(shadow_root)
+    all_predictions = {
+        item["prediction_fingerprint"]: item
+        for group in predictions_by_model.values() for item in group
+    }
+    evaluations = _load_evaluation_index(evaluation_root, set(all_predictions))
 
     complete_by_fingerprint = {}
     for fingerprint, payload in evaluations.items():
+        prediction = all_predictions[fingerprint]
+        if not prediction_timing(prediction)["forward_eligible"]:
+            continue
+        if (
+            payload.get("model_id") != prediction["model"]["model_id"]
+            or payload.get("model_version") != prediction["model"]["version"]
+            or payload.get("signal_date") != prediction["trade_date"]
+        ):
+            raise ValueError("forward-shadow evaluation identity does not match prediction")
         status = payload.get("status")
         if status == "complete":
             complete_by_fingerprint[fingerprint] = _valid_return(
