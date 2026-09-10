@@ -46,6 +46,14 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _is_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(char in "0123456789abcdef" for char in value)
+    )
+
+
 def _positive_int(value: object, field: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError(f"{field} must be a positive integer")
@@ -96,28 +104,28 @@ def validate_valuation_checkpoint(
     if expected_account_id is not None and account_id != expected_account_id:
         raise ValueError("valuation checkpoint account binding mismatch")
     try:
-        date.fromisoformat(payload["price_date"])
+        price_date = date.fromisoformat(payload["price_date"])
         account_as_of = datetime.fromisoformat(payload["account_as_of"])
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("valuation checkpoint date metadata is invalid") from exc
     if account_as_of.tzinfo is None or account_as_of.utcoffset() is None:
         raise ValueError("valuation checkpoint account_as_of must be timezone-aware")
+    if price_date < account_as_of.astimezone(SHANGHAI).date():
+        raise ValueError("valuation checkpoint price date predates account state")
 
     for field in ("account_fingerprint", "daily_content_fingerprint"):
-        value = payload.get(field)
-        if not isinstance(value, str) or len(value) != 64:
-            raise ValueError(f"valuation checkpoint {field} must be SHA-256")
+        if not _is_sha256(payload.get(field)):
+            raise ValueError(f"valuation checkpoint {field} must be lowercase SHA-256")
     evidence = payload.get("evidence")
     if not isinstance(evidence, dict):
         raise ValueError("valuation checkpoint evidence must be an object")
     for field in ("account_state_sha256", "raw_price_set_sha256"):
-        value = evidence.get(field)
-        if not isinstance(value, str) or len(value) != 64:
-            raise ValueError(f"valuation checkpoint evidence.{field} must be SHA-256")
+        if not _is_sha256(evidence.get(field)):
+            raise ValueError(
+                f"valuation checkpoint evidence.{field} must be lowercase SHA-256"
+            )
     partition_sha = evidence.get("daily_bar_partition_sha256")
-    if partition_sha is not None and (
-        not isinstance(partition_sha, str) or len(partition_sha) != 64
-    ):
+    if partition_sha is not None and not _is_sha256(partition_sha):
         raise ValueError("valuation checkpoint daily-bar partition hash is invalid")
 
     cash_fen = _nonnegative_int(payload.get("cash_fen"), "cash_fen")
@@ -152,13 +160,21 @@ def validate_valuation_checkpoint(
         )
     if evidence["raw_price_set_sha256"] != _canonical_hash(raw_price_evidence):
         raise ValueError("valuation checkpoint raw price evidence fingerprint mismatch")
+    if positions and partition_sha is None:
+        raise ValueError("valuation checkpoint with positions requires partition evidence")
+    if not positions and partition_sha is not None:
+        raise ValueError("cash-only valuation cannot claim unused price-partition evidence")
     nav_fen = _nonnegative_int(payload.get("nav_fen"), "nav_fen")
     if nav_fen != cash_fen + market_value_sum:
         raise ValueError("valuation checkpoint NAV arithmetic mismatch")
+    if payload.get("price_basis") != "raw_same_session_close":
+        raise ValueError("valuation checkpoint must use raw same-session close")
     if payload.get("performance_claim") is not False:
         raise ValueError("valuation checkpoint cannot carry a performance claim")
+    if payload.get("broker_order_authority") is not False:
+        raise ValueError("valuation checkpoint cannot carry broker/order authority")
     fingerprint = payload.get("checkpoint_fingerprint")
-    if not isinstance(fingerprint, str) or len(fingerprint) != 64:
+    if not _is_sha256(fingerprint):
         raise ValueError("valuation checkpoint fingerprint is invalid")
     if fingerprint != _canonical_hash(_checkpoint_core(payload)):
         raise ValueError("valuation checkpoint fingerprint mismatch")
@@ -218,6 +234,29 @@ def load_latest_valuation_checkpoint(
     if relative != expected_relative:
         raise ValueError("valuation ACTIVE pointer path does not match checkpoint identity")
     return checkpoint_path, payload
+
+
+def _assert_inputs_unchanged(
+    *,
+    account_id: str,
+    account_root: Path,
+    product_root: Path,
+    storage: ParquetStorage,
+    account_fingerprint: str,
+    daily_content_fingerprint: str,
+    partition_path: Path,
+    partition_sha: str | None,
+) -> None:
+    account_after = load_effective_account(account_id, account_root=account_root, storage=storage)
+    snapshot_after = load_validated_latest_snapshot(product_root)
+    if snapshot_after is None:
+        raise ValueError("Daily snapshot disappeared during valuation materialization")
+    if account_after["account_fingerprint"] != account_fingerprint:
+        raise ValueError("account identity drifted during valuation materialization")
+    if snapshot_after.report["content_fingerprint"] != daily_content_fingerprint:
+        raise ValueError("Daily identity drifted during valuation materialization")
+    if partition_sha is not None and _sha256_file(partition_path) != partition_sha:
+        raise ValueError("raw daily-bar partition drifted during valuation materialization")
 
 
 def materialize_valuation_checkpoint(
@@ -292,13 +331,14 @@ def materialize_valuation_checkpoint(
     }
     partition_path = storage.daily_bars_path(price_date)
     partition_sha = _sha256_file(partition_path) if positions else None
+    daily_fingerprint = snapshot.report["content_fingerprint"]
     core = {
         "schema": _SCHEMA,
         "account_id": account_id,
         "account_fingerprint": account["account_fingerprint"],
         "account_as_of": account["as_of"],
         "price_date": price_date.isoformat(),
-        "daily_content_fingerprint": snapshot.report["content_fingerprint"],
+        "daily_content_fingerprint": daily_fingerprint,
         "cash_fen": account["cash_fen"],
         "positions": marked_positions,
         "nav_fen": account["cash_fen"]
@@ -324,22 +364,16 @@ def materialize_valuation_checkpoint(
         "checkpoint_fingerprint": fingerprint,
     }
 
-    # Re-read every mutable upstream identity before publication. A concurrent
-    # account import/journal update, Daily activation, or price-partition rewrite
-    # cannot silently publish a checkpoint from a mixed state.
-    account_after = load_effective_account(account_id, account_root=account_root, storage=storage)
-    snapshot_after = load_validated_latest_snapshot(product_root)
-    if snapshot_after is None:
-        raise ValueError("Daily snapshot disappeared during valuation materialization")
-    if account_after["account_fingerprint"] != account["account_fingerprint"]:
-        raise ValueError("account identity drifted during valuation materialization")
-    if (
-        snapshot_after.report["content_fingerprint"]
-        != snapshot.report["content_fingerprint"]
-    ):
-        raise ValueError("Daily identity drifted during valuation materialization")
-    if positions and _sha256_file(partition_path) != partition_sha:
-        raise ValueError("raw daily-bar partition drifted during valuation materialization")
+    _assert_inputs_unchanged(
+        account_id=account_id,
+        account_root=account_root,
+        product_root=product_root,
+        storage=storage,
+        account_fingerprint=account["account_fingerprint"],
+        daily_content_fingerprint=daily_fingerprint,
+        partition_path=partition_path,
+        partition_sha=partition_sha,
+    )
 
     root = _valuation_root(account_root, account_id)
     day_root = root / price_date.isoformat()
@@ -352,6 +386,16 @@ def materialize_valuation_checkpoint(
         )
         if existing["checkpoint_fingerprint"] != fingerprint:
             raise ValueError("existing valuation directory carries the wrong fingerprint")
+        _assert_inputs_unchanged(
+            account_id=account_id,
+            account_root=account_root,
+            product_root=product_root,
+            storage=storage,
+            account_fingerprint=account["account_fingerprint"],
+            daily_content_fingerprint=daily_fingerprint,
+            partition_path=partition_path,
+            partition_sha=partition_sha,
+        )
         _activate(root, final_path, fingerprint)
         return final_path, existing, True
 
@@ -374,12 +418,34 @@ def materialize_valuation_checkpoint(
                 expected_account_id=account_id,
             )
             if existing["checkpoint_fingerprint"] != fingerprint:
-                raise ValueError("concurrent valuation winner has wrong fingerprint")
+                raise ValueError(
+                    "concurrent valuation winner has wrong fingerprint"
+                ) from exc
+            _assert_inputs_unchanged(
+                account_id=account_id,
+                account_root=account_root,
+                product_root=product_root,
+                storage=storage,
+                account_fingerprint=account["account_fingerprint"],
+                daily_content_fingerprint=daily_fingerprint,
+                partition_path=partition_path,
+                partition_sha=partition_sha,
+            )
             _activate(root, final_path, fingerprint)
             return final_path, existing, True
         published = validate_valuation_checkpoint(
             final_path,
             expected_account_id=account_id,
+        )
+        _assert_inputs_unchanged(
+            account_id=account_id,
+            account_root=account_root,
+            product_root=product_root,
+            storage=storage,
+            account_fingerprint=account["account_fingerprint"],
+            daily_content_fingerprint=daily_fingerprint,
+            partition_path=partition_path,
+            partition_sha=partition_sha,
         )
         _activate(root, final_path, fingerprint)
         return final_path, published, False
