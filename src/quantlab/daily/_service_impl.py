@@ -32,6 +32,10 @@ from quantlab.data.sync import (
     validate_daily_bars,
     validate_daily_basic,
 )
+from quantlab.portfolio.product import (
+    construct_daily_fixed_count_portfolio,
+    fixed_count_config_from_daily,
+)
 from quantlab.research import build_research_dataset, filter_v1_universe
 from quantlab.research.factor_registry import (
     FACTOR_REGISTRY,
@@ -307,7 +311,51 @@ def _load_config(path: Path) -> dict:
         raise DataValidationError("weight values must be finite numbers")
     if not (0 < cap <= 1 and 0 < gross <= 1):
         raise DataValidationError("weight values must be in (0, 1]")
+    # The product adapter is the economic contract. Validating it here prevents
+    # the Daily generator from accepting a config that downstream portfolio
+    # construction would reject (most importantly, a different tie policy).
+    fixed_count_config_from_daily(config)
     return config
+
+
+def _apply_portfolio_contract(
+    ranking: pd.DataFrame,
+    effective: date,
+    config: dict,
+) -> tuple[pd.DataFrame, int, int, float, float]:
+    """Materialize Daily ranks while delegating economic targets to Portfolio Core."""
+    # Validate even when the cross-section is empty; an empty day must not let an
+    # invalid product contract slip through merely because there are no names.
+    fixed_count_config_from_daily(config)
+    ascending = config["score_direction"] == "lower_is_better"
+    materialized = ranking.sort_values(
+        ["alpha_score", "instrument_id"],
+        ascending=[ascending, True],
+        na_position="last",
+        kind="mergesort",
+    ).reset_index(drop=True)
+    valid_count = int(materialized["alpha_score"].notna().sum())
+    materialized["rank"] = pd.array(
+        list(range(1, valid_count + 1)) + [pd.NA] * (len(materialized) - valid_count),
+        dtype="Int64",
+    )
+
+    if materialized.empty:
+        materialized["selected"] = pd.Series(dtype=bool)
+        materialized["target_weight"] = pd.Series(dtype=float)
+        return materialized, 0, 0, 0.0, 1.0
+
+    portfolio = construct_daily_fixed_count_portfolio(
+        materialized[["instrument_id", "trade_date", "alpha_score"]],
+        effective,
+        config,
+    )
+    weights = {item.instrument_id: item.target_weight for item in portfolio.positions}
+    materialized["selected"] = materialized["instrument_id"].isin(weights)
+    materialized["target_weight"] = materialized["instrument_id"].map(weights).fillna(0.0)
+    selected_count = len(portfolio.positions)
+    per_name = portfolio.positions[0].target_weight if portfolio.positions else 0.0
+    return materialized, valid_count, selected_count, per_name, portfolio.cash_weight
 
 
 def _next_open_session(storage: ParquetStorage, current: date) -> date | None:
@@ -456,29 +504,11 @@ def generate_daily_snapshot(
         ["reversal_20d", "low_amplitude", "small_size", "intraday_strength"],
     )
     ranking["alpha_score"] = ranking[config["score_definition"]]
-    ascending = config["score_direction"] == "lower_is_better"
-    ranking = ranking.sort_values(
-        ["alpha_score", "instrument_id"],
-        ascending=[ascending, True],
-        na_position="last",
-        kind="mergesort",
-    ).reset_index(drop=True)
-    valid_count = int(ranking["alpha_score"].notna().sum())
-    ranking["rank"] = pd.array(
-        list(range(1, valid_count + 1)) + [pd.NA] * (len(ranking) - valid_count),
-        dtype="Int64",
+    ranking, valid_count, selected_count, per_name, cash_weight = _apply_portfolio_contract(
+        ranking,
+        effective,
+        config,
     )
-    selected_count = min(config["target_count"], valid_count)
-    ranking["selected"] = False
-    if selected_count:
-        ranking.loc[: selected_count - 1, "selected"] = True
-    per_name = min(
-        config["max_weight_per_name"],
-        config["gross_exposure"] / selected_count if selected_count else 0.0,
-    )
-    ranking["target_weight"] = 0.0
-    if selected_count:
-        ranking.loc[: selected_count - 1, "target_weight"] = per_name
     ranking["selection_reason"] = ranking.apply(
         lambda row: (
             f"RESEARCH_TARGET: {config['score_definition']} / "
@@ -572,6 +602,10 @@ def generate_daily_snapshot(
         "research_dataset": PROJECT_ROOT / "src" / "quantlab" / "research" / "dataset.py",
         "factor_registry": PROJECT_ROOT / "src" / "quantlab" / "research" / "factor_registry.py",
         "universe": PROJECT_ROOT / "src" / "quantlab" / "research" / "universe.py",
+        "portfolio_product": PROJECT_ROOT / "src" / "quantlab" / "portfolio" / "product.py",
+        "portfolio_constructor": (
+            PROJECT_ROOT / "src" / "quantlab" / "portfolio" / "constructor.py"
+        ),
     }
     next_session = _next_open_session(storage, effective)
     target_weight_sum = round(float(target["target_weight"].sum()), 12)
@@ -609,7 +643,7 @@ def generate_daily_snapshot(
             "status": "research_target_only",
             "position_weight": per_name,
             "position_weight_sum": target_weight_sum,
-            "cash_weight": round(1.0 - target_weight_sum, 12),
+            "cash_weight": round(float(cash_weight), 12),
             "next_session_review_required": True,
             "reason": (
                 "no account state, next-session market status, executable quote, or verified "
