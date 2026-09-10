@@ -1,0 +1,13 @@
+{
+  "schema": "daily_product_strategy_audit_v1",
+  "experiment_id": "daily_product_strategy_audit_v1",
+  "data_start": "2020-01-01",
+  "data_end": "2024-12-31",
+  "signal_frequency": "weekly_first_open_session",
+  "execution_lag_sessions": 1,
+  "transaction_cost_bps": 10.0,
+  "settlement_recovery_assumptions": [1.0, 0.0],
+  "history_status": "retrospective_history_already_observed_not_fresh_oos",
+  "board_scope_policy": "all_supported_v1_boards_only_until_effective_dated_board_history",
+  "performance_claim": false
+}
