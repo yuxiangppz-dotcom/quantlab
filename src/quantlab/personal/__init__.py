@@ -19,6 +19,11 @@ from quantlab.personal.tracking import (
     preview_manual_cash_flows,
     preview_manual_fills,
 )
+from quantlab.personal.valuation_checkpoint import (
+    load_latest_valuation_checkpoint,
+    materialize_valuation_checkpoint,
+    validate_valuation_checkpoint,
+)
 
 __all__ = [
     "CashFlowDirection",
@@ -34,8 +39,11 @@ __all__ = [
     "load_account",
     "load_effective_account",
     "load_latest_plan",
+    "load_latest_valuation_checkpoint",
     "load_tracking_summary",
     "manual_tracking_fixture_smoke",
+    "materialize_valuation_checkpoint",
     "preview_manual_cash_flows",
     "preview_manual_fills",
+    "validate_valuation_checkpoint",
 ]
