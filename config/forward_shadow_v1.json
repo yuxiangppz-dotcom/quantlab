@@ -1,0 +1,24 @@
+{
+  "schema": "quantlab_forward_shadow_config_v1",
+  "config_id": "forward_shadow_v1",
+  "universe": "V1_SH_SZ_A_share",
+  "target_count": 20,
+  "max_weight_per_name": 0.05,
+  "label_horizon_sessions": 20,
+  "models": [
+    {
+      "model_id": "return_20d_baseline",
+      "version": "daily_mvp_v1",
+      "source_column": "return_20d",
+      "direction": "lower_is_better",
+      "status": "baseline_research_example_test_observed"
+    },
+    {
+      "model_id": "transparent_combo_v1",
+      "version": "v1_frozen_forward_candidate",
+      "source_column": "transparent_combo_v1",
+      "direction": "higher_is_better",
+      "status": "RESEARCH_CANDIDATE_NOT_PROMOTED"
+    }
+  ]
+}

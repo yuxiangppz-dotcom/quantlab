@@ -130,6 +130,21 @@ def _ui(port: int) -> int:
         return 130
 
 
+def _shadow() -> int:
+    from quantlab.research.forward_shadow import (
+        evaluate_matured_forward_shadows,
+        generate_forward_shadow,
+    )
+
+    results = generate_forward_shadow()
+    evaluations = evaluate_matured_forward_shadows()
+    for result in results:
+        action = "reused" if result.reused else "created"
+        print(f"{action} {result.model_id}: {result.prediction_dir}")
+    print(f"new matured evaluations: {len(evaluations)}")
+    return 0
+
+
 def _accept(account_id: str) -> int:
     from quantlab.daily.acceptance import run_v1_acceptance
 
@@ -246,6 +261,7 @@ def _parser() -> argparse.ArgumentParser:
     ui.add_argument("--port", type=int, default=8501)
     accept = sub.add_parser("accept", help="Run local Daily v1 end-to-end acceptance.")
     accept.add_argument("--account-id", default="demo_200k")
+    sub.add_parser("shadow", help="Freeze forward-only scores; append matured diagnostics.")
     return parser
 
 
@@ -276,6 +292,8 @@ def main() -> None:
         code = _ui(args.port)
     elif args.command == "accept":
         code = _accept(args.account_id)
+    elif args.command == "shadow":
+        code = _shadow()
     else:  # pragma: no cover - argparse enforces this
         raise AssertionError(args.command)
     raise SystemExit(code)
