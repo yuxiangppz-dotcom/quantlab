@@ -16,7 +16,10 @@ from quantlab.daily.service import (
     load_latest_snapshot,
 )
 from quantlab.data.models import DataValidationError
-from quantlab.portfolio.product import construct_daily_fixed_count_portfolio
+from quantlab.portfolio.product import (
+    construct_daily_fixed_count_portfolio,
+    fixed_count_config_from_daily,
+)
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -130,6 +133,7 @@ def validate_daily_snapshot_semantics(snapshot: DailySnapshot) -> None:
         report_target, dict
     ):
         raise DataValidationError("Daily report portfolio semantic metadata must be objects")
+    portfolio_config = fixed_count_config_from_daily(model)
 
     try:
         ranking = pd.read_csv(snapshot.ranking_path)
@@ -171,7 +175,7 @@ def validate_daily_snapshot_semantics(snapshot: DailySnapshot) -> None:
         raise DataValidationError("Daily ranking target_weight must be finite and non-negative")
 
     valid = ranking[ranking["alpha_score"].notna()].copy()
-    ascending = model.get("score_direction") == "lower_is_better"
+    ascending = portfolio_config.score_direction == "lower_is_better"
     ordered = valid.sort_values(
         ["alpha_score", "instrument_id"],
         ascending=[ascending, True],
@@ -218,13 +222,37 @@ def validate_daily_snapshot_semantics(snapshot: DailySnapshot) -> None:
     if target_ids != expected_ids or len(target) != len(expected_ids):
         raise DataValidationError("Daily target CSV does not match selected core portfolio instruments")
     target_weights = pd.to_numeric(target["target_weight"], errors="coerce")
-    if target_weights.isna().any() or (~target_weights.map(math.isfinite)).any():
-        raise DataValidationError("Daily target target_weight must be finite")
-    for instrument_id, weight in zip(target["instrument_id"], target_weights, strict=True):
+    target_ranks = pd.to_numeric(target["rank"], errors="coerce")
+    target_scores = pd.to_numeric(target["alpha_score"], errors="coerce")
+    if (
+        target_weights.isna().any()
+        or (~target_weights.map(math.isfinite)).any()
+        or (target_weights < 0).any()
+        or target_ranks.isna().any()
+        or target_scores.isna().any()
+    ):
+        raise DataValidationError("Daily target contains invalid semantic values")
+    ranking_by_id = ranking.set_index("instrument_id")
+    for instrument_id, rank, score, weight in zip(
+        target["instrument_id"],
+        target_ranks,
+        target_scores,
+        target_weights,
+        strict=True,
+    ):
         _assert_close(float(weight), expected_weights[instrument_id], "target CSV target_weight")
+        if float(rank) != expected_ranks[instrument_id]:
+            raise DataValidationError("Daily target rank does not match ranking")
+        _assert_close(
+            float(score),
+            float(ranking_by_id.at[instrument_id, "alpha_score"]),
+            "target CSV alpha_score",
+        )
 
     if report_ranking.get("tie_policy") != model.get("tie_policy"):
         raise DataValidationError("Daily report ranking tie policy differs from model config")
+    if report_ranking.get("universe_rows") != len(ranking):
+        raise DataValidationError("Daily report universe_rows does not match ranking")
     if report_ranking.get("selected_rows") != len(expected_ids):
         raise DataValidationError("Daily report selected_rows does not match core portfolio")
     if report_ranking.get("valid_score_rows") != len(valid):
@@ -241,13 +269,12 @@ def validate_daily_snapshot_semantics(snapshot: DailySnapshot) -> None:
         expected_cash,
         "target.cash_weight",
     )
-    if expected_weights:
-        expected_per_name = next(iter(expected_weights.values()))
-        _assert_close(
-            _finite_float(report_target.get("position_weight"), "target.position_weight"),
-            expected_per_name,
-            "target.position_weight",
-        )
+    expected_per_name = next(iter(expected_weights.values()), 0.0)
+    _assert_close(
+        _finite_float(report_target.get("position_weight"), "target.position_weight"),
+        expected_per_name,
+        "target.position_weight",
+    )
 
 
 def load_validated_latest_snapshot(
