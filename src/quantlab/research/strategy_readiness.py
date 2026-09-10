@@ -33,7 +33,9 @@ class StrategyReadinessReport:
     role: str
     registry_status: str
     evidence_ref_count: int
-    catalog_bound_evidence_count: int
+    catalog_evidence_id_match_count: int
+    catalog_path_match_count: int
+    evidence_catalog_fingerprint: str | None
     forward_prediction_count: int
     forward_complete_evaluation_count: int
     forward_incomplete_evaluation_count: int
@@ -94,12 +96,17 @@ def _shadow_by_key(
     return result
 
 
-def _catalog_bound_refs(entry: StrategyRegistryEntry, catalog: EvidenceCatalog | None) -> int:
+def _catalog_matches(
+    entry: StrategyRegistryEntry,
+    catalog: EvidenceCatalog | None,
+) -> tuple[int, int, str | None]:
     if catalog is None:
-        return 0
+        return 0, 0, None
     evidence_ids = {item.evidence_id for item in catalog.entries}
     relative_paths = {item.relative_path for item in catalog.entries}
-    return sum(ref in evidence_ids or ref in relative_paths for ref in entry.evidence_refs)
+    evidence_id_matches = sum(ref in evidence_ids for ref in entry.evidence_refs)
+    path_matches = sum(ref in relative_paths for ref in entry.evidence_refs)
+    return evidence_id_matches, path_matches, catalog.catalog_fingerprint
 
 
 def _build_one(
@@ -112,6 +119,7 @@ def _build_one(
     complete_count = 0 if shadow is None else shadow.complete_evaluation_count
     incomplete_count = 0 if shadow is None else shadow.incomplete_evaluation_count
     pending_count = 0 if shadow is None else shadow.pending_prediction_count
+    catalog_id_count, catalog_path_count, catalog_fingerprint = _catalog_matches(entry, catalog)
 
     blockers: list[str] = []
     if entry.status not in {ELIGIBLE_FOR_USER_REVIEW, USER_APPROVED}:
@@ -140,7 +148,9 @@ def _build_one(
         "role": entry.role,
         "registry_status": entry.status,
         "evidence_ref_count": len(entry.evidence_refs),
-        "catalog_bound_evidence_count": _catalog_bound_refs(entry, catalog),
+        "catalog_evidence_id_match_count": catalog_id_count,
+        "catalog_path_match_count": catalog_path_count,
+        "evidence_catalog_fingerprint": catalog_fingerprint,
         "forward_prediction_count": prediction_count,
         "forward_complete_evaluation_count": complete_count,
         "forward_incomplete_evaluation_count": incomplete_count,
