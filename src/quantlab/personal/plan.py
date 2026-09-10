@@ -11,7 +11,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from quantlab.daily.service import DEFAULT_PRODUCT_ROOT, PROJECT_ROOT, load_latest_snapshot
+from quantlab.daily.integrity import load_validated_latest_snapshot
+from quantlab.daily.service import DEFAULT_PRODUCT_ROOT, PROJECT_ROOT
 from quantlab.data.storage import ParquetStorage
 from quantlab.personal.account import (
     DEFAULT_ACCOUNT_ROOT,
@@ -91,7 +92,7 @@ def build_reference_plan(
     from quantlab.personal.tracking import load_effective_account
 
     account = load_effective_account(account_id, account_root=account_root, storage=storage)
-    snapshot = load_latest_snapshot(product_root)
+    snapshot = load_validated_latest_snapshot(product_root)
     if snapshot is None:
         raise FileNotFoundError("no daily snapshot; run `quantlab daily` first")
     signal_date = date.fromisoformat(snapshot.report["effective_as_of"])
