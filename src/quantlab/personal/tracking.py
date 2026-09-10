@@ -277,7 +277,9 @@ def _load_journal(account: dict, account_root: Path) -> dict | None:
     return payload
 
 
-def _decode_journal(payload: dict | None) -> tuple[list[ManualFillImported], list[ExternalCashFlow]]:
+def _decode_journal(
+    payload: dict | None,
+) -> tuple[list[ManualFillImported], list[ExternalCashFlow]]:
     if payload is None:
         return [], []
     fills: list[ManualFillImported] = []
@@ -936,7 +938,9 @@ def build_tracking_valuation(
     effective = load_effective_account(account_id, account_root=account_root, storage=storage)
     bars = {item.instrument_id: item for item in storage.load_daily_bars_by_date(mark_date)}
     missing = sorted(
-        item["instrument_id"] for item in effective["positions"] if item["instrument_id"] not in bars
+        item["instrument_id"]
+        for item in effective["positions"]
+        if item["instrument_id"] not in bars
     )
     base = {
         "price_date": mark_date.isoformat(),
@@ -977,7 +981,10 @@ def build_tracking_valuation(
             "performance_claim": False,
             "limitations": [
                 "opening snapshot is marked at the latest prior raw daily close",
-                "external cash flows are account truth but cash-flow-aware performance is not implemented",
+                (
+                    "external cash flows are account truth but cash-flow-aware "
+                    "performance is not implemented"
+                ),
                 "corporate-action cash and share postings are not modeled",
             ],
         }
