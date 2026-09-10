@@ -7,8 +7,10 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from quantlab.research.product_strategy_audit import _load_configs, _product_targets
-
+from quantlab.research.product_strategy_audit import (
+    _load_configs,
+    _product_targets,
+)
 
 DAY = date(2026, 9, 9)
 
@@ -114,6 +116,16 @@ def test_load_configs_binds_preregistered_recovery_and_daily_tie_contract(tmp_pa
         _daily_config(tie_policy="keep_all_cutoff_ties"),
     )
     with pytest.raises(ValueError, match="tie policy"):
+        _load_configs(*paths)
+
+
+def test_load_configs_rejects_narrowed_historical_board_scope(tmp_path: Path) -> None:
+    paths = _write_configs(
+        tmp_path,
+        _audit_config(),
+        _daily_config(allowed_boards=["主板", "创业板"]),
+    )
+    with pytest.raises(ValueError, match="effective-dated board history"):
         _load_configs(*paths)
 
 
