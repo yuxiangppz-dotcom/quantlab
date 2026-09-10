@@ -5,6 +5,10 @@ import importlib.util
 import pandas as pd
 import pytest
 
+from quantlab.research.alpha158_subset import (
+    alpha158_subset_rows,
+    calculate_alpha158_exact_subset,
+)
 from quantlab.research.factor_registry import (
     FACTOR_REGISTRY,
     add_transparent_combination,
@@ -51,9 +55,9 @@ def test_transparent_combination_is_deterministic_under_row_reordering() -> None
     features = build_factor_columns(_frame())
     columns = ["reversal_20d", "low_amplitude", "small_size", "intraday_strength"]
     left = add_transparent_combination(features, columns).set_index("instrument_id")
-    right = add_transparent_combination(
-        features.sample(frac=1, random_state=7), columns
-    ).set_index("instrument_id")
+    right = add_transparent_combination(features.sample(frac=1, random_state=7), columns).set_index(
+        "instrument_id"
+    )
     pd.testing.assert_series_equal(
         left["transparent_combo_v1"].sort_index(),
         right["transparent_combo_v1"].sort_index(),
@@ -67,3 +71,21 @@ def test_qlib_status_never_misrepresents_fallback_as_qlib() -> None:
     if not installed:
         with pytest.raises(RuntimeError, match="Qlib is not installed"):
             to_qlib_static_loader(_frame(), ["return_1d"])
+
+
+def test_alpha158_subset_is_exact_and_does_not_claim_full_alpha158() -> None:
+    source = _frame()
+    quantlab = build_factor_columns(source)
+    subset = calculate_alpha158_exact_subset(source)
+    pd.testing.assert_series_equal(subset["KMID"], quantlab["intraday_strength"], check_names=False)
+    pd.testing.assert_series_equal(subset["KLEN"], -quantlab["low_amplitude"], check_names=False)
+    rows = alpha158_subset_rows()
+    assert [row["qlib_feature"] for row in rows] == ["KMID", "KLEN"]
+    assert rows[0]["qlib_expression"] == "($close-$open)/$open"
+    status = qlib_integration_status()
+    assert status["alpha158_full_implementation"] is False
+
+
+def test_alpha158_subset_rejects_missing_raw_price() -> None:
+    with pytest.raises(ValueError, match="missing columns"):
+        calculate_alpha158_exact_subset(_frame().drop(columns="open"))

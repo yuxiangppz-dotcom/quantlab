@@ -15,6 +15,8 @@ def qlib_integration_status() -> dict[str, object]:
         "canonical_source": "QuantLab ParquetStorage",
         "qlib_sample_data_downloaded": False,
         "qlib_backtest_used": False,
+        "alpha158_subset": "KMID,KLEN exact mapping only",
+        "alpha158_full_implementation": False,
         "status": "available" if available else "optional_dependency_not_installed",
     }
 

@@ -1,5 +1,10 @@
 """Research layer: adjusted prices and returns."""
 
+from quantlab.research.alpha158_subset import (
+    ALPHA158_EXACT_SUBSET,
+    alpha158_subset_rows,
+    calculate_alpha158_exact_subset,
+)
 from quantlab.research.dataset import build_research_dataset
 from quantlab.research.evaluation import (
     daily_rank_ic,
@@ -13,6 +18,9 @@ from quantlab.research.returns import calculate_forward_returns, calculate_retur
 from quantlab.research.universe import filter_v1_universe
 
 __all__ = [
+    "ALPHA158_EXACT_SUBSET",
+    "alpha158_subset_rows",
+    "calculate_alpha158_exact_subset",
     "ResearchDailyPrice",
     "build_prices",
     "build_research_dataset",
