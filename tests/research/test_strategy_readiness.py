@@ -127,6 +127,19 @@ def test_missing_shadow_is_explicitly_visible() -> None:
     assert "FORWARD_SHADOW_SUMMARY_NOT_FOUND" in report.blockers
 
 
+def test_forged_approval_and_missing_advanced_evidence_fail_closed() -> None:
+    forged = replace(
+        _entry(USER_APPROVED),
+        approval_source="historical_metric_threshold",
+    )
+    with pytest.raises(DataValidationError, match="explicit_user_decision"):
+        build_strategy_readiness([forged], shadow_summaries=[_shadow(complete=1)])
+
+    missing_evidence = replace(_entry(), evidence_refs=())
+    with pytest.raises(DataValidationError, match="requires evidence references"):
+        build_strategy_readiness([missing_evidence], shadow_summaries=[_shadow()])
+
+
 def test_duplicate_shadow_or_strategy_identity_fails_closed() -> None:
     with pytest.raises(DataValidationError, match="duplicate Forward Shadow diagnostic identity"):
         build_strategy_readiness([_entry()], shadow_summaries=[_shadow(), _shadow()])
