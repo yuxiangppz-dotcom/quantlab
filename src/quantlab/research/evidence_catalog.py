@@ -53,48 +53,53 @@ def _canonical_hash(payload: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _bool_or_none(value: object, field: str, path: Path) -> bool | None:
+def _bool_or_none(value: object, field: str, label: str) -> bool | None:
     if value is None:
         return None
     if not isinstance(value, bool):
-        raise DataValidationError(f"{path}: {field} must be boolean when present")
+        raise DataValidationError(f"{label}: {field} must be boolean when present")
     return value
 
 
-def _string_or_none(value: object, field: str, path: Path) -> str | None:
+def _string_or_none(value: object, field: str, label: str) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str) or not value.strip():
-        raise DataValidationError(f"{path}: {field} must be a non-empty string when present")
+        raise DataValidationError(
+            f"{label}: {field} must be a non-empty string when present"
+        )
     return value.strip()
 
 
-def _parse_entry(root: Path, path: Path) -> EvidenceCatalogEntry | None:
+def _parse_entry(root: Path, path: Path) -> EvidenceCatalogEntry:
     resolved_root = root.resolve()
     resolved_path = path.resolve()
     if not resolved_path.is_relative_to(resolved_root):
-        raise DataValidationError(f"experiment artifact escapes evidence root: {path}")
+        raise DataValidationError("experiment artifact escapes evidence root")
+    relative = resolved_path.relative_to(resolved_root).as_posix()
     raw = path.read_bytes()
     try:
         payload = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise DataValidationError(f"invalid JSON evidence artifact: {path}") from exc
+        raise DataValidationError(
+            f"{relative}: invalid JSON evidence artifact"
+        ) from exc
     if not isinstance(payload, dict):
-        raise DataValidationError(f"evidence artifact must contain a JSON object: {path}")
+        raise DataValidationError(
+            f"{relative}: evidence artifact must contain a JSON object"
+        )
 
     schema = payload.get("schema")
     run_id = payload.get("run_id")
-    # JSON files such as auxiliary manifests may legitimately live under an
-    # experiment directory. A catalog entry is intentionally limited to
-    # run-addressable evidence with both schema and run_id.
-    if schema is None and run_id is None:
-        return None
     if not isinstance(schema, str) or not schema.strip():
-        raise DataValidationError(f"{path}: evidence schema must be a non-empty string")
+        raise DataValidationError(
+            f"{relative}: evidence schema must be a non-empty string"
+        )
     if not isinstance(run_id, str) or not run_id.strip():
-        raise DataValidationError(f"{path}: evidence run_id must be a non-empty string")
+        raise DataValidationError(
+            f"{relative}: evidence run_id must be a non-empty string"
+        )
 
-    relative = resolved_path.relative_to(resolved_root).as_posix()
     file_sha = hashlib.sha256(raw).hexdigest()
     identity = {
         "relative_path": relative,
@@ -108,16 +113,28 @@ def _parse_entry(root: Path, path: Path) -> EvidenceCatalogEntry | None:
         schema=schema.strip(),
         run_id=run_id.strip(),
         file_sha256=file_sha,
-        code_head=_string_or_none(payload.get("code_head"), "code_head", path),
+        code_head=_string_or_none(payload.get("code_head"), "code_head", relative),
         history_status=_string_or_none(
-            payload.get("history_status"), "history_status", path
+            payload.get("history_status"), "history_status", relative
         ),
         performance_claim=_bool_or_none(
-            payload.get("performance_claim"), "performance_claim", path
+            payload.get("performance_claim"), "performance_claim", relative
         ),
         strategy_promoted=_bool_or_none(
-            payload.get("strategy_promoted"), "strategy_promoted", path
+            payload.get("strategy_promoted"), "strategy_promoted", relative
         ),
+    )
+
+
+def _catalog_fingerprint(
+    entries: list[EvidenceCatalogEntry],
+    issues: list[EvidenceCatalogIssue],
+) -> str:
+    return _canonical_hash(
+        {
+            "entries": [asdict(item) for item in entries],
+            "issues": [asdict(item) for item in issues],
+        }
     )
 
 
@@ -126,20 +143,26 @@ def build_evidence_catalog(
     *,
     strict: bool = True,
 ) -> EvidenceCatalog:
-    """Index run-addressable JSON artifacts below ``root``.
+    """Index run ``summary.json`` evidence below ``root``.
 
-    In strict mode any malformed evidence stops the scan. In non-strict mode the
-    bad artifact is reported in ``issues`` and valid evidence remains visible.
-    Neither mode mutates the evidence store.
+    V1 intentionally limits indexing to ``summary.json`` so auxiliary JSON
+    manifests do not accidentally become evidence merely because they carry a
+    schema. In strict mode any malformed summary stops the scan. In non-strict
+    mode the bad artifact is reported in ``issues`` and valid evidence remains
+    visible. Neither mode mutates the evidence store.
     """
     if not root.exists():
-        return EvidenceCatalog(entries=(), issues=(), catalog_fingerprint=_canonical_hash([]))
+        return EvidenceCatalog(
+            entries=(),
+            issues=(),
+            catalog_fingerprint=_catalog_fingerprint([], []),
+        )
     if not root.is_dir():
         raise DataValidationError("evidence catalog root must be a directory")
 
     entries: list[EvidenceCatalogEntry] = []
     issues: list[EvidenceCatalogIssue] = []
-    for path in sorted(root.rglob("*.json")):
+    for path in sorted(root.rglob("summary.json")):
         relative = path.relative_to(root).as_posix()
         try:
             entry = _parse_entry(root, path)
@@ -147,29 +170,29 @@ def build_evidence_catalog(
             if strict:
                 if isinstance(exc, DataValidationError):
                     raise
-                raise DataValidationError(f"cannot read evidence artifact: {path}") from exc
-            issues.append(EvidenceCatalogIssue(relative, str(exc)))
+                raise DataValidationError(
+                    f"{relative}: cannot read evidence artifact"
+                ) from exc
+            message = str(exc)
+            root_text = str(root)
+            resolved_root_text = str(root.resolve())
+            message = message.replace(resolved_root_text, "<root>").replace(
+                root_text, "<root>"
+            )
+            issues.append(EvidenceCatalogIssue(relative, message))
             continue
-        if entry is not None:
-            entries.append(entry)
+        entries.append(entry)
 
-    keys = [(entry.schema, entry.run_id, entry.relative_path) for entry in entries]
-    if len(keys) != len(set(keys)):
-        raise DataValidationError("duplicate schema/run_id/path identity in evidence catalog")
     evidence_ids = [entry.evidence_id for entry in entries]
     if len(evidence_ids) != len(set(evidence_ids)):
         raise DataValidationError("duplicate evidence_id in evidence catalog")
 
     entries.sort(key=lambda item: (item.schema, item.run_id, item.relative_path))
     issues.sort(key=lambda item: item.relative_path)
-    fingerprint_payload = {
-        "entries": [asdict(item) for item in entries],
-        "issues": [asdict(item) for item in issues],
-    }
     return EvidenceCatalog(
         entries=tuple(entries),
         issues=tuple(issues),
-        catalog_fingerprint=_canonical_hash(fingerprint_payload),
+        catalog_fingerprint=_catalog_fingerprint(entries, issues),
     )
 
 
@@ -177,7 +200,9 @@ def evidence_by_id(catalog: EvidenceCatalog, evidence_id: str) -> EvidenceCatalo
     """Resolve one exact evidence artifact by its content-bound ID."""
     matches = [entry for entry in catalog.entries if entry.evidence_id == evidence_id]
     if len(matches) != 1:
-        raise DataValidationError(f"evidence_id does not resolve exactly once: {evidence_id}")
+        raise DataValidationError(
+            f"evidence_id does not resolve exactly once: {evidence_id}"
+        )
     return matches[0]
 
 
