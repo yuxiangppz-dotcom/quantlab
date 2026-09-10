@@ -62,6 +62,23 @@ def test_transparent_combination_is_deterministic_under_row_reordering() -> None
         left["transparent_combo_v1"].sort_index(),
         right["transparent_combo_v1"].sort_index(),
     )
+    contribution_columns = [f"{column}_combo_contribution" for column in columns]
+    pd.testing.assert_series_equal(
+        left[contribution_columns].sum(axis=1).sort_index(),
+        left["transparent_combo_v1"].sort_index(),
+        check_names=False,
+    )
+
+
+def test_transparent_contributions_preserve_partial_component_mean() -> None:
+    features = build_factor_columns(_frame())
+    features.loc[0, "low_amplitude"] = float("nan")
+    columns = ["reversal_20d", "low_amplitude", "small_size", "intraday_strength"]
+    result = add_transparent_combination(features, columns)
+    contributions = [f"{column}_combo_contribution" for column in columns]
+    assert result.loc[0, "transparent_combo_v1"] == pytest.approx(
+        result.loc[0, contributions].sum()
+    )
 
 
 def test_qlib_status_never_misrepresents_fallback_as_qlib() -> None:

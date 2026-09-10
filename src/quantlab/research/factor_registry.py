@@ -39,8 +39,17 @@ def registry_rows() -> list[dict]:
 def build_factor_columns(frame: pd.DataFrame) -> pd.DataFrame:
     """Create the registered PIT features from same-day or historical inputs."""
     required = {
-        "return_1d", "return_5d", "return_20d", "open", "high", "low", "close",
-        "amount", "turnover_rate", "circ_mv", "total_mv",
+        "return_1d",
+        "return_5d",
+        "return_20d",
+        "open",
+        "high",
+        "low",
+        "close",
+        "amount",
+        "turnover_rate",
+        "circ_mv",
+        "total_mv",
     }
     missing = required - set(frame.columns)
     if missing:
@@ -65,9 +74,12 @@ def build_factor_columns(frame: pd.DataFrame) -> pd.DataFrame:
 
 def add_transparent_combination(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     """Equal-weight cross-sectional winsorized z-score combination."""
+    if not columns or len(columns) != len(set(columns)):
+        raise ValueError("transparent combination columns must be non-empty and unique")
     result = frame.copy()
     components = []
     for column in columns:
+
         def normalize(group: pd.Series) -> pd.Series:
             valid = group.dropna()
             if valid.empty:
@@ -78,6 +90,10 @@ def add_transparent_combination(frame: pd.DataFrame, columns: list[str]) -> pd.D
             return (clipped - clipped.mean()) / std if std > 0 else clipped * 0
 
         normalized = result.groupby("trade_date", group_keys=False)[column].transform(normalize)
-        components.append(normalized)
-    result["transparent_combo_v1"] = pd.concat(components, axis=1).mean(axis=1)
+        components.append(normalized.rename(column))
+    normalized_frame = pd.concat(components, axis=1)
+    available_count = normalized_frame.notna().sum(axis=1).replace(0, math.nan)
+    for column in columns:
+        result[f"{column}_combo_contribution"] = normalized_frame[column] / available_count
+    result["transparent_combo_v1"] = normalized_frame.mean(axis=1)
     return result

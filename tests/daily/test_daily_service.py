@@ -12,7 +12,14 @@ from quantlab.daily.service import (
     inspect_data_status,
     load_latest_snapshot,
 )
-from quantlab.data.models import AdjFactor, DailyBar, DailyBasic, Security, TradingCalendar
+from quantlab.data.models import (
+    AdjFactor,
+    DailyBar,
+    DailyBasic,
+    DailyPriceLimit,
+    Security,
+    TradingCalendar,
+)
 from quantlab.data.storage import ParquetStorage
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -219,3 +226,30 @@ def test_distinct_user_config_does_not_overwrite_same_day_baseline(tmp_path: Pat
     )
     assert activated_baseline.reused
     assert load_latest_snapshot(product_root).report_path == baseline.report_path
+
+
+def test_snapshot_displays_provider_reported_signal_date_limits(tmp_path: Path) -> None:
+    storage, sessions = _seed_storage(tmp_path)
+    effective = sessions[-1]
+    storage.save_daily_price_limits_by_date(
+        [
+            DailyPriceLimit(
+                "000001.SZ", effective, None, 35.0, 25.0, "SZSE", "tushare.stk_limit", "a"
+            ),
+            DailyPriceLimit(
+                "600000.SH", effective, None, 34.0, 24.0, "SSE", "tushare.stk_limit", "b"
+            ),
+        ],
+        effective,
+    )
+    snapshot = generate_daily_snapshot(
+        effective,
+        storage=storage,
+        config_path=_config(tmp_path / "daily.json"),
+        product_root=tmp_path / "products",
+        now=datetime(2026, 2, 1, 18, tzinfo=SHANGHAI),
+    )
+    ranking = pd.read_csv(snapshot.ranking_path)
+    assert set(ranking["price_limit_data_status"]) == {"provider_reported_for_signal_date"}
+    assert "stk_limit" in snapshot.report["provenance"]["input_sha256"]
+    assert snapshot.report["enrichment"]["stk_limit"]["status"] == "available"

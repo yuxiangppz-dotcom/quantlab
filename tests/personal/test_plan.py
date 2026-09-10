@@ -189,8 +189,7 @@ def test_cash_constrained_plan_allocates_by_alpha_rank_not_security_code(tmp_pat
     account_root = tmp_path / "accounts"
     import_account_csv(
         (
-            HEADER
-            + "mine,manual_tracking,2026-09-10T08:00:00+08:00,20000.00,,0,0,,none_declared\n"
+            HEADER + "mine,manual_tracking,2026-09-10T08:00:00+08:00,20000.00,,0,0,,none_declared\n"
         ).encode(),
         account_root=account_root,
     )
@@ -203,3 +202,24 @@ def test_cash_constrained_plan_allocates_by_alpha_rank_not_security_code(tmp_pat
     assert rows["000001.SZ"]["action"] == "NO_TRADE"
     assert rows["000001.SZ"]["reason"] == "INSUFFICIENT_CURRENT_CASH_NO_SELL_FUNDING"
     assert payload["sell_proceeds_fund_buys"] is False
+
+
+def test_candidate_plan_is_explicitly_not_promoted(tmp_path: Path) -> None:
+    product_root, storage = _seed_product(tmp_path)
+    report_path = product_root / "2026-09-09" / "report.json"
+    report = json.loads(report_path.read_text())
+    report["model"] = {"model_status": "candidate_not_promoted_no_cost_control_closure"}
+    report_path.write_text(json.dumps(report))
+    account_root = tmp_path / "accounts"
+    import_account_csv(
+        (
+            HEADER
+            + "mine,manual_tracking,2026-09-10T08:00:00+08:00,200000.00,,0,0,,none_declared\n"
+        ).encode(),
+        account_root=account_root,
+    )
+    _, _, payload = build_reference_plan(
+        "mine", account_root=account_root, product_root=product_root, storage=storage
+    )
+    assert payload["candidate_warning"] == "RESEARCH_CANDIDATE_NOT_PROMOTED"
+    assert "NEXT_SESSION_PRICE_LIMIT_NOT_YET_OBSERVED" in payload["rows"][0]["pending_checks"]

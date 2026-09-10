@@ -132,9 +132,7 @@ def build_reference_plan(
     )
     target_ranks = {
         instrument: int(rank)
-        for instrument, rank in zip(
-            target_rows["instrument_id"], target_rows["rank"], strict=True
-        )
+        for instrument, rank in zip(target_rows["instrument_id"], target_rows["rank"], strict=True)
     }
     risk_context = {
         instrument: str(context)
@@ -186,7 +184,12 @@ def build_reference_plan(
         reason = "AT_TARGET"
         planned = 0
         fee_fen = 0
-        pending = ["T_PLUS_1_MARKET_STATUS", "EXECUTABLE_LIMIT_PRICE", "VERIFIED_ALL_IN_FEE"]
+        pending = [
+            "T_PLUS_1_MARKET_STATUS",
+            "NEXT_SESSION_PRICE_LIMIT_NOT_YET_OBSERVED",
+            "EXECUTABLE_LIMIT_PRICE",
+            "VERIFIED_ALL_IN_FEE",
+        ]
         context = risk_context.get(instrument, "OUTSIDE_RANKING_CONTEXT_UNKNOWN")
         if security is None or grid is None:
             action, reason = "NO_TRADE", "PIT_OR_QUANTITY_RULE_UNKNOWN"
@@ -265,6 +268,12 @@ def build_reference_plan(
         "planning_nav_fen": nav_fen,
         "remaining_current_cash_after_reference_buys_fen": available_cash,
         "status": "reference_only_pending_review",
+        "strategy_status": snapshot.report.get("model", {}).get("model_status", "unknown"),
+        "candidate_warning": (
+            "RESEARCH_CANDIDATE_NOT_PROMOTED"
+            if "candidate" in snapshot.report.get("model", {}).get("model_status", "").lower()
+            else None
+        ),
         "execution_confirmed": False,
         "broker_submission": False,
         "sell_proceeds_fund_buys": False,

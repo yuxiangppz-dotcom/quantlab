@@ -134,12 +134,20 @@ def sync_dividend_observations(
     )
 
 
-def inspect_enrichment_status(storage: ParquetStorage) -> dict:
+def inspect_enrichment_status(storage: ParquetStorage, as_of: date | None = None) -> dict:
     price_paths = sorted(storage.base_dir.glob("daily_price_limit/year=*/month=*/*.parquet"))
     financial_paths = sorted(
         storage.base_dir.glob("financial_indicator/observed_on=*/snapshot=*.parquet")
     )
     dividend_paths = sorted(storage.base_dir.glob("dividend/observed_on=*/snapshot=*.parquet"))
+    financial = storage.load_financial_indicator_observations() if financial_paths else []
+    dividends = storage.load_dividend_observations() if dividend_paths else []
+    eligible_financial = [
+        item for item in financial if as_of is None or item.available_from <= as_of
+    ]
+    eligible_dividends = [
+        item for item in dividends if as_of is None or item.available_from <= as_of
+    ]
     return {
         "stk_limit": {
             "status": "available" if price_paths else "not_loaded",
@@ -149,11 +157,71 @@ def inspect_enrichment_status(storage: ParquetStorage) -> dict:
         "fina_indicator_vip": {
             "status": "prospective_only" if financial_paths else "not_loaded",
             "snapshots": len(financial_paths),
+            "observed_versions": len(financial),
+            "eligible_versions_as_of": len(eligible_financial),
+            "latest_available_from": (
+                max(item.available_from for item in financial).isoformat() if financial else None
+            ),
+            "latest_period_end": (
+                max(item.period_end for item in eligible_financial).isoformat()
+                if eligible_financial
+                else None
+            ),
             "strict_historical_pit": False,
         },
         "dividend": {
             "status": "context_only" if dividend_paths else "not_loaded",
             "snapshots": len(dividend_paths),
+            "observed_events": len(dividends),
+            "eligible_events_as_of": len(eligible_dividends),
+            "latest_available_from": (
+                max(item.available_from for item in dividends).isoformat() if dividends else None
+            ),
             "account_postings": False,
         },
     }
+
+
+def dividend_context_warnings(
+    storage: ParquetStorage,
+    instrument_ids: set[str],
+    *,
+    as_of: date,
+    days_before: int = 30,
+    days_after: int = 60,
+) -> list[dict]:
+    """Return observed corporate-action context near an account date.
+
+    This is display-only evidence. It never posts cash or shares and uses only
+    records that QuantLab had observed by ``as_of``.
+    """
+    from datetime import timedelta
+
+    lower = as_of - timedelta(days=days_before)
+    upper = as_of + timedelta(days=days_after)
+    rows = []
+    for item in storage.load_dividend_observations():
+        if item.instrument_id not in instrument_ids or item.available_from > as_of:
+            continue
+        event_dates = {
+            "record_date": item.record_date,
+            "ex_date": item.ex_date,
+            "pay_date": item.pay_date,
+            "share_listing_date": item.share_listing_date,
+        }
+        nearby = {
+            name: value.isoformat()
+            for name, value in event_dates.items()
+            if value is not None and lower <= value <= upper
+        }
+        if nearby:
+            rows.append(
+                {
+                    "instrument_id": item.instrument_id,
+                    "process_status": item.process_status,
+                    "available_from": item.available_from.isoformat(),
+                    **nearby,
+                    "warning": "CORPORATE_ACTION_CONTEXT_REQUIRES_ACCOUNT_RECONCILIATION",
+                }
+            )
+    return sorted(rows, key=lambda row: (row["instrument_id"], str(row)))

@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from quantlab.alpha import calculate_momentum_alpha
+from quantlab.data.enrichment import inspect_enrichment_status
 from quantlab.data.models import DataValidationError
 from quantlab.data.storage import ParquetStorage
 from quantlab.data.sync import (
@@ -329,6 +330,15 @@ def _risk_context(storage: ParquetStorage, trade_date: date, ranking: pd.DataFra
         else {}
     )
     suspension_map: dict[str, list] = {}
+    price_limit_loaded = storage.daily_price_limit_exists(trade_date)
+    price_limit_map = (
+        {item.instrument_id: item for item in storage.load_daily_price_limits_by_date(trade_date)}
+        if price_limit_loaded
+        else {}
+    )
+    if price_limit_loaded and set(ranking["instrument_id"]) - set(price_limit_map):
+        raise DataValidationError("loaded stk_limit partition does not cover the Daily ranking")
+    close_map = dict(zip(ranking["instrument_id"], ranking["close"], strict=True))
     if suspension_loaded:
         for item in storage.load_suspensions_v1_by_date(trade_date):
             suspension_map.setdefault(item.instrument_id, []).append(item)
@@ -350,6 +360,19 @@ def _risk_context(storage: ParquetStorage, trade_date: date, ranking: pd.DataFra
             parts.append(f"SUSPENSION_CONTEXT_REPORTED:{kinds}")
         else:
             parts.append("NO_SUSPENSION_RECORD_NOT_FILL_EVIDENCE")
+        if not price_limit_loaded:
+            parts.append("PRICE_LIMIT_CONTEXT_NOT_LOADED")
+        else:
+            limit = price_limit_map[instrument_id]
+            close = float(close_map[instrument_id])
+            if round(close, 4) == round(limit.up_limit, 4):
+                parts.append("CLOSE_AT_REPORTED_UP_LIMIT")
+            elif round(close, 4) == round(limit.down_limit, 4):
+                parts.append("CLOSE_AT_REPORTED_DOWN_LIMIT")
+            elif limit.down_limit <= close <= limit.up_limit:
+                parts.append("CLOSE_WITHIN_REPORTED_LIMITS_NOT_NEXT_SESSION_EVIDENCE")
+            else:
+                parts.append("CLOSE_OUTSIDE_REPORTED_LIMITS_REQUIRES_REVIEW")
         labels.append(";".join(parts))
     return labels
 
@@ -470,6 +493,21 @@ def generate_daily_snapshot(
         axis=1,
     )
     ranking["risk_context"] = _risk_context(storage, effective, ranking)
+    if storage.daily_price_limit_exists(effective):
+        limits = pd.DataFrame(
+            [asdict(item) for item in storage.load_daily_price_limits_by_date(effective)]
+        )
+        ranking = ranking.merge(
+            limits[["instrument_id", "up_limit", "down_limit"]],
+            on="instrument_id",
+            how="left",
+            validate="one_to_one",
+        )
+        ranking["price_limit_data_status"] = "provider_reported_for_signal_date"
+    else:
+        ranking["up_limit"] = float("nan")
+        ranking["down_limit"] = float("nan")
+        ranking["price_limit_data_status"] = "not_loaded"
     ranking = ranking[
         [
             "rank",
@@ -486,11 +524,18 @@ def generate_daily_snapshot(
             "total_mv",
             "circ_mv",
             *[item.factor_id for item in FACTOR_REGISTRY],
+            "reversal_20d_combo_contribution",
+            "low_amplitude_combo_contribution",
+            "small_size_combo_contribution",
+            "intraday_strength_combo_contribution",
             "transparent_combo_v1",
             "selected",
             "target_weight",
             "selection_reason",
             "risk_context",
+            "up_limit",
+            "down_limit",
+            "price_limit_data_status",
         ]
     ]
     target = ranking.loc[ranking["selected"]].copy()
@@ -504,6 +549,9 @@ def generate_daily_snapshot(
             "target_weight",
             "selection_reason",
             "risk_context",
+            "up_limit",
+            "down_limit",
+            "price_limit_data_status",
         ]
     ]
 
@@ -515,6 +563,8 @@ def generate_daily_snapshot(
         "calendar": storage.calendar_path,
         "config": config_path,
     }
+    if storage.daily_price_limit_exists(effective):
+        input_paths["stk_limit"] = storage.daily_price_limit_path(effective)
     input_fingerprints = {name: _sha256_file(path) for name, path in input_paths.items()}
     code_paths = {
         "daily_service": Path(__file__),
@@ -532,6 +582,7 @@ def generate_daily_snapshot(
         "next_known_open_session": next_session.isoformat() if next_session else None,
         "data_status": status,
         "model": config,
+        "enrichment": inspect_enrichment_status(storage, effective),
         "ranking": {
             "universe_rows": len(ranking),
             "valid_score_rows": valid_count,
@@ -543,6 +594,12 @@ def generate_daily_snapshot(
             ),
             "factor_detail_columns": [item.factor_id for item in FACTOR_REGISTRY]
             + ["transparent_combo_v1"],
+            "factor_contribution_columns": [
+                "reversal_20d_combo_contribution",
+                "low_amplitude_combo_contribution",
+                "small_size_combo_contribution",
+                "intraday_strength_combo_contribution",
+            ],
             "factor_selection_note": (
                 "baseline selects frozen return_20d reversal; transparent_combo_v1 is an "
                 "unpromoted candidate without cost/Control closure"
@@ -575,6 +632,8 @@ def generate_daily_snapshot(
             "baseline results were already observed and do not establish future profitability",
             "absence of an ST or suspension context row is not proof of tradability",
             "a T-close research target is not a T+1 executable order or fill",
+            "signal-date stk_limit is context only; next-session limits remain unknown",
+            "financial observations are prospective-only because revision timestamps are absent",
             "systematic termination-announcement coverage remains incomplete",
         ],
     }

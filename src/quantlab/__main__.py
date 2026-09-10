@@ -26,7 +26,11 @@ def _date(value: str) -> date:
 
 
 def _doctor(as_json: bool) -> int:
+    from quantlab.data import ParquetStorage
+    from quantlab.data.enrichment import inspect_enrichment_status
+
     status = inspect_data_status()
+    effective = date.fromisoformat(status["effective_as_of"]) if status["effective_as_of"] else None
     payload = {
         "product": "QuantLab Daily",
         "version": "1.0.0",
@@ -34,6 +38,9 @@ def _doctor(as_json: bool) -> int:
         "python": sys.version.split()[0],
         "tushare_token_available": bool(os.environ.get("TUSHARE_TOKEN")),
         "data": status,
+        "enrichment": inspect_enrichment_status(
+            ParquetStorage(PROJECT_ROOT / "data" / "canonical"), effective
+        ),
     }
     if as_json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -47,6 +54,8 @@ def _doctor(as_json: bool) -> int:
         print(f"  calendar through: {status['latest_calendar_date']}")
         for issue in status["issues"]:
             print(f"  WARNING: {issue}")
+        for endpoint, item in payload["enrichment"].items():
+            print(f"  {endpoint}: {item['status']}")
     return 0 if status["effective_as_of"] else 2
 
 

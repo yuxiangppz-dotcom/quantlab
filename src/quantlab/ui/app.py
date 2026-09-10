@@ -4,19 +4,28 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 import pandas as pd
 import streamlit as st
 
 from quantlab.daily.configuration import create_daily_user_config
-from quantlab.daily.experiments import load_baseline_view, load_latest_factor_view
+from quantlab.daily.experiments import (
+    load_baseline_view,
+    load_latest_cadence_audit,
+    load_latest_factor_view,
+    load_latest_portfolio_audit,
+)
 from quantlab.daily.service import (
+    PROJECT_ROOT,
+    SHANGHAI,
     generate_daily_snapshot,
     inspect_data_status,
     load_latest_snapshot,
 )
+from quantlab.data.enrichment import dividend_context_warnings, inspect_enrichment_status
+from quantlab.data.storage import ParquetStorage
 from quantlab.personal import (
     build_plan_fill_comparison,
     build_reference_plan,
@@ -30,6 +39,7 @@ from quantlab.personal import (
     load_tracking_summary,
     preview_manual_fills,
 )
+from quantlab.research.forward_shadow import latest_forward_shadow
 
 st.set_page_config(page_title="QuantLab Daily", page_icon="📈", layout="wide")
 
@@ -44,6 +54,21 @@ def _factor_view() -> dict | None:
     return load_latest_factor_view()
 
 
+@st.cache_data(show_spinner=False)
+def _portfolio_audit() -> dict | None:
+    return load_latest_portfolio_audit()
+
+
+@st.cache_data(show_spinner=False)
+def _cadence_audit() -> dict | None:
+    return load_latest_cadence_audit()
+
+
+@st.cache_data(show_spinner=False)
+def _shadow_view() -> list[dict]:
+    return latest_forward_shadow()
+
+
 def _latest() -> tuple[object | None, pd.DataFrame | None, pd.DataFrame | None]:
     snapshot = load_latest_snapshot()
     if snapshot is None:
@@ -55,7 +80,7 @@ def _format_pct(value: float) -> str:
     return f"{value:.2%}"
 
 
-st.title("QuantLab Daily v1")
+st.title("QuantLab Daily v1.1")
 st.caption("本地日频研究与辅助决策工具；研究目标不是券商订单，未知证据不会显示为安全。")
 
 page = st.sidebar.radio(
@@ -65,6 +90,9 @@ page = st.sidebar.radio(
 
 if page == "数据状态与日报":
     status = inspect_data_status()
+    storage = ParquetStorage(PROJECT_ROOT / "data" / "canonical")
+    effective = date.fromisoformat(status["effective_as_of"]) if status["effective_as_of"] else None
+    enrichment = inspect_enrichment_status(storage, effective)
     cols = st.columns(4)
     cols[0].metric("共同数据截止日", status["effective_as_of"] or "不可用")
     cols[1].metric("日历截止日", status["latest_calendar_date"] or "不可用")
@@ -79,6 +107,16 @@ if page == "数据状态与日报":
         pd.DataFrame.from_dict(status["datasets"], orient="index").reset_index(names="dataset"),
         width="stretch",
         hide_index=True,
+    )
+    st.subheader("增强数据可用性")
+    st.dataframe(
+        pd.DataFrame.from_dict(enrichment, orient="index").reset_index(names="endpoint"),
+        width="stretch",
+        hide_index=True,
+    )
+    st.caption(
+        "fina_indicator_vip 仅从本地首次观察日向前使用；报告期不是公开日，"
+        "当前快照不用于回填历史 PIT 因子。dividend 仅作人工核对提示。"
     )
     if st.button("生成/刷新日频报告", type="primary"):
         with st.spinner("正在读取必要 lookback 并生成报告…"):
@@ -126,6 +164,7 @@ if page == "数据状态与日报":
         if report["data_status"]["status"] != "complete":
             st.warning(f"这是 {report['effective_as_of']} 的离线结果，不是今天的收盘结果。")
         st.write(report["ranking"]["score_interpretation"])
+        st.write(f"策略状态：`{report['model']['model_status']}`")
         st.dataframe(target, width="stretch", hide_index=True)
         st.download_button(
             "下载目标 CSV",
@@ -160,6 +199,30 @@ elif page == "股票排名与因子":
             mask |= shown["name"].astype(str).str.contains(query, case=False, na=False)
             shown = shown[mask]
         st.dataframe(shown, width="stretch", hide_index=True, height=650)
+        contribution_columns = snapshot.report["ranking"].get("factor_contribution_columns", [])
+        available_contributions = [column for column in contribution_columns if column in ranking]
+        if available_contributions:
+            st.subheader("透明组合因子贡献")
+            st.caption("各行贡献之和等于 transparent_combo_v1；这是分数组成，不是收益归因。")
+            st.dataframe(
+                ranking.loc[ranking["selected"], ["instrument_id", *available_contributions]],
+                width="stretch",
+                hide_index=True,
+            )
+        if {"return_20d", "transparent_combo_v1"}.issubset(ranking.columns):
+            baseline_ids = set(
+                ranking.sort_values(["return_20d", "instrument_id"], kind="mergesort").head(20)[
+                    "instrument_id"
+                ]
+            )
+            candidate_ids = set(
+                ranking.sort_values(
+                    ["transparent_combo_v1", "instrument_id"],
+                    ascending=[False, True],
+                    kind="mergesort",
+                ).head(20)["instrument_id"]
+            )
+            st.metric("Candidate 与 baseline Top20 重合", f"{len(baseline_ids & candidate_ids)}/20")
         research = _factor_view()
         if research is not None:
             st.subheader("有限因子研究批次")
@@ -181,6 +244,44 @@ elif page == "股票排名与因子":
             st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
             st.info(
                 f"Qlib: {research['qlib']['status']}；LightGBM: {research['lightgbm']['status']}"
+            )
+        cadence = _cadence_audit()
+        if cadence is not None:
+            st.subheader("Daily 与 Weekly 信号诊断")
+            st.caption(
+                f"Discovery only · {cadence['period'][0]} 至 {cadence['period'][1]} · "
+                "没有用 Validation/Test 自由调频"
+            )
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {"factor": factor, **values}
+                        for factor, values in cadence["comparison"].items()
+                    ]
+                ),
+                width="stretch",
+                hide_index=True,
+            )
+        shadows = _shadow_view()
+        if shadows:
+            st.subheader("最新 Forward Shadow")
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "model": item["model"]["model_id"],
+                            "version": item["model"]["version"],
+                            "status": item["model"]["status"],
+                            "trade_date": item["trade_date"],
+                            "target_count": item["target_count"],
+                            "label_status": item["label"]["status"],
+                            "fingerprint": item["prediction_fingerprint"][:12],
+                        }
+                        for item in shadows
+                    ]
+                ),
+                width="stretch",
+                hide_index=True,
             )
         st.download_button(
             "下载完整排名 CSV",
@@ -215,6 +316,15 @@ elif page == "回测与基准":
         with st.expander("指标与披露"):
             serializable = {key: value for key, value in view.items() if key != "curve"}
             st.code(json.dumps(serializable, ensure_ascii=False, indent=2), language="json")
+        audit = _portfolio_audit()
+        if audit is not None:
+            st.subheader("有限候选 Portfolio Translation Audit")
+            st.caption(
+                f"{audit['period'][0]} 至 {audit['period'][1]} · {audit['history_status']} · "
+                f"Control CAGR {_format_pct(audit['control_cagr'])}"
+            )
+            st.dataframe(pd.DataFrame(audit["rows"]), width="stretch", hide_index=True)
+            st.warning("这些区间已经被观察；表中相对表现不是 fresh OOS，也没有触发策略晋级。")
 
 else:
     snapshot, _, target = _latest()
@@ -265,6 +375,14 @@ else:
         cols[3].metric("账户时间", account["as_of"])
         if account["account_mode"] == "demo_simulation":
             st.info("这是演示账户，不是用户实际资产。")
+        corporate_actions = dividend_context_warnings(
+            ParquetStorage(PROJECT_ROOT / "data" / "canonical"),
+            {item["instrument_id"] for item in account["positions"]},
+            as_of=datetime.now(SHANGHAI).date(),
+        )
+        if corporate_actions:
+            st.error("持仓附近存在分红/送转日期上下文，真实现金和股数需要人工核对。")
+            st.dataframe(pd.DataFrame(corporate_actions), width="stretch", hide_index=True)
         if tracking["event_count"]:
             st.success(
                 f"已通过同一执行账本回放 {tracking['event_count']} 笔人工成交；"
@@ -374,6 +492,8 @@ else:
                 f"信号日 {payload['signal_date']}，拟用于 "
                 f"{payload['intended_next_session']} 复核。"
             )
+            if payload.get("candidate_warning"):
+                st.error(payload["candidate_warning"])
             plan = pd.DataFrame(payload["rows"])
             st.dataframe(plan, width="stretch", hide_index=True)
             csv_path = path.with_suffix(".csv")

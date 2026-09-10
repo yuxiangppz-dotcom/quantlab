@@ -5,6 +5,8 @@ from datetime import UTC, date, datetime
 import pytest
 
 from quantlab.data.enrichment import (
+    dividend_context_warnings,
+    inspect_enrichment_status,
     sync_daily_price_limits,
     sync_financial_indicator_observation,
 )
@@ -12,6 +14,7 @@ from quantlab.data.models import (
     DailyBar,
     DailyPriceLimit,
     DataValidationError,
+    DividendObservation,
     FinancialIndicatorObservation,
     Security,
 )
@@ -146,3 +149,43 @@ def test_financial_snapshot_is_prospective_and_idempotent(tmp_path) -> None:
     loaded = storage.load_financial_indicator_observations()
     assert len(loaded) == 1
     assert loaded[0].available_from == date(2026, 9, 10)
+    before = inspect_enrichment_status(storage, date(2026, 9, 9))
+    after = inspect_enrichment_status(storage, date(2026, 9, 10))
+    assert before["fina_indicator_vip"]["eligible_versions_as_of"] == 0
+    assert after["fina_indicator_vip"]["eligible_versions_as_of"] == 1
+
+
+def test_dividend_warning_is_observation_bounded_and_never_posts_account_state(tmp_path) -> None:
+    storage = _storage(tmp_path)
+    storage.save_dividend_observations(
+        [
+            DividendObservation(
+                instrument_id="000001.SZ",
+                period_end=date(2025, 12, 31),
+                announcement_date=date(2026, 8, 1),
+                process_status="实施",
+                stock_dividend_per_share=None,
+                stock_bonus_rate=None,
+                stock_conversion_rate=None,
+                cash_dividend_after_tax=0.1,
+                cash_dividend_before_tax=0.1,
+                record_date=date(2026, 9, 15),
+                ex_date=date(2026, 9, 16),
+                pay_date=date(2026, 9, 16),
+                share_listing_date=None,
+                implementation_announcement_date=date(2026, 9, 10),
+                observed_at=datetime(2026, 9, 10, tzinfo=UTC),
+                available_from=date(2026, 9, 10),
+                source="tushare.dividend",
+                source_record_id="dividend-1",
+            )
+        ]
+    )
+    assert dividend_context_warnings(storage, {"000001.SZ"}, as_of=date(2026, 9, 9)) == []
+    warnings = dividend_context_warnings(storage, {"000001.SZ"}, as_of=date(2026, 9, 10))
+    assert warnings[0]["ex_date"] == "2026-09-16"
+    assert warnings[0]["warning"] == "CORPORATE_ACTION_CONTEXT_REQUIRES_ACCOUNT_RECONCILIATION"
+    assert (
+        inspect_enrichment_status(storage, date(2026, 9, 10))["dividend"]["account_postings"]
+        is False
+    )

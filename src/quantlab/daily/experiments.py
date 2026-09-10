@@ -12,6 +12,8 @@ from quantlab.daily.service import PROJECT_ROOT
 
 BASELINE_SCHEMA = "performance_baseline_benchmark_correctness_v0_1_3"
 FACTOR_SCHEMA = "daily_factor_research_v1"
+PORTFOLIO_AUDIT_SCHEMA = "portfolio_translation_audit_v1_1"
+CADENCE_AUDIT_SCHEMA = "daily_weekly_cadence_audit_v1_1"
 
 
 def latest_completed_baseline(
@@ -135,3 +137,61 @@ def load_latest_factor_view(
         "qlib": summary["qlib"],
         "performance_claim": summary["performance_claim"],
     }
+
+
+def _latest_summary(schema: str, experiments_root: Path) -> tuple[Path, dict] | None:
+    root = experiments_root / schema
+    candidates = sorted(
+        path for path in root.glob("*/summary.json") if not path.parent.name.endswith(".incomplete")
+    )
+    if not candidates:
+        return None
+    path = candidates[-1]
+    return path, json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_latest_portfolio_audit(
+    experiments_root: Path = PROJECT_ROOT / "data" / "experiments",
+) -> dict | None:
+    item = _latest_summary(PORTFOLIO_AUDIT_SCHEMA, experiments_root)
+    if item is None:
+        return None
+    path, summary = item
+    rows = []
+    for factor, result in summary["candidates"].items():
+        metrics = result["metrics"]
+        active = result["primary_attribution"]
+        rows.append(
+            {
+                "factor": factor,
+                "cagr_net": metrics["cagr_net"],
+                "active_cagr": active["active_cagr"],
+                "sharpe_net": metrics["sharpe_net"],
+                "max_drawdown_net": metrics["max_drawdown_net"],
+                "active_max_drawdown": active["active_max_drawdown"],
+                "annualized_turnover": metrics["annualized_turnover"],
+                "cagr_cost_drag": metrics["cagr_cost_drag"],
+                "information_ratio": active["information_ratio"],
+                "beta": active["beta"],
+                "coverage": active["n_obs"] / (metrics["n_records"] - 1),
+            }
+        )
+    return {
+        "run_dir": str(path.parent),
+        "run_id": summary["run_id"],
+        "period": summary["period"],
+        "history_status": summary["history_status"],
+        "control_cagr": summary["control"]["metrics"]["cagr_net"],
+        "rows": rows,
+        "strategy_promoted": summary["strategy_promoted"],
+    }
+
+
+def load_latest_cadence_audit(
+    experiments_root: Path = PROJECT_ROOT / "data" / "experiments",
+) -> dict | None:
+    item = _latest_summary(CADENCE_AUDIT_SCHEMA, experiments_root)
+    if item is None:
+        return None
+    path, summary = item
+    return {**summary, "run_dir": str(path.parent)}
