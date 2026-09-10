@@ -13,6 +13,7 @@ from pathlib import Path
 
 from quantlab.daily import _service_impl as _impl
 from quantlab.daily.materialization import commit_staged_daily_snapshot
+from quantlab.data.models import DataValidationError
 
 # Preserve the existing service surface, including a few private helpers used by
 # internal modules. ``generate_daily_snapshot`` is replaced below with the
@@ -35,14 +36,24 @@ def generate_daily_snapshot(
     A repeated build with identical content reuses the existing content-addressed
     bundle. If data, model inputs, or output-producing code change, a new sibling
     bundle is created and the prior bundle remains untouched.
+
+    The calculation layer may retain native Python values in its returned report
+    while ``report.json`` necessarily contains their JSON representation. Reload
+    the staged snapshot through the normal disk loader before integrity checks so
+    publication validates the exact bytes that will become evidence rather than
+    an equivalent-but-not-identical in-memory representation.
     """
     product_root = Path(product_root)
     with tempfile.TemporaryDirectory(prefix="quantlab-daily-stage-") as temp_dir:
-        staged = _impl.generate_daily_snapshot(
+        stage_root = Path(temp_dir)
+        _impl.generate_daily_snapshot(
             requested_as_of,
             storage=storage,
             config_path=config_path,
-            product_root=Path(temp_dir),
+            product_root=stage_root,
             now=now,
         )
+        staged = _impl.load_latest_snapshot(stage_root)
+        if staged is None:
+            raise DataValidationError("Daily staging completed without an active snapshot")
         return commit_staged_daily_snapshot(staged, product_root)
