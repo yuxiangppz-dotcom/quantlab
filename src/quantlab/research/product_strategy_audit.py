@@ -2,7 +2,7 @@
 
 This runner answers a narrow question that the fractional candidate audit cannot:
 what happens when the historical research engine receives the same exact-count
-portfolio construction contract used by QuantLab Daily?  It intentionally keeps
+portfolio construction contract used by QuantLab Daily? It intentionally keeps
 all frozen backtest, lifecycle, cost, and control semantics unchanged.
 """
 
@@ -96,6 +96,15 @@ def _load_configs(audit_path: Path, daily_path: Path) -> tuple[dict, dict]:
         or not set(boards).issubset(SUPPORTED_BOARDS)
     ):
         raise ValueError("Daily allowed_boards is not a supported non-empty subset")
+    # The current security master is not an effective-dated board-history authority.
+    # A narrowed historical board filter would otherwise risk silently dropping a
+    # predecessor code that is absent from today's master. Until an explicit PIT
+    # board-history source exists, v1 only supports the full SH/SZ A-share board set.
+    if set(boards) != set(SUPPORTED_BOARDS):
+        raise ValueError(
+            "historical narrowed board filtering requires effective-dated board history; "
+            "v1 audit only supports all configured V1 boards"
+        )
     daily = {**daily, "allowed_boards": boards}
     return audit, daily
 
@@ -104,13 +113,9 @@ def _build_signal_frame(
     storage: ParquetStorage,
     dataset: pd.DataFrame,
     signal_dates: list[date],
-    board_by_instrument: dict[str, str],
-    allowed_boards: frozenset[str],
 ) -> pd.DataFrame:
     universe = filter_v1_universe(dataset)
     signal = universe[universe["trade_date"].isin(signal_dates)].copy()
-    signal["board"] = signal["instrument_id"].map(board_by_instrument)
-    signal = signal[signal["board"].isin(allowed_boards)].copy()
 
     raw_rows = []
     basic_rows = []
@@ -164,6 +169,35 @@ def _require_comparable(status: str, n_obs: int, expected_n_obs: int, label: str
         raise RuntimeError(f"{label} attribution coverage mismatch: {n_obs} != {expected_n_obs}")
 
 
+def _make_spec(
+    *,
+    label: str,
+    targets: dict,
+    price_frame: pd.DataFrame,
+    open_dates: list[date],
+    backtest_config: BacktestConfig,
+    execution_lag_sessions: int,
+    lifecycle: LifecycleMonitor,
+    period_start: date,
+    period_end: date,
+    risk_facts: list,
+) -> BacktestRunSpec:
+    return BacktestRunSpec(
+        label=label,
+        price_frame=price_frame,
+        open_dates=tuple(open_dates),
+        targets=targets,
+        config=backtest_config,
+        execution_lag_sessions=execution_lag_sessions,
+        mode=RUN_MODE_STRICT,
+        lifecycle=lifecycle,
+        requested_period_start=period_start,
+        requested_period_end=period_end,
+        risk_facts=risk_facts,
+        risk_policy=EXIT_POLICY_ID,
+    )
+
+
 def run_product_strategy_audit(
     audit_config_path: Path,
     daily_config_path: Path,
@@ -196,11 +230,6 @@ def run_product_strategy_audit(
 
     calendar = storage.load_trading_calendar()
     securities = storage.load_securities()
-    board_by_instrument = {item.instrument_id: item.board for item in securities}
-    allowed_boards = frozenset(daily["allowed_boards"])
-    allowed_master_ids = {
-        item.instrument_id for item in securities if item.board in allowed_boards
-    }
     open_dates = sorted(
         {
             item.trade_date
@@ -222,13 +251,7 @@ def run_product_strategy_audit(
         forward_horizons=(),
     )
     price_frame = dataset[["instrument_id", "trade_date", "adj_close"]].copy()
-    signal_frame = _build_signal_frame(
-        storage,
-        dataset,
-        signal_dates,
-        board_by_instrument,
-        allowed_boards,
-    )
+    signal_frame = _build_signal_frame(storage, dataset, signal_dates)
     strategy_targets = _product_targets(signal_frame, daily, signal_dates)
 
     code_changes = load_security_code_changes(PROJECT_ROOT / "config/security_code_changes.csv")
@@ -240,21 +263,23 @@ def run_product_strategy_audit(
     if errors:
         raise ValueError("; ".join(errors))
 
-    def product_universe_predicate(instrument_id: str) -> bool:
-        return is_v1_a_share(instrument_id) and instrument_id in allowed_master_ids
-
+    # All supported boards are intentionally included. Do not intersect this PIT
+    # eligibility set with today's security-master IDs: historical predecessor
+    # codes may be absent from the current master and are restored by lifecycle
+    # code-change history.
     eligibility = pit_eligibility_frame(
         securities,
         code_changes,
         signal_dates,
         LEGACY_DELIST_DATE_INCLUSIVE,
-        universe_predicate=product_universe_predicate,
+        universe_predicate=is_v1_a_share,
     )
     control_targets = build_equal_weight_control_targets(eligibility, signal_dates)
 
     scenario_rows = []
     scenarios = {}
     expected_n_obs = len(open_dates) - 1
+    execution_lag_sessions = int(audit["execution_lag_sessions"])
     for recovery in audit["settlement_recovery_assumptions"]:
         backtest_config = BacktestConfig(
             initial_nav=1.0,
@@ -265,26 +290,31 @@ def run_product_strategy_audit(
                 settlement_fee_bps=0.0,
             ),
         )
-
-        def spec(label: str, targets: dict) -> BacktestRunSpec:
-            return BacktestRunSpec(
-                label=label,
-                price_frame=price_frame,
-                open_dates=tuple(open_dates),
-                targets=targets,
-                config=backtest_config,
-                execution_lag_sessions=int(audit["execution_lag_sessions"]),
-                mode=RUN_MODE_STRICT,
-                lifecycle=monitor,
-                requested_period_start=period_start,
-                requested_period_end=period_end,
-                risk_facts=facts,
-                risk_policy=EXIT_POLICY_ID,
-            )
-
         scenario_id = f"recovery_assumption_{int(float(recovery))}"
-        control_spec = spec(f"{scenario_id}:equal_weight_v1_control", control_targets)
-        strategy_spec = spec(f"{scenario_id}:{daily['strategy_id']}", strategy_targets)
+        control_spec = _make_spec(
+            label=f"{scenario_id}:equal_weight_v1_control",
+            targets=control_targets,
+            price_frame=price_frame,
+            open_dates=open_dates,
+            backtest_config=backtest_config,
+            execution_lag_sessions=execution_lag_sessions,
+            lifecycle=monitor,
+            period_start=period_start,
+            period_end=period_end,
+            risk_facts=facts,
+        )
+        strategy_spec = _make_spec(
+            label=f"{scenario_id}:{daily['strategy_id']}",
+            targets=strategy_targets,
+            price_frame=price_frame,
+            open_dates=open_dates,
+            backtest_config=backtest_config,
+            execution_lag_sessions=execution_lag_sessions,
+            lifecycle=monitor,
+            period_start=period_start,
+            period_end=period_end,
+            risk_facts=facts,
+        )
         control_result = control_spec.run()
         strategy_result = strategy_spec.run()
         _require_comparable(
@@ -305,7 +335,10 @@ def run_product_strategy_audit(
             expected_n_obs,
             f"{scenario_id}:strategy",
         )
-        if strategy_result.valid_through != period_end or control_result.valid_through != period_end:
+        if (
+            strategy_result.valid_through != period_end
+            or control_result.valid_through != period_end
+        ):
             raise RuntimeError(f"{scenario_id} did not remain valid through configured period end")
         symmetry = strategy_control_symmetry_audit(strategy_spec, control_spec)
         strategy_metrics = compute_metrics(
@@ -385,6 +418,10 @@ def run_product_strategy_audit(
         },
         "evidence_applicability": {
             "portfolio_construction": "exact_Daily_config_contract",
+            "board_scope": (
+                "all supported V1 SH/SZ A-share boards; narrowed historical board filters "
+                "fail closed until effective-dated board history exists"
+            ),
             "signal_cadence": (
                 "weekly research audit; isolates exact-count portfolio semantics and does not "
                 "claim the user rebalances every Daily report"
