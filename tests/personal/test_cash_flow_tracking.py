@@ -316,9 +316,9 @@ def test_old_cash_flow_csv_contract_is_rejected_instead_of_silent_downgrade(
 ) -> None:
     account_root, storage = _seed(tmp_path)
     old = (
-        "account_id,external_flow_id,reported_at,direction,amount_cny\n"
-        "mine,D1,2026-09-07T14:00:00+08:00,DEPOSIT,100.00\n"
-    ).encode()
+        b"account_id,external_flow_id,reported_at,direction,amount_cny\n"
+        b"mine,D1,2026-09-07T14:00:00+08:00,DEPOSIT,100.00\n"
+    )
     with pytest.raises(ValueError, match="columns must exactly equal"):
         preview_manual_cash_flows("mine", old, account_root=account_root, storage=storage)
 
