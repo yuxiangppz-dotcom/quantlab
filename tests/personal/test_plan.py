@@ -5,6 +5,7 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from quantlab.data.models import DailyBar, Security
 from quantlab.data.storage import ParquetStorage
@@ -26,6 +27,7 @@ def _seed_product(tmp_path: Path) -> tuple[Path, ParquetStorage]:
             {
                 "instrument_id": "000001.SZ",
                 "name": "甲",
+                "rank": 1,
                 "selected": True,
                 "target_weight": 0.5,
                 "risk_context": "NO_CONTEXT_EVENT_REPORTED",
@@ -33,6 +35,7 @@ def _seed_product(tmp_path: Path) -> tuple[Path, ParquetStorage]:
             {
                 "instrument_id": "600000.SH",
                 "name": "乙",
+                "rank": 2,
                 "selected": True,
                 "target_weight": 0.4999,
                 "risk_context": "ST_CONTEXT_REPORTED",
@@ -40,6 +43,7 @@ def _seed_product(tmp_path: Path) -> tuple[Path, ParquetStorage]:
             {
                 "instrument_id": "300001.SZ",
                 "name": "旧持仓",
+                "rank": 3,
                 "selected": False,
                 "target_weight": 0.0,
                 "risk_context": "NO_CONTEXT_EVENT_REPORTED",
@@ -47,6 +51,7 @@ def _seed_product(tmp_path: Path) -> tuple[Path, ParquetStorage]:
             {
                 "instrument_id": "688001.SH",
                 "name": "高价目标",
+                "rank": 4,
                 "selected": True,
                 "target_weight": 0.0001,
                 "risk_context": "NO_CONTEXT_EVENT_REPORTED",
@@ -139,6 +144,13 @@ def test_plan_uses_raw_close_current_cash_and_blocks_st_buy(tmp_path: Path) -> N
         account_root=account_root,
         account_fingerprint=payload["account_fingerprint"],
     ) == (json_path, payload)
+    csv_path.write_text(csv_path.read_text() + "tampered")
+    with pytest.raises(ValueError, match="CSV fingerprint mismatch"):
+        load_latest_plan(
+            "mine",
+            account_root=account_root,
+            account_fingerprint=payload["account_fingerprint"],
+        )
 
 
 def test_missing_price_for_existing_position_fails_complete_valuation(tmp_path: Path) -> None:
@@ -159,3 +171,35 @@ def test_missing_price_for_existing_position_fails_complete_valuation(tmp_path: 
         assert "missing prices: 688999.SH" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("missing held price must fail")
+
+
+def test_cash_constrained_plan_allocates_by_alpha_rank_not_security_code(tmp_path: Path) -> None:
+    product_root, storage = _seed_product(tmp_path)
+    ranking_path = product_root / "2026-09-09" / "ranking.csv"
+    ranking = pd.read_csv(ranking_path)
+    ranking.loc[ranking["instrument_id"] == "600000.SH", ["rank", "risk_context"]] = [
+        1,
+        "NO_CONTEXT_EVENT_REPORTED",
+    ]
+    ranking.loc[ranking["instrument_id"] == "000001.SZ", "rank"] = 2
+    ranking.loc[ranking["instrument_id"] == "688001.SH", "selected"] = False
+    ranking.loc[ranking["instrument_id"].isin(["000001.SZ", "600000.SH"]), "target_weight"] = 0.5
+    # Reverse the input rows to prove the allocation is independent of input order.
+    ranking.iloc[::-1].to_csv(ranking_path, index=False)
+    account_root = tmp_path / "accounts"
+    import_account_csv(
+        (
+            HEADER
+            + "mine,manual_tracking,2026-09-10T08:00:00+08:00,20000.00,,0,0,,none_declared\n"
+        ).encode(),
+        account_root=account_root,
+    )
+    _, _, payload = build_reference_plan(
+        "mine", account_root=account_root, product_root=product_root, storage=storage
+    )
+    rows = {item["instrument_id"]: item for item in payload["rows"]}
+    assert rows["600000.SH"]["action"] == "BUY"
+    assert rows["600000.SH"]["target_alpha_rank"] == 1
+    assert rows["000001.SZ"]["action"] == "NO_TRADE"
+    assert rows["000001.SZ"]["reason"] == "INSUFFICIENT_CURRENT_CASH_NO_SELL_FUNDING"
+    assert payload["sell_proceeds_fund_buys"] is False

@@ -118,9 +118,24 @@ def build_reference_plan(
         or target_rows["target_weight"].sum() > 1.000000001
     ):
         raise ValueError("daily target weights are outside a long-only fully-funded portfolio")
+    if "rank" not in target_rows:
+        raise ValueError("daily target is missing alpha rank for deterministic cash allocation")
+    target_rows["rank"] = pd.to_numeric(target_rows["rank"], errors="coerce")
+    if (
+        target_rows["rank"].isna().any()
+        or (target_rows["rank"] <= 0).any()
+        or (target_rows["rank"] % 1 != 0).any()
+    ):
+        raise ValueError("daily target alpha ranks must be positive integers")
     target_weights = dict(
         zip(target_rows["instrument_id"], target_rows["target_weight"], strict=True)
     )
+    target_ranks = {
+        instrument: int(rank)
+        for instrument, rank in zip(
+            target_rows["instrument_id"], target_rows["rank"], strict=True
+        )
+    }
     risk_context = {
         instrument: str(context)
         for instrument, context in zip(
@@ -143,7 +158,14 @@ def build_reference_plan(
     )
     available_cash = account["cash_fen"]
     rows = []
-    for instrument in sorted(set(current) | set(target_weights)):
+    # Cash is deliberately consumed by economic priority, not security code.
+    # Existing non-target holdings sort after ranked targets and sale proceeds
+    # never increase ``available_cash`` below.
+    instruments = sorted(
+        set(current) | set(target_weights),
+        key=lambda instrument: (target_ranks.get(instrument, float("inf")), instrument),
+    )
+    for instrument in instruments:
         holding = current.get(
             instrument,
             {"quantity": 0, "sellable_quantity": 0, "reference_cost_fen": None},
@@ -204,6 +226,7 @@ def build_reference_plan(
             {
                 "instrument_id": instrument,
                 "name": security.name if security else None,
+                "target_alpha_rank": target_ranks.get(instrument),
                 "action": action,
                 "reason": reason,
                 "current_shares": holding["quantity"],
@@ -245,6 +268,7 @@ def build_reference_plan(
         "execution_confirmed": False,
         "broker_submission": False,
         "sell_proceeds_fund_buys": False,
+        "cash_allocation_policy": "target_alpha_rank_ascending_then_instrument_id",
         "price_basis": "raw_T_close_reference_not_order_limit",
         "fee_evidence": (
             "user_reported commission only: <=500k 0.86/10000; >500k 0.80/10000; min CNY5"

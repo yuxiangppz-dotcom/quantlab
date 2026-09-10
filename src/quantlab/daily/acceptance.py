@@ -16,7 +16,12 @@ from quantlab.daily.service import (
     inspect_data_status,
     load_latest_snapshot,
 )
-from quantlab.personal import list_accounts, load_latest_plan
+from quantlab.personal import (
+    list_accounts,
+    load_effective_account,
+    load_latest_plan,
+    manual_tracking_fixture_smoke,
+)
 
 DEFAULT_ACCEPTANCE_ROOT = PROJECT_ROOT / "data" / "products" / "acceptance"
 
@@ -33,7 +38,30 @@ def run_v1_acceptance(
     baseline = load_baseline_view()
     factor_view = load_latest_factor_view()
     accounts = list_accounts()
-    plan_item = load_latest_plan(account_id) if account_id in accounts else None
+    account = None
+    plan_item = None
+    plan_binding_error = None
+    if account_id in accounts:
+        try:
+            account = load_effective_account(account_id)
+            plan_item = load_latest_plan(
+                account_id, account_fingerprint=account["account_fingerprint"]
+            )
+        except (FileNotFoundError, KeyError, ValueError) as exc:
+            plan_binding_error = str(exc)
+    plan = plan_item[1] if plan_item else None
+    plan_account_bound = bool(
+        plan
+        and account
+        and plan.get("account_fingerprint") == account.get("account_fingerprint")
+    )
+    plan_daily_bound = bool(
+        plan
+        and snapshot
+        and plan.get("daily_content_fingerprint")
+        == snapshot.report.get("content_fingerprint")
+    )
+    plan_csv_bound = bool(plan and plan.get("csv_sha256"))
     checks = {
         "common_complete_data_date_available": status["effective_as_of"] is not None,
         "daily_snapshot_available": snapshot is not None,
@@ -53,6 +81,10 @@ def run_v1_acceptance(
         "bounded_factor_research_available": factor_view is not None,
         "account_available": account_id in accounts,
         "reference_plan_available": plan_item is not None,
+        "reference_plan_current_account_bound": plan_account_bound,
+        "reference_plan_current_daily_bound": plan_daily_bound,
+        "reference_plan_csv_fingerprint_verified": plan_csv_bound,
+        "manual_tracking_fixture_smoke": manual_tracking_fixture_smoke(),
         "worktree_clean": not _git("status --porcelain"),
     }
     ranking_columns = []
@@ -94,6 +126,7 @@ def run_v1_acceptance(
         ),
         "account_id": account_id,
         "plan_id": plan_item[1]["plan_id"] if plan_item else None,
+        "plan_binding_error": plan_binding_error,
         "known_limitations": [
             "no strategy is promoted for real-money use",
             "execution readiness remains false and no broker gateway exists",

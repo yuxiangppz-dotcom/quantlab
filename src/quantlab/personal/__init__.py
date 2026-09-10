@@ -13,6 +13,7 @@ from quantlab.personal.tracking import (
     import_manual_fills,
     load_effective_account,
     load_tracking_summary,
+    manual_tracking_fixture_smoke,
     preview_manual_fills,
 )
 
@@ -26,6 +27,7 @@ __all__ = [
     "import_manual_fills",
     "load_effective_account",
     "load_tracking_summary",
+    "manual_tracking_fixture_smoke",
     "preview_manual_fills",
     "build_plan_fill_comparison",
     "build_tracking_valuation",

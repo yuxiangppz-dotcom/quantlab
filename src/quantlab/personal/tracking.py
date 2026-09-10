@@ -316,6 +316,48 @@ def _replay(
     return ledger
 
 
+def manual_tracking_fixture_smoke() -> bool:
+    """Exercise the manual-fill ledger path entirely in memory.
+
+    Acceptance uses this fixture rather than touching a user's account or
+    journal.  It deliberately checks cash, position, and the T+1 boundary.
+    """
+    monday = date(2026, 9, 7)
+    tuesday = date(2026, 9, 8)
+    calendar = TradingCalendar(
+        (monday, tuesday), monday, tuesday, "acceptance-fixture", "f" * 64
+    )
+    initial = AccountSnapshot(
+        "acceptance_fixture",
+        datetime(2026, 9, 7, 9, tzinfo=SHANGHAI),
+        200_000,
+    )
+    event = ManualFillImported(
+        event_id="manual:acceptance-fixture",
+        fill_id="2026-09-07:acceptance-fixture",
+        occurred_at=datetime(2026, 9, 7, 16, tzinfo=SHANGHAI),
+        account_id="acceptance_fixture",
+        instrument_id="000001.SZ",
+        side=Side.BUY,
+        trade_date=monday,
+        quantity=100,
+        price=Decimal("10.00"),
+        gross_notional_fen=100_000,
+        fee_fen=500,
+        buy_lot_sellable_from=tuesday,
+        source_sha256="a" * 64,
+        source_row_sha256="b" * 64,
+    )
+    ledger = ExecutionLedger(initial, calendar=calendar)
+    ledger.append_manual_imports([event])
+    return (
+        ledger.cash_fen == 99_500
+        and ledger.position_quantity("000001.SZ") == 100
+        and ledger.sellable_quantity("000001.SZ", monday) == 0
+        and ledger.sellable_quantity("000001.SZ", tuesday) == 100
+    )
+
+
 def _summary(
     account: dict,
     ledger: ExecutionLedger,
