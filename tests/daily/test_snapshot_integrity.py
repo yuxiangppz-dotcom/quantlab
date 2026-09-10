@@ -29,8 +29,11 @@ def _hash(payload: object) -> str:
 def _snapshot(tmp_path: Path) -> DailySnapshot:
     out = tmp_path / "snapshot"
     out.mkdir()
-    ranking = b"instrument_id,alpha_score\n000001.SZ,1.0\n"
-    target = b"instrument_id,target_weight\n000001.SZ,1.0\n"
+    ranking = (
+        b"instrument_id,trade_date,alpha_score,rank,selected,target_weight\n"
+        b"000001.SZ,2026-09-09,1.0,1,True,1.0\n"
+    )
+    target = b"instrument_id,rank,alpha_score,target_weight\n000001.SZ,1,1.0,1.0\n"
     report_core = {
         "schema": "quantlab_daily_v1",
         "effective_as_of": "2026-09-09",
@@ -38,7 +41,25 @@ def _snapshot(tmp_path: Path) -> DailySnapshot:
             "status": "complete",
             "inspected_at": "2026-09-10T08:00:00+08:00",
         },
-        "model": {"config_id": "test"},
+        "model": {
+            "config_id": "test",
+            "target_count": 1,
+            "score_direction": "higher_is_better",
+            "gross_exposure": 1.0,
+            "max_weight_per_name": 1.0,
+            "tie_policy": "alpha_score_then_instrument_id",
+        },
+        "ranking": {
+            "universe_rows": 1,
+            "valid_score_rows": 1,
+            "selected_rows": 1,
+            "tie_policy": "alpha_score_then_instrument_id",
+        },
+        "target": {
+            "position_weight": 1.0,
+            "position_weight_sum": 1.0,
+            "cash_weight": 0.0,
+        },
     }
     fingerprint_report = {
         **report_core,
