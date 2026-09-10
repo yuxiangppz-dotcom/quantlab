@@ -62,3 +62,34 @@ account imports, fills, orders, strategy promotions, C-drive changes or changes
 to frozen accounting/execution/backtest rules. Freeze after real verification
 and green CI. Next task: historical price-limit gaps with explicit special-case
 handling, followed by preregistered features and bounded model diagnostics.
+
+## Actual acquisition and independent verification
+
+Executed from clean pushed `b859d5dc17181cb4c7a390e58a73e7f3f79c9b4f`,
+2026-09-11 01:24:31.341222 through 01:31:53.257353 Asia/Shanghai (the receipts
+store UTC). All 812 planned calls completed, with no provider/validation failure,
+no truncated response and no empty accepted partition. Both datasets now cover
+all 406 requested open sessions; the final missing count is zero.
+
+| Dataset | New partitions | New rows |
+|---|---:|---:|
+| stock_st | 406 | 73,009 |
+| suspend_d | 406 | 6,446 |
+
+The new canonical files total 9,826,148 bytes. The initial run's plan/request/
+acceptance/report receipts total 1,904,716 bytes. A separate verification read
+recomputed the final report fingerprint, every accepted-file hash, and all
+**2,434 preexisting ST/S-R partition hashes**; all matched. No original partition
+changed. The first run report is
+`data/products/context_backfill/394cf06938a840a9b308217492b1837d/report.json`,
+fingerprint `6cb555df3eaaedb571d9cdfce8409bb22fc130761dddb2134a7f86de96a8457e`.
+An immediate rerun also completed with **zero provider calls, zero new accepted
+files and zero missing partitions**; its report is
+`data/products/context_backfill/ac462ac7b9cb4e739f62db9b88af8485/report.json`.
+
+No changes to the authorized scope or financial rules were needed. Historical
+price-limit gaps, per-bar original publication/revision evidence, board history
+and corporate-action completeness remain separate unresolved inputs. Neither
+this source repair nor its `complete` acquisition status is performance or
+execution acceptance. Implementation and evidence report are committed/pushed;
+the PR records the final report commit, merge and CI status.
