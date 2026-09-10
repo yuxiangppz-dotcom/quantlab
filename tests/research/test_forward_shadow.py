@@ -82,7 +82,7 @@ def _seed(tmp_path: Path) -> tuple[ParquetStorage, Path, Path, date]:
                 "target_count": 2,
                 "max_weight_per_name": 0.5,
                 "gross_exposure": 1.0,
-                "tie_policy": "alpha_then_code",
+                "tie_policy": "alpha_score_then_instrument_id",
                 "test_observed": True,
                 "performance_claim": False,
             }
