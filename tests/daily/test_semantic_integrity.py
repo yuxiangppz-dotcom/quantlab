@@ -41,7 +41,10 @@ def _snapshot(tmp_path: Path) -> DailySnapshot:
             },
         ]
     )
-    target = ranking.loc[ranking["selected"], ["instrument_id", "rank", "alpha_score", "target_weight"]]
+    target = ranking.loc[
+        ranking["selected"],
+        ["instrument_id", "rank", "alpha_score", "target_weight"],
+    ]
     ranking_path = out / "ranking.csv"
     target_path = out / "target_portfolio.csv"
     ranking.to_csv(ranking_path, index=False)

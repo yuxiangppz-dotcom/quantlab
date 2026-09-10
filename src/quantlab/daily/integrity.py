@@ -195,7 +195,9 @@ def validate_daily_snapshot_semantics(snapshot: DailySnapshot) -> None:
             continue
         expected_rank = expected_ranks[instrument_id]
         if pd.isna(rank) or float(rank) != expected_rank:
-            raise DataValidationError("Daily alpha rank does not match deterministic score ordering")
+            raise DataValidationError(
+                "Daily alpha rank does not match deterministic score ordering"
+            )
 
     if ranking.empty:
         expected_weights: dict[str, float] = {}
@@ -216,11 +218,17 @@ def validate_daily_snapshot_semantics(snapshot: DailySnapshot) -> None:
     if selected_ids != expected_ids:
         raise DataValidationError("Daily selected instruments do not match core portfolio contract")
     for instrument_id, weight in zip(ranking["instrument_id"], weights, strict=True):
-        _assert_close(float(weight), expected_weights.get(instrument_id, 0.0), "ranking target_weight")
+        _assert_close(
+            float(weight),
+            expected_weights.get(instrument_id, 0.0),
+            "ranking target_weight",
+        )
 
     target_ids = set(target["instrument_id"])
     if target_ids != expected_ids or len(target) != len(expected_ids):
-        raise DataValidationError("Daily target CSV does not match selected core portfolio instruments")
+        raise DataValidationError(
+            "Daily target CSV does not match selected core portfolio instruments"
+        )
     target_weights = pd.to_numeric(target["target_weight"], errors="coerce")
     target_ranks = pd.to_numeric(target["rank"], errors="coerce")
     target_scores = pd.to_numeric(target["alpha_score"], errors="coerce")
