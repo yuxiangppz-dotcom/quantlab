@@ -95,7 +95,9 @@ def test_eligible_strategy_with_mature_forward_evidence_still_requires_user_appr
     )[0]
 
     assert report.ready_for_user_review is True
-    assert report.catalog_bound_evidence_count == 1
+    assert report.catalog_evidence_id_match_count == 0
+    assert report.catalog_path_match_count == 1
+    assert report.evidence_catalog_fingerprint == "c" * 64
     assert report.strategy_approval_authority is False
     assert report.broker_order_authority is False
     assert report.blockers == ("EXPLICIT_USER_APPROVAL_REQUIRED",)
