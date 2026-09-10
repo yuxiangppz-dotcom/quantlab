@@ -20,12 +20,34 @@ from quantlab.research.forward_shadow_analytics import (
 from quantlab.research.models import ResearchDailyPrice
 from quantlab.research.price import build_prices, filter_point_in_time, prices_to_frame
 from quantlab.research.returns import calculate_forward_returns, calculate_returns
+from quantlab.research.strategy_registry import (
+    ELIGIBLE_FOR_USER_REVIEW,
+    FORWARD_EVIDENCE_ACCUMULATING,
+    FORWARD_SHADOW,
+    IDEA,
+    PORTFOLIO_AUDITED,
+    REJECTED,
+    RESEARCHED,
+    USER_APPROVED,
+    StrategyRegistryEntry,
+    load_strategy_registry,
+    transition_strategy,
+)
 from quantlab.research.universe import filter_v1_universe
 
 __all__ = [
     "ALPHA158_EXACT_SUBSET",
+    "ELIGIBLE_FOR_USER_REVIEW",
+    "FORWARD_EVIDENCE_ACCUMULATING",
+    "FORWARD_SHADOW",
+    "IDEA",
+    "PORTFOLIO_AUDITED",
+    "REJECTED",
+    "RESEARCHED",
     "ResearchDailyPrice",
     "ShadowDiagnosticSummary",
+    "StrategyRegistryEntry",
+    "USER_APPROVED",
     "alpha158_subset_rows",
     "build_prices",
     "build_research_dataset",
@@ -35,10 +57,12 @@ __all__ = [
     "daily_rank_ic",
     "filter_point_in_time",
     "filter_v1_universe",
+    "load_strategy_registry",
     "paired_shadow_diagnostics",
     "prices_to_frame",
     "quantile_returns",
     "summarize_forward_shadow",
     "summarize_ic",
     "summarize_quantiles",
+    "transition_strategy",
 ]
