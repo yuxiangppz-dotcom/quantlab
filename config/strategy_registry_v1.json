@@ -1,5 +1,6 @@
 {
   "schema": "quantlab_strategy_registry_v1",
+  "forward_config_ref": "config/forward_shadow_v1.json",
   "strategies": [
     {
       "strategy_id": "momentum_20d_reversal_example",
@@ -7,6 +8,7 @@
       "role": "baseline",
       "score_source": "return_20d lower_is_better",
       "status": "FORWARD_EVIDENCE_ACCUMULATING",
+      "forward_model_id": "return_20d_baseline",
       "evidence_refs": [
         "research-backtest-v1.0",
         "config/forward_shadow_v1.json"
@@ -20,6 +22,7 @@
       "role": "candidate",
       "score_source": "transparent_combo_v1 higher_is_better",
       "status": "FORWARD_EVIDENCE_ACCUMULATING",
+      "forward_model_id": "transparent_combo_v1",
       "evidence_refs": [
         "config/portfolio_translation_audit_v1_1.json",
         "config/forward_shadow_v1.json"
