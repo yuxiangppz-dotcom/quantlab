@@ -23,6 +23,15 @@ class EnrichmentDatasetResult:
         return asdict(self)
 
 
+def _daily_v1_security_ids(storage: ParquetStorage) -> set[str]:
+    """Match the frozen SH/SZ A-share product scope (no B shares or Beijing)."""
+    return {
+        item.instrument_id
+        for item in storage.load_securities()
+        if item.market in {"SH", "SZ"} and not item.symbol.startswith(("900", "200"))
+    }
+
+
 def sync_daily_price_limits(
     provider: DataProvider, storage: ParquetStorage, trade_date: date
 ) -> EnrichmentDatasetResult:
@@ -32,7 +41,7 @@ def sync_daily_price_limits(
             "stk_limit", "reused", len(rows), str(storage.daily_price_limit_path(trade_date))
         )
     rows = provider.get_daily_price_limits_by_date(trade_date)
-    security_ids = {item.instrument_id for item in storage.load_securities()}
+    security_ids = _daily_v1_security_ids(storage)
     rows = [item for item in rows if item.instrument_id in security_ids]
     if not rows:
         raise DataValidationError(f"stk_limit has no canonical A-share rows for {trade_date}")
@@ -46,7 +55,11 @@ def sync_daily_price_limits(
         for item in rows
     ):
         raise DataValidationError(f"stk_limit contains invalid rows for {trade_date}")
-    daily_ids = {item.instrument_id for item in storage.load_daily_bars_by_date(trade_date)}
+    daily_ids = {
+        item.instrument_id
+        for item in storage.load_daily_bars_by_date(trade_date)
+        if item.instrument_id in security_ids
+    }
     limit_ids = {item.instrument_id for item in rows}
     missing = daily_ids - limit_ids
     if missing:
@@ -61,7 +74,7 @@ def sync_financial_indicator_observation(
     provider: DataProvider, storage: ParquetStorage, period_end: date
 ) -> EnrichmentDatasetResult:
     rows = provider.get_financial_indicators_by_period(period_end)
-    security_ids = {item.instrument_id for item in storage.load_securities()}
+    security_ids = _daily_v1_security_ids(storage)
     rows = [item for item in rows if item.instrument_id in security_ids]
     if not rows:
         return EnrichmentDatasetResult(

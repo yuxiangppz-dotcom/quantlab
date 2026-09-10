@@ -101,6 +101,41 @@ def test_price_limit_sync_fails_when_a_daily_bar_has_no_official_limit(tmp_path)
         sync_daily_price_limits(Empty(), storage, DAY)
 
 
+def test_price_limit_sync_excludes_beijing_outside_daily_v1_scope(tmp_path) -> None:
+    storage = _storage(tmp_path)
+    beijing = Security(
+        "920268.BJ",
+        "920268",
+        "北交所样本",
+        "BSE",
+        "BJ",
+        "北交所",
+        "L",
+        date(2025, 1, 1),
+        None,
+    )
+    storage.upsert_securities([beijing])
+
+    class WithBeijing(_Provider):
+        def get_daily_price_limits_by_date(self, trade_date: date):
+            return [
+                _limit(),
+                DailyPriceLimit(
+                    "920268.BJ",
+                    DAY,
+                    20.0,
+                    26.0,
+                    0.0,
+                    "BSE",
+                    "tushare.stk_limit",
+                    "beijing-limit",
+                ),
+            ]
+
+    result = sync_daily_price_limits(WithBeijing(), storage, DAY)
+    assert result.rows == 1
+
+
 def test_financial_snapshot_is_prospective_and_idempotent(tmp_path) -> None:
     storage = _storage(tmp_path)
     period = date(2024, 12, 31)
