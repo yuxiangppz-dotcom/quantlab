@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shutil
@@ -112,10 +113,13 @@ def commit_staged_daily_snapshot(
         if staged_report.get("content_fingerprint") != fingerprint:
             raise DataValidationError("staged Daily report fingerprint changed during publication")
         try:
+            # A valid competing publisher leaves a non-empty destination. POSIX
+            # may report that race as EEXIST or ENOTEMPTY depending on platform;
+            # neither case permits replacing the winner.
             os.rename(temp_dir, out_dir)
-        except FileExistsError:
-            # A concurrent publisher won the race. Never replace it; validate
-            # the winning immutable bundle and reuse it instead.
+        except OSError as exc:
+            if exc.errno not in {errno.EEXIST, errno.ENOTEMPTY}:
+                raise
             shutil.rmtree(temp_dir, ignore_errors=True)
             published = _validate_published(out_dir, fingerprint, reused=True)
             _impl._activate_snapshot(product_root, published.report_path, fingerprint)
