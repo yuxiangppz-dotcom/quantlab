@@ -22,12 +22,23 @@ from quantlab.research.strategy_registry import (
 
 
 def _entry(status: str = IDEA) -> StrategyRegistryEntry:
+    advanced = {
+        RESEARCHED,
+        PORTFOLIO_AUDITED,
+        FORWARD_SHADOW,
+        FORWARD_EVIDENCE_ACCUMULATING,
+        ELIGIBLE_FOR_USER_REVIEW,
+        USER_APPROVED,
+    }
     return StrategyRegistryEntry(
         strategy_id="candidate",
         version="v1",
         role="candidate",
         score_source="score higher_is_better",
         status=status,
+        evidence_refs=("seed-evidence",) if status in advanced else (),
+        user_approved=status == USER_APPROVED,
+        approval_source="explicit_user_decision" if status == USER_APPROVED else None,
     )
 
 
@@ -98,6 +109,25 @@ def test_evidence_transition_requires_new_nonempty_reference() -> None:
         transition_strategy(researched, PORTFOLIO_AUDITED, evidence_ref="run-1")
 
 
+def test_advanced_registry_status_requires_existing_evidence(tmp_path: Path) -> None:
+    payload = {
+        "schema": "quantlab_strategy_registry_v1",
+        "strategies": [
+            {
+                "strategy_id": "candidate",
+                "version": "v1",
+                "role": "candidate",
+                "score_source": "x",
+                "status": "FORWARD_EVIDENCE_ACCUMULATING",
+            }
+        ],
+    }
+    path = tmp_path / "registry.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(DataValidationError, match="requires evidence_refs"):
+        load_strategy_registry(path)
+
+
 def test_registry_rejects_duplicate_versions_and_forged_approval(tmp_path: Path) -> None:
     duplicate = {
         "schema": "quantlab_strategy_registry_v1",
@@ -132,6 +162,7 @@ def test_registry_rejects_duplicate_versions_and_forged_approval(tmp_path: Path)
                 "role": "candidate",
                 "score_source": "x",
                 "status": "USER_APPROVED",
+                "evidence_refs": ["historical-run"],
                 "user_approved": True,
                 "approval_source": "historical_metric_threshold",
             }
