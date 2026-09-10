@@ -32,10 +32,13 @@ def comparison_rows(report, horizon):
             "信号": SIGNALS[candidate["group"]],
             "状态": "完成" if candidate["status"] == "complete" else "失败（已保留）",
         }
-        for period, title in PERIODS.items():
+        for period, title in (
+            ("validation", "验证期"),
+            ("test_observed", "回顾期"),
+            ("discovery", "训练期"),
+        ):
             summary = candidate["periods"].get(period, {}).get("summary", {})
             row[f"{title} 平均 IC"] = summary.get("mean_rank_ic")
-            row[f"{title} 有效日"] = summary.get("valid_days")
         rows.append(row)
     return rows
 
@@ -63,6 +66,7 @@ def render_round2_review():
         )
         horizon = st.selectbox("查看预测区间（交易日）", [5, 10, 20], key="round2_horizon")
         st.caption("预测区间不等于实际持仓天数；各组使用相同的完整特征及有效标签样本。")
+        st.caption("验证期：2023–2024；回顾期：2025–2026-09-10；训练期：2020–2022。")
         st.dataframe(
             pd.DataFrame(comparison_rows(report, horizon)), hide_index=True, width="stretch"
         )
@@ -82,8 +86,8 @@ def render_round2_review():
                 "有效日": item["valid_days"],
                 "IC 为正的日比例": item["positive_ratio"],
             }
-            for period, data in candidate["periods"].items()
-            for item in data["annual"]
+            for period in PERIODS
+            for item in candidate["periods"].get(period, {}).get("annual", [])
         ]
         if annual:
             st.dataframe(pd.DataFrame(annual), hide_index=True, width="stretch")
@@ -127,6 +131,14 @@ def render_round2_review():
             "QuantLab_第二轮诊断.json",
             "application/json",
         )
+        findings = PROJECT_ROOT / "docs/research_round2_findings_zh.md"
+        if findings.exists():
+            st.download_button(
+                "下载第二轮中文解读",
+                findings.read_bytes(),
+                "QuantLab_第二轮中文解读.md",
+                "text/markdown",
+            )
         st.info(
             "日常使用仍从“开始使用”更新数据、生成日报、登记当日前瞻；研究结果不自动生成买卖指令。"
         )
