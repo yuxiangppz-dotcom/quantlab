@@ -66,6 +66,10 @@ def _validate_registry_entry(entry: StrategyRegistryEntry) -> None:
         raise DataValidationError("strategy readiness role must be baseline or candidate")
     if entry.status not in STATUSES:
         raise DataValidationError(f"unknown strategy readiness status: {entry.status!r}")
+    if len(entry.evidence_refs) != len(set(entry.evidence_refs)):
+        raise DataValidationError("strategy readiness evidence references must be unique")
+    if any(not isinstance(ref, str) or not ref.strip() for ref in entry.evidence_refs):
+        raise DataValidationError("strategy readiness evidence references must be non-empty strings")
     if entry.status not in {IDEA, REJECTED} and not entry.evidence_refs:
         raise DataValidationError(
             f"strategy readiness status {entry.status} requires evidence references"
@@ -79,6 +83,11 @@ def _validate_registry_entry(entry: StrategyRegistryEntry) -> None:
             )
     elif entry.user_approved or entry.approval_source is not None:
         raise DataValidationError("non-approved readiness entry cannot carry approval authority")
+    if entry.status == REJECTED:
+        if not isinstance(entry.rejection_reason, str) or not entry.rejection_reason.strip():
+            raise DataValidationError("REJECTED readiness entry requires rejection_reason")
+    elif entry.rejection_reason is not None:
+        raise DataValidationError("non-rejected readiness entry cannot carry rejection_reason")
 
 
 def _shadow_by_key(
