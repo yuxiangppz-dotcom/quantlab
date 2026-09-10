@@ -19,6 +19,7 @@ from quantlab.personal import (
     load_tracking_summary,
     materialize_valuation_checkpoint,
     preview_manual_cash_flows,
+    replay_account_at,
 )
 from quantlab.personal.tracking import CASH_FLOW_COLUMNS
 from quantlab.research.forward_shadow import evaluate_matured_forward_shadows
@@ -262,3 +263,70 @@ def render_cash_and_valuation():
             )
     except Exception as exc:
         st.error(f"已保存估值无法校验：{public_error(exc)}")
+    render_historical_account(account_id, account)
+
+
+def render_historical_account(account_id, account):
+    with st.expander("查看历史时点的现金与持仓"):
+        st.write(
+            "按目前已录入的真实发生时间回放，包含事后补录的记录；"
+            "不代表当时已经获知全部事实，也不是收益报表。"
+        )
+        default_at = datetime.now(SHANGHAI).replace(microsecond=0)
+        day = st.date_input(
+            "回放日期",
+            value=default_at.date(),
+            max_value=datetime.now(SHANGHAI).date(),
+            key=f"history_day_{account_id}",
+        )
+        moment = st.time_input(
+            "截止时间（北京时间，包含该时刻）",
+            value=default_at.time(),
+            key=f"history_time_{account_id}",
+        )
+        basis = st.text_input(
+            "历史期初指纹（留空使用当前起点）", key=f"history_basis_{account_id}"
+        ).strip()
+        cutoff = datetime.combine(day, moment, tzinfo=SHANGHAI)
+        query_key = (account_id, account["account_fingerprint"], cutoff.isoformat(), basis)
+        if st.button("回放指定历史时点"):
+            st.session_state.pop("history_result", None)
+            try:
+                st.session_state["history_result"] = replay_account_at(
+                    account_id,
+                    cutoff,
+                    opening_fingerprint=basis or None,
+                )
+                st.session_state["history_query"] = query_key
+            except Exception as exc:
+                st.error(f"历史回放无法完成：{public_error(exc)}")
+        result = st.session_state.get("history_result")
+        if result and st.session_state.get("history_query") == query_key:
+            if result["status"] == "blocked":
+                reasons = {
+                    "cutoff_precedes_opening_basis": "查询时间早于期初快照，请选择更早的已保存起点",
+                    "legacy_fill_execution_time_unknown": "旧成交缺少真实发生时刻",
+                    "legacy_cash_flow_effective_time_unknown": "旧出入金缺少真实生效时刻",
+                    "calendar_unavailable": "没有交易日历",
+                    "calendar_does_not_cover_basis_to_cutoff": "交易日历未覆盖回放区间",
+                    "calendar_has_unverified_days_inside_replay_interval": (
+                        "区间内有未经验证的日历日期"
+                    ),
+                }
+                for reason in result["blocked_reasons"]:
+                    st.warning(reasons.get(reason, reason))
+            else:
+                st.metric("该时点账面现金", f"¥{Decimal(result['cash_fen']) / 100:,.2f}")
+                st.caption(
+                    f"纳入 {len(result['included_event_ids'])} 笔；"
+                    f"其中 {result['late_reported_event_count']} 笔是在截止时间之后补录。"
+                )
+                st.dataframe(pd.DataFrame(result["positions"]), hide_index=True, width="stretch")
+            import json
+
+            st.download_button(
+                "下载本次历史回放",
+                json.dumps(result, ensure_ascii=False, indent=2).encode(),
+                "quantlab_historical_account.json",
+                "application/json",
+            )

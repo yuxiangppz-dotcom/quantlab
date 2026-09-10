@@ -123,8 +123,8 @@ def _aware(value: str, field: str, row: int) -> datetime:
     return parsed.astimezone(SHANGHAI)
 
 
-def _calendar(storage: ParquetStorage) -> TradingCalendar:
-    entries = storage.load_trading_calendar()
+def _calendar(storage: ParquetStorage, *, entries=None) -> TradingCalendar:
+    entries = storage.load_trading_calendar() if entries is None else entries
     if not entries:
         raise ValueError("trading calendar is unavailable")
     sessions = tuple(sorted({item.trade_date for item in entries if item.is_open}))

@@ -12,6 +12,7 @@ from quantlab.personal.cash_flow import (
     ExternalCashFlow,
 )
 from quantlab.personal.fill_fact import ManualFillFact, ManualFillTimingQuality
+from quantlab.personal.historical import replay_account_at
 from quantlab.personal.plan import build_reference_plan, load_latest_plan
 from quantlab.personal.tracking import (
     build_plan_fill_comparison,
@@ -53,5 +54,6 @@ __all__ = [
     "materialize_valuation_checkpoint",
     "preview_manual_cash_flows",
     "preview_manual_fills",
+    "replay_account_at",
     "validate_valuation_checkpoint",
 ]

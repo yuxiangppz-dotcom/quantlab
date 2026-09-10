@@ -234,3 +234,39 @@ def test_fill_ui_preview_then_commit_uses_real_temporary_journal(tmp_path, monke
     assert not app.exception
     assert len(list(account_root.glob("mine/tracking/*/journal.json"))) == 1
     assert personal.load_effective_account("mine")["cash_fen"] == 219000
+
+
+def _history_screen():
+    from quantlab.ui.workbench_pages import render_historical_account
+
+    render_historical_account("mine", {"account_fingerprint": "synthetic-ui-basis"})
+
+
+def test_historical_ui_reads_real_temporary_ledger_without_writing(tmp_path, monkeypatch):
+    from datetime import date, time
+
+    from quantlab.personal import import_manual_fills, replay_account_at
+
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "personal"))
+    from test_cash_flow_tracking import _seed
+    from test_manual_fill_time import _fill
+
+    root, storage = _seed(tmp_path)
+    import_manual_fills("mine", _fill(), account_root=root, storage=storage)
+    journal = next(root.glob("mine/tracking/*/journal.json"))
+    before = journal.read_bytes()
+    monkeypatch.setattr(
+        workbench_pages,
+        "replay_account_at",
+        lambda account_id, as_of, **kw: replay_account_at(
+            account_id, as_of, account_root=root, storage=storage, **kw
+        ),
+    )
+    app = AppTest.from_function(_history_screen).run()
+    app.date_input[0].set_value(date(2026, 9, 8))
+    app.time_input[0].set_value(time(10, 0))
+    next(button for button in app.button if button.label == "回放指定历史时点").click().run()
+    assert not app.exception
+    assert app.metric[0].value == "¥995.00"
+    assert "1 笔是在截止时间之后补录" in app.caption[0].value
+    assert journal.read_bytes() == before
