@@ -173,6 +173,7 @@ def _portfolio(action: str, account_id: str, source: str | None, cash: str | Non
         import_manual_cash_flows,
         import_manual_fills,
         load_tracking_summary,
+        materialize_valuation_checkpoint,
         preview_manual_cash_flows,
         preview_manual_fills,
     )
@@ -211,6 +212,11 @@ def _portfolio(action: str, account_id: str, source: str | None, cash: str | Non
             path, payload = import_manual_cash_flows(account_id, Path(source))
             payload["journal_path"] = str(path)
         print(json.dumps(payload, ensure_ascii=False, indent=2))
+    elif action == "mark":
+        path, payload, reused = materialize_valuation_checkpoint(account_id)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        print(f"valuation checkpoint: {path}")
+        print(f"reused: {reused}")
     elif action == "track":
         payload = {
             "account": load_tracking_summary(account_id),
@@ -276,6 +282,10 @@ def _parser() -> argparse.ArgumentParser:
         import_parser = portfolio_sub.add_parser(action, help=help_text)
         import_parser.add_argument("--account-id", required=True)
         import_parser.add_argument("--file", required=True)
+    portfolio_mark = portfolio_sub.add_parser(
+        "mark", help="Materialize an immutable raw-close account valuation checkpoint."
+    )
+    portfolio_mark.add_argument("--account-id", required=True)
     portfolio_track = portfolio_sub.add_parser("track", help="Show replayed account state.")
     portfolio_track.add_argument("--account-id", required=True)
     ui = sub.add_parser("ui", help="Start the local-only Streamlit UI.")
