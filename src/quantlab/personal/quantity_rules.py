@@ -35,6 +35,11 @@ _ENGINEERING_FALLBACK = {
     ),
 }
 
+# Rule construction validates source provenance and interval non-overlap. Build it
+# once so a plan with thousands of names does not recreate the same immutable
+# rule book for every instrument.
+_DEFAULT_RULE_BOOK = default_a_share_rule_book()
+
 
 @dataclass(frozen=True)
 class ReferenceQuantityRule:
@@ -63,7 +68,7 @@ def resolve_reference_quantity_rule(
     if scope is None:
         return None
 
-    book = rule_book or default_a_share_rule_book()
+    book = rule_book if rule_book is not None else _DEFAULT_RULE_BOOK
     rule = book.resolve(security.exchange, scope, intended_session)
     if rule is not None:
         return ReferenceQuantityRule(
