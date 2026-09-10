@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import date
 from pathlib import Path
@@ -16,6 +17,39 @@ HEADER = (
     "account_id,account_mode,as_of,cash_cny,instrument_id,quantity,"
     "sellable_quantity,reference_cost_cny,open_orders_declaration\n"
 )
+
+
+def _rebind_report(out: Path, **updates: object) -> None:
+    report_path = out / "report.json"
+    if report_path.exists():
+        report = json.loads(report_path.read_text())
+        report = {
+            key: value
+            for key, value in report.items()
+            if key not in {"generated_at", "content_fingerprint"}
+        }
+    else:
+        report = {
+            "effective_as_of": "2026-09-09",
+            "next_known_open_session": "2026-09-10",
+        }
+    report.update(updates)
+    payload = {
+        "report": report,
+        "ranking_sha256": hashlib.sha256((out / "ranking.csv").read_bytes()).hexdigest(),
+        "target_sha256": hashlib.sha256((out / "target_portfolio.csv").read_bytes()).hexdigest(),
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            default=str,
+        ).encode()
+    ).hexdigest()
+    report["content_fingerprint"] = fingerprint
+    report_path.write_text(json.dumps(report), encoding="utf-8")
 
 
 def _seed_product(tmp_path: Path) -> tuple[Path, ParquetStorage]:
@@ -61,15 +95,7 @@ def _seed_product(tmp_path: Path) -> tuple[Path, ParquetStorage]:
     ranking.to_csv(out / "ranking.csv", index=False)
     (out / "target_portfolio.csv").write_text("instrument_id,target_weight\n")
     (out / "report.html").write_text("ok")
-    (out / "report.json").write_text(
-        json.dumps(
-            {
-                "effective_as_of": "2026-09-09",
-                "next_known_open_session": "2026-09-10",
-                "content_fingerprint": "daily-fingerprint",
-            }
-        )
-    )
+    _rebind_report(out)
     storage = ParquetStorage(tmp_path / "canonical")
     securities = [
         Security("000001.SZ", "000001", "甲", "SZSE", "SZ", "主板", "L", date(2000, 1, 1), None),
@@ -175,7 +201,8 @@ def test_missing_price_for_existing_position_fails_complete_valuation(tmp_path: 
 
 def test_cash_constrained_plan_allocates_by_alpha_rank_not_security_code(tmp_path: Path) -> None:
     product_root, storage = _seed_product(tmp_path)
-    ranking_path = product_root / "2026-09-09" / "ranking.csv"
+    out = product_root / "2026-09-09"
+    ranking_path = out / "ranking.csv"
     ranking = pd.read_csv(ranking_path)
     ranking.loc[ranking["instrument_id"] == "600000.SH", ["rank", "risk_context"]] = [
         1,
@@ -186,6 +213,7 @@ def test_cash_constrained_plan_allocates_by_alpha_rank_not_security_code(tmp_pat
     ranking.loc[ranking["instrument_id"].isin(["000001.SZ", "600000.SH"]), "target_weight"] = 0.5
     # Reverse the input rows to prove the allocation is independent of input order.
     ranking.iloc[::-1].to_csv(ranking_path, index=False)
+    _rebind_report(out)
     account_root = tmp_path / "accounts"
     import_account_csv(
         (
@@ -206,10 +234,11 @@ def test_cash_constrained_plan_allocates_by_alpha_rank_not_security_code(tmp_pat
 
 def test_candidate_plan_is_explicitly_not_promoted(tmp_path: Path) -> None:
     product_root, storage = _seed_product(tmp_path)
-    report_path = product_root / "2026-09-09" / "report.json"
-    report = json.loads(report_path.read_text())
-    report["model"] = {"model_status": "candidate_not_promoted_no_cost_control_closure"}
-    report_path.write_text(json.dumps(report))
+    out = product_root / "2026-09-09"
+    _rebind_report(
+        out,
+        model={"model_status": "candidate_not_promoted_no_cost_control_closure"},
+    )
     account_root = tmp_path / "accounts"
     import_account_csv(
         (
@@ -223,3 +252,21 @@ def test_candidate_plan_is_explicitly_not_promoted(tmp_path: Path) -> None:
     )
     assert payload["candidate_warning"] == "RESEARCH_CANDIDATE_NOT_PROMOTED"
     assert "NEXT_SESSION_PRICE_LIMIT_NOT_YET_OBSERVED" in payload["rows"][0]["pending_checks"]
+
+
+def test_reference_plan_rejects_tampered_daily_ranking(tmp_path: Path) -> None:
+    product_root, storage = _seed_product(tmp_path)
+    ranking_path = product_root / "2026-09-09" / "ranking.csv"
+    ranking_path.write_text(ranking_path.read_text() + "tampered\n", encoding="utf-8")
+    account_root = tmp_path / "accounts"
+    import_account_csv(
+        (
+            HEADER
+            + "mine,manual_tracking,2026-09-10T08:00:00+08:00,200000.00,,0,0,,none_declared\n"
+        ).encode(),
+        account_root=account_root,
+    )
+    with pytest.raises(ValueError, match="content fingerprint mismatch"):
+        build_reference_plan(
+            "mine", account_root=account_root, product_root=product_root, storage=storage
+        )
