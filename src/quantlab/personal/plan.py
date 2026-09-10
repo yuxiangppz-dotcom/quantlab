@@ -19,6 +19,11 @@ from quantlab.personal.account import (
     atomic_json,
     atomic_text,
 )
+from quantlab.personal.quantity_rules import (
+    floor_reference_buy_quantity,
+    floor_reference_sell_quantity,
+    resolve_reference_quantity_rule,
+)
 
 
 def _fen_from_price(value: object) -> int:
@@ -27,20 +32,6 @@ def _fen_from_price(value: object) -> int:
     if price <= 0 or fen <= 0:
         raise ValueError(f"invalid reference close: {value}")
     return int(fen)
-
-
-def _quantity_grid(board: str) -> tuple[int, int, str] | None:
-    if board == "科创板":
-        return 200, 1, "daily_mvp_assumption_star_min200_step1"
-    if board in {"主板", "创业板"}:
-        return 100, 100, "daily_mvp_assumption_a_share_lot100"
-    return None
-
-
-def _floor_buy(raw: int, minimum: int, step: int) -> int:
-    if raw < minimum:
-        return 0
-    return minimum + ((raw - minimum) // step) * step
 
 
 def _estimated_commission_fen(notional_fen: int) -> int:
@@ -171,15 +162,22 @@ def build_reference_plan(
         )
         security = securities.get(instrument)
         bar = bars.get(instrument)
-        grid = _quantity_grid(security.board) if security else None
+        quantity_rule = (
+            resolve_reference_quantity_rule(security, intended_session)
+            if security is not None
+            else None
+        )
         weight = Decimal(str(target_weights.get(instrument, 0.0)))
         reference_price_fen = _fen_from_price(bar.close) if bar else None
         target_shares = 0
-        rule_id = None
-        if weight > 0 and reference_price_fen is not None and grid is not None:
-            minimum, step, rule_id = grid
-            budget = int((Decimal(nav_fen) * weight).quantize(Decimal("1"), rounding=ROUND_FLOOR))
-            target_shares = _floor_buy(budget // reference_price_fen, minimum, step)
+        if weight > 0 and reference_price_fen is not None and quantity_rule is not None:
+            budget = int(
+                (Decimal(nav_fen) * weight).quantize(Decimal("1"), rounding=ROUND_FLOOR)
+            )
+            target_shares = floor_reference_buy_quantity(
+                budget // reference_price_fen,
+                quantity_rule,
+            )
         delta = target_shares - holding["quantity"]
         action = "HOLD"
         reason = "AT_TARGET"
@@ -192,7 +190,7 @@ def build_reference_plan(
             "VERIFIED_ALL_IN_FEE",
         ]
         context = risk_context.get(instrument, "OUTSIDE_RANKING_CONTEXT_UNKNOWN")
-        if security is None or grid is None:
+        if security is None or quantity_rule is None:
             action, reason = "NO_TRADE", "PIT_OR_QUANTITY_RULE_UNKNOWN"
         elif bar is None:
             action, reason = "NO_TRADE", "REFERENCE_PRICE_MISSING"
@@ -215,12 +213,12 @@ def build_reference_plan(
                 fee_fen = 0
         elif delta < 0:
             desired = -delta
-            sellable = min(desired, holding["sellable_quantity"])
-            minimum, step, rule_id = grid
-            if sellable == holding["quantity"] and desired == holding["quantity"]:
-                planned = sellable
-            elif sellable >= minimum:
-                planned = minimum + ((sellable - minimum) // step) * step
+            planned = floor_reference_sell_quantity(
+                desired_quantity=desired,
+                sellable_quantity=holding["sellable_quantity"],
+                total_position_quantity=holding["quantity"],
+                rule=quantity_rule,
+            )
             if planned > 0:
                 action, reason = "SELL", "REFERENCE_TARGET_DECREASE"
                 fee_fen = _estimated_commission_fen(planned * reference_price_fen)
@@ -250,8 +248,15 @@ def build_reference_plan(
                 ),
                 "estimated_partial_fee_cny": str(Decimal(fee_fen) / 100),
                 "fee_status": "user_reported_commission_only_not_verified_all_in",
-                "quantity_rule_status": "engineering_assumption_requires_next_session_review",
-                "quantity_rule_id": rule_id,
+                "quantity_rule_status": (
+                    quantity_rule.rule_status if quantity_rule is not None else "unknown"
+                ),
+                "quantity_rule_id": (
+                    quantity_rule.rule_id if quantity_rule is not None else None
+                ),
+                "quantity_rule_limitations": (
+                    ";".join(quantity_rule.limitations) if quantity_rule is not None else None
+                ),
                 "risk_context": context,
                 "pending_checks": ";".join(pending),
             }
@@ -279,6 +284,7 @@ def build_reference_plan(
         "broker_submission": False,
         "sell_proceeds_fund_buys": False,
         "cash_allocation_policy": "target_alpha_rank_ascending_then_instrument_id",
+        "quantity_rule_policy": "authoritative_pit_then_explicit_engineering_fallback",
         "price_basis": "raw_T_close_reference_not_order_limit",
         "fee_evidence": (
             "user_reported commission only: <=500k 0.86/10000; >500k 0.80/10000; min CNY5"
@@ -287,7 +293,9 @@ def build_reference_plan(
             "statutory and exchange fees are not included because all-in commission "
             "scope is unverified",
             "next-session market status and executable limit price are unknown",
-            "quantity rules are current engineering assumptions, not a validated 2026 rule book",
+            "authoritative PIT quantity rules are used only where the execution rule book "
+            "has exact coverage; uncovered sessions remain explicitly unverified "
+            "engineering fallbacks",
         ],
         "rows": rows,
     }
