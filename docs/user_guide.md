@@ -65,8 +65,17 @@ pending check.
 ## Manual fills
 
 Download the fill template. Each actual broker fill needs a stable broker trade
-id, trade date, timezone-aware report time, instrument, BUY/SELL, quantity,
+id, trade date, timezone-aware execution and report times, instrument, BUY/SELL, quantity,
 Decimal price, explicit gross amount, and actual fee.
+
+New fill CSVs require these columns in order:
+`account_id,broker_trade_id,trade_date,executed_at,reported_at,instrument_id,side,quantity,price_cny,gross_notional_cny,fee_cny`.
+The report time must not precede execution, and the Shanghai execution date must
+equal trade_date. Delayed reporting does not advance T+1 availability. Old journal
+versions remain readable with explicitly unverified execution timing; old CSVs
+are rejected instead of inferring an execution time. Fill-containing journals use
+v4. Timing completeness alone does not establish performance readiness or
+independent broker verification.
 
 Always click **预览并校验成交** first. The preview writes nothing. Only **确认导入已预览成交**
 commits the complete batch. Re-importing the same fill is a no-op; changed values

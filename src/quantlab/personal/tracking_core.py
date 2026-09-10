@@ -1,10 +1,12 @@
-"""Deterministic manual account truth with explicit cash-flow time semantics.
+"""Deterministic manual account truth with explicit economic/report time semantics.
 
 Broker fills remain execution-ledger facts. External deposits and withdrawals are
 account-truth facts layered around that ledger; they never become orders, fills,
 or broker authority. New cash-flow imports separate economic ``effective_at``
 from observation ``reported_at``; legacy single-timestamp journals remain
-replayable but are explicitly not performance-grade timing evidence.
+replayable but are explicitly not performance-grade timing evidence. Exact manual
+fills similarly separate executed_at and reported_at while retaining the existing
+ExecutionLedger share, fee and T+1 accounting.
 """
 
 from __future__ import annotations
@@ -40,11 +42,13 @@ from quantlab.personal.cash_flow import (
     CashFlowTimingQuality,
     ExternalCashFlow,
 )
+from quantlab.personal.fill_fact import ManualFillFact, ManualFillTimingQuality
 
 FILL_COLUMNS = (
     "account_id",
     "broker_trade_id",
     "trade_date",
+    "executed_at",
     "reported_at",
     "instrument_id",
     "side",
@@ -64,6 +68,7 @@ CASH_FLOW_COLUMNS = (
 _JOURNAL_V1 = "quantlab_manual_fill_journal_v1"
 _JOURNAL_V2 = "quantlab_manual_tracking_journal_v2"
 _JOURNAL_V3 = "quantlab_manual_tracking_journal_v3"
+_JOURNAL_V4 = "quantlab_manual_tracking_journal_v4"
 _NO_CASH_FLOW_TIMING = "not_applicable_no_external_cash_flows"
 
 
@@ -186,16 +191,45 @@ def _fill_payload(event: ManualFillImported, *, tagged: bool = False) -> dict:
         "source_sha256": event.source_sha256,
         "source_row_sha256": event.source_row_sha256,
     }
+    exact = isinstance(event, ManualFillFact) and event.is_performance_timing_eligible
+    payload.update({
+        "executed_at": event.occurred_at.isoformat() if exact else None,
+        "reported_at": _reported_time(event).isoformat(),
+        "timing_quality": (
+            ManualFillTimingQuality.EXACT_EXECUTION_TIME.value if exact
+            else ManualFillTimingQuality.LEGACY_REPORTED_AS_EXECUTION_UNVERIFIED.value
+        ),
+    })
     return {"event_type": "manual_fill", **payload} if tagged else payload
 
 
-def _fill_from_payload(item: dict) -> ManualFillImported:
+def _fill_from_payload(item: dict, *, timed: bool = False) -> ManualFillFact:
     if item.get("event_type", "manual_fill") != "manual_fill":
         raise ValueError("journal event is not a manual fill")
-    return ManualFillImported(
+    occurred = datetime.fromisoformat(item["occurred_at"])
+    if timed:
+        try:
+            quality = ManualFillTimingQuality(item["timing_quality"])
+            reported = datetime.fromisoformat(item["reported_at"])
+            executed = item["executed_at"]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("v4 fill timing payload is invalid") from exc
+        if quality is ManualFillTimingQuality.EXACT_EXECUTION_TIME:
+            if not isinstance(executed, str) or datetime.fromisoformat(executed) != occurred:
+                raise ValueError("v4 fill executed_at must equal its ledger occurred_at")
+        elif executed is not None:
+            raise ValueError("legacy fill cannot claim an exact executed_at")
+    else:
+        if {"executed_at", "reported_at", "timing_quality"} & set(item):
+            raise ValueError("explicit fill timing requires journal v4")
+        quality = ManualFillTimingQuality.LEGACY_REPORTED_AS_EXECUTION_UNVERIFIED
+        reported = occurred
+    return ManualFillFact(
         event_id=item["event_id"],
         fill_id=item["fill_id"],
-        occurred_at=datetime.fromisoformat(item["occurred_at"]),
+        occurred_at=occurred,
+        reported_at=reported,
+        timing_quality=quality,
         account_id=item["account_id"],
         instrument_id=item["instrument_id"],
         side=Side(item["side"]),
@@ -290,6 +324,8 @@ def _economic_time(event: ManualFillImported | ExternalCashFlow) -> datetime:
 
 
 def _reported_time(event: ManualFillImported | ExternalCashFlow) -> datetime:
+    if isinstance(event, ManualFillFact):
+        return event.report_time
     if isinstance(event, ExternalCashFlow):
         return event.reported_at or event.effective_at
     return event.occurred_at
@@ -313,7 +349,7 @@ def _load_journal(account: dict, account_root: Path) -> dict | None:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("manual tracking journal is unreadable or invalid JSON") from exc
-    if payload.get("schema") not in {_JOURNAL_V1, _JOURNAL_V2, _JOURNAL_V3}:
+    if payload.get("schema") not in {_JOURNAL_V1, _JOURNAL_V2, _JOURNAL_V3, _JOURNAL_V4}:
         raise ValueError("unsupported manual tracking journal schema")
     if payload.get("account_id") != account["account_id"]:
         raise ValueError("manual journal account binding mismatch")
@@ -350,10 +386,10 @@ def _decode_journal(
         for item in payload["events"]:
             event_type = item.get("event_type")
             if event_type == "manual_fill":
-                fills.append(_fill_from_payload(item))
+                fills.append(_fill_from_payload(item, timed=schema == _JOURNAL_V4))
             elif event_type == "external_cash_flow":
                 flow = _cash_flow_from_payload(item)
-                if schema == _JOURNAL_V3 and "effective_at" not in item:
+                if schema in {_JOURNAL_V3, _JOURNAL_V4} and "effective_at" not in item:
                     raise ValueError("v3 cash-flow event is missing explicit effective_at")
                 flows.append(flow)
             else:
@@ -430,6 +466,7 @@ def _parse_fill_events(
         if instrument not in known_instruments:
             raise ValueError(f"row {index} instrument_id is unknown: {instrument}")
         trade_date = date.fromisoformat(row["trade_date"].strip())
+        executed_at = _aware(row["executed_at"].strip(), "executed_at", index)
         reported_at = _aware(row["reported_at"].strip(), "reported_at", index)
         side_text = row["side"].strip().lower()
         if side_text not in {"buy", "sell"}:
@@ -448,10 +485,12 @@ def _parse_fill_events(
         ).hexdigest()
         fill_id = f"{trade_date.isoformat()}:{broker_id}"
         events.append(
-            ManualFillImported(
+            ManualFillFact(
                 event_id=f"manual:{account['account_id']}:{fill_id}",
                 fill_id=fill_id,
-                occurred_at=reported_at,
+                occurred_at=executed_at,
+                reported_at=reported_at,
+                timing_quality=ManualFillTimingQuality.EXACT_EXECUTION_TIME,
                 account_id=account["account_id"],
                 instrument_id=instrument,
                 side=side,
@@ -570,6 +609,15 @@ def _timing_quality(flows: tuple[ExternalCashFlow, ...]) -> tuple[str, bool]:
     return CashFlowTimingQuality.LEGACY_REPORTED_AS_EFFECTIVE_UNVERIFIED.value, False
 
 
+def _fill_timing_quality(fills: tuple[ManualFillImported, ...]) -> tuple[str, bool]:
+    if not fills:
+        return "not_applicable_no_manual_fills", True
+    if all(isinstance(event, ManualFillFact) and event.is_performance_timing_eligible
+           for event in fills):
+        return ManualFillTimingQuality.EXACT_EXECUTION_TIME.value, True
+    return ManualFillTimingQuality.LEGACY_REPORTED_AS_EXECUTION_UNVERIFIED.value, False
+
+
 def _summary(account: dict, replay: _TrackingReplay, duplicate_count: int) -> dict:
     valuation_date = exchange_date(replay.latest_economic_at)
     instruments = sorted({lot.instrument_id for lot in replay.ledger.lots})
@@ -589,6 +637,13 @@ def _summary(account: dict, replay: _TrackingReplay, duplicate_count: int) -> di
         "positions": positions,
         "fill_ids": sorted(event.fill_id for event in replay.fills),
     }
+    if any(isinstance(event, ManualFillFact) and event.is_performance_timing_eligible
+           for event in replay.fills):
+        state["fill_timing"] = [
+            {key: _fill_payload(event)[key]
+             for key in ("fill_id", "executed_at", "reported_at", "timing_quality")}
+            for event in sorted(replay.fills, key=lambda event: event.fill_id)
+        ]
     if replay.cash_flows:
         ordered_flows = sorted(
             replay.cash_flows,
@@ -610,6 +665,7 @@ def _summary(account: dict, replay: _TrackingReplay, duplicate_count: int) -> di
     ).hexdigest()
     net_external = sum(event.signed_amount_fen for event in replay.cash_flows)
     timing_quality, timing_eligible = _timing_quality(replay.cash_flows)
+    fill_quality, fill_eligible = _fill_timing_quality(replay.fills)
     latest_flow_effective = max(
         (event.effective_at for event in replay.cash_flows),
         default=None,
@@ -633,6 +689,9 @@ def _summary(account: dict, replay: _TrackingReplay, duplicate_count: int) -> di
         "external_cash_flow_net_fen": net_external,
         "cash_flow_timing_quality": timing_quality,
         "cash_flow_timing_performance_eligible": timing_eligible,
+        "fill_timing_quality": fill_quality,
+        "fill_timing_performance_eligible": fill_eligible,
+        "intraday_timing_eligible": timing_eligible and fill_eligible,
         "latest_fill_trade_date": (
             max(event.trade_date for event in replay.fills).isoformat() if replay.fills else None
         ),
@@ -657,9 +716,6 @@ def _summary(account: dict, replay: _TrackingReplay, duplicate_count: int) -> di
 def _journal_events(
     fills: list[ManualFillImported], flows: list[ExternalCashFlow]
 ) -> tuple[str, list[dict]]:
-    if not flows:
-        ordered = sorted(fills, key=lambda event: (event.occurred_at, event.event_id))
-        return _JOURNAL_V1, [_fill_payload(event) for event in ordered]
     combined = sorted((*fills, *flows), key=lambda event: (_economic_time(event), event.event_id))
     payloads = [
         _fill_payload(event, tagged=True)
@@ -667,7 +723,7 @@ def _journal_events(
         else _cash_flow_payload(event)
         for event in combined
     ]
-    return _JOURNAL_V3, payloads
+    return (_JOURNAL_V4 if fills else _JOURNAL_V3), payloads
 
 
 def _write_journal(
@@ -920,10 +976,12 @@ def manual_tracking_fixture_smoke() -> bool:
         datetime(2026, 9, 7, 9, tzinfo=SHANGHAI),
         200_000,
     )
-    event = ManualFillImported(
+    event = ManualFillFact(
         event_id="manual:acceptance-fixture",
         fill_id="2026-09-07:acceptance-fixture",
-        occurred_at=datetime(2026, 9, 7, 16, tzinfo=SHANGHAI),
+        occurred_at=datetime(2026, 9, 7, 14, tzinfo=SHANGHAI),
+        reported_at=datetime(2026, 9, 7, 16, tzinfo=SHANGHAI),
+        timing_quality=ManualFillTimingQuality.EXACT_EXECUTION_TIME,
         account_id="acceptance_fixture",
         instrument_id="000001.SZ",
         side=Side.BUY,
@@ -1013,6 +1071,9 @@ def load_effective_account(
         "cash_flow_timing_performance_eligible": summary[
             "cash_flow_timing_performance_eligible"
         ],
+        "fill_timing_quality": summary["fill_timing_quality"],
+        "fill_timing_performance_eligible": summary["fill_timing_performance_eligible"],
+        "intraday_timing_eligible": summary["intraday_timing_eligible"],
     }
 
 

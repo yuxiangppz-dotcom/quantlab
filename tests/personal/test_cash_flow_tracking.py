@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import date
 from pathlib import Path
@@ -27,7 +28,7 @@ FLOW_HEADER = (
     "account_id,external_flow_id,effective_at,reported_at,direction,amount_cny\n"
 )
 FILL_HEADER = (
-    "account_id,broker_trade_id,trade_date,reported_at,instrument_id,side,"
+    "account_id,broker_trade_id,trade_date,executed_at,reported_at,instrument_id,side,"
     "quantity,price_cny,gross_notional_cny,fee_cny\n"
 )
 
@@ -92,7 +93,7 @@ def _fill(
     gross = f"{quantity * float(price):.2f}"
     return (
         FILL_HEADER
-        + f"mine,{broker_id},2026-09-07,{reported_at},000001.SZ,BUY,"
+        + f"mine,{broker_id},2026-09-07,{reported_at},{reported_at},000001.SZ,BUY,"
         + f"{quantity},{price},{gross},{fee}\n"
     ).encode()
 
@@ -261,7 +262,7 @@ def test_cash_flow_and_fill_replay_follow_effective_time_not_import_order(tmp_pa
         )
 
 
-def test_fill_only_journal_stays_v1_and_upgrades_without_losing_fill(tmp_path: Path) -> None:
+def test_legacy_fill_only_v1_replays_and_upgrades_without_losing_fill(tmp_path: Path) -> None:
     account_root, storage = _seed(tmp_path)
     fill = _fill("B1", "2026-09-07T15:00:00+08:00", 100)
     path, _ = import_manual_fills(
@@ -271,10 +272,24 @@ def test_fill_only_journal_stays_v1_and_upgrades_without_losing_fill(tmp_path: P
         product_root=tmp_path / "products",
         storage=storage,
     )
-    assert json.loads(path.read_text())["schema"] == "quantlab_manual_fill_journal_v1"
+    legacy = json.loads(path.read_text())
+    assert legacy["schema"] == "quantlab_manual_tracking_journal_v4"
+    legacy["schema"] = "quantlab_manual_fill_journal_v1"
+    for item in legacy["events"]:
+        for key in ("event_type", "executed_at", "reported_at", "timing_quality"):
+            item.pop(key)
+    legacy["events_fingerprint"] = hashlib.sha256(
+        json.dumps(legacy["events"], sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    legacy.pop("journal_fingerprint")
+    legacy["journal_fingerprint"] = hashlib.sha256(
+        json.dumps(legacy, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    path.write_text(json.dumps(legacy))
     before = load_tracking_summary("mine", account_root=account_root, storage=storage)
     assert before["fill_event_count"] == 1
     assert before["cash_flow_event_count"] == 0
+    assert before["fill_timing_performance_eligible"] is False
 
     flow = _flow("D1", "2026-09-07T16:00:00+08:00", "DEPOSIT", "100.00")
     import_manual_cash_flows(
@@ -285,7 +300,7 @@ def test_fill_only_journal_stays_v1_and_upgrades_without_losing_fill(tmp_path: P
         storage=storage,
     )
     payload = json.loads(path.read_text())
-    assert payload["schema"] == "quantlab_manual_tracking_journal_v3"
+    assert payload["schema"] == "quantlab_manual_tracking_journal_v4"
     assert {item["event_type"] for item in payload["events"]} == {
         "manual_fill",
         "external_cash_flow",
@@ -293,6 +308,8 @@ def test_fill_only_journal_stays_v1_and_upgrades_without_losing_fill(tmp_path: P
     after = load_tracking_summary("mine", account_root=account_root, storage=storage)
     assert after["fill_event_count"] == 1
     assert after["cash_flow_event_count"] == 1
+    assert after["fill_timing_performance_eligible"] is False
+    assert after["cash_flow_timing_performance_eligible"] is True
 
 
 def test_combined_journal_tampering_is_rejected(tmp_path: Path) -> None:
