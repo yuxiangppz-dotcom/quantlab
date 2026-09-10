@@ -19,6 +19,10 @@ import pandas as pd
 from quantlab.daily.service import DEFAULT_PRODUCT_ROOT, PROJECT_ROOT, load_latest_snapshot
 from quantlab.data.models import DataValidationError
 from quantlab.data.storage import ParquetStorage
+from quantlab.portfolio.product import (
+    DAILY_FIXED_COUNT_TIE_POLICY,
+    construct_daily_fixed_count_portfolio,
+)
 from quantlab.research.dataset import build_research_dataset
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -184,6 +188,7 @@ def generate_forward_shadow(
     config = _load_config(config_path)
     head = _git_head()
     config_fingerprint = _sha256_file(config_path)
+    signal_date = date.fromisoformat(snapshot.report["effective_as_of"])
     results = []
     for model in config["models"]:
         source = model["source_column"]
@@ -193,6 +198,23 @@ def generate_forward_shadow(
         scored = scored.rename(columns={source: "alpha_score"})
         scored["alpha_score"] = pd.to_numeric(scored["alpha_score"], errors="coerce")
         scored = scored[scored["alpha_score"].notna()].copy()
+
+        product_config = {
+            "target_count": config["target_count"],
+            "score_direction": model["direction"],
+            "gross_exposure": 1.0,
+            "max_weight_per_name": config["max_weight_per_name"],
+            "tie_policy": DAILY_FIXED_COUNT_TIE_POLICY,
+        }
+        portfolio = construct_daily_fixed_count_portfolio(
+            scored[["instrument_id", "trade_date", "alpha_score"]],
+            signal_date,
+            product_config,
+        )
+        target_weights = {
+            position.instrument_id: position.target_weight for position in portfolio.positions
+        }
+
         ascending = model["direction"] == "lower_is_better"
         scored = scored.sort_values(
             ["alpha_score", "instrument_id"],
@@ -200,16 +222,14 @@ def generate_forward_shadow(
             kind="mergesort",
         ).reset_index(drop=True)
         scored["rank"] = range(1, len(scored) + 1)
-        selected = min(config["target_count"], len(scored))
-        scored["selected"] = scored["rank"] <= selected
-        weight = min(
-            float(config["max_weight_per_name"]),
-            1.0 / selected if selected else 0.0,
+        scored["selected"] = scored["instrument_id"].isin(target_weights)
+        scored["target_weight"] = (
+            scored["instrument_id"].map(target_weights).fillna(0.0).astype(float)
         )
-        scored["target_weight"] = scored["selected"].map({True: weight, False: 0.0})
         target = scored[scored["selected"]][
             ["instrument_id", "name", "rank", "alpha_score", "target_weight"]
         ].copy()
+        selected = len(portfolio.positions)
         core = {
             "schema": "quantlab_forward_shadow_prediction_v1",
             "trade_date": snapshot.report["effective_as_of"],
@@ -221,8 +241,19 @@ def generate_forward_shadow(
             "universe": config["universe"],
             "universe_rows": len(scored),
             "target_count": selected,
-            "target_weight_sum": round(float(target["target_weight"].sum()), 12),
+            "target_weight_sum": round(
+                sum(position.target_weight for position in portfolio.positions), 12
+            ),
+            "cash_weight": round(portfolio.cash_weight, 12),
             "tie_policy": f"{model['direction']}_alpha_score_then_instrument_id",
+            "portfolio_contract": {
+                "constructor": "fixed_count_v1",
+                "requested_target_count": config["target_count"],
+                "score_direction": model["direction"],
+                "gross_exposure": 1.0,
+                "max_weight_per_name": config["max_weight_per_name"],
+                "tie_policy": DAILY_FIXED_COUNT_TIE_POLICY,
+            },
             "code_head": head,
             "label": {
                 "name": f"diagnostic_future_return_{config['label_horizon_sessions']}d",
