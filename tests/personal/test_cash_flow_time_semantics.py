@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -9,8 +9,6 @@ from quantlab.personal.cash_flow import (
     CashFlowTimingQuality,
     ExternalCashFlow,
 )
-
-UTC = timezone.utc
 
 
 def _flow(**overrides) -> ExternalCashFlow:
