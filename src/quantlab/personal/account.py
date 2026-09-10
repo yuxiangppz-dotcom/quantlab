@@ -150,8 +150,29 @@ def import_account_csv(
         json.dumps(economic, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     path = account_root / account_id / "snapshot.json"
+    if path.exists():
+        previous = load_account(account_id, account_root=account_root)
+        if previous["account_mode"] != mode:
+            raise ValueError("account_mode cannot change for an existing account_id")
+        _archive_snapshot(path.parent, previous)
+    _archive_snapshot(path.parent, payload)
     atomic_json(path, payload)
     return path
+
+
+def _archive_snapshot(directory: Path, payload: dict) -> None:
+    """Keep each opening basis available without replacing an existing archive."""
+    fingerprint = payload["account_fingerprint"]
+    archive = directory / "snapshots" / f"{fingerprint}.json"
+    if archive.exists():
+        saved = json.loads(archive.read_text(encoding="utf-8"))
+        # Source CSV formatting can differ for identical economic facts.
+        if not isinstance(saved, dict) or {
+            key: value for key, value in saved.items() if key != "source_sha256"
+        } != {key: value for key, value in payload.items() if key != "source_sha256"}:
+            raise ValueError("existing account snapshot archive conflicts with its fingerprint")
+        return
+    atomic_json(archive, payload)
 
 
 def create_demo_account(
@@ -173,6 +194,8 @@ def create_demo_account(
 
 
 def load_account(account_id: str, *, account_root: Path = DEFAULT_ACCOUNT_ROOT) -> dict:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", account_id):
+        raise ValueError("account_id must be 1-64 safe ASCII identifier characters")
     path = account_root / account_id / "snapshot.json"
     if not path.exists():
         raise FileNotFoundError(f"account snapshot not found: {account_id}")

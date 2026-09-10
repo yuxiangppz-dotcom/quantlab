@@ -97,7 +97,7 @@ def run_v1_acceptance(
     checks["ranking_has_user_columns"] = required_columns.issubset(ranking_columns)
     core = {
         "schema": "quantlab_daily_v1_acceptance",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "git_head": _git("rev-parse HEAD"),
         "checks": checks,
         "product_ready": all(checks.values()),
@@ -127,7 +127,8 @@ def run_v1_acceptance(
         "known_limitations": [
             "no strategy is promoted for real-money use",
             "execution readiness remains false and no broker gateway exists",
-            "manual tracking lacks corporate actions and external cash flows",
+            "manual tracking lacks corporate-action postings "
+            "and full historical/performance readiness",
             "anns_d termination-announcement coverage is unavailable",
         ],
     }

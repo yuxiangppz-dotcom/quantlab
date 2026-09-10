@@ -17,12 +17,12 @@ from quantlab.daily.experiments import (
     load_latest_factor_view,
     load_latest_portfolio_audit,
 )
+from quantlab.daily.integrity import load_validated_latest_snapshot
 from quantlab.daily.service import (
     PROJECT_ROOT,
     SHANGHAI,
     generate_daily_snapshot,
     inspect_data_status,
-    load_latest_snapshot,
 )
 from quantlab.data.enrichment import dividend_context_warnings, inspect_enrichment_status
 from quantlab.data.storage import ParquetStorage
@@ -39,7 +39,16 @@ from quantlab.personal import (
     load_tracking_summary,
     preview_manual_fills,
 )
+from quantlab.personal.account import REQUIRED_COLUMNS
+from quantlab.personal.tracking import FILL_COLUMNS
 from quantlab.research.forward_shadow import latest_forward_shadow
+from quantlab.ui.workbench import DATA_STATUS_LABELS, csv_template, preview_matches, public_error
+from quantlab.ui.workbench_pages import (
+    render_cash_and_valuation,
+    render_data_update,
+    render_shadow,
+    render_start,
+)
 
 st.set_page_config(page_title="QuantLab Daily", page_icon="📈", layout="wide")
 
@@ -70,7 +79,11 @@ def _shadow_view() -> list[dict]:
 
 
 def _latest() -> tuple[object | None, pd.DataFrame | None, pd.DataFrame | None]:
-    snapshot = load_latest_snapshot()
+    try:
+        snapshot = load_validated_latest_snapshot()
+    except Exception as exc:
+        st.error(f"日报无法校验：{public_error(exc)}")
+        return None, None, None
     if snapshot is None:
         return None, None, None
     return snapshot, pd.read_csv(snapshot.ranking_path), pd.read_csv(snapshot.target_path)
@@ -80,23 +93,35 @@ def _format_pct(value: float) -> str:
     return f"{value:.2%}"
 
 
-st.title("QuantLab Daily v1.1")
+st.title("QuantLab 个人量化工作台")
 st.caption("本地日频研究与辅助决策工具；研究目标不是券商订单，未知证据不会显示为安全。")
 
 page = st.sidebar.radio(
     "页面",
-    ("数据状态与日报", "股票排名与因子", "回测与基准", "账户与参考计划"),
+    ("开始使用", "数据状态与日报", "股票排名与因子", "前瞻观察",
+     "账户与参考计划", "资金流水与估值", "回测与基准"),
 )
 
-if page == "数据状态与日报":
-    status = inspect_data_status()
+if page == "开始使用":
+    render_start()
+elif page == "前瞻观察":
+    render_shadow()
+elif page == "资金流水与估值":
+    render_cash_and_valuation()
+elif page == "数据状态与日报":
+    render_data_update()
+    try:
+        status = inspect_data_status()
+    except Exception as exc:
+        st.error(f"数据无法校验：{public_error(exc)}。已有文件会保留，请修复后重新检查。")
+        st.stop()
     storage = ParquetStorage(PROJECT_ROOT / "data" / "canonical")
     effective = date.fromisoformat(status["effective_as_of"]) if status["effective_as_of"] else None
     enrichment = inspect_enrichment_status(storage, effective)
     cols = st.columns(4)
     cols[0].metric("共同数据截止日", status["effective_as_of"] or "不可用")
     cols[1].metric("日历截止日", status["latest_calendar_date"] or "不可用")
-    cols[2].metric("状态", status["status"])
+    cols[2].metric("状态", DATA_STATUS_LABELS.get(status["status"], status["status"]))
     cols[3].metric(
         "缺口交易日",
         status["stale_open_sessions"] if status["stale_open_sessions"] is not None else "未知",
@@ -119,10 +144,13 @@ if page == "数据状态与日报":
         "当前快照不用于回填历史 PIT 因子。dividend 仅作人工核对提示。"
     )
     if st.button("生成/刷新日频报告", type="primary"):
-        with st.spinner("正在读取必要 lookback 并生成报告…"):
-            created = generate_daily_snapshot(date.fromisoformat(status["requested_as_of"]))
-        st.success("已复用相同输入的缓存" if created.reused else "日报已生成")
-        st.rerun()
+        try:
+            with st.spinner("正在读取必要历史数据并生成报告…"):
+                created = generate_daily_snapshot(date.fromisoformat(status["requested_as_of"]))
+            st.cache_data.clear()
+            st.rerun()
+        except Exception as exc:
+            st.error(f"日报未生成：{public_error(exc)}")
     with st.expander("新建版本化日频配置"):
         strategy = st.selectbox(
             "策略",
@@ -332,14 +360,14 @@ else:
     st.subheader("账户持仓与参考调仓计划")
     st.warning("本页只生成参考计划，不会向券商下单。T+1 状态、次日价格和完整费用仍需人工复核。")
     with st.expander("账户 CSV 格式与导入", expanded=not list_accounts()):
-        template = (
-            "account_id,account_mode,as_of,cash_cny,instrument_id,quantity,"
-            "sellable_quantity,reference_cost_cny,open_orders_declaration\n"
-            "my_account,manual_tracking,2026-09-10T09:00:00+08:00,200000.00,"
-            "000001.SZ,1000,1000,10.50,none_declared\n"
+        template = csv_template(REQUIRED_COLUMNS)
+        st.caption("模板只有表头。请填写自己的真实快照；先体验功能可使用下方演示账户。")
+        st.info(
+            "同一账户导入新的完整快照，会切换账本起点。旧快照和旧账本保留；"
+            "新起点只应录入其后发生的成交与出入金，避免重复计算。账户模式不能更改。"
         )
         st.download_button(
-            "下载账户模板 CSV", template.encode(), "quantlab_account_template.csv", "text/csv"
+            "下载账户模板 CSV", template, "quantlab_account_template.csv", "text/csv"
         )
         uploaded = st.file_uploader("选择完整账户快照 CSV", type="csv")
         if uploaded is not None:
@@ -357,20 +385,28 @@ else:
             "演示账户初始现金（CNY）", min_value=0.0, value=200000.0, step=10000.0
         )
         if st.button("创建/重置演示账户"):
-            path = create_demo_account(cash_cny=f"{demo_cash:.2f}")
-            st.success(f"演示账户已写入 {path}")
-            st.rerun()
+            try:
+                create_demo_account(cash_cny=f"{demo_cash:.2f}")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"演示账户无法创建：{public_error(exc)}")
 
     accounts = list_accounts()
     if not accounts:
         st.info("尚无账户。请显式创建演示账户或导入完整账户快照。")
     else:
         account_id = st.selectbox("账户", accounts)
-        account = load_effective_account(account_id)
-        tracking = load_tracking_summary(account_id)
+        try:
+            account = load_effective_account(account_id)
+            tracking = load_tracking_summary(account_id)
+        except Exception as exc:
+            st.error(f"账户无法回放：{public_error(exc)}")
+            st.stop()
         positions = pd.DataFrame(account["positions"])
         cols = st.columns(4)
-        cols[0].metric("账户模式", account["account_mode"])
+        cols[0].metric(
+            "账户模式", "手工记账" if account["account_mode"] == "manual_tracking" else "演示账户"
+        )
         cols[1].metric("现金", f"¥{Decimal(account['cash_fen']) / 100:,.2f}")
         cols[2].metric("持仓数", len(account["positions"]))
         cols[3].metric("账户时间", account["as_of"])
@@ -386,9 +422,12 @@ else:
             st.dataframe(pd.DataFrame(corporate_actions), width="stretch", hide_index=True)
         if tracking["event_count"]:
             st.success(
-                f"已通过同一执行账本回放 {tracking['event_count']} 笔人工成交；"
+                f"已回放 {tracking['fill_event_count']} 笔成交和 "
+                f"{tracking['cash_flow_event_count']} 笔出入金；"
                 f"累计实际费用 ¥{Decimal(tracking['total_fee_fen']) / 100:,.2f}。"
             )
+            if not tracking["intraday_timing_eligible"]:
+                st.warning("含旧版时间未验证记录，不具备精确日内收益归因条件。")
             valuation = build_tracking_valuation(account_id)
             if valuation["status"] == "complete_reference_mark_to_market":
                 cols = st.columns(2)
@@ -412,17 +451,10 @@ else:
             st.info("演示账户不会接收人工真实成交；请导入 manual_tracking 账户。")
         else:
             with st.expander("人工成交：预览后导入"):
-                fill_template = (
-                    "account_id,broker_trade_id,trade_date,executed_at,reported_at,"
-                    "instrument_id,side,"
-                    "quantity,price_cny,gross_notional_cny,fee_cny\n"
-                    f"{account_id},broker_trade_001,2026-09-10,"
-                    "2026-09-10T14:30:00+08:00,"
-                    "2026-09-10T15:10:00+08:00,000001.SZ,BUY,100,10.00,1000.00,5.00\n"
-                )
+                fill_template = csv_template(FILL_COLUMNS)
                 st.download_button(
                     "下载人工成交模板 CSV",
-                    fill_template.encode(),
+                    fill_template,
                     "quantlab_manual_fills_template.csv",
                     "text/csv",
                 )
@@ -433,14 +465,21 @@ else:
                     fill_raw = fill_upload.getvalue()
                     fill_sha = hashlib.sha256(fill_raw).hexdigest()
                     if st.button("预览并校验成交"):
+                        st.session_state.pop("fill_preview", None)
                         try:
                             preview = preview_manual_fills(account_id, fill_raw)
                             st.session_state["fill_preview"] = preview
                             st.session_state["fill_preview_sha"] = fill_sha
+                            st.session_state["fill_preview_account"] = (
+                                account["account_fingerprint"]
+                            )
                         except Exception as exc:
                             st.error(f"成交预览失败：{exc}")
                     preview = st.session_state.get("fill_preview")
-                    if preview and st.session_state.get("fill_preview_sha") == fill_sha:
+                    if preview_matches(
+                        preview, fill_sha, account, st.session_state.get("fill_preview_sha"),
+                        st.session_state.get("fill_preview_account"),
+                    ):
                         st.write(
                             f"新增 {preview['accepted_count']} 笔，重复 "
                             f"{preview['duplicate_count']} 笔；预览后现金 "
