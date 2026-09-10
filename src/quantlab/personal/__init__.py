@@ -6,7 +6,11 @@ from quantlab.personal.account import (
     list_accounts,
     load_account,
 )
-from quantlab.personal.cash_flow import CashFlowDirection, ExternalCashFlow
+from quantlab.personal.cash_flow import (
+    CashFlowDirection,
+    CashFlowTimingQuality,
+    ExternalCashFlow,
+)
 from quantlab.personal.plan import build_reference_plan, load_latest_plan
 from quantlab.personal.tracking import (
     build_plan_fill_comparison,
@@ -27,6 +31,7 @@ from quantlab.personal.valuation_checkpoint import (
 
 __all__ = [
     "CashFlowDirection",
+    "CashFlowTimingQuality",
     "ExternalCashFlow",
     "build_plan_fill_comparison",
     "build_reference_plan",
