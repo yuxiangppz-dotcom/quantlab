@@ -16,6 +16,7 @@ ACCOUNT_HEADER = (
     "account_id,account_mode,as_of,cash_cny,instrument_id,quantity,"
     "sellable_quantity,reference_cost_cny,open_orders_declaration\n"
 )
+TARGET_WEIGHT = 0.5
 
 
 def _write_single_name_snapshot(
@@ -36,7 +37,7 @@ def _write_single_name_snapshot(
                 "alpha_score": 1.0,
                 "rank": 1,
                 "selected": True,
-                "target_weight": 1.0,
+                "target_weight": TARGET_WEIGHT,
                 "risk_context": "NO_CONTEXT_EVENT_REPORTED",
             }
         ]
@@ -55,7 +56,7 @@ def _write_single_name_snapshot(
             "score_definition": "transparent_combo_v1",
             "score_direction": "higher_is_better",
             "target_count": 1,
-            "max_weight_per_name": 1.0,
+            "max_weight_per_name": TARGET_WEIGHT,
             "gross_exposure": 1.0,
             "tie_policy": "alpha_score_then_instrument_id",
         },
@@ -66,9 +67,9 @@ def _write_single_name_snapshot(
             "tie_policy": "alpha_score_then_instrument_id",
         },
         "target": {
-            "position_weight": 1.0,
-            "position_weight_sum": 1.0,
-            "cash_weight": 0.0,
+            "position_weight": TARGET_WEIGHT,
+            "position_weight_sum": TARGET_WEIGHT,
+            "cash_weight": 1.0 - TARGET_WEIGHT,
         },
     }
     payload = {
