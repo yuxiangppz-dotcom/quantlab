@@ -141,6 +141,72 @@ class DailyBasic:
 
 
 @dataclass(frozen=True)
+class DailyPriceLimit:
+    """Provider-reported daily price limits; never a percentage inference."""
+
+    instrument_id: str
+    trade_date: date
+    pre_close: float | None
+    up_limit: float
+    down_limit: float
+    exchange: str | None
+    source: str
+    source_record_id: str
+
+
+@dataclass(frozen=True)
+class FinancialIndicatorObservation:
+    """A financial-indicator version first observed by QuantLab.
+
+    Tushare exposes ``ann_date`` and ``update_flag`` but no revision timestamp.
+    Consequently these rows are prospective evidence from ``available_from``;
+    they must not be retroactively joined to historical features.
+    """
+
+    instrument_id: str
+    announcement_date: date
+    period_end: date
+    update_flag: str | None
+    roe: float | None
+    roa: float | None
+    gross_profit_margin: float | None
+    net_profit_margin: float | None
+    revenue_growth_yoy: float | None
+    net_profit_growth_yoy: float | None
+    operating_cashflow_to_revenue: float | None
+    debt_to_assets: float | None
+    observed_at: datetime
+    available_from: date
+    pit_status: str
+    source: str
+    source_record_id: str
+
+
+@dataclass(frozen=True)
+class DividendObservation:
+    """A provider dividend/corporate-action row first observed by QuantLab."""
+
+    instrument_id: str
+    period_end: date | None
+    announcement_date: date | None
+    process_status: str | None
+    stock_dividend_per_share: float | None
+    stock_bonus_rate: float | None
+    stock_conversion_rate: float | None
+    cash_dividend_after_tax: float | None
+    cash_dividend_before_tax: float | None
+    record_date: date | None
+    ex_date: date | None
+    pay_date: date | None
+    share_listing_date: date | None
+    implementation_announcement_date: date | None
+    observed_at: datetime
+    available_from: date
+    source: str
+    source_record_id: str
+
+
+@dataclass(frozen=True)
 class RawLifecycleAnnouncement:
     """Provider-neutral, date-partitioned announcement-index record.
 

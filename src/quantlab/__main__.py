@@ -66,7 +66,13 @@ def _daily(as_of: date | None) -> int:
     return 0
 
 
-def _update(through: date | None, include_context: bool) -> int:
+def _update(
+    through: date | None,
+    include_context: bool,
+    include_enrichment: bool,
+    financial_period: date | None,
+    dividend_instruments: tuple[str, ...],
+) -> int:
     from quantlab.daily.update import run_incremental_update
     from quantlab.data import ParquetStorage, TushareProvider
 
@@ -77,6 +83,9 @@ def _update(through: date | None, include_context: bool) -> int:
         storage,
         through or datetime.now(SHANGHAI).date(),
         include_context=include_context,
+        include_enrichment=include_enrichment,
+        financial_period=financial_period,
+        dividend_instruments=dividend_instruments,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2, default=str))
     return 0
@@ -191,6 +200,22 @@ def _parser() -> argparse.ArgumentParser:
     update.add_argument(
         "--no-context", action="store_true", help="Skip ST/suspension context endpoints."
     )
+    update.add_argument(
+        "--enrichment",
+        action="store_true",
+        help="Fetch stk_limit and explicitly scoped financial/dividend enrichment.",
+    )
+    update.add_argument(
+        "--financial-period",
+        type=_date,
+        help="Reporting period end to observe with fina_indicator_vip.",
+    )
+    update.add_argument(
+        "--dividend-instrument",
+        action="append",
+        default=[],
+        help="Explicit A-share instrument to observe for dividend context (repeatable).",
+    )
     daily = sub.add_parser("daily", help="Generate an offline daily ranking snapshot.")
     daily.add_argument("--as-of", type=_date, help="Requested local date (YYYY-MM-DD).")
     research = sub.add_parser("research", help="Run a registered research experiment.")
@@ -229,7 +254,13 @@ def main() -> None:
     if args.command == "doctor":
         code = _doctor(args.json)
     elif args.command == "update":
-        code = _update(args.through, not args.no_context)
+        code = _update(
+            args.through,
+            not args.no_context,
+            args.enrichment,
+            args.financial_period,
+            tuple(args.dividend_instrument),
+        )
     elif args.command == "daily":
         code = _daily(args.as_of)
     elif args.command == "research":

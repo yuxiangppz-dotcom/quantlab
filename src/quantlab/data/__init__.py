@@ -1,10 +1,20 @@
 """Market data acquisition and storage."""
 
+from quantlab.data.enrichment import (
+    EnrichmentDatasetResult,
+    inspect_enrichment_status,
+    sync_daily_price_limits,
+    sync_dividend_observations,
+    sync_financial_indicator_observation,
+)
 from quantlab.data.models import (
     AdjFactor,
     DailyBar,
     DailyBasic,
+    DailyPriceLimit,
     DataValidationError,
+    DividendObservation,
+    FinancialIndicatorObservation,
     IndexDailyBar,
     NameChangeRecord,
     RawLifecycleAnnouncement,
@@ -42,9 +52,13 @@ __all__ = [
     "ContextSyncResult",
     "DailyBar",
     "DailyBasic",
+    "DailyPriceLimit",
     "DataProvider",
     "DataValidationError",
     "DuplicateDataError",
+    "DividendObservation",
+    "FinancialIndicatorObservation",
+    "EnrichmentDatasetResult",
     "IndexDailyBar",
     "NameChangeRecord",
     "ParquetStorage",
@@ -69,4 +83,8 @@ __all__ = [
     "validate_daily_bars",
     "validate_daily_basic",
     "validate_index_daily_bars",
+    "inspect_enrichment_status",
+    "sync_daily_price_limits",
+    "sync_dividend_observations",
+    "sync_financial_indicator_observation",
 ]

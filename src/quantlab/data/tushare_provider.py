@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import math
 import os
 from collections.abc import Mapping
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import tushare as ts
@@ -16,6 +18,10 @@ from quantlab.data.models import (
     AdjFactor,
     DailyBar,
     DailyBasic,
+    DailyPriceLimit,
+    DataValidationError,
+    DividendObservation,
+    FinancialIndicatorObservation,
     IndexDailyBar,
     NameChangeRecord,
     RawLifecycleAnnouncement,
@@ -34,6 +40,7 @@ from quantlab.data.provider import DataProvider
 _SECURITY_FIELDS = "ts_code,symbol,name,exchange,market,list_status,list_date,delist_date"
 _LIST_STATUSES = ("L", "D", "P")
 _CALENDAR_EXCHANGES = (SSE, SZSE)
+_SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 def security_from_row(row: Mapping[str, Any]) -> Security:
@@ -126,6 +133,89 @@ def daily_basic_from_row(row: Mapping[str, Any]) -> DailyBasic:
         turnover_rate=_to_float(row["turnover_rate"]) / 100.0,
         total_mv=_to_float(row["total_mv"]) * 10000.0,
         circ_mv=_to_float(row["circ_mv"]) * 10000.0,
+    )
+
+
+def _optional_float(row: Mapping[str, Any], name: str) -> float | None:
+    value = row.get(name)
+    if value is None or pd.isna(value):
+        return None
+    result = float(value)
+    if not math.isfinite(result):
+        raise DataValidationError(f"non-finite provider value for {name}")
+    return result
+
+
+def daily_price_limit_from_row(row: Mapping[str, Any]) -> DailyPriceLimit:
+    payload = dict(row)
+    fingerprint = canonical_payload_fingerprint(payload)
+    return DailyPriceLimit(
+        instrument_id=str(payload["ts_code"]),
+        trade_date=parse_required_yyyymmdd(payload["trade_date"]),
+        pre_close=_optional_float(payload, "pre_close"),
+        up_limit=_to_float(payload["up_limit"]),
+        down_limit=_to_float(payload["down_limit"]),
+        exchange=_optional_text(payload, "exchange"),
+        source="tushare.stk_limit",
+        source_record_id=fingerprint,
+    )
+
+
+def financial_indicator_from_row(
+    row: Mapping[str, Any], observed_at: datetime
+) -> FinancialIndicatorObservation:
+    payload = dict(row)
+    announcement_date = parse_required_yyyymmdd(payload["ann_date"])
+    # No historical revision timestamp is exposed.  First local observation is
+    # therefore the earliest defensible availability boundary.
+    available_from = max(announcement_date, observed_at.astimezone(_SHANGHAI).date())
+    return FinancialIndicatorObservation(
+        instrument_id=str(payload["ts_code"]),
+        announcement_date=announcement_date,
+        period_end=parse_required_yyyymmdd(payload["end_date"]),
+        update_flag=_optional_text(payload, "update_flag"),
+        roe=_optional_float(payload, "roe"),
+        roa=_optional_float(payload, "roa"),
+        gross_profit_margin=_optional_float(payload, "grossprofit_margin"),
+        net_profit_margin=_optional_float(payload, "netprofit_margin"),
+        revenue_growth_yoy=_optional_float(payload, "tr_yoy"),
+        net_profit_growth_yoy=_optional_float(payload, "netprofit_yoy"),
+        operating_cashflow_to_revenue=_optional_float(payload, "ocf_to_or"),
+        debt_to_assets=_optional_float(payload, "debt_to_assets"),
+        observed_at=observed_at,
+        available_from=available_from,
+        pit_status="prospective_from_first_local_observation",
+        source="tushare.fina_indicator_vip",
+        source_record_id=canonical_payload_fingerprint(payload),
+    )
+
+
+def dividend_from_row(row: Mapping[str, Any], observed_at: datetime) -> DividendObservation:
+    payload = dict(row)
+    known_date = (
+        parse_yyyymmdd(payload.get("imp_ann_date"))
+        or parse_yyyymmdd(payload.get("ann_date"))
+        or observed_at.astimezone(_SHANGHAI).date()
+    )
+    return DividendObservation(
+        instrument_id=str(payload["ts_code"]),
+        period_end=parse_yyyymmdd(payload.get("end_date")),
+        announcement_date=parse_yyyymmdd(payload.get("ann_date")),
+        process_status=_optional_text(payload, "div_proc"),
+        stock_dividend_per_share=_optional_float(payload, "stk_div"),
+        stock_bonus_rate=_optional_float(payload, "stk_bo_rate"),
+        stock_conversion_rate=_optional_float(payload, "stk_co_rate"),
+        cash_dividend_after_tax=_optional_float(payload, "cash_div"),
+        cash_dividend_before_tax=_optional_float(payload, "cash_div_tax"),
+        record_date=parse_yyyymmdd(payload.get("record_date")),
+        ex_date=parse_yyyymmdd(payload.get("ex_date")),
+        pay_date=parse_yyyymmdd(payload.get("pay_date")),
+        share_listing_date=parse_yyyymmdd(payload.get("div_listdate")),
+        implementation_announcement_date=parse_yyyymmdd(payload.get("imp_ann_date")),
+        observed_at=observed_at,
+        available_from=max(known_date, observed_at.astimezone(_SHANGHAI).date()),
+        source="tushare.dividend",
+        source_record_id=canonical_payload_fingerprint(payload),
     )
 
 
@@ -299,6 +389,44 @@ class TushareProvider(DataProvider):
         )
         return [index_daily_from_row(row) for row in frame.to_dict("records")]
 
+    def get_daily_price_limits_by_date(self, trade_date: date) -> list[DailyPriceLimit]:
+        frame = self._pro.stk_limit(
+            trade_date=format_yyyymmdd(trade_date),
+            fields="ts_code,trade_date,pre_close,up_limit,down_limit,asset_type,exchange",
+        )
+        if len(frame) >= 5800:
+            raise RuntimeError("stk_limit response reached documented row limit")
+        if "asset_type" in frame:
+            frame = frame[frame["asset_type"].astype(str).eq("STK")]
+        return [daily_price_limit_from_row(row) for row in frame.to_dict("records")]
+
+    def get_financial_indicators_by_period(
+        self, period_end: date
+    ) -> list[FinancialIndicatorObservation]:
+        observed_at = datetime.now(UTC)
+        frame = self._pro.fina_indicator_vip(
+            period=format_yyyymmdd(period_end),
+            fields=(
+                "ts_code,ann_date,end_date,roe,roa,grossprofit_margin,"
+                "netprofit_margin,tr_yoy,netprofit_yoy,ocf_to_or,debt_to_assets,update_flag"
+            ),
+        )
+        return [financial_indicator_from_row(row, observed_at) for row in frame.to_dict("records")]
+
+    def get_dividends(self, instrument_id: str) -> list[DividendObservation]:
+        observed_at = datetime.now(UTC)
+        frame = self._pro.dividend(
+            ts_code=instrument_id,
+            fields=(
+                "ts_code,end_date,ann_date,div_proc,stk_div,stk_bo_rate,stk_co_rate,"
+                "cash_div,cash_div_tax,record_date,ex_date,pay_date,div_listdate,"
+                "imp_ann_date"
+            ),
+        )
+        if len(frame) >= 2000:
+            raise RuntimeError("dividend response reached documented row limit")
+        return [dividend_from_row(row, observed_at) for row in frame.to_dict("records")]
+
     def probe_lifecycle_capabilities(self, probe_date: date) -> dict[str, dict[str, object]]:
         """Perform minimal API calls and return only safe capability metadata.
 
@@ -306,6 +434,7 @@ class TushareProvider(DataProvider):
         retained or surfaced.  The result intentionally contains only endpoint,
         outcome, row count and exception class.
         """
+
         def probe(
             endpoint: str, call, date_column: str | None, limit: int | None
         ) -> dict[str, object]:
@@ -352,9 +481,7 @@ class TushareProvider(DataProvider):
         return {
             "stock_basic": probe(
                 "stock_basic",
-                lambda: self._pro.stock_basic(
-                    exchange="", list_status="L", fields="ts_code"
-                ),
+                lambda: self._pro.stock_basic(exchange="", list_status="L", fields="ts_code"),
                 None,
                 None,
             ),
@@ -364,14 +491,10 @@ class TushareProvider(DataProvider):
             "suspend_d": probe(
                 "suspend_d", lambda: self._pro.suspend_d(trade_date=day), "trade_date", 5000
             ),
-            "anns_d": probe(
-                "anns_d", lambda: self._pro.anns_d(ann_date=day), "ann_date", 2000
-            ),
+            "anns_d": probe("anns_d", lambda: self._pro.anns_d(ann_date=day), "ann_date", 2000),
             "namechange": probe(
                 "namechange",
-                lambda: self._pro.namechange(
-                    ts_code="000001.SZ", start_date=day, end_date=day
-                ),
+                lambda: self._pro.namechange(ts_code="000001.SZ", start_date=day, end_date=day),
                 None,
                 None,
             ),

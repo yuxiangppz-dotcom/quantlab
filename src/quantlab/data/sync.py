@@ -69,9 +69,7 @@ def validate_daily_bars(bars: list[DailyBar], expected_date: date) -> None:
             )
         key = (bar.instrument_id, bar.trade_date)
         if key in seen:
-            raise DataValidationError(
-                f"Duplicate bar for {bar.instrument_id} on {bar.trade_date}"
-            )
+            raise DataValidationError(f"Duplicate bar for {bar.instrument_id} on {bar.trade_date}")
         seen.add(key)
 
         for field_name, value in (
@@ -93,13 +91,9 @@ def validate_daily_bars(bars: list[DailyBar], expected_date: date) -> None:
                 )
 
         if bar.high < bar.open or bar.high < bar.close or bar.high < bar.low:
-            raise DataValidationError(
-                f"Invalid high for {bar.instrument_id} on {bar.trade_date}"
-            )
+            raise DataValidationError(f"Invalid high for {bar.instrument_id} on {bar.trade_date}")
         if bar.low > bar.open or bar.low > bar.close:
-            raise DataValidationError(
-                f"Invalid low for {bar.instrument_id} on {bar.trade_date}"
-            )
+            raise DataValidationError(f"Invalid low for {bar.instrument_id} on {bar.trade_date}")
 
 
 def validate_adj_factors(factors: list[AdjFactor], expected_date: date) -> None:
@@ -245,8 +239,7 @@ def validate_index_daily_bars(bars: list[IndexDailyBar], expected_date: date) ->
         ):
             if value is None or not math.isfinite(value) or value <= 0:
                 raise DataValidationError(
-                    f"Invalid {field_name} for {bar.instrument_id} "
-                    f"on {bar.trade_date}"
+                    f"Invalid {field_name} for {bar.instrument_id} on {bar.trade_date}"
                 )
 
         for field_name, value in (("volume", bar.volume), ("amount", bar.amount)):
@@ -255,18 +248,13 @@ def validate_index_daily_bars(bars: list[IndexDailyBar], expected_date: date) ->
             # finite value is a data error.
             if math.isfinite(value) and value < 0:
                 raise DataValidationError(
-                    f"Invalid {field_name} for {bar.instrument_id} "
-                    f"on {bar.trade_date}"
+                    f"Invalid {field_name} for {bar.instrument_id} on {bar.trade_date}"
                 )
 
         if bar.high < bar.open or bar.high < bar.close or bar.high < bar.low:
-            raise DataValidationError(
-                f"Invalid high for {bar.instrument_id} on {bar.trade_date}"
-            )
+            raise DataValidationError(f"Invalid high for {bar.instrument_id} on {bar.trade_date}")
         if bar.low > bar.open or bar.low > bar.close:
-            raise DataValidationError(
-                f"Invalid low for {bar.instrument_id} on {bar.trade_date}"
-            )
+            raise DataValidationError(f"Invalid low for {bar.instrument_id} on {bar.trade_date}")
 
 
 def sync_index_daily_history(
@@ -459,16 +447,26 @@ def _validate_context_rows(items, expected_date: date, dataset: str, limit: int)
 
 
 def _context_result(
-    dataset: str, start_date: date, end_date: date, expected: list[date],
-    completed: list[date], truncated: list[date], rows,
+    dataset: str,
+    start_date: date,
+    end_date: date,
+    expected: list[date],
+    completed: list[date],
+    truncated: list[date],
+    rows,
 ) -> ContextSyncResult:
     completed_set = set(completed)
     missing = tuple(d.isoformat() for d in expected if d not in completed_set)
     return ContextSyncResult(
-        dataset=dataset, requested_start=start_date, requested_end=end_date,
-        expected_open_sessions=len(expected), completed_sessions=len(completed_set),
-        missing_sessions=missing, truncated_sessions=tuple(d.isoformat() for d in truncated),
-        row_count=len(rows), unique_instruments=len({row.instrument_id for row in rows}),
+        dataset=dataset,
+        requested_start=start_date,
+        requested_end=end_date,
+        expected_open_sessions=len(expected),
+        completed_sessions=len(completed_set),
+        missing_sessions=missing,
+        truncated_sessions=tuple(d.isoformat() for d in truncated),
+        row_count=len(rows),
+        unique_instruments=len({row.instrument_id for row in rows}),
         complete=not missing and not truncated,
     )
 
@@ -483,12 +481,22 @@ def sync_lifecycle_context(
     """Sync date-scoped ST/S-R context with explicit completeness accounting."""
     expected = _open_trade_dates(provider, start_date, end_date)
     configs = (
-        ("stock_st", 1000, storage.stock_st_v1_exists,
-         provider.get_stock_st_by_date, storage.save_stock_st_v1_by_date,
-         storage.load_stock_st_v1_by_date),
-        ("suspend_d", 5000, storage.suspensions_v1_exists,
-         provider.get_suspensions_by_date, storage.save_suspensions_v1_by_date,
-         storage.load_suspensions_v1_by_date),
+        (
+            "stock_st",
+            1000,
+            storage.stock_st_v1_exists,
+            provider.get_stock_st_by_date,
+            storage.save_stock_st_v1_by_date,
+            storage.load_stock_st_v1_by_date,
+        ),
+        (
+            "suspend_d",
+            5000,
+            storage.suspensions_v1_exists,
+            provider.get_suspensions_by_date,
+            storage.save_suspensions_v1_by_date,
+            storage.load_suspensions_v1_by_date,
+        ),
     )
     results: dict[str, ContextSyncResult] = {}
     for dataset, limit, exists, fetch, save, load in configs:

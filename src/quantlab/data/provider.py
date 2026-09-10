@@ -9,6 +9,9 @@ from quantlab.data.models import (
     AdjFactor,
     DailyBar,
     DailyBasic,
+    DailyPriceLimit,
+    DividendObservation,
+    FinancialIndicatorObservation,
     IndexDailyBar,
     NameChangeRecord,
     RawLifecycleAnnouncement,
@@ -76,3 +79,17 @@ class DataProvider(ABC):
         self, instrument_id: str, start_date: date, end_date: date
     ) -> list[IndexDailyBar]:
         """Return index daily bars for one index instrument and date range."""
+
+    def get_daily_price_limits_by_date(self, trade_date: date) -> list[DailyPriceLimit]:
+        """Return provider-reported full-market price limits for one date."""
+        raise NotImplementedError
+
+    def get_financial_indicators_by_period(
+        self, period_end: date
+    ) -> list[FinancialIndicatorObservation]:
+        """Return a point-observed financial-indicator snapshot for one period."""
+        raise NotImplementedError
+
+    def get_dividends(self, instrument_id: str) -> list[DividendObservation]:
+        """Return point-observed dividend context for one instrument."""
+        raise NotImplementedError

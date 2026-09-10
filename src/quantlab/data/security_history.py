@@ -49,9 +49,7 @@ def load_security_code_changes(path: str | Path) -> list[SecurityCodeChange]:
         except ValueError as exc:
             raise DataValidationError(f"invalid date in code history row: {row}") from exc
         if effective <= original:
-            raise DataValidationError(
-                f"effective_date <= original_list_date for {old}"
-            )
+            raise DataValidationError(f"effective_date <= original_list_date for {old}")
 
         changes.append(
             SecurityCodeChange(

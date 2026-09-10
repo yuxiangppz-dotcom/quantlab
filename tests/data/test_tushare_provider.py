@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pandas as pd
 import pytest
@@ -12,7 +12,13 @@ from quantlab.data.models import (
     Security,
     TradingCalendar,
 )
-from quantlab.data.tushare_provider import TushareProvider, index_daily_from_row
+from quantlab.data.tushare_provider import (
+    TushareProvider,
+    daily_price_limit_from_row,
+    dividend_from_row,
+    financial_indicator_from_row,
+    index_daily_from_row,
+)
 
 
 def _index_row(**overrides):
@@ -163,9 +169,74 @@ def test_daily_basic_from_row_units() -> None:
     db = tushare_provider.daily_basic_from_row(row)
     assert db.instrument_id == "600519.SH"
     assert db.trade_date == date(2026, 7, 1)
-    assert db.turnover_rate == pytest.approx(0.052)   # 5.2% -> decimal
+    assert db.turnover_rate == pytest.approx(0.052)  # 5.2% -> decimal
     assert db.total_mv == pytest.approx(1_230_000.0)  # 123 万元 -> CNY
-    assert db.circ_mv == pytest.approx(1_000_000.0)   # 100 万元 -> CNY
+    assert db.circ_mv == pytest.approx(1_000_000.0)  # 100 万元 -> CNY
+
+
+def test_price_limit_is_provider_fact_not_inferred_percentage() -> None:
+    item = daily_price_limit_from_row(
+        {
+            "ts_code": "000001.SZ",
+            "trade_date": "20260909",
+            "pre_close": 11.52,
+            "up_limit": 12.67,
+            "down_limit": 10.37,
+            "exchange": "SZSE",
+        }
+    )
+    assert item.up_limit == 12.67
+    assert item.down_limit == 10.37
+    assert item.source == "tushare.stk_limit"
+
+
+def test_financial_revision_is_only_available_from_first_local_observation() -> None:
+    observed = datetime(2026, 9, 10, 2, tzinfo=UTC)
+    item = financial_indicator_from_row(
+        {
+            "ts_code": "000001.SZ",
+            "ann_date": "20250314",
+            "end_date": "20241231",
+            "roe": 9.1,
+            "roa": 0.8,
+            "grossprofit_margin": None,
+            "netprofit_margin": 31.0,
+            "tr_yoy": 4.2,
+            "netprofit_yoy": 5.1,
+            "ocf_to_or": 20.0,
+            "debt_to_assets": 91.0,
+            "update_flag": "1",
+        },
+        observed,
+    )
+    assert item.available_from == date(2026, 9, 10)
+    assert item.pit_status == "prospective_from_first_local_observation"
+    assert item.update_flag == "1"
+
+
+def test_dividend_context_does_not_imply_account_posting() -> None:
+    observed = datetime(2026, 9, 10, 2, tzinfo=UTC)
+    item = dividend_from_row(
+        {
+            "ts_code": "000001.SZ",
+            "end_date": "20241231",
+            "ann_date": "20250314",
+            "div_proc": "实施",
+            "stk_div": 0,
+            "stk_bo_rate": 0,
+            "stk_co_rate": 0,
+            "cash_div": 0.2,
+            "cash_div_tax": 0.25,
+            "record_date": "20250610",
+            "ex_date": "20250611",
+            "pay_date": "20250611",
+            "div_listdate": None,
+            "imp_ann_date": "20250604",
+        },
+        observed,
+    )
+    assert item.available_from == date(2026, 9, 10)
+    assert item.cash_dividend_before_tax == 0.25
 
 
 def test_required_trade_date_missing_raises() -> None:
@@ -218,24 +289,39 @@ class _FakePro:
         return pd.DataFrame([_SECURITY_ROWS[kwargs["list_status"]]])
 
     def trade_cal(self, **kwargs):
-        return pd.DataFrame([
-            {"exchange": kwargs["exchange"], "cal_date": "20260101", "is_open": 1},
-        ])
+        return pd.DataFrame(
+            [
+                {"exchange": kwargs["exchange"], "cal_date": "20260101", "is_open": 1},
+            ]
+        )
 
     def daily(self, **kwargs):
         return pd.DataFrame([_daily_row()])
 
     def stock_st(self, **kwargs):
-        return pd.DataFrame([{
-            "ts_code": "002509.SZ", "trade_date": kwargs["trade_date"],
-            "name": "*ST天广", "type": "ST", "type_name": "风险警示板",
-        }])
+        return pd.DataFrame(
+            [
+                {
+                    "ts_code": "002509.SZ",
+                    "trade_date": kwargs["trade_date"],
+                    "name": "*ST天广",
+                    "type": "ST",
+                    "type_name": "风险警示板",
+                }
+            ]
+        )
 
     def suspend_d(self, **kwargs):
-        return pd.DataFrame([{
-            "ts_code": "002509.SZ", "trade_date": kwargs["trade_date"],
-            "suspend_timing": "09:30-10:00", "suspend_type": "S",
-        }])
+        return pd.DataFrame(
+            [
+                {
+                    "ts_code": "002509.SZ",
+                    "trade_date": kwargs["trade_date"],
+                    "suspend_timing": "09:30-10:00",
+                    "suspend_type": "S",
+                }
+            ]
+        )
 
     def anns_d(self, **kwargs):
         return pd.DataFrame(columns=["ann_date"])
@@ -289,10 +375,16 @@ def test_suspend_d_uses_trade_date_and_preserves_raw_s_r_fields(monkeypatch) -> 
 def test_capability_rejects_successful_wrong_date_scope(monkeypatch) -> None:
     class WrongDatePro(_FakePro):
         def suspend_d(self, **kwargs):
-            return pd.DataFrame([{
-                "ts_code": "002509.SZ", "trade_date": "20200514",
-                "suspend_timing": None, "suspend_type": "S",
-            }])
+            return pd.DataFrame(
+                [
+                    {
+                        "ts_code": "002509.SZ",
+                        "trade_date": "20200514",
+                        "suspend_timing": None,
+                        "suspend_type": "S",
+                    }
+                ]
+            )
 
     monkeypatch.setattr(tushare_provider.ts, "pro_api", lambda token: WrongDatePro())
     capability = TushareProvider(token="dummy").probe_lifecycle_capabilities(date(2020, 5, 15))

@@ -39,12 +39,16 @@ def classify_announcement(announcement: RawLifecycleAnnouncement) -> ClassifiedA
     title = announcement.title.replace(" ", "")
     if "终止上市" in title and ("决定" in title or "作出" in title):
         return ClassifiedAnnouncement(
-            announcement, "decision", VERIFICATION_TRUSTED,
+            announcement,
+            "decision",
+            VERIFICATION_TRUSTED,
             "formal termination-decision wording in announcement title",
         )
     if "终止上市" in title:
         return ClassifiedAnnouncement(
-            announcement, "possible", VERIFICATION_REVIEW_REQUIRED,
+            announcement,
+            "possible",
+            VERIFICATION_REVIEW_REQUIRED,
             "termination wording without unambiguous formal decision",
         )
     if "风险提示" in title or "退市风险警示" in title:
@@ -60,7 +64,9 @@ def classify_announcement(announcement: RawLifecycleAnnouncement) -> ClassifiedA
     else:
         category = "other"
     return ClassifiedAnnouncement(
-        announcement, category, VERIFICATION_REJECTED,
+        announcement,
+        category,
+        VERIFICATION_REJECTED,
         f"title classified as {category}; not a termination decision",
     )
 
@@ -86,31 +92,38 @@ def normalize_lifecycle_events(
             # The announcement is real but the local calendar cannot support a
             # safe PIT decision yet; retain no executable canonical event.
             continue
-        identity = "|".join((
-            ann.source, ann.source_record_id, ann.instrument_id,
-            EVENT_TYPE_TERMINATION_DECISION, ann.announcement_date.isoformat(),
-            ann.content_fingerprint,
-        ))
+        identity = "|".join(
+            (
+                ann.source,
+                ann.source_record_id,
+                ann.instrument_id,
+                EVENT_TYPE_TERMINATION_DECISION,
+                ann.announcement_date.isoformat(),
+                ann.content_fingerprint,
+            )
+        )
         event_id = hashlib.sha256(identity.encode("utf-8")).hexdigest()
-        events.append(SecurityLifecycleEvent(
-            event_id=event_id,
-            instrument_id=ann.instrument_id,
-            event_type=EVENT_TYPE_TERMINATION_DECISION,
-            event_date=ann.announcement_date,
-            event_time=ann.announcement_time,
-            available_from=available_from,
-            effective_date=None,
-            source=ann.source,
-            source_record_id=ann.source_record_id,
-            source_url=ann.source_url,
-            raw_title=ann.title,
-            verification_status=classified.verification_status,
-            classification_reason=(
-                f"{CLASSIFIER_VERSION}: {classified.classification_reason}; "
-                "daily PIT=next_open_session_after_announcement_date"
-            ),
-            content_fingerprint=ann.content_fingerprint,
-        ))
+        events.append(
+            SecurityLifecycleEvent(
+                event_id=event_id,
+                instrument_id=ann.instrument_id,
+                event_type=EVENT_TYPE_TERMINATION_DECISION,
+                event_date=ann.announcement_date,
+                event_time=ann.announcement_time,
+                available_from=available_from,
+                effective_date=None,
+                source=ann.source,
+                source_record_id=ann.source_record_id,
+                source_url=ann.source_url,
+                raw_title=ann.title,
+                verification_status=classified.verification_status,
+                classification_reason=(
+                    f"{CLASSIFIER_VERSION}: {classified.classification_reason}; "
+                    "daily PIT=next_open_session_after_announcement_date"
+                ),
+                content_fingerprint=ann.content_fingerprint,
+            )
+        )
     return sorted(events, key=lambda item: (item.available_from, item.event_id))
 
 
@@ -119,7 +132,8 @@ def events_available_as_of(
 ) -> list[SecurityLifecycleEvent]:
     """Return only trusted canonical events usable at the requested session."""
     return [
-        event for event in events
+        event
+        for event in events
         if event.verification_status == VERIFICATION_TRUSTED and event.available_from <= as_of
     ]
 
@@ -129,14 +143,16 @@ def termination_decisions_available_as_of(
 ) -> dict[str, SecurityLifecycleEvent]:
     """Select one deterministic trusted termination event per instrument."""
     candidates = [
-        event for event in events_available_as_of(events, as_of)
+        event
+        for event in events_available_as_of(events, as_of)
         if event.event_type == EVENT_TYPE_TERMINATION_DECISION
     ]
     by_instrument: dict[str, SecurityLifecycleEvent] = {}
     for event in candidates:
         existing = by_instrument.get(event.instrument_id)
         if existing is None or (event.available_from, event.event_id) < (
-            existing.available_from, existing.event_id
+            existing.available_from,
+            existing.event_id,
         ):
             by_instrument[event.instrument_id] = event
     return by_instrument
@@ -163,9 +179,7 @@ def events_to_facts(events: list[SecurityLifecycleEvent]) -> dict:
     return output
 
 
-def golden_event_audit(
-    manual_facts: dict, events: list[SecurityLifecycleEvent]
-) -> list[dict]:
+def golden_event_audit(manual_facts: dict, events: list[SecurityLifecycleEvent]) -> list[dict]:
     """Compare manual verified facts with systematic events without hardcoded IDs."""
     rows: list[dict] = []
     by_instrument: dict[str, list[SecurityLifecycleEvent]] = {}
@@ -180,17 +194,19 @@ def golden_event_audit(
             compatible = [e for e in candidates if e.verification_status == VERIFICATION_TRUSTED]
             matched = exact[0] if exact else (compatible[0] if compatible else None)
             status = "exact" if exact else ("compatible" if matched else "missing")
-            rows.append({
-                "instrument_id": instrument_id,
-                "manual_fact_id": fact.get("fact_id"),
-                "systematic_event_id": matched.event_id if matched else None,
-                "status": status,
-                "manual_date": fact.get("document_date"),
-                "systematic_date": matched.event_date.isoformat() if matched else None,
-                "available_from": matched.available_from.isoformat() if matched else None,
-                "classification": matched.verification_status if matched else None,
-                "source_url": matched.source_url if matched else None,
-            })
+            rows.append(
+                {
+                    "instrument_id": instrument_id,
+                    "manual_fact_id": fact.get("fact_id"),
+                    "systematic_event_id": matched.event_id if matched else None,
+                    "status": status,
+                    "manual_date": fact.get("document_date"),
+                    "systematic_date": matched.event_date.isoformat() if matched else None,
+                    "available_from": matched.available_from.isoformat() if matched else None,
+                    "classification": matched.verification_status if matched else None,
+                    "source_url": matched.source_url if matched else None,
+                }
+            )
     return rows
 
 
@@ -218,26 +234,27 @@ def lifecycle_coverage_rows(
         suspension_state = None
         if event and instrument_id in suspensions_by_id:
             suspension_state = any(
-                suspension.trade_date == event.available_from
-                and suspension.suspend_type == "S"
+                suspension.trade_date == event.available_from and suspension.suspend_type == "S"
                 for suspension in suspensions_by_id[instrument_id]
             )
-        rows.append({
-            "instrument_id": instrument_id,
-            "delist_date": (
-                delist_dates[instrument_id].isoformat()
-                if instrument_id in delist_dates
-                else None
-            ),
-            "st_observed": instrument_id in st_ids,
-            "termination_decision_available": event is not None,
-            "decision_available_from": event.available_from.isoformat() if event else None,
-            "suspension_context_observed": instrument_id in suspensions_by_id,
-            "suspended_on_available_from": suspension_state,
-            "first_tradable_price_after_available_from": (
-                first_after.isoformat() if first_after else None
-            ),
-            "last_observed_price_date": prices[-1][0].isoformat() if prices else None,
-            "exit_window_exists": bool(event and first_after),
-        })
+        rows.append(
+            {
+                "instrument_id": instrument_id,
+                "delist_date": (
+                    delist_dates[instrument_id].isoformat()
+                    if instrument_id in delist_dates
+                    else None
+                ),
+                "st_observed": instrument_id in st_ids,
+                "termination_decision_available": event is not None,
+                "decision_available_from": event.available_from.isoformat() if event else None,
+                "suspension_context_observed": instrument_id in suspensions_by_id,
+                "suspended_on_available_from": suspension_state,
+                "first_tradable_price_after_available_from": (
+                    first_after.isoformat() if first_after else None
+                ),
+                "last_observed_price_date": prices[-1][0].isoformat() if prices else None,
+                "exit_window_exists": bool(event and first_after),
+            }
+        )
     return rows

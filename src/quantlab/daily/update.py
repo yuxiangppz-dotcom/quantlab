@@ -5,6 +5,11 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 
+from quantlab.data.enrichment import (
+    sync_daily_price_limits,
+    sync_dividend_observations,
+    sync_financial_indicator_observation,
+)
 from quantlab.data.models import DataValidationError
 from quantlab.data.provider import DataProvider
 from quantlab.data.storage import ParquetStorage
@@ -28,6 +33,7 @@ class IncrementalUpdateResult:
     core_skipped_sessions: tuple[str, ...]
     index_synced_sessions: tuple[str, ...]
     context_status: dict
+    enrichment_status: dict
     stopped_at: str | None
     stop_reason: str | None
 
@@ -76,6 +82,9 @@ def run_incremental_update(
     *,
     include_context: bool = True,
     index_instruments: tuple[str, ...] = DEFAULT_INDICES,
+    include_enrichment: bool = False,
+    financial_period: date | None = None,
+    dividend_instruments: tuple[str, ...] = (),
 ) -> IncrementalUpdateResult:
     """Update missing daily partitions through a requested local date.
 
@@ -156,6 +165,18 @@ def run_incremental_update(
         )
         context_status["datasets"] = {name: asdict(result) for name, result in context.items()}
 
+    enrichment_status: dict = {"requested": include_enrichment, "datasets": {}}
+    if include_enrichment and completed_dates:
+        for completed_date in completed_dates:
+            result = sync_daily_price_limits(provider, storage, completed_date)
+            enrichment_status["datasets"][f"stk_limit:{completed_date}"] = result.to_dict()
+        if financial_period is not None:
+            result = sync_financial_indicator_observation(provider, storage, financial_period)
+            enrichment_status["datasets"]["fina_indicator_vip"] = result.to_dict()
+        if dividend_instruments:
+            result = sync_dividend_observations(provider, storage, dividend_instruments)
+            enrichment_status["datasets"]["dividend"] = result.to_dict()
+
     return IncrementalUpdateResult(
         requested_through=through,
         calendar_start=calendar_start,
@@ -164,6 +185,7 @@ def run_incremental_update(
         core_skipped_sessions=tuple(skipped),
         index_synced_sessions=tuple(index_synced),
         context_status=context_status,
+        enrichment_status=enrichment_status,
         stopped_at=stopped_at,
         stop_reason=stop_reason,
     )
