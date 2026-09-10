@@ -41,3 +41,49 @@ Ruff and git diff --check passed. Self-review ensured code HEAD is protected by
 the output fingerprint, zero required tables and nonpositive factor inputs are
 reported, and the CLI requires a clean pushed revision. The source checker is
 ready for the authorized real-data run; findings will be appended after that run.
+
+## Real input audit and interpretation
+
+Executed from clean pushed `2b46065e334d25a296929ab77c5adc1f32f11a22`;
+completed `2026-09-11T00:51:41.245480+08:00`. Output
+`data/products/research_input_audit/c8beae776bacaf8e0b5b42ddbb48ef347466c66eb48c012c801e1a440950be48/audit.json`.
+The 3,913,681-byte artifact binds 9,414 source files (787,024,156 bytes), with no
+source-hash changes during inspection. It covers 1,623 target sessions and 120
+warmup sessions from 2019-07-09, 1,743 inspected sessions total. Calendar: 12,264
+rows; security master: 5,900; code changes: three. No outcome/model was evaluated.
+
+Daily: 8,426,396 rows; adjustment factors: 8,624,420; daily basic: 8,411,869;
+existing benchmark indices: 5,229. All four datasets have every inspected daily
+partition. No duplicate/null-key, wrong-partition-date, daily OHLC/adjustment
+validity, calendar conflict, unmapped security or daily-to-adjustment join
+failure was found by these checks. This is local structural evidence, not
+independent certification of provider history or historical publication time.
+
+The result is **needs_input_work**, with 341 findings grouped as follows:
+
+| Finding | Evidence and scope | Impact and next action |
+|---|---|---|
+| High: missing index context | SSE Composite absent on all 1,623 target sessions; STAR50 absent on all 1,490 target sessions from 2020-07-23 | Acquire separately versioned research context; retain the three original benchmark partitions unchanged |
+| High: missing tradability context | 1,618 of 1,623 price-limit partitions missing; ST and suspension each missing 406 dates, 2025-01-02 through 2026-09-03 | Bounded resumable acquisition of only missing dates; physical completeness still does not establish full historical tradability |
+| High within the affected rows: missing daily-basic joins | 14,771 instrument-days over 321 dates across the raw universe; 14,758 use BJ identifiers and are outside the frozen SH/SZ A-share research scope; 13 SH/SZ A-share rows across four names remain | Keep universe attribution explicit; do not erase terminal/missing observations or silently shrink the research universe |
+| High within the affected rows: market-cap inconsistency | 603882.SH on 15 sessions, 2020-09-22 through 2020-10-20, has circulating market value above total market value | Preserve source values; investigate or explicitly mark affected features unavailable, with exclusion/coverage evidence |
+
+The 13 SH/SZ unmatched observations comprise 002604.SZ (four), 300216.SZ (five),
+000939.SZ (two), 000760.SZ (two). These counts were recomputed from the retained
+finding records, separately from the audit summary. Direct source spot checks
+confirmed the 603882.SH inconsistency on 2020-09-22 (44,225,679,286 circulating
+versus 44,071,390,536 total CNY) and 2020-10-20 (51,788,844,804 versus
+51,608,170,674 CNY). The underlying cause is not established; no repair was made.
+
+Completeness counts for ST/suspension concern their sparse event partitions,
+not a full per-security tradability matrix. Historical board membership,
+provider revisions, full corporate actions and complete cost evidence remain
+unverified. The 20% drawdown objective has not been tested or met by this audit.
+
+Three files changed; no scope deviations. Source checker self-review and all
+required tests passed. No provider calls, canonical writes, training, labels,
+new return calculations, real account imports, orders or strategy promotions.
+Freeze the audited checker after green CI. Next issue should repair the concrete
+index/context gaps with immutable provenance, then implement the predeclared
+features with explicit missing-data treatment. Final report commit, push and
+merge/CI evidence is recorded in the linked PR.
