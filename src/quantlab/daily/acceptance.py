@@ -10,11 +10,11 @@ from pathlib import Path
 import pandas as pd
 
 from quantlab.daily.experiments import load_baseline_view, load_latest_factor_view
+from quantlab.daily.integrity import load_validated_latest_snapshot
 from quantlab.daily.service import (
     PROJECT_ROOT,
     _atomic_write_text,
     inspect_data_status,
-    load_latest_snapshot,
 )
 from quantlab.personal import (
     list_accounts,
@@ -34,7 +34,7 @@ def run_v1_acceptance(
     account_id: str = "demo_200k", *, output_root: Path = DEFAULT_ACCEPTANCE_ROOT
 ) -> tuple[Path, Path, dict]:
     status = inspect_data_status()
-    snapshot = load_latest_snapshot()
+    snapshot = load_validated_latest_snapshot()
     baseline = load_baseline_view()
     factor_view = load_latest_factor_view()
     accounts = list_accounts()

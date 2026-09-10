@@ -42,7 +42,7 @@ def test_acceptance_requires_and_publishes_the_real_user_path(tmp_path: Path, mo
     monkeypatch.setattr(
         acceptance, "inspect_data_status", lambda: {"effective_as_of": "2026-09-09"}
     )
-    monkeypatch.setattr(acceptance, "load_latest_snapshot", lambda: snapshot)
+    monkeypatch.setattr(acceptance, "load_validated_latest_snapshot", lambda: snapshot)
     monkeypatch.setattr(
         acceptance,
         "load_baseline_view",
@@ -142,7 +142,7 @@ def test_acceptance_rejects_a_plan_bound_to_an_old_daily_snapshot(
     monkeypatch.setattr(
         acceptance, "inspect_data_status", lambda: {"effective_as_of": "2026-09-09"}
     )
-    monkeypatch.setattr(acceptance, "load_latest_snapshot", lambda: snapshot)
+    monkeypatch.setattr(acceptance, "load_validated_latest_snapshot", lambda: snapshot)
     monkeypatch.setattr(
         acceptance, "load_baseline_view", lambda: {"schema": "formal", "run_id": "run"}
     )
