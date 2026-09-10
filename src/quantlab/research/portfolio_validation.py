@@ -39,6 +39,7 @@ from quantlab.research.factor_registry import add_transparent_combination, build
 from quantlab.research.universe import filter_v1_universe, is_v1_a_share
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
+_COMPARABLE_STATUSES = {"completed", "completed_with_settlement_assumptions"}
 
 
 def _head() -> str:
@@ -88,6 +89,13 @@ def _targets(frame: pd.DataFrame, candidate: str, signal_dates: list[date]) -> d
     return targets
 
 
+def _require_comparable(status: str, n_obs: int, expected_n_obs: int, label: str) -> None:
+    if status not in _COMPARABLE_STATUSES:
+        raise RuntimeError(f"{label} is not comparable: run status {status}")
+    if n_obs != expected_n_obs:
+        raise RuntimeError(f"{label} attribution coverage mismatch: {n_obs} != {expected_n_obs}")
+
+
 def run_portfolio_translation_audit(
     config_path: Path,
     *,
@@ -112,7 +120,10 @@ def run_portfolio_translation_audit(
     if effective_text is None:
         raise ValueError("no complete daily data date for portfolio audit")
     period_start = date.fromisoformat(config["data_start"])
-    period_end = date.fromisoformat(effective_text)
+    effective = date.fromisoformat(effective_text)
+    period_end = date.fromisoformat(config["data_end"])
+    if period_end > effective:
+        raise ValueError("portfolio audit end exceeds latest complete data date")
     calendar = storage.load_trading_calendar()
     securities = storage.load_securities()
     open_dates = sorted(
@@ -174,6 +185,16 @@ def run_portfolio_translation_audit(
 
     control_spec = spec("equal_weight_v1_control", control_targets)
     control_result = control_spec.run()
+    _require_comparable(
+        control_result.status,
+        len(control_result.records) - 1,
+        len(open_dates) - 1,
+        "equal_weight_v1_control",
+    )
+    if control_result.valid_through != period_end:
+        raise RuntimeError(
+            "equal_weight_v1_control did not remain valid through the configured period end"
+        )
     control_returns = strategy_daily_returns(control_result.records, book="net")
     control_metrics = compute_metrics(
         control_result.records, control_result.rebalances, backtest_config
@@ -188,6 +209,7 @@ def run_portfolio_translation_audit(
         attribution = compare_benchmark(
             result.records, "equal_weight_v1_control", control_returns, book="net"
         )
+        _require_comparable(result.status, attribution.n_obs, len(result.records) - 1, candidate)
         symmetry = strategy_control_symmetry_audit(candidate_spec, control_spec)
         details[candidate] = {
             "run_status": result.status,
@@ -224,7 +246,10 @@ def run_portfolio_translation_audit(
         "code_head": _head(),
         "config_sha256": hashlib.sha256(config_path.read_bytes()).hexdigest(),
         "period": [period_start.isoformat(), period_end.isoformat()],
-        "history_status": "retrospective_test_observed_not_fresh_oos",
+        "history_status": (
+            "retrospective_discovery_validation; 2025-2026 history was previously observed; "
+            "not fresh OOS"
+        ),
         "signal_frequency": config["signal_frequency"],
         "execution_timing": "validated_T_close_signal_then_T_plus_1_close_engine",
         "control": {"status": control_result.status, "metrics": control_metrics},

@@ -2,7 +2,9 @@ from datetime import date
 
 import pandas as pd
 
-from quantlab.research.portfolio_validation import _targets
+import pytest
+
+from quantlab.research.portfolio_validation import _require_comparable, _targets
 
 
 def test_candidate_targets_use_higher_score_and_stable_ties() -> None:
@@ -23,3 +25,10 @@ def test_candidate_targets_use_higher_score_and_stable_ties() -> None:
         "000003.SZ",
     ]
     assert sum(item.target_weight for item in portfolio.positions) == 1.0
+
+
+def test_comparison_fails_closed_on_blocked_control_or_partial_alignment() -> None:
+    with pytest.raises(RuntimeError, match="run status"):
+        _require_comparable("blocked_by_unsupported_event", 10, 10, "control")
+    with pytest.raises(RuntimeError, match="coverage mismatch"):
+        _require_comparable("completed", 9, 10, "candidate")

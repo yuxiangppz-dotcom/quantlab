@@ -1,7 +1,7 @@
 {
   "experiment_id": "portfolio_translation_audit_v1_1",
   "data_start": "2020-01-01",
-  "data_end": "latest_complete",
+  "data_end": "2024-12-31",
   "signal_frequency": "weekly_first_open_session",
   "execution_lag_sessions": 1,
   "selection_fraction": 0.2,
@@ -15,6 +15,6 @@
     "transparent_combo_v1",
     "reversal_20d"
   ],
-  "history_status": "retrospective_test_observed",
+  "history_status": "retrospective_discovery_validation_history_already_observed",
   "performance_claim": false
 }
