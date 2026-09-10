@@ -135,6 +135,19 @@ def test_semantics_rejects_target_csv_weight_drift(
         integrity.validate_daily_snapshot_semantics(snapshot)
 
 
+def test_semantics_rejects_target_csv_rank_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot = _snapshot(tmp_path)
+    _skip_bundle_check(monkeypatch)
+    target = pd.read_csv(snapshot.target_path)
+    target.loc[0, "rank"] = 2
+    target.to_csv(snapshot.target_path, index=False)
+
+    with pytest.raises(DataValidationError, match="target rank"):
+        integrity.validate_daily_snapshot_semantics(snapshot)
+
+
 def test_semantics_rejects_report_cash_drift(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
