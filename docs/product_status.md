@@ -3,7 +3,36 @@
 This file distinguishes locally exercised product paths from planned work.
 It is evidence notes, not a substitute for tests or an investment claim.
 
-## Milestones
+## Current delivery: guided workbench (2026-09-10)
+
+- Seven Chinese pages now join the existing services into an explicit local
+  workflow, including bounded updates, temporally admitted forward observation,
+  cash-flow preview/import and immutable valuation access. See
+  [中文快速上手](quickstart_zh.md) and [完整手册](user_guide.md).
+- PR #36 excludes labels that cross chronological research split boundaries;
+  PR #37 binds manual fill execution/report times and preserves legacy warnings;
+  PR #39 resumes bounded daily updates from actual partition presence.
+- The authorized five-session live update added 2026-09-10 core/index data,
+  completed ST/suspension and limit context, and extended the calendar to
+  2026-10-15. The seven checked preexisting 2026-09-09 partition hashes stayed
+  unchanged. No older core/index partition gaps were reported in this inventory.
+- LightGBM/Qlib runtime smoke now passes after the user-authorized installation
+  of libgomp1. A smoke fit does not imply a validated market model.
+- Old shadow records without bound generation times are retained but excluded
+  from prospective counts. No retrospective artifact is relabelled as OOS.
+- Existing account modes cannot be changed by reimport; opening snapshots are
+  preserved by fingerprint while journals retain their original basis binding.
+- Final test counts, browser/launcher evidence, clean commit and CI identifiers
+  are recorded in the delivery PR and local delivery report after validation.
+
+Corporate-action postings, arbitrary historical account cutoffs, full performance
+eligibility and broker integration remain incomplete. No strategy was promoted.
+
+## Historical milestones (not current readiness evidence)
+
+The following notes describe earlier runs at their recorded time. In particular,
+the four-page UI, old data date, LightGBM runtime blocker and old test counts below
+have been superseded by the current delivery above.
 
 | Milestone | Status | Local evidence | Next action |
 |---|---|---|---|

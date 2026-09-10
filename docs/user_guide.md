@@ -1,95 +1,141 @@
-# QuantLab Daily v1.1 User Guide
+# QuantLab 个人量化工作台使用手册
 
-QuantLab Daily is a local research and assisted-decision tool. It does not send
-orders, move cash, or infer fills from daily bars.
+首次使用先看 [中文快速上手](quickstart_zh.md)。本手册说明账户字段和证据记录的具体含义。
 
-## Start and inspect
+## 启动与页面
 
-From WSL in `/home/administrator/projects/quantlab`:
+双击桌面 **QuantLab** 打开本机浏览器；双击 **Stop QuantLab** 停止后台服务。
+地址为 `http://127.0.0.1:8501`。关闭浏览器不会停止服务，电脑重启后需重新打开。
+重复启动会复用经过身份校验的进程，不会停止占用相同端口的其他程序。
+
+| 页面 | 用途 |
+|---|---|
+| 开始使用 | 查看实际数据日期、日报日期、有效前瞻数量，下载说明 |
+| 数据状态与日报 | 明确确认后更新数据、生成日报、查看覆盖和风险 |
+| 股票排名与因子 | 查看目标组合、因子和已有历史研究、下载排名 |
+| 前瞻观察 | 登记当前预测、检查成熟标签，区分旧版和有效记录 |
+| 账户与参考计划 | 导入完整快照、预览及导入实际成交、生成参考调仓计划 |
+| 资金流水与估值 | 预览及导入真实出入金、保存及下载账户估值 |
+| 回测与基准 | 阅读已有历史实验与基准，不能视为新样本外证据 |
+
+打开或刷新页面只读取本地内容。数据更新、日报生成、前瞻登记、账户导入和估值保存需要
+明确点击对应按钮。研究参数调整形成新的配置版本，不覆盖被冻结的历史结果。
+
+## 数据与日报
+
+建议交易日收盘后使用。更新补齐截至所选日期最近最多 5 个已知交易日的日线、复权因子、
+日频指标、三个基准指数、ST/停牌状态和涨跌停上下文，同时更新股票基础信息。
+日历查询范围为所选日期前 45 天至后 35 天。已有日线分区复用，不扩大为历史全量下载。
+更早的缺口会明确列出，需另行安排数据修复。
+
+源数据尚未完整时，更新停止并显示原因，解决后可重试。日历更新不代表行情齐全。
+“完整”只表示当前日频模型所需覆盖通过校验，不能推导出全部历史数据或所有证券可交易。
+财务版本、分红上下文不等于完整历史时点数据。
+
+更新后生成日报，核对日期。评分使用复权研究价格，参考计划和估值使用原始价格。
+信号日价格及涨跌停仅供核对，不能作为下一交易日成交承诺。
+Token 从本机环境读取，不要放入 CSV、截图、聊天、Git 或报错附件。
+
+## 前瞻观察
+
+完整日报必须属于当天，日报生成和预测登记均处于该信号日北京时间
+16:00 至次日 00:00 之前。采用本机时钟，属于本地审计记录，并非第三方可信时间戳。
+同一信号日期、模型版本和配置的首份记录固定保留。重复相同内容会复用；同一身份下
+改变输入不会获得可替换的预测。旧版无绑定时间证据和过期记录排除在有效前瞻统计之外，
+不回填或升级成新证据。
+
+20 个交易日标签未成熟时只显示等待，缺失保持缺失。评估独立追加，不能改写预测。
+相邻预测标签窗口重叠，记录数不是独立样本数，不能拼接成实盘收益曲线。
+
+## 账户快照
+
+下载空白模板，以 UTF-8 编码保存，保留全部表头及顺序。每只持仓一行，账户层字段各行一致。
+一次导入必须涵盖全部现金和持仓，是完整账本起点。
+
+| 字段 | 填写方式 |
+|---|---|
+| account_id | 1–64 位账户名，以字母或数字开头，其余可用字母、数字、下划线、点、短横线 |
+| account_mode | 自己的账户填 manual_tracking；演示填 demo_simulation；同名账户模式不可切换 |
+| as_of | 完整快照时间，必须含时区，如 2026-09-10T15:30:00+08:00 |
+| cash_cny | 非负人民币现金，至多两位小数，各行重复相同总现金 |
+| instrument_id | 如 000001.SZ；仅现金行留空 |
+| quantity | 正整数持仓股数；仅现金行填 0 |
+| sellable_quantity | 当前可卖股数，不超过总股数；仅现金行填 0 |
+| reference_cost_cny | 可选参考成本，非负且至多两位小数；未知留空 |
+| open_orders_declaration | 确认无未完成委托时填 none_declared；不确定时如实填 unknown |
+
+同名账户新快照会切换当前起点。旧起点按指纹保存在 snapshots/，旧账本仍归属旧起点，
+不能套用到新起点。只录入当前快照之后、且未被其包含的成交和出入金。
+完整备份账户目录后再迁移。界面暂不提供自动恢复旧起点，避免误恢复后重复记账。
+演示账户仅用于熟悉工具；重置演示不会将同名真实手工账户改成演示账户。
+
+## 真实成交
+
+选择手工账户，展开“人工成交：预览后导入”，下载模板。
+
+| 字段 | 含义 |
+|---|---|
+| account_id | 与选中账户一致 |
+| broker_trade_id | 券商真实成交编号，用于去重 |
+| trade_date | 上海时区实际成交日期，YYYY-MM-DD |
+| executed_at | 实际成交时刻，含时区，日期须与 trade_date 一致 |
+| reported_at | 记录/获知时刻，含时区，不得早于 executed_at |
+| instrument_id / side | 证券代码；BUY 或 SELL |
+| quantity | 实际正整数成交股数 |
+| price_cny | 实际成交价格 |
+| gross_notional_cny | 实际成交金额 |
+| fee_cny | 已知实际费用；不以猜测的零费用替代未知 |
+
+先预览，核对新增/重复笔数、股数、费用和回放后现金，再确认。文件、所选账户或状态变化后
+须重新预览。重复事实复用，相同编号的冲突事实拒绝，不能改编号掩盖错误。
+成交按实际发生时间参与现金、持仓及 T+1 回放；报告时间表示何时获知。
+旧记录缺实际成交时间仍可回放，但标为时间未验证，不能用于精确日内归因。
+
+## 出入金与估值
+
+在“资金流水与估值”选择手工账户，下载空白模板，以实际模板表头及顺序为准。
+
+| 字段 | 含义 |
+|---|---|
+| account_id / external_flow_id | 账户名及真实流水唯一编号 |
+| direction | DEPOSIT 入金；WITHDRAWAL 出金 |
+| amount_cny | 正数人民币金额，至多两位小数；出金也填正数 |
+| effective_at | 资金实际生效时刻，必须含时区 |
+| reported_at | 记录/获知时刻，含时区且不早于生效时刻 |
+
+预览后再确认。后发生的入金不能为早先买入融资。旧版缺生效时间记录保留未验证标记。
+估值绑定账户状态和已校验日报中的原始收盘价；相同内容复用，账户变化后应保存新记录。
+估值日期不能早于其使用的账户事实，价格缺失或关键绑定不成立时拒绝保存。
+估值是记录，完整公司行动入账和全部收益归因尚未完成，需与券商核对。
+
+## 参考计划与研究结果
+
+生成完整日报，导入或选定账户，再生成下一交易日参考计划。计划绑定账户、日报及导出文件。
+它不会预支预计卖出所得，也不会从日线推导真实成交。证据不足时限制动作。
+BUY/SELL/HOLD/NO_TRADE 表示参考买入、参考卖出、持有、不交易，均需人工复核。
+
+历史回测、候选模型和前瞻样本分别阅读。审批与下单权限独立，本工具没有券商下单入口。
+本次交付没有把任何策略批准用于真钱。
+
+## 文件与维护
+
+项目位于 WSL `/home/administrator/projects/quantlab`；Windows 可从
+`\\wsl.localhost\Ubuntu\home\administrator\projects\quantlab` 进入。
+
+- data/canonical/：正式数据。
+- data/products/：日报及验收等产品产物，前瞻等具体路径见输出记录。
+- data/accounts/：快照、按起点绑定的账本、计划和估值。迁移前完整备份。
+- data/runtime/ui/：服务日志和进程身份记录，不是交易证据。
+- 本地产物不提交 Git，仓库代码不自动备份个人账户与行情。
+
+开发维护时可在 WSL 项目目录运行：
 
 ```bash
 uv run quantlab doctor
-uv run quantlab ui
+uv run pytest
+uv run ruff check .
+git diff --check
 ```
 
-From Windows, run:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\start_quantlab_ui.ps1
-```
-
-The UI is local-only at `http://127.0.0.1:8501`. Refreshing it does not call a
-provider, train a model, generate a report, or import a fill.
-
-## Daily workflow
-
-1. Inspect the common complete data date on the first page.
-2. Explicitly run `uv run quantlab update` when an update is needed. This is the
-   only normal Daily command that calls Tushare and writes Canonical data.
-3. Click **生成/刷新日频报告**, or run `uv run quantlab daily`.
-4. Review data date, model status, risks, ranking, factors and research targets.
-   Signal-date provider-reported up/down limits are context only; the next
-   session still requires review.
-5. Optionally create a new immutable configuration in the UI. The baseline and
-   transparent-combination candidate are labelled separately; changing count,
-   cap or boards creates a new version and does not overwrite the frozen result.
-
-After a completed signal-date report, freeze forward evidence with:
-
-```bash
-uv run quantlab shadow
-```
-
-The same fingerprint is reused exactly. A model/config/code or Daily-content
-change creates a separate immutable prediction. Mature 20-session diagnostics
-are appended outside the prediction directory; this is not a backtest or fill.
-
-Optional Qlib research support is installed with `uv sync --extra qlib`. The
-verified integration sends QuantLab Canonical-derived DataFrames to Qlib's
-`StaticDataLoader`; it does not download Qlib market data or use Qlib's
-portfolio accounting.
-
-## Account and plan
-
-Download the account template from the fourth page. It is a complete snapshot:
-all rows repeat account id/mode/time/cash/open-order declaration, with one
-position per row. Cash and reference cost allow at most two CNY decimals;
-quantity and sellable quantity are integers.
-
-Use `manual_tracking` for your own complete snapshot. Use `demo_simulation` only
-for a clearly labelled demonstration. After import, click **生成下一交易日参考计划**.
-The output is BUY/SELL/HOLD/NO_TRADE reference action—not an order. Review the
-raw-close date, actual sellable quantity, estimated partial commission and every
-pending check.
-
-## Manual fills
-
-Download the fill template. Each actual broker fill needs a stable broker trade
-id, trade date, timezone-aware execution and report times, instrument, BUY/SELL, quantity,
-Decimal price, explicit gross amount, and actual fee.
-
-New fill CSVs require these columns in order:
-`account_id,broker_trade_id,trade_date,executed_at,reported_at,instrument_id,side,quantity,price_cny,gross_notional_cny,fee_cny`.
-The report time must not precede execution, and the Shanghai execution date must
-equal trade_date. Delayed reporting does not advance T+1 availability. Old journal
-versions remain readable with explicitly unverified execution timing; old CSVs
-are rejected instead of inferring an execution time. Fill-containing journals use
-v4. Timing completeness alone does not establish performance readiness or
-independent broker verification.
-
-Always click **预览并校验成交** first. The preview writes nothing. Only **确认导入已预览成交**
-commits the complete batch. Re-importing the same fill is a no-op; changed values
-under the same trade id are rejected. The page then shows replayed cash,
-positions, fees, and plan-versus-fill differences.
-
-## Acceptance and boundaries
-
-```bash
-uv run quantlab accept --account-id demo_200k
-```
-
-The acceptance artifact checks the local user path. Product readiness is not a
-strategy-profitability claim: the baseline remains test-observed and inferior
-to its equal-weight control, the candidate is unpromoted, execution readiness
-is false, and no broker gateway exists. See `docs/known_limitations.md` before
-using any reference plan.
+桌面快捷方式由 scripts/install_quantlab_shortcuts.ps1 安装，使用单次进程执行策略，
+无需更改系统全局策略。日常操作不需要打开终端。
