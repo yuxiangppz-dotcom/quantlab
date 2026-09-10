@@ -114,6 +114,8 @@ def build_round2_features(
     frame: pd.DataFrame,
     open_dates: list[date],
     index_bundle: dict,
+    *,
+    include_combination: bool = True,
 ) -> pd.DataFrame:
     """Retain source identities and values; mask only invalid dependent features."""
     if not frame.index.is_unique:
@@ -150,6 +152,7 @@ def build_round2_features(
     index_features = index_feature_frame(index_bundle, open_dates).set_index("trade_date")
     for name in INDEX_FEATURES:
         result[name] = result["trade_date"].map(index_features[name])
-    result = add_transparent_combination(result, list(COMBINATION))
+    if include_combination:
+        result = add_transparent_combination(result, list(COMBINATION))
     result["common_features_available"] = np.isfinite(result[list(AUGMENTED_FEATURES)]).all(axis=1)
     return result
