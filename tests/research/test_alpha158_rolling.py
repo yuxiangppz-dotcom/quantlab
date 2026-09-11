@@ -140,3 +140,29 @@ def test_metrics_include_unknown_labels_and_do_not_bridge_empty_sessions():
     assert daily.iloc[1].score_rows == 0
     assert daily.rank_stability.isna().all()
     assert daily.iloc[2].rank_ic == pytest.approx(1.0)
+
+
+def test_coordinator_limits_arrow_before_any_metadata_or_fit(tmp_path, monkeypatch):
+    import pyarrow as pa
+
+    from quantlab.research import alpha158_rolling as rolling
+
+    class StopBeforeWork(Exception):
+        pass
+
+    def inspect_before_plan(*args):
+        assert pa.cpu_count() == 2
+        assert pa.io_thread_count() == 2
+        raise StopBeforeWork
+
+    previous = pa.cpu_count(), pa.io_thread_count()
+    try:
+        pa.set_cpu_count(8)
+        pa.set_io_thread_count(8)
+        monkeypatch.setattr(rolling, "prepare_plan", inspect_before_plan)
+        with pytest.raises(StopBeforeWork):
+            rolling.run(tmp_path)
+        assert not list(tmp_path.rglob("started.json"))
+    finally:
+        pa.set_cpu_count(previous[0])
+        pa.set_io_thread_count(previous[1])

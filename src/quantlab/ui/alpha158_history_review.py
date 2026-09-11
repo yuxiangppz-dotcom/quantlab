@@ -18,7 +18,7 @@ def render_alpha158_history():
             return
         complete = report["status"] == "complete"
         if complete:
-            st.success("历史因子数据已生成并校验，尚未用这批数据训练模型。")
+            st.success("历史因子数据已生成并校验。本生成批次不含训练；滚动模型结果见上方。")
         else:
             st.info(
                 f"已保存 {report['completed_batches']} / {report['expected_batches']} 个因子批次。"
@@ -109,7 +109,7 @@ def render_alpha158_history():
                     "text/markdown",
                 )
         st.caption(
-            "下一步按预先固定的方案比较线性与 LightGBM 滚动模型，保留全部结果。"
+            "这批封存因子供上方固定的线性与 LightGBM 滚动比较使用，全部结果保留。"
             "因子数据可用不代表可以成交；完整费用、历史规则和公司行为记账仍需补齐。"
             "本批尚未评价净收益或验证 20% 最大回撤目标。"
         )

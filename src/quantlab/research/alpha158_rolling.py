@@ -326,6 +326,11 @@ def paired_diagnostics(out, plan, results):
 
 
 def run(root=PROJECT_ROOT):
+    import pyarrow as pa
+
+    # Model children already pinned Arrow; also pin the metadata coordinator.
+    pa.set_cpu_count(2)
+    pa.set_io_thread_count(2)
     out = root / OUTPUT
     with exclusive_job(out):
         plan = prepare_plan(root, out)
@@ -437,6 +442,8 @@ def load_report(out):
         report.get("performance_eligible") is not False
         or report.get("execution_authority") is not False
         or report.get("cumulative_fit_attempts") != 6
+        or report.get("completed_fits")
+        != sum(r["status"] == "completed" for r in report["attempts"])
         or [r["slot"] for r in report["attempts"]] != plan["slots"]
     ):
         raise DataValidationError("invalid rolling report authority or attempt count")

@@ -25,6 +25,8 @@ def render_alpha158_rolling():
         a, b = st.columns(2)
         a.metric("已消耗训练次数 / 上限", f"{report['cumulative_fit_attempts']} / 6")
         b.metric("完成训练及诊断", report["completed_fits"])
+        if report["status"] == "complete":
+            st.success("六次固定训练及诊断已完成，全部结果已保留。")
         status_names = {
             "completed": "完成",
             "failed": "失败（不重试）",
@@ -51,7 +53,12 @@ def render_alpha158_rolling():
                 if record["status"] == "failed":
                     st.error(f"窗口 {fold} · {name}：{record.get('error', '详见训练记录')}")
                 summary = record.get("summary", {})
-                for period, values in summary.get("summaries", {}).items():
+                summaries = summary.get("summaries", {})
+                for period in ("train", "evaluation", "observed_2026"):
+                    if period not in summaries:
+                        continue
+                    values = summaries[period]
+                    train_ic = summaries["train"]["mean_rank_ic"]
                     metrics.append(
                         {
                             "窗口": fold,
@@ -64,6 +71,13 @@ def render_alpha158_rolling():
                             "预测记录": values["score_rows"],
                             "标签有效记录": values["evaluation_rows"],
                             "日均 RankIC": values["mean_rank_ic"],
+                            "训练IC−当期IC": (
+                                train_ic - values["mean_rank_ic"]
+                                if period != "train"
+                                and train_ic is not None
+                                and values["mean_rank_ic"] is not None
+                                else None
+                            ),
                             "分数标准差": values["mean_score_std_population"],
                             "相邻日排名相关": values["mean_rank_stability"],
                             "前20名成员变化": values["mean_top20_membership_change"],
@@ -71,7 +85,22 @@ def render_alpha158_rolling():
                     )
         st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
         if metrics:
-            st.dataframe(pd.DataFrame(metrics), hide_index=True, width="stretch")
+            display = pd.DataFrame(metrics)
+            for column in ("预测记录", "标签有效记录"):
+                display[column] = display[column].map(lambda value: f"{value:,}")
+            for column in ("日均 RankIC", "训练IC−当期IC", "分数标准差", "相邻日排名相关"):
+                display[column] = display[column].map(
+                    lambda value: "—" if pd.isna(value) else f"{value:.4f}"
+                )
+            display["前20名成员变化"] = display["前20名成员变化"].map(
+                lambda value: "—" if pd.isna(value) else f"{value:.2%}"
+            )
+            st.dataframe(
+                display,
+                hide_index=True,
+                width="stretch",
+                height=35 * (len(metrics) + 1) + 3,
+            )
         st.caption(
             "RankIC 是每日预测排序与未来 5 个交易日收益排序的相关性，不是收益率。"
             "标签跨区间边界或缺失时不进入评价，但不因此删除预测。前20名成员变化是"
@@ -82,6 +111,11 @@ def render_alpha158_rolling():
                 f"累计新增文件约 {report['generated_bytes'] / 1024**3:.2f} GiB；"
                 f"训练子进程内存峰值 {report['child_peak_rss_bytes'] / 1024**3:.2f} GiB。"
                 "上限：8 GiB 文件、8 GiB 进程内存、两条计算线程。"
+            )
+            st.caption(
+                "本次六个模型工作进程均限制两条计算线程。复核发现标签整理主进程的 "
+                "Arrow 线程池未显式限制，不能认证该阶段同样满足两条线程；入口现已补齐，"
+                "本批模型未重训。"
             )
             st.download_button(
                 "下载滚动模型完整记录",
