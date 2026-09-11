@@ -61,3 +61,15 @@ def test_qlib_static_loader_accepts_quantlab_dataframe_without_market_download()
     assert len(loaded) == 2
     assert list(loaded.columns.get_level_values(0).unique()) == ["feature"]
     assert "future_return_5d" not in loaded.columns.get_level_values(-1)
+
+
+def test_native_alpha158_transport_golden_split_missing_and_causal_fixtures(tmp_path):
+    from quantlab.research.alpha158_audit import synthetic_fixture_checks
+    from quantlab.research.alpha158_native import load_contract
+
+    result = synthetic_fixture_checks(tmp_path / "synthetic_only", load_contract())
+    assert result["native_features_checked"] == 158
+    assert result["all_provider_parity"]
+    assert result["split_adjustment_invariant"]
+    assert result["future_and_label_invariant"] and result["prefix_invariant"]
+    assert result["missing_history_masked"] and result["zero_volume_preserved_as_unknown"]

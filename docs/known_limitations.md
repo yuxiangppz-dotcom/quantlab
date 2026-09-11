@@ -22,12 +22,15 @@
 - The bounded factor batch, daily/weekly Discovery cadence audit, and 2020–2024
   Portfolio Translation Audit are retrospective/test-observed. Positive
   historical active CAGR is not fresh OOS and no candidate is auto-promoted.
-- Qlib 0.9.7 and the StaticDataLoader adapter run locally. Only KMID and KLEN
-  have exact Alpha158 mappings; the style set is not a complete Alpha158
-  implementation. Qlib does not own Canonical data or accounting.
-- The LightGBM wheel is present in the optional research environment but the
-  WSL host lacks `libgomp.so.1`. No LightGBM model was trained and no fallback
-  model is labelled as LightGBM.
+- Qlib 0.9.7 executes all 158 native expressions in the bounded five-code audit;
+  transport parity passed, while complete-history eligibility is deliberately
+  stricter than native defaults. The older handwritten style set still has only
+  KMID/KLEN exact mappings. No full-market Alpha158 model has been evaluated;
+  see [actual audit findings](alpha158_findings_zh.md). Qlib does not own Canonical
+  data or accounting.
+- The former `libgomp.so.1` blocker is resolved. Six predeclared LightGBM fits
+  completed in round two; their historical results remain retrospective,
+  test-observed and unpromoted. The Alpha158 parity batch adds no research fit.
 - Forward Shadow starts at 2026-09-09, so it has no matured 20-session evidence
   yet. Original predictions are immutable; later diagnostics cannot turn this
   short history into historical OOS evidence.
