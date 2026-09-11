@@ -1,0 +1,1089 @@
+{
+  "history_report": "bd599dc16eb30853dc60f7f86266383543c06984d83979629d1a70c7215ea2f3",
+  "inventory": "0869cd29048ef0649838ebd6f6c846e5ccd9174e90498a95941ae1b21cc6649c",
+  "runtime": {
+    "versions": {
+      "pyqlib": "0.9.7",
+      "lightgbm": "4.7.0",
+      "scikit-learn": "1.9.0",
+      "numpy": "2.5.2",
+      "scipy": "1.18.1",
+      "pandas": "3.0.5",
+      "pyarrow": "25.0.1",
+      "mlflow": "3.16.0"
+    },
+    "python_and_native_source_trees": {
+      "qlib": {
+        "files": 232,
+        "sha256": "584efcc4d823f59a8ae3241c0ae9ec411b2054823a06b741cf79bb35b5fc5bf5"
+      },
+      "lightgbm": {
+        "files": 10,
+        "sha256": "afc2d097f0a4ec8e25bfcea16dff970c71d22c29d08bb3ad47ed6d91952a8887"
+      },
+      "sklearn": {
+        "files": 722,
+        "sha256": "497304e28c929e97f4917b4dffcef586dad50be5b3e81f1ae367eac2bfb98f2a"
+      },
+      "numpy": {
+        "files": 426,
+        "sha256": "fe9d9c73c402333998cd6d02adec158aa81c55f6d6a5a8888c577c53a51dafaa"
+      },
+      "scipy": {
+        "files": 1094,
+        "sha256": "9f91eeea0d5c5cd20c191b11b300d4dbbdc5cc9089ef9f5bae924bf991f27c41"
+      },
+      "mlflow": {
+        "files": 1185,
+        "sha256": "9acbcce33e7ed93d9a6dbabed0de230ce424d8c8ae0ce43ff8c36fc8ac249dfc"
+      }
+    }
+  },
+  "files": {
+    "data/products/alpha158_staging/alpha158_history_20260911/plan.json": {
+      "sha256": "877f524f27b143bf055c6d9aad2a004a23a6596a981ea5fa475035d11314dec2",
+      "bytes": 137782
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/inventory.json": {
+      "sha256": "47226e18c60dcc66d6cad9098b1c9a02b6cd8e8b328a2987cfb2aed55ad2387c",
+      "bytes": 1440245
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/report.json": {
+      "sha256": "f32be0c520f75d52cff4f89d120823c8aee1a6c271d353f25fcf256e3a19be98",
+      "bytes": 40078
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0000.json": {
+      "sha256": "cbc6c5f55fb1a3d38d2a51aecad63ee0faa63d2a76e8e4f55928e2bf706e0c1a",
+      "bytes": 75105
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0001.json": {
+      "sha256": "8e12bacacf119b94e224cac7f1b43a858441058bb061a5697666c45e998f6518",
+      "bytes": 74867
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0002.json": {
+      "sha256": "df987fe211578d64e809b1c16a082d58ae5fd480d88d43a633445b8be5a00921",
+      "bytes": 74857
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0003.json": {
+      "sha256": "c191816e806595231ffc39d7717d69638bfd256e1487c1098db1072c6fe494ee",
+      "bytes": 74857
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0004.json": {
+      "sha256": "a66b0fd03f20ce71ba6274a0a7da4cd7421dedee670c7ed4f56b5cf0432481c2",
+      "bytes": 74724
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0005.json": {
+      "sha256": "fc0418959e8c63287e75a6c4c09b7e72d84b846b2963975572345a7a6df3cc4b",
+      "bytes": 74884
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0006.json": {
+      "sha256": "f44d97accb84bd85d5c6ede3e258bad8d1cef79679dd3f66faf18f99b5db9a5e",
+      "bytes": 74870
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0007.json": {
+      "sha256": "06d70722e0b631590f54afe83d6fad1c2c14227c557d9f76fda179c954152e22",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0008.json": {
+      "sha256": "8fe8b0785631e02ddb50ca2f682c5f8fb6162d0e04b9af4f46803ac8412f7297",
+      "bytes": 74724
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0009.json": {
+      "sha256": "1c848961ae88794faf6c8dd54153c2e44bd0280f9023148bd06d59b2b7c2e0a7",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0010.json": {
+      "sha256": "4c5677dde83efcbcd5965f24a1a4f3ac1feed9dc2b42f706ee9b7c3d1a59102c",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0011.json": {
+      "sha256": "c7f4171e1814c4e66558d4137e6e1992772b0c5ae2cb6e716a43c94fa5914061",
+      "bytes": 74726
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0012.json": {
+      "sha256": "ca27424b8c0a220de5c59e34046117db194841f1c65e0288e18fb0f803c234a5",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0013.json": {
+      "sha256": "cef9476f738d2c1710a67d839599f3000fce1102d8a9469febeb19abdfc98341",
+      "bytes": 74875
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0014.json": {
+      "sha256": "d0bb849179771f8311c9e885c526b39266886b13463a0cfdee951c0b29b7351a",
+      "bytes": 75001
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0015.json": {
+      "sha256": "d756df4a1403cda57790884d0d13625b1dc47a76a6b4bc81bbc4c42a2911cb51",
+      "bytes": 74981
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0016.json": {
+      "sha256": "6e9ad3eab6c6b7499df5d85b5be0ed850e633a020c6ddc45161c8ff717e8d535",
+      "bytes": 74980
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0017.json": {
+      "sha256": "332980973679e6c8837e125971dfd3421141a328f7f0431f641b084e69fd4209",
+      "bytes": 74995
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0018.json": {
+      "sha256": "1a8ba75fa0b9c0db2013c2fa6ccbb43022b3a6bc6bae000cb4621246f39c593f",
+      "bytes": 74856
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0019.json": {
+      "sha256": "bb68dd83e561ec537480eab457b134dfc1a9a779b639f4624ccf167afe5bfc0e",
+      "bytes": 74557
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0020.json": {
+      "sha256": "c9737c780e7f3c156d5ac7f18eb799a427178042e57c8c6bd3dfadc338af3c7c",
+      "bytes": 74871
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0021.json": {
+      "sha256": "5171149a54ffbd360eb18ae674c14680c6d8b373adc6f14874aa97956c86e603",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0022.json": {
+      "sha256": "4c56d01e4ef6c8b1f5ba880853c3117c0dd79130c80e2004064077ea25e8814a",
+      "bytes": 74841
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0023.json": {
+      "sha256": "2548400217a37a1b88145a0bab6026437dbe0dfd836189962cf882db2857cfa2",
+      "bytes": 74612
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0024.json": {
+      "sha256": "aedeb71e5ddc948e88f3cec09eaddacb332903d63b8db57cf0d5e8c9f5e5b51f",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0025.json": {
+      "sha256": "e0373b48c0cd22f4d48dea16afdf97323600a3dcebd4c44d3333c7efc25cd02b",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0026.json": {
+      "sha256": "27d94173b3c75d32ca53d5be96f066347473781c94afc574b0456df9a6725d00",
+      "bytes": 74857
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0027.json": {
+      "sha256": "31102c4708cd78be90059293844e9acc21ad908336ade2d9c4c4ccf644efc71d",
+      "bytes": 74732
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0028.json": {
+      "sha256": "c9c9e8c4c25d6186ae3f94c6f96abaf825e9c87c43408eff9b28bfc7768c0d78",
+      "bytes": 74869
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0029.json": {
+      "sha256": "c49b945fc9edb4815bd62bdd3cf1b9f2115257cfd7a0dbc5c4d9ad070821ccec",
+      "bytes": 74855
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0030.json": {
+      "sha256": "5dce06d5593d576a9a2cf3f7739b994f54a526819eb9fb5ea97b7ab73ead1c60",
+      "bytes": 74840
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0031.json": {
+      "sha256": "930aa2793aaf872f220b31f532b821fa81d515be9f601f7a5c2f297b4ad89693",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0032.json": {
+      "sha256": "bb5b6802c67b76feed2bd574237f2674aa033a8f2a87d9bf94bcd7e201f96b52",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0033.json": {
+      "sha256": "c9939825627c65e914507c78786743b157ff8d4772891f078aa517484690abe9",
+      "bytes": 74869
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0034.json": {
+      "sha256": "3659b4404f0f3628086638de12232c78e1259867fa5ff73ced0bad267d7ed88b",
+      "bytes": 74531
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0035.json": {
+      "sha256": "4f5cb0accdc317f545b9f2ad9de79c957ff24e4bc878dfb1127d60083c905c6d",
+      "bytes": 74629
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0036.json": {
+      "sha256": "583c2e12c45b0a1a746531b2957cd6a3da4c114f908429502211121cd5d8ca42",
+      "bytes": 74840
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0037.json": {
+      "sha256": "e143682d555d3af5a2a7711a82eac2cf892a03dfe7a543733a3ba10b93eb12e4",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0038.json": {
+      "sha256": "569e0e7ba0e04ef3f4e105084100fde742c981b02a8bc8dfea72db710f7fcc06",
+      "bytes": 74725
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0039.json": {
+      "sha256": "4951d1dd709f98cbb671ad7fda82bcff528d4bb59d6b76ace25004653796c0b3",
+      "bytes": 74869
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0040.json": {
+      "sha256": "2a8f0544c065aa49162b541628459c3522aebcfcafcdf1d78e2f76ece6b69643",
+      "bytes": 74730
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0041.json": {
+      "sha256": "98407d93dcf0565604c0b7a6c9f04da7cbcf3cfd01bdeb3b1578c2e97f14a512",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0042.json": {
+      "sha256": "4808bfff4e2d8ba736470eecc6a7f306613f1ce01e600f42bd18bbc3d90cb495",
+      "bytes": 74667
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0043.json": {
+      "sha256": "c3d779cc9b03dbdbe880932a7d6a4412a9dff51e2ddb59c4ece5ebcafad694b3",
+      "bytes": 74525
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0044.json": {
+      "sha256": "cd0a3a9401c58c9156b15c9e4598456380c8f243dba309dd5f92adf89c4e3674",
+      "bytes": 74530
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0045.json": {
+      "sha256": "9c8ece567bd4d78f4e23d5ab3720e1e284ab7020f8816c063d17b27af29f1e3d",
+      "bytes": 74635
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0046.json": {
+      "sha256": "6ceba42c0f0e49e57024fd25874f444b6a3cfc8d0be8285111ea05150fafa376",
+      "bytes": 74511
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0047.json": {
+      "sha256": "7a0e5e00d16d97e98b7f0c2a23be44ef1746bd356e29c813ea7dbedae0078123",
+      "bytes": 74840
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0048.json": {
+      "sha256": "b454996ee7bf39741fde597bbafdcb91f2c5ec0d9a107c0ec49e7ca225e67bf5",
+      "bytes": 74853
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0049.json": {
+      "sha256": "c01bbd22e90273d0027d9dea6b84b4413cf2ef54e16b675bc929827ed228e903",
+      "bytes": 74851
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0050.json": {
+      "sha256": "b1f13eb764e16bd9c1faced89e5f29e5d8c5d49c0be6ebda356f6188ec638840",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0051.json": {
+      "sha256": "e27f18770829bbf1d375feedc129891005c2cecad2785b0bddc87d5003747af0",
+      "bytes": 74853
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0052.json": {
+      "sha256": "4a82a60eecbd6f0a4c4ce6f8e886864252b3c0aea011b6662e89d5997087e392",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0053.json": {
+      "sha256": "3d669fd4b7d7c607b21c8d637c96cd77f91356369ca7d72a38f7977baddec087",
+      "bytes": 75088
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0054.json": {
+      "sha256": "7da94b8604a27d193f50c1df79d172c8b6bf71408ab0ba5e946061ca8bf0a81b",
+      "bytes": 74867
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0055.json": {
+      "sha256": "73240f1893a03b8801d1cad13cd3bdb24662eec6077c7c3c5cd7cc7ef69dc49d",
+      "bytes": 74864
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0056.json": {
+      "sha256": "a479af2d6d0198832c9ae35b84e19b8bc87577ccbfce866e5be8425bcbe7ee48",
+      "bytes": 74851
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0057.json": {
+      "sha256": "fffe196e390edf3d6c61aa38b71553160f1e50e6009c58a4b785a9c48d330466",
+      "bytes": 74725
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0058.json": {
+      "sha256": "77ea17cb00503eedcb8934ad30ca33f0baf68bf7c90bb339d1976087e716f462",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0059.json": {
+      "sha256": "a01ea6993419f2ebf305e44bf7a2527ee24f6aa1517b61f37081e094c2deec79",
+      "bytes": 74869
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0060.json": {
+      "sha256": "e7b3c8a8ed1b3973809fdb07859c0156554650bb807eac73f04b678f1747e286",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0061.json": {
+      "sha256": "a3f606ed4b9c23aa999dbd2fd7993aab1a0bbfecffdfb9de2fa7541d65ae68ee",
+      "bytes": 74832
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0062.json": {
+      "sha256": "8d40c161633c7834b7b95d1475c51c3a1a57485d3d8cd8112e4e0be930dbb8c0",
+      "bytes": 74864
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0063.json": {
+      "sha256": "4d9268a47724e3006dc504f4f6902664aa5037a2e8809335234c690e5b03fdcf",
+      "bytes": 74553
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0064.json": {
+      "sha256": "a6b1ed14f8c00530173dd7f3a93dc2483cd52d0e32d6ff3e39044629d64023d4",
+      "bytes": 74704
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0065.json": {
+      "sha256": "201d9eadd1ead8c02e834f94205b87341d2a62fd029b58c85487de9a2138ef4f",
+      "bytes": 74730
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0066.json": {
+      "sha256": "0a62ab1f73340cd4340fb20acd5978ef1ae20e916e2bda37d72645aa48dcf2fb",
+      "bytes": 74657
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0067.json": {
+      "sha256": "53bbc6358d5242974a4dd08d769b2211705b5ee58a5c4021fe9d59b3050aec77",
+      "bytes": 74505
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0068.json": {
+      "sha256": "273395af8e96f954d060cfdc10e66ee92ccd8ae467a7be433479452cd0f7a785",
+      "bytes": 74693
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0069.json": {
+      "sha256": "16b0cd1e7f4f7dabe465f98090d5351005067683ffb7c83cbc16f818fa898b65",
+      "bytes": 74694
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0070.json": {
+      "sha256": "e9f2955270014ddd47e2a8b07091b07c7dd3598c49b01ab81f5248cacd8e6345",
+      "bytes": 74593
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0071.json": {
+      "sha256": "793123c1f8777881f46ccc718563ab87a7c827d8e4bc751d234c40c02b4b9f03",
+      "bytes": 74507
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0072.json": {
+      "sha256": "566652b9d8d38be7d3038bf6bc01c3aaefa8e2210c848681853a54c145dea60e",
+      "bytes": 74696
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0073.json": {
+      "sha256": "a090d6d996982eb1b090c276cbac3bdeae53695bfc5861b6f05f24377fe1a853",
+      "bytes": 74838
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0074.json": {
+      "sha256": "39d2ee9dce7211086998537765034913367533717e6de46b70fa1c6aa912e746",
+      "bytes": 74841
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0075.json": {
+      "sha256": "36ce5ade7e79c32ea3b71ad501437a0b9c5d5ea46294df1ed022f967fe477b29",
+      "bytes": 74845
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0076.json": {
+      "sha256": "67798b52d6bc3fd22eff80f8bc2f8ced2a55dc916d9e540c6346306c8a8c8dda",
+      "bytes": 74842
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0077.json": {
+      "sha256": "bbe3053decb7098d4400595ed11535fd9a31f341cf41099e705a5f287c60281b",
+      "bytes": 74990
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0078.json": {
+      "sha256": "983458917f564f59a6da8c702f35ee4fe387a8d7393b82595c11a6bde72101b3",
+      "bytes": 74988
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0079.json": {
+      "sha256": "5b1d39a75a83e824948c905d3706d230c0756028006e3ceafe5218d6af5ef78d",
+      "bytes": 74989
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0080.json": {
+      "sha256": "98da4bbc7839178e2b058636bce9896417613989667a3a3b0ba05a07073dd593",
+      "bytes": 74991
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0081.json": {
+      "sha256": "b84120091946655f7cda7d62edf370b02c9693f51e449d991917f318daac89ce",
+      "bytes": 74986
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0082.json": {
+      "sha256": "872157cc25bb3489ee01d9733490cc426c633155229802ecf50e1840c5ff0798",
+      "bytes": 74985
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0083.json": {
+      "sha256": "944d85c1dd6f1e394426562aaae365ed20410b73464e2a0f8487fd989febcd85",
+      "bytes": 74976
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0084.json": {
+      "sha256": "ef4d46eb8514a6992293cd046e9c03df6fa463950f3b90a22520ac124422afa1",
+      "bytes": 74981
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0085.json": {
+      "sha256": "7d2f410699e5cb2650b18b153fb424c264e16d0a18032867b03f4e9e7886b474",
+      "bytes": 74977
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0086.json": {
+      "sha256": "d3b4cbbe0f10cdc95f4f3638b3ed4bc605c8d5d123ff1f69f97ea6ceb5ebd693",
+      "bytes": 74959
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0087.json": {
+      "sha256": "d643de5d94321a6652332474b3055932604b21377e0709b8731dab50c31d3246",
+      "bytes": 74977
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0088.json": {
+      "sha256": "9e5c35e08902180cfbc41f614dc41a60f73f13650f792f77b7c89d38e6b72d26",
+      "bytes": 74976
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0089.json": {
+      "sha256": "653dfd88f1bf739158fa205cdd560fd52937b0b04f71a61ec604d12168ac2e2c",
+      "bytes": 74969
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0090.json": {
+      "sha256": "329b183b43ce3f816b2b7c38fd747c3c2240f35952d2571cd3809cdc8f003fec",
+      "bytes": 74932
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0091.json": {
+      "sha256": "eb7eefa3ef68ff0ce67f269d6f6ff0041883115d13aff3eacbabc7117933fb3c",
+      "bytes": 74960
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0092.json": {
+      "sha256": "00d3216fc6fe3a9bd9ef5a9aea8992cde49c84c1d420dd9c43fa5b12a53cdc8b",
+      "bytes": 74903
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0093.json": {
+      "sha256": "8e095de866730bd3542a6bc2be1ddd358cb240355ea42b62c691aeb8138038ab",
+      "bytes": 74924
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0094.json": {
+      "sha256": "070c0f4868286f9c4449abcf66ea811ee3bffd792735c9ba193919b12656faee",
+      "bytes": 75185
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0095.json": {
+      "sha256": "1b963f5aa655f73b6e0623cc49e980c61659c5b911b1bb34bf6d1a0705d4ce2b",
+      "bytes": 74696
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0096.json": {
+      "sha256": "997b35a41e0fede88cc5e1cb4b99c06cd73bce425ba4feae3ae73b83641518a5",
+      "bytes": 74873
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0097.json": {
+      "sha256": "afcfa0d3bac816a019924eb9293d8a018ae9e07ed7b8f4a5b536577815118784",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0098.json": {
+      "sha256": "05b49974017092d2304192168087b59b78e7d71d3d49f2f2bfdc18521dfd3fa2",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0099.json": {
+      "sha256": "b8b8ce5e7ebc1b367371cbd19b50f9da68698ddaaec6ae47a456de80f16cc0f9",
+      "bytes": 74871
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0100.json": {
+      "sha256": "c3a1e1e13d96060b3e08b023b9f0f85d3489745a51b65d9cd2882c9b2ef547de",
+      "bytes": 74872
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0101.json": {
+      "sha256": "5f59ef16e837737162257d586a7305f47b56618e721c2db5baae297b96de72d1",
+      "bytes": 74871
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0102.json": {
+      "sha256": "9e278625b93d274d603ac40816df3eeeaadcec01e89ee8ecf1b7650500a9b0e7",
+      "bytes": 74872
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0103.json": {
+      "sha256": "ca00563f7a991ab4341602eadb40e03a2eba5046c7c51409a88bca4efb318d44",
+      "bytes": 74869
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0104.json": {
+      "sha256": "e526a1867a999a21da9bed9b776de6978a30d45d5921f0ecbe9164795ee7042d",
+      "bytes": 74871
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0105.json": {
+      "sha256": "f7de4de152a292b6ec5c1ceaefafb76b800ea9525332ca1369a71572cf53a4b2",
+      "bytes": 74859
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0106.json": {
+      "sha256": "dbd723e967b39f47b30b7e81fcf203c52b170e1b19a55b7bbbdfca20d4bd69b1",
+      "bytes": 74869
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0107.json": {
+      "sha256": "e34b4b6f9e29eba12d626eb5422a5bbabb6cf910248639759911a16ce7245b9d",
+      "bytes": 74564
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0108.json": {
+      "sha256": "09884b3a280a82dbc03fc22464bd61ae1b426b6a2e855d14dfee8170ae12c83d",
+      "bytes": 74869
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0109.json": {
+      "sha256": "0e98b1202be05c2698ef637ecfaa8d6839d785a36a56d518dc28f7b007ac272a",
+      "bytes": 74725
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0110.json": {
+      "sha256": "586e343bbd9cc4f466123bb0e473ee920a6db9a62347e66325df7f949b7a4bfa",
+      "bytes": 74868
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0111.json": {
+      "sha256": "c45912f5bfdf29afab146fe9af6009930cf8639478f8f84592f508bb74ad7883",
+      "bytes": 74870
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0112.json": {
+      "sha256": "9fed3383ee149c3db1bd2f1bb3b7d11912d760894ea43958f2d0f2d145b72511",
+      "bytes": 74869
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0113.json": {
+      "sha256": "8c45351cd6310bd6628eebe36b26a2a8ad5a0df7eb5b8af14dfd0f8efe1ea934",
+      "bytes": 74872
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0114.json": {
+      "sha256": "544c1ef142f1b92c1c20214025901008d2c52fbe3bd3209e0f36b82de7d749a7",
+      "bytes": 74869
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0115.json": {
+      "sha256": "5a55d8faa657fc171f93e6fb48ce88f590b542b5a6dd838935e2ed18eabdeca4",
+      "bytes": 74859
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0116.json": {
+      "sha256": "f27ecb07c6da3485a0370c8c324e58ab96d4d2768e3db3dabbfed7052e9a0659",
+      "bytes": 74870
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0117.json": {
+      "sha256": "52e22663c09172148015cdf6e8bd5e109add99730f0f6b7dec2e168083179248",
+      "bytes": 74869
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0118.json": {
+      "sha256": "54febe09d805aefeca9eb272ae2dda3a2578ad8e4b1c6eade13dcf8d9dcbf6db",
+      "bytes": 74872
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0119.json": {
+      "sha256": "85837e3b26723359abea9267175b859650b9a12c56cc33716697b3745cea633a",
+      "bytes": 74865
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0120.json": {
+      "sha256": "851a99ef2b22ee68eb44b4aba79380ce155adbad69d3719e4f3396a8c30b980c",
+      "bytes": 74508
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0121.json": {
+      "sha256": "2c6e331413fd52ce83824610c9381efb5d3f48215577fd4dba616f295c5a18b0",
+      "bytes": 75000
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0122.json": {
+      "sha256": "63b956e48639b7b37a794c6a7b4a6a9672801b197a9823cdc1988047dcde3313",
+      "bytes": 74840
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0123.json": {
+      "sha256": "fc3aa8103b8c6b219e047936c73e115e91f25fda591300b2521d6bf70dd81358",
+      "bytes": 74839
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0124.json": {
+      "sha256": "913a71dbf38c6b2e882c6970e6c3584a82b7f65af19516c5666e2e6bd4398d31",
+      "bytes": 74842
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0125.json": {
+      "sha256": "e69296727cc36c38c69cd54e6040b64fe7a4451ab23022de80632b3904c3dcbd",
+      "bytes": 74841
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0126.json": {
+      "sha256": "bd58416741c913134ecd9943f30c020bfe9114c2f8a6a8065bca5a9a9c6f0c78",
+      "bytes": 74840
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0127.json": {
+      "sha256": "3e05ff7e6e04a2c0e45d4a8eec7fd188cb9a77e2e1f3b96d24973d51f133e59f",
+      "bytes": 74870
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0128.json": {
+      "sha256": "74e163b7fcd75d2e6960f6faa15931c4359f1c606b1c603fa7f56be451653eab",
+      "bytes": 74869
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0129.json": {
+      "sha256": "a7507099b76d57e01c3349b91f9e4defa04608a5b0beca724667a31c5dbec6ad",
+      "bytes": 75007
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0130.json": {
+      "sha256": "b99db4d7479ff751bc6ed2c3f0d65dc53ee09a0aa13938f8e8af8e37a5ab6b3e",
+      "bytes": 74840
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0131.json": {
+      "sha256": "0145ebba00175170685ba69e1f2b9a915d7e049ff007ab80b9803955784343df",
+      "bytes": 75015
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0132.json": {
+      "sha256": "56a814872e906b9b2fac1af08add9271cc8caccda70c9c3e096af002a4798eff",
+      "bytes": 74999
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0133.json": {
+      "sha256": "e41c7cba2c9885a3f5685237233bd3f78eb23f13557cc167de2621bede3b623c",
+      "bytes": 75001
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0134.json": {
+      "sha256": "4b225944f97f3e954ef0b240897e4a799b935c3b11416dbc00d409a2323961b0",
+      "bytes": 75000
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0135.json": {
+      "sha256": "f8d2d33ee83d8fac23a2b5cca25886e3e569ca546a2b04a04036c7882f72e257",
+      "bytes": 74857
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0136.json": {
+      "sha256": "fc6ad234edab5171e43ef08e3f508e9aaf270832ea49ae01a31f6d02399cca1f",
+      "bytes": 74846
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0137.json": {
+      "sha256": "809fd1bdc092ac6c17525574f1e1ad4d0ff6b668d50c121312ef33eece69d2cd",
+      "bytes": 75015
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0138.json": {
+      "sha256": "5fd7742cc2c00f4bd0e1a97cf08c27c3393fcee076bdf67c9ba1f42dfe29c2b7",
+      "bytes": 75000
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0139.json": {
+      "sha256": "915c3309a103e965259ab38168d41e7a19e74d64ccfeff3400a479a26f5d41a6",
+      "bytes": 74854
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0140.json": {
+      "sha256": "b06b384289b01dd593e3fb2a442a4afd69312811d8531d007cc0d322524911d6",
+      "bytes": 74713
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0141.json": {
+      "sha256": "1bf820f584eb775e0d1b3acfef272ce5fe05e0e20a95e8200d55372839f5a17b",
+      "bytes": 74691
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0142.json": {
+      "sha256": "3f771497c6bf6d285c7203d38112f83bacf4d7bec2df47e577bb565704cdc4fb",
+      "bytes": 74692
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0143.json": {
+      "sha256": "011ade9b75d7beab9891efc0193c6d6b2c78c88eae1cd8807a8a974db35d5ccc",
+      "bytes": 74724
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0144.json": {
+      "sha256": "ae371679834839dce35b7dc9314c646d88c531d18c471b637a2c54d676ce6d53",
+      "bytes": 74720
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0145.json": {
+      "sha256": "7335384dc1b270328be9f1ce1a70d9bd8ca2aef026bbe975dcb2e6948d0c0940",
+      "bytes": 74694
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0146.json": {
+      "sha256": "a5ee922b228a59941917abe64066b9d7684e8c1412d3a8dc1df310e635c1081d",
+      "bytes": 74815
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0147.json": {
+      "sha256": "72cf8f60e85a157e62be42f11326048b32c7608ee0e88226b282ccf362e65ece",
+      "bytes": 74999
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0148.json": {
+      "sha256": "c04ff2373e51f73183237fbae2ea84107e543e869c2a5dcd5fb2ee447f29c8a7",
+      "bytes": 74997
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0149.json": {
+      "sha256": "d6aa691d905bc78f598f33c81858ae370aa14be6a986c9f6e8c4f583f87a0e3d",
+      "bytes": 74999
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0150.json": {
+      "sha256": "8054235fe2f019b967b12b9ca19f4a2d79c3b45d2dc692fc265e73726c145ac1",
+      "bytes": 75201
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0151.json": {
+      "sha256": "cba6d6c357771ab9d1b011640c3e08ab689fcbc8bfd1675e65705a3be9825b3f",
+      "bytes": 74840
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0152.json": {
+      "sha256": "4e49ae55a2bcb7c158c20aa296eea8352186e1bc0a3cd56bf9f28f12f06e7e78",
+      "bytes": 74997
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0153.json": {
+      "sha256": "c39181f743ef56fc230e15bde6acc0a53ee0119d824d2db10f6be4e4c84a33ed",
+      "bytes": 74998
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0154.json": {
+      "sha256": "6dc8cf172eb4d6ddcde287789b411ef939b1cbf993339d9cd858fd257c76a425",
+      "bytes": 74997
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0155.json": {
+      "sha256": "4cc8185f62b430a7b5d5857552ced1f6aacd71c50a2f2df431040f4d4fbfed97",
+      "bytes": 74998
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0156.json": {
+      "sha256": "4df03cf88f7fca19f749fb74795f03543710dd74216ccf8038595abff8caaae3",
+      "bytes": 74997
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0157.json": {
+      "sha256": "807baad6b49b107c706418fe5f7abdd6cc0bdf7d1d4cf9d0cc76ca46ddb72f1a",
+      "bytes": 74995
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0158.json": {
+      "sha256": "afc2c277d38b057e0ff11ca20d82a4bce4c29aa30e036fbcff6c30c21905af39",
+      "bytes": 74999
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0159.json": {
+      "sha256": "cb50900bd28b6664865cb9b2ff422ec67b486dc9baa88700f8fa8c217df7ce16",
+      "bytes": 74988
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0160.json": {
+      "sha256": "38984ec97d2c3a04fd9b1eb468f71abc1ca29570e4294afe0271a5c117019b9c",
+      "bytes": 74996
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0161.json": {
+      "sha256": "70951622fe93bdaad84813fd84f71a68b1996cad37fa2d7fc8fa4b7dbcfd85ed",
+      "bytes": 74965
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0162.json": {
+      "sha256": "627ce5a3c87f842f1a6e9c57908b57b8551d99a298c27eaecb8775eae32a1d1e",
+      "bytes": 74995
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0163.json": {
+      "sha256": "445219177645341e96890822b56ca93e2230b3dbe11a7096f865285bc42f7a4e",
+      "bytes": 74996
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0164.json": {
+      "sha256": "7d04b4c0d341055311eea68f3d3a102c2779026016f962920c279640c9cb1793",
+      "bytes": 74995
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0165.json": {
+      "sha256": "aca89d0bbd659915c0a9b34f888c6977bfc1e1989683542cea087de20f817485",
+      "bytes": 74997
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0166.json": {
+      "sha256": "640a26c46a6223fb7e4bd41a102598dadea1b68672b450d7842ddceb2d6850f3",
+      "bytes": 74991
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0167.json": {
+      "sha256": "0d34ac9e80f18352934cedb93de6dd4d999491da216c2d8e69b97f1115220c36",
+      "bytes": 74984
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0168.json": {
+      "sha256": "e1fcb8300d5e9e20374b96aed0fed869ad9f61f7f316098cee4956b5e24ca443",
+      "bytes": 74986
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0169.json": {
+      "sha256": "92d178bb2aac271c5cc8cc4c052dcb6bd0c37f5f6180487d7dc0949730adb163",
+      "bytes": 74896
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0170.json": {
+      "sha256": "04a15e8df3251eb938bced795531ab96bb720388a0ee3272524a3862f15cfcbc",
+      "bytes": 43659
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2019-07.json": {
+      "sha256": "8b8e5b37cca28593571013ca3b3834349f43ec93716a04af7ff50359ab8e0386",
+      "bytes": 26548
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2019-08.json": {
+      "sha256": "8be57b1b7355d3611be752a909eb2a47f9764266be446dbbcdb11595404165d1",
+      "bytes": 28323
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2019-09.json": {
+      "sha256": "582e175338b56384ebda2ddc5cb088d10d5d970601ff6a49ba11629154f1e9d1",
+      "bytes": 27680
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2019-10.json": {
+      "sha256": "30f9a2f620a04002af473d1e4047b2559493f5ed07eae23349f01c742ba3ffab",
+      "bytes": 27340
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2019-11.json": {
+      "sha256": "eee416d524727c389fadc67bf46ec93e1077c1dbae38ab0f53cdfccf4b742927",
+      "bytes": 28620
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2019-12.json": {
+      "sha256": "af83399f95a817a54d5e3dcc10b9685235ec9c15d95c39430942461b1a4622d4",
+      "bytes": 29102
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2020-01.json": {
+      "sha256": "e8263eb5699744c2dce7e4ac57ff343f3d80a9384106c70151e98b7736883fc4",
+      "bytes": 27161
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2020-02.json": {
+      "sha256": "87d0a438bd5a52f91218c4bac94214843ef8ca2381fb7003dd722055e69ca289",
+      "bytes": 28465
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2020-03.json": {
+      "sha256": "95e4d6fd05c33fa5a208da78036b5d6c0071d42c242b460a761535ed8019f615",
+      "bytes": 29112
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2020-04.json": {
+      "sha256": "ae48d3120180009602948b2497028b68031d8c5daa59aa759ad57514a64175bd",
+      "bytes": 28790
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2020-05.json": {
+      "sha256": "d5cb70f140336f56f4822da24705a2800e2ec6f417a3bec91592bff890dafc00",
+      "bytes": 28742
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2020-06.json": {
+      "sha256": "d55ae3c8b1c25a40573f78ccc143124cbbdeef257784876b16a3438fface2b35",
+      "bytes": 29545
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2020-07.json": {
+      "sha256": "6af41347b1258a1d7a467a4d0150c9012cef9320759ccd154505a3dd913d1b16",
+      "bytes": 30827
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2020-08.json": {
+      "sha256": "cc26b140a8b6451bf266bf46f0628e9a1ecc50cc0b9895f9ddb20b2bd8e06649",
+      "bytes": 30340
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2020-09.json": {
+      "sha256": "e74c7bcb20f94b85f25d00daddfa6a8eb054384e3aab63f333d7c2997c4ccbbe",
+      "bytes": 30820
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2020-10.json": {
+      "sha256": "e63e821423f8fb4b3f59560a8f190334a00c49101033088d6f89df20926d1f3e",
+      "bytes": 29190
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2020-11.json": {
+      "sha256": "d6a6efc6479692cbce1684cf49a3ef1df3f1328a3d8ad21197898024c66c02de",
+      "bytes": 30962
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2020-12.json": {
+      "sha256": "aee28f3e974d624540f5c7bcc0f87a93ee5d1d6541651e3b4e49c0d39be7aeeb",
+      "bytes": 31914
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2021-01.json": {
+      "sha256": "c6ba90f829ebf20b90dc147f6351e585a98b4056d5c6ac349fc9d06145796126",
+      "bytes": 31104
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2021-02.json": {
+      "sha256": "7aa2a121c637f234b5d36016ea94ba3f53de2b61a58f46bcf75122a1964f6821",
+      "bytes": 29491
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2021-03.json": {
+      "sha256": "99af08429fdbfd9177f83484468a319d198650c78cfaf434a19ae39b69914ee5",
+      "bytes": 32074
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2021-04.json": {
+      "sha256": "36663ce319e2a35a40688021024fd38b396aca4d81824fd8ce137f8932d27264",
+      "bytes": 31586
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2021-05.json": {
+      "sha256": "21edc23629c25d99414bf8daf1cf10071a7a9c313d2ce43aacc5afd1274f9290",
+      "bytes": 30618
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2021-06.json": {
+      "sha256": "d33d57c1b7de91c6a8758e22b2d088baf3d64aa60e3a41413c3c9d57f181e3bc",
+      "bytes": 31588
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2021-07.json": {
+      "sha256": "dbc7de3b9342541e711d0979defef304868cfebff6fa33b9837bc3d1e0b3f50c",
+      "bytes": 32064
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2021-08.json": {
+      "sha256": "ee273cd5294869877dae0ac30e5f7883c7aecef23ab55997f8656c512ff57000",
+      "bytes": 32070
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2021-09.json": {
+      "sha256": "8a62fce2b547a53270604e2e676acb8d26492b0c936baa9ac654bc0686f3aa29",
+      "bytes": 31579
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2021-10.json": {
+      "sha256": "f40f2bed6cfad413307a52b98066d339a636b1df0e8646ee72effbeb38333ff2",
+      "bytes": 30288
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2021-11.json": {
+      "sha256": "160712797414af1281e19666a8f57eb2a71aadfbcecebce49af869ba0c8070a4",
+      "bytes": 32989
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2021-12.json": {
+      "sha256": "e8208171d0d7c3f2d41b3489bc3946c5f117416503aeb2fa6afb5f017479efe3",
+      "bytes": 33471
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2022-01.json": {
+      "sha256": "60cd6fcc539ed19889ff45913c234c6d52e3dece85fbec36de93eaa3c1f5e104",
+      "bytes": 32183
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2022-02.json": {
+      "sha256": "199ff15c0008602dd628e89c1cdda3da17bc91973d9c40f61d297d7133f87194",
+      "bytes": 31212
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2022-03.json": {
+      "sha256": "ec651bfd889455e7e9944244502c6b2439d81ca0f065b74b2710f9b1b43162d6",
+      "bytes": 33628
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2022-04.json": {
+      "sha256": "65c0cfa38c879639a1ad82afb4095178cfd22edb39f7ae02837a84539c06c1d3",
+      "bytes": 32338
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2022-05.json": {
+      "sha256": "6e36e02e0d6f03b9ad155b3729b92bdeafab9d423b0d59768c480af9c8d0a271",
+      "bytes": 32340
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2022-06.json": {
+      "sha256": "5a5b8dda7d602c8e124e3ccd8a26d2133b15f4334f6607bbf198d8d1fbe98b59",
+      "bytes": 33139
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2022-07.json": {
+      "sha256": "8ac1d0835ca1167648c9c5cc156f7481a45959090bc3bb27196757d854cab35c",
+      "bytes": 33141
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2022-08.json": {
+      "sha256": "91fab0eece227406bc7053773064f7d37accf8c68200647c308d0748f97d80ce",
+      "bytes": 33941
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2022-09.json": {
+      "sha256": "bce93dc8d1d8206b224daef2716a10c0570095696fc3f0927a8db9debe776897",
+      "bytes": 33299
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2022-10.json": {
+      "sha256": "e7387581adb75a74cb98675dad4fe49c9db5158f4a42d86d593238799e8c45c9",
+      "bytes": 31838
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2022-11.json": {
+      "sha256": "0f7f2879f46cbd5228b3406d55296adcff789b2dfc5e434b9478d504ef4cc9b6",
+      "bytes": 33774
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2022-12.json": {
+      "sha256": "43e9a71cee592e1bd69507e31e3ce9ec0d9c6ef085fb6ff9a1e376b7ffe9d0de",
+      "bytes": 33776
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2023-01.json": {
+      "sha256": "b4ac1ec5678d8f37dfc669b959ee12fec83547615a22f8aabd32c6f494001627",
+      "bytes": 31841
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2023-02.json": {
+      "sha256": "a300a35f9d4d9715921e0eb87396f06a2694855969b8f74bd916d27d53458e3a",
+      "bytes": 33131
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2023-03.json": {
+      "sha256": "c67e9084f5d37d7592c26dfed8e651e22b63bc0d9aabb6c819b23b0ee5b17315",
+      "bytes": 34098
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2023-04.json": {
+      "sha256": "d3dda3ab8c5494af610dd634fc599aa32c0b28df2850c480f562a09e3db9ff9c",
+      "bytes": 32808
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2023-05.json": {
+      "sha256": "ba43423cc0a860d513cc123bad67834ece583c39a39c78def404e4103bf1b506",
+      "bytes": 33131
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2023-06.json": {
+      "sha256": "ffc48148e0b6c5158fecb557661e31a9505ed9c9d1b836b2a1940e922b5b2dc7",
+      "bytes": 33131
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2023-07.json": {
+      "sha256": "db6668765fe82b1f307e37be9be455a46562b4252d2a6f26e4c35d4078b0e51e",
+      "bytes": 33607
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2023-08.json": {
+      "sha256": "9ddd1446107b285b68df0a5b291915c332d30388b13dcfe12a771af3c96152d8",
+      "bytes": 34405
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2023-09.json": {
+      "sha256": "56f3a79e95342e4033dcb454f01880dfaa7125ae6a02d7af81fd26d622b371d2",
+      "bytes": 33440
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2023-10.json": {
+      "sha256": "be9720b5069d5560707cb03fa11b46d20fba5d5b1e56836152aa1bc76027a92c",
+      "bytes": 32475
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2023-11.json": {
+      "sha256": "667ce078bac142f331e4130894e87a450f3b351260145cb8b4cb2c67e3387123",
+      "bytes": 34085
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2023-12.json": {
+      "sha256": "757dc28b6f5838a930e8d06b377b447ed33581a1a78b970d54d3c10987c88c06",
+      "bytes": 33764
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2024-01.json": {
+      "sha256": "3146d65d355e4a66217a528fb881677962d915d15c5f28a8ce86353b273f9295",
+      "bytes": 34086
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2024-02.json": {
+      "sha256": "7fa1f6ae57da8df2c5de6a06cde4abaec403bafda0d55219cd1379eefdab1063",
+      "bytes": 31984
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2024-03.json": {
+      "sha256": "6b811ed65f38b0ec9f83f6f280995e8700f6081e50c19f38bfd0124d8d7e87de",
+      "bytes": 33917
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2024-04.json": {
+      "sha256": "38d8a361699386fcc4a404cdf8b1bebd86fd32588e71bcad6c9a1af532e23bec",
+      "bytes": 33595
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2024-05.json": {
+      "sha256": "5bce4f32996aacf9404fe206840227f4994535cd04e5e88fb81076d2337e862c",
+      "bytes": 33595
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2024-06.json": {
+      "sha256": "3e0c558f311c326eed562cc32fc5d9240c8be9a91fb3d000fb9e057fbbeba970",
+      "bytes": 33272
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2024-07.json": {
+      "sha256": "b4a992e4243fdd6e042d8bf8f084b749c68f198392d832e9c695f426c8d4e0a8",
+      "bytes": 34563
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2024-08.json": {
+      "sha256": "fcc4cb6906e442e547e03339dfff170b0635d09537822c4362963c892cb9742d",
+      "bytes": 34241
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2024-09.json": {
+      "sha256": "86b95ea2f11444a1295fcea8a0bcbfeaee5476afcb989156545d8b74c08b62b6",
+      "bytes": 33274
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2024-10.json": {
+      "sha256": "71a8e00fb99f36753849f6eeaa0c9b905698f6d999cb5f5cab824f77d35b98bd",
+      "bytes": 32952
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2024-11.json": {
+      "sha256": "cdb02e5f134c7e030259abe42d9c52318b442912c8bbf2a061ff735f285ba72d",
+      "bytes": 33918
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2024-12.json": {
+      "sha256": "2a45a0827b44eb9325ea6896c417383e48f1d4a1fb5908d4ea772fd48cecadef",
+      "bytes": 34241
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2025-01.json": {
+      "sha256": "b15383e40b00a89818b8cbad06ef421566439ca568cfd0b0da9b9b254711c16e",
+      "bytes": 32952
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2025-02.json": {
+      "sha256": "7b4723bb5d5720bc0fcf6daa84e9117c3f66f8510514bf36757e284b34fd78e1",
+      "bytes": 32952
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2025-03.json": {
+      "sha256": "154c14cc1fad19d1d0eaeabbe6bf9db2a199959afaade38741fb8014c06340b1",
+      "bytes": 33919
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2025-04.json": {
+      "sha256": "d530160a5f9dab8fcf5e5a103df84868ec4e85b3e3d9f381aacf4cb6bb7316d4",
+      "bytes": 33918
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2025-05.json": {
+      "sha256": "cea48fbe4bd90b6629e1ce30dac41a0dd34b9242da1deb29289631bae5e0c11c",
+      "bytes": 33274
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2025-06.json": {
+      "sha256": "4a5189043137b1cbc0b24c04a6152542d27e53f17a53ef23b1a221dea606053a",
+      "bytes": 33597
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2025-07.json": {
+      "sha256": "6ecfad9d16bb8dd8734d95d984afd9695fbe09642065065cf98df25420f3dd6d",
+      "bytes": 34563
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2025-08.json": {
+      "sha256": "d206f3f1863ce85722f22d9ff792d30e45e436444343f7dbb04c2b7b3f9262ec",
+      "bytes": 33919
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2025-09.json": {
+      "sha256": "289f195fca8c0560443f0cc2d12080ee370a7d9a6e29d23c3142012818fde0dd",
+      "bytes": 34241
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2025-10.json": {
+      "sha256": "4d82cdbbfffaea57ac53ee5264aa4b949faffd9e917ef5b6dba4d99a40269036",
+      "bytes": 32630
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2025-11.json": {
+      "sha256": "2c3f90a3ddfdd382a2ce4a2d4524e4edef60b1c8c2be69bff3e5ee2edb185ca0",
+      "bytes": 33597
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2025-12.json": {
+      "sha256": "5e05de9bb172a73863824371c2ccb167808c99471f5045eda721a4ddde9f7c10",
+      "bytes": 34562
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2026-01.json": {
+      "sha256": "ef71c7ad35173bf610c70885c5889be6b72ac4067cbb257425ec07f18b07c1f8",
+      "bytes": 33596
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2026-02.json": {
+      "sha256": "72349eddbaf87db0c236abc587b8e6039a736bb2fdcb8d325e5ce6d8e5c4b487",
+      "bytes": 31663
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2026-03.json": {
+      "sha256": "40f79ea0bd44659701651223232b5ece4a0a746259e666fe48f10457b4e2be81",
+      "bytes": 34240
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2026-04.json": {
+      "sha256": "d7db67137a0b2e6bc4e837fd6abdd1f93c9244e992840af635a67bc753113af1",
+      "bytes": 33919
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2026-05.json": {
+      "sha256": "91450a700b0d562584d385d01991201b6e00561eda6644d6e0b3c605074aaa3e",
+      "bytes": 32952
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2026-06.json": {
+      "sha256": "962fc4f64617b8fc33c9ee4c84afa564081959e3b9c68f113206546e778d62fa",
+      "bytes": 33919
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2026-07.json": {
+      "sha256": "85ae05194e269a9d026e2c391478fd4a53aca1c3d58ec74cd87845027c87fb70",
+      "bytes": 34563
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2026-08.json": {
+      "sha256": "43674d0db8595c2b165e72fbac1f0750b5e727108fedc47c7550ab160acc3ca4",
+      "bytes": 33919
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/raw-2026-09.json": {
+      "sha256": "658d48af337845290ca527ef8eaf543c015488897071b6834044645143eb3d68",
+      "bytes": 29732
+    }
+  },
+  "contract_sha256": "b5463788d844e5583ab35fb3d883dc92cc76053a5b31d4396a85d40911fbb0e1"
+}

@@ -13,6 +13,45 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def test_fixed_rolling_qlib_models_synthetic_fit_and_saved_prediction(tmp_path):
+    import json
+    import pickle
+
+    import numpy as np
+    from qlib.workflow import R
+
+    from quantlab.daily.service import PROJECT_ROOT
+    from quantlab.research.alpha158_rolling import init_qlib
+    from quantlab.research.alpha158_rolling_data import fit_scaler_inplace, transform
+    from quantlab.research.alpha158_rolling_models import ArrayDataset, make_model
+
+    config = json.loads((PROJECT_ROOT / "config/alpha158_rolling_v1.json").read_text())
+    random = np.random.default_rng(417)
+    original = np.asarray(random.normal(size=(800, 158)), dtype="float32", order="F")
+    y = (original[:, 0] * .1 + original[:, 2] * .05).astype("float32")
+    init_qlib(tmp_path / "qlib", experiment_name="synthetic_compatibility")
+    for kind in ("ridge", "lightgbm"):
+        x = original.copy(order="F")
+        scaler = fit_scaler_inplace(x) if kind == "ridge" else None
+        model = make_model(kind, config)
+        with R.start(experiment_name="synthetic_compatibility", recorder_name=kind):
+            if kind == "lightgbm":
+                model.fit(ArrayDataset(x, y), verbose_eval=0)
+                assert model.model.current_iteration() == 100
+            else:
+                model.fit(ArrayDataset(x, y))
+                assert model.n_iter_[0] <= 200
+            path = tmp_path / f"{kind}.pkl"
+            path.write_bytes(pickle.dumps(model))
+            R.save_objects(local_path=str(path))
+            assert path.name in R.get_recorder().list_artifacts()
+        dataset = ArrayDataset(transform(original[:10], scaler))
+        prediction = model.predict(dataset)
+        np.testing.assert_array_equal(prediction, pickle.loads(path.read_bytes()).predict(dataset))
+        assert np.isfinite(prediction).all()
+        assert len(prediction) == 10
+
+
 def test_lightgbm_native_runtime_can_fit_and_predict() -> None:
     from lightgbm import LGBMRegressor
 

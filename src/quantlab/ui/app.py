@@ -322,11 +322,13 @@ elif page == "股票排名与因子":
 elif page == "回测与基准":
     from quantlab.ui.alpha158_history_review import render_alpha158_history
     from quantlab.ui.alpha158_review import render_alpha158_review
+    from quantlab.ui.alpha158_rolling_review import render_alpha158_rolling
     from quantlab.ui.research_controls import render_research_costs
     from quantlab.ui.round2_review import render_round2_review
     from quantlab.ui.signal_feasibility_review import render_signal_feasibility_review
 
     render_research_costs()
+    render_alpha158_rolling()
     render_alpha158_history()
     render_alpha158_review()
     render_round2_review()
