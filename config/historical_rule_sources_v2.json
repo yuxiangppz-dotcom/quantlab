@@ -1,0 +1,544 @@
+{
+  "contract_sha256": "089db23e3870c5c50f9d2db059d23c921c01ee38a25a388349bdfc0c2bb10b73",
+  "documents": {
+    "sse_2023_notice": {
+      "title": "上证发〔2023〕32号发布通知（归档）",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2023-02-17",
+      "retrieved_at": "2026-09-11T10:50:15.166349+00:00",
+      "url": "https://www.sse.com.cn/lawandrules/sselawsrules2025/repeal/rules/c/c_20250612_10824490.shtml",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2023_notice.html",
+      "bytes": 35712,
+      "sha256": "0a634408b2842a6cba4f4686d6013716aa5bf5cddf547139945d0eb7c6d9a27c"
+    },
+    "sse_2023_rules": {
+      "title": "上海证券交易所交易规则（2023年修订）",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2023-02-17",
+      "retrieved_at": "2026-09-11T10:50:15.588316+00:00",
+      "url": "https://www.sse.com.cn/lawandrules/sselawsrules2025/repeal/rules/c/10824490/files/dcbe58edb194451d93f19b1f7dd8fb4c.docx",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2023_rules.docx",
+      "bytes": 51948,
+      "sha256": "7aa2319f6dcf597be1e86b3b69d7c2ad0e6acb2a5d0cc6be48a01af602fded40"
+    },
+    "sse_2023_repeals": {
+      "title": "sse 2023 repeals",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2023-02-17",
+      "retrieved_at": "2026-09-11T10:50:15.812833+00:00",
+      "url": "https://www.sse.com.cn/lawandrules/sselawsrules2025/repeal/rules/c/10824490/files/2dd188e159c243a384004b3dc48167a8.docx",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2023_repeals.docx",
+      "bytes": 16934,
+      "sha256": "7f89cfdc37f7fafdf48037bbbc5f3d608b35ae39d658484755550718f1d902a6"
+    },
+    "sse_2023_deferred": {
+      "title": "sse 2023 deferred",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2023-02-17",
+      "retrieved_at": "2026-09-11T10:50:16.591319+00:00",
+      "url": "https://www.sse.com.cn/lawandrules/sselawsrules2025/repeal/rules/c/10824490/files/3f0cc77bae0543c795a42731398bc8e0.docx",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2023_deferred.docx",
+      "bytes": 17995,
+      "sha256": "13cd6f14fdc5b8ecb5fad1876c6ecb05bf6c163d5217a2f2d687029ffa5bf4e2"
+    },
+    "sse_2026_notice": {
+      "title": "上证发〔2026〕41号发布通知",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2026-04-24",
+      "retrieved_at": "2026-09-11T10:50:18.160217+00:00",
+      "url": "https://www.sse.com.cn/lawandrules/sselawsrules2025/trade/universal/c/c_20260424_10816492.shtml",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2026_notice.html",
+      "bytes": 34823,
+      "sha256": "cd3365ac6d36b137c7da57fa40459fe317bd8c534f3349ca1eff8bef93548494"
+    },
+    "sse_2026_rules": {
+      "title": "上海证券交易所交易规则（2026年修订）",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2026-04-24",
+      "retrieved_at": "2026-09-11T10:50:19.470961+00:00",
+      "url": "https://www.sse.com.cn/lawandrules/sselawsrules2025/trade/universal/c/10816492/files/704204728fe74fff89de4f16efda4791.docx",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2026_rules.docx",
+      "bytes": 65302,
+      "sha256": "fc922c433438b2636cb631eab25cca405209712acbb6aaded768c45456ff8888"
+    },
+    "sse_2026_deferred": {
+      "title": "sse 2026 deferred",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2026-04-24",
+      "retrieved_at": "2026-09-11T10:50:20.397208+00:00",
+      "url": "https://www.sse.com.cn/lawandrules/sselawsrules2025/trade/universal/c/10816492/files/2ebdf02d60684b07a6ca0fd1f8cd1456.docx",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2026_deferred.docx",
+      "bytes": 16476,
+      "sha256": "f4a0d0976a01e3e95f82460170900993824b70d91183e42d09e13ba10a9958c5"
+    },
+    "sse_2023_launch_plan": {
+      "title": "首批沪深主板注册制上市安排（4月4日）",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2023-04-04",
+      "retrieved_at": "2026-09-11T10:50:21.309040+00:00",
+      "url": "https://www.sse.com.cn/aboutus/mediacenter/hotandd/c/c_20230404_5719112.shtml",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2023_launch_plan.html",
+      "bytes": 27659,
+      "sha256": "cd14cf31f250e9e7ebfb812ae691b27d9042031ff04de83f88b5471b0cd195b4"
+    },
+    "szse_2026_notice": {
+      "title": "深证上〔2026〕551号发布通知",
+      "authority": "Shenzhen Stock Exchange",
+      "published_on": "2026-04-24",
+      "retrieved_at": "2026-09-11T10:50:21.661879+00:00",
+      "url": "https://www.szse.cn/lawrules/rule/trade/current/t20260424_620190.html",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2026_notice.html",
+      "bytes": 19374,
+      "sha256": "08d05a9d3f9c7dac31e8ac33712bac26b3995585718031e99a953e9128eec2d2"
+    },
+    "szse_2026_rules": {
+      "title": "深圳证券交易所交易规则（2026年修订）",
+      "authority": "Shenzhen Stock Exchange",
+      "published_on": "2026-04-24",
+      "retrieved_at": "2026-09-11T10:50:21.960507+00:00",
+      "url": "https://docs.static.szse.cn/www/lawrules/rule/trade/current/W020260424690713155663.pdf",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2026_rules.pdf",
+      "bytes": 282084,
+      "sha256": "9b66f8b0db70f84a25ef1ccb4ee2351001724e408117552d75f6d8993483c586"
+    },
+    "szse_2023_notice": {
+      "title": "深证上〔2023〕98号发布通知（归档）",
+      "authority": "Shenzhen Stock Exchange",
+      "published_on": "2023-02-17",
+      "retrieved_at": "2026-09-11T10:56:18.909215+00:00",
+      "url": "https://www.szse.cn/lawrules/rule/repeal/rules/t20230217_598773.html",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2023_notice.html",
+      "bytes": 15560,
+      "sha256": "7f4405a3e7021976db2d4ecbb1b02434f603110b2de46233f5a8b71f2059794a"
+    },
+    "szse_2023_actual_launch": {
+      "title": "首批主板注册制企业于2023年4月10日上市",
+      "authority": "Shenzhen Stock Exchange",
+      "published_on": "2023-04-10",
+      "retrieved_at": "2026-09-11T10:56:19.508811+00:00",
+      "url": "https://www.szse.cn/aboutus/trends/news/t20230410_599854.html",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2023_actual_launch.html",
+      "bytes": 16457,
+      "sha256": "16f953ac2bd11a0bf72bb81ba20d10aaaa0a0b6d2456018c337340c91524c243"
+    },
+    "sse_2020_rules": {
+      "title": "sse 2020 rules",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2020-03-13",
+      "retrieved_at": "2026-09-11T10:56:19.793063+00:00",
+      "url": "https://www.sse.com.cn/lawandrules/sselawsrules2025/repeal/rules/c/10785127/files/b39b8db2daa74eac916d8b3d6907af51.docx",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2020_rules.docx",
+      "bytes": 37763,
+      "sha256": "bc0abb073a0463e3b9e0a3d8d0fa190ffee44286fdae8bf431f1f64fb8eccb2f"
+    },
+    "sse_star_2019_rules": {
+      "title": "sse star 2019 rules",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2019-03-01",
+      "retrieved_at": "2026-09-11T10:56:20.773311+00:00",
+      "url": "https://www.sse.com.cn/lawandrules/sselawsrules/repeal/rules/c/10118601/files/f6fc4a1d4c1f469183a013c4dc36a535.pdf",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_star_2019_rules.pdf",
+      "bytes": 268491,
+      "sha256": "e751bcc6470c49a4de98c5dce32d03e926927f0825d3f9c469274b802e748b6a"
+    },
+    "szse_2021_rules": {
+      "title": "szse 2021 rules",
+      "authority": "Shenzhen Stock Exchange",
+      "published_on": "2021-03-31",
+      "retrieved_at": "2026-09-11T10:56:24.946064+00:00",
+      "url": "https://www.szse.cn/lawrules/rule/repeal/rules/P020231230545143336292.pdf",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2021_rules.pdf",
+      "bytes": 287964,
+      "sha256": "3a7e3e378b169248bb9314accd749586a10af24028909e66ae0f1759d5151c3d"
+    },
+    "szse_chinext_2020_rules": {
+      "title": "szse chinext 2020 rules",
+      "authority": "Shenzhen Stock Exchange",
+      "published_on": "2020-06-12",
+      "retrieved_at": "2026-09-11T10:56:25.735355+00:00",
+      "url": "https://docs.static.szse.cn/www/disclosure/notice/general/W020200612831351578076.pdf",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_chinext_2020_rules.pdf",
+      "bytes": 279208,
+      "sha256": "c4ea293e2f1e86c5083fa7b606ceb5cf621885ff539e05bf089a7efd5fa7c20f"
+    },
+    "szse_2023_rules": {
+      "title": "深圳证券交易所交易规则（2023年修订）",
+      "authority": "Shenzhen Stock Exchange",
+      "published_on": "2023-02-17",
+      "retrieved_at": "2026-09-11T10:56:53.414983+00:00",
+      "url": "https://docs.static.szse.cn/www/lawrules/rule/repeal/rules/W020230217564423808793.pdf",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2023_rules.pdf",
+      "bytes": 620843,
+      "sha256": "7018114a6e11deb239c2a72e71e49defc6e8841b3e2c093b3bbf809282c67222"
+    },
+    "szse_2023_revisions": {
+      "title": "szse 2023 revisions",
+      "authority": "Shenzhen Stock Exchange",
+      "published_on": "2023-02-17",
+      "retrieved_at": "2026-09-11T10:56:53.816356+00:00",
+      "url": "https://docs.static.szse.cn/www/lawrules/rule/repeal/rules/W020230217564424593579.pdf",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2023_revisions.pdf",
+      "bytes": 337827,
+      "sha256": "4928b041c9d621b9a54a9a41c6d9f182ebf9891386f6500127e9e2a4bb6e0c08"
+    },
+    "sse_2014_sell_notice": {
+      "title": "上证函〔2014〕301号：竞价申报数量及前端控制",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2014-06-27",
+      "retrieved_at": "2026-09-11T10:59:02.929343+00:00",
+      "url": "https://www.sse.com.cn/lawandrules/guide/stock/jyglywznylc/tz/c/c_20230209_5716007.shtml",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2014_sell_notice.html",
+      "bytes": 30622,
+      "sha256": "9b5ce1d7af79539e2781ac4ad5767eebb1cdc0d0cc29876ae7627548326c40d9"
+    },
+    "szse_2014_sell_notice": {
+      "title": "深证会〔2014〕72号：竞价卖出申报数量",
+      "authority": "Shenzhen Stock Exchange",
+      "published_on": "2014-07-25",
+      "retrieved_at": "2026-09-11T10:59:04.122676+00:00",
+      "url": "https://www.szse.cn/lawrules/rule/trade/current/t20150914_565054.html",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2014_sell_notice.html",
+      "bytes": 21673,
+      "sha256": "9bf20e75707c6f69ed4778627bb6b5fd1ad67f460e05e3e86f1053c380733e34"
+    },
+    "sse_2019_t1_faq": {
+      "title": "科创板配套规则答记者问，第七问（T+1）",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2019-03-01",
+      "retrieved_at": "2026-09-11T10:59:04.379589+00:00",
+      "url": "https://www.sse.com.cn/aboutus/mediacenter/hotandd/c/c_20190301_4729501.shtml",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2019_t1_faq.html",
+      "bytes": 40232,
+      "sha256": "1936b54af07057e331a06075ead1e52c6189aaa503b83d50b91695ac5237324d"
+    },
+    "szse_1995_events": {
+      "title": "1995年深交所大事记，一月1日T+1交收；网页标注1995-12-31，归档URL为2007-03-28",
+      "authority": "Shenzhen Stock Exchange",
+      "published_on": "1995-12-31",
+      "retrieved_at": "2026-09-11T10:59:05.404617+00:00",
+      "url": "https://www.szse.cn/aboutus/sse/events/t20070328_497829.html",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_1995_events.html",
+      "bytes": 87042,
+      "sha256": "87a41248d5c64832142857d31d60d8850aa6d820a645eb68c52edca001418dec"
+    },
+    "szse_2026_revisions": {
+      "title": "szse 2026 revisions",
+      "authority": "Shenzhen Stock Exchange",
+      "published_on": "2026-04-24",
+      "retrieved_at": "2026-09-11T10:59:16.699288+00:00",
+      "url": "https://docs.static.szse.cn/www/lawrules/rule/trade/current/W020260424690713346617.pdf",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2026_revisions.pdf",
+      "bytes": 141508,
+      "sha256": "3a309bf5b4f7b2ee170b897084397568c7a1db939b398f4ab8999587501c727a"
+    },
+    "sse_2026_revisions": {
+      "title": "sse 2026 revisions",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2026-04-24",
+      "retrieved_at": "2026-09-11T10:59:16.917054+00:00",
+      "url": "https://www.sse.com.cn/lawandrules/sselawsrules2025/trade/universal/c/10816492/files/92435c67211f452fa2e01792bf72012b.docx",
+      "path": "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2026_revisions.docx",
+      "bytes": 16084,
+      "sha256": "6c0ffbb11664654442ff0907c8ab109349c1b7665b6745998d34c1219ec98aa1"
+    },
+    "sse_2022_block_notice": {
+      "title": "上证发〔2022〕129号：调整大宗交易规定",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2022-08-19",
+      "retrieved_at": "2026-09-11T12:49:45.483773+00:00",
+      "url": "https://www.sse.com.cn/lawandrules/sselawsrules2025/repeal/rules/c/c_20220819_10785126.shtml",
+      "path": "data/products/rule_evidence/rule_catalogue_v2_20260911/sources/sse_2022_block_notice.html",
+      "bytes": 28941,
+      "sha256": "7f4ef64896d5ea58ab6ea03e8f04e554621330a88667da9359a4cde828c0c57a"
+    },
+    "sse_2020_notice": {
+      "title": "上证发〔2020〕17号：交易规则修订发布通知",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2020-03-13",
+      "retrieved_at": "2026-09-11T12:49:46.436602+00:00",
+      "url": "https://www.sse.com.cn/lawandrules/sselawsrules2025/repeal/rules/c/c_20200313_10785127.shtml",
+      "path": "data/products/rule_evidence/rule_catalogue_v2_20260911/sources/sse_2020_notice.html",
+      "bytes": 29986,
+      "sha256": "5b06079affb23be33261f6ba92d619c3fdf8aad71636b8ba15d6143e2e2d5f2e"
+    },
+    "sse_star_2019_notice": {
+      "title": "上证发〔2019〕23号：科创板交易特别规定发布通知",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2019-03-01",
+      "retrieved_at": "2026-09-11T12:49:46.773653+00:00",
+      "url": "https://www.sse.com.cn/lawandrules/sselawsrules2025/repeal/rules/c/c_20190301_10785118.shtml",
+      "path": "data/products/rule_evidence/rule_catalogue_v2_20260911/sources/sse_star_2019_notice.html",
+      "bytes": 28942,
+      "sha256": "e95dc6453674fba1f69f63d115a50dbcfccd01e8157cc0ca4e36b70baf83b831"
+    },
+    "szse_chinext_2020_notice": {
+      "title": "深证上〔2020〕515号：创业板交易特别规定发布通知",
+      "authority": "Shenzhen Stock Exchange",
+      "published_on": "2020-06-12",
+      "retrieved_at": "2026-09-11T12:49:47.983771+00:00",
+      "url": "https://www.szse.cn/disclosure/notice/general/t20200612_578381.html",
+      "path": "data/products/rule_evidence/rule_catalogue_v2_20260911/sources/szse_chinext_2020_notice.html",
+      "bytes": 19519,
+      "sha256": "d04a8f720ee0c3fbfcd8ff7b033148a952c7ab459f033eeadb1db06e6322dd47"
+    },
+    "szse_chinext_2020_launch_faq": {
+      "title": "2020-08-21深交所创业板改革答记者问，第四问确认8月24日施行",
+      "authority": "Shenzhen Stock Exchange",
+      "published_on": "2020-08-21",
+      "retrieved_at": "2026-09-11T12:49:48.236039+00:00",
+      "url": "https://www.szse.cn/aboutus/trends/news/t20200821_580924.html",
+      "path": "data/products/rule_evidence/rule_catalogue_v2_20260911/sources/szse_chinext_2020_launch_faq.html",
+      "bytes": 34508,
+      "sha256": "cba74610a5c582e2ac94f3bb21a04f2e5fa1fa175131b0cd287f9bbfc311b1ae"
+    },
+    "szse_2022_block_notice": {
+      "title": "深证会〔2022〕298号：协议大宗交易价格范围",
+      "authority": "Shenzhen Stock Exchange",
+      "published_on": "2022-08-19",
+      "retrieved_at": "2026-09-11T12:50:48.168156+00:00",
+      "url": "https://www.szse.cn/lawrules/rule/repeal/rules/P020231230545119551637.pdf",
+      "path": "data/products/rule_evidence/rule_catalogue_v2_20260911/sources/szse_2022_block_notice.pdf",
+      "bytes": 101119,
+      "sha256": "434ca639ad857e91c0cd3c008561f92d314db3d50560068339ef776d4b861a11"
+    },
+    "sse_2020_deferred": {
+      "title": "2020年第二次修订交易规则暂缓实施条文",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2020-03-13",
+      "retrieved_at": "2026-09-11T12:51:24.588872+00:00",
+      "url": "https://www.sse.com.cn/lawandrules/sselawsrules2025/repeal/rules/c/10785127/files/b79c255874ea49679c46eca9ff1f3aed.docx",
+      "path": "data/products/rule_evidence/rule_catalogue_v2_20260911/sources/sse_2020_deferred.docx",
+      "bytes": 16581,
+      "sha256": "6cf12c92b1329d5a67f6313272b221b30a17aa6f83d76e9912b4e856d28a09ea"
+    },
+    "sse_2020_revisions": {
+      "title": "2020年第二次修订交易规则修订条文",
+      "authority": "Shanghai Stock Exchange",
+      "published_on": "2020-03-13",
+      "retrieved_at": "2026-09-11T12:51:25.508308+00:00",
+      "url": "https://www.sse.com.cn/lawandrules/sselawsrules2025/repeal/rules/c/10785127/files/dbc1dab581e34f4a9076607f90c18c62.docx",
+      "path": "data/products/rule_evidence/rule_catalogue_v2_20260911/sources/sse_2020_revisions.docx",
+      "bytes": 14290,
+      "sha256": "8e1b52144c3b27a9550dd3ef6e8e3562f59c55fc86f9e0da37b317af44a5a350"
+    }
+  },
+  "files": {
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2023_notice.html": {
+      "bytes": 35712,
+      "sha256": "0a634408b2842a6cba4f4686d6013716aa5bf5cddf547139945d0eb7c6d9a27c"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2023_rules.docx": {
+      "bytes": 51948,
+      "sha256": "7aa2319f6dcf597be1e86b3b69d7c2ad0e6acb2a5d0cc6be48a01af602fded40"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2023_repeals.docx": {
+      "bytes": 16934,
+      "sha256": "7f89cfdc37f7fafdf48037bbbc5f3d608b35ae39d658484755550718f1d902a6"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2023_deferred.docx": {
+      "bytes": 17995,
+      "sha256": "13cd6f14fdc5b8ecb5fad1876c6ecb05bf6c163d5217a2f2d687029ffa5bf4e2"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2026_notice.html": {
+      "bytes": 34823,
+      "sha256": "cd3365ac6d36b137c7da57fa40459fe317bd8c534f3349ca1eff8bef93548494"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2026_rules.docx": {
+      "bytes": 65302,
+      "sha256": "fc922c433438b2636cb631eab25cca405209712acbb6aaded768c45456ff8888"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2026_deferred.docx": {
+      "bytes": 16476,
+      "sha256": "f4a0d0976a01e3e95f82460170900993824b70d91183e42d09e13ba10a9958c5"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2023_launch_plan.html": {
+      "bytes": 27659,
+      "sha256": "cd14cf31f250e9e7ebfb812ae691b27d9042031ff04de83f88b5471b0cd195b4"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2026_notice.html": {
+      "bytes": 19374,
+      "sha256": "08d05a9d3f9c7dac31e8ac33712bac26b3995585718031e99a953e9128eec2d2"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2026_rules.pdf": {
+      "bytes": 282084,
+      "sha256": "9b66f8b0db70f84a25ef1ccb4ee2351001724e408117552d75f6d8993483c586"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2023_notice.html": {
+      "bytes": 15560,
+      "sha256": "7f4405a3e7021976db2d4ecbb1b02434f603110b2de46233f5a8b71f2059794a"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2023_actual_launch.html": {
+      "bytes": 16457,
+      "sha256": "16f953ac2bd11a0bf72bb81ba20d10aaaa0a0b6d2456018c337340c91524c243"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2020_rules.docx": {
+      "bytes": 37763,
+      "sha256": "bc0abb073a0463e3b9e0a3d8d0fa190ffee44286fdae8bf431f1f64fb8eccb2f"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_star_2019_rules.pdf": {
+      "bytes": 268491,
+      "sha256": "e751bcc6470c49a4de98c5dce32d03e926927f0825d3f9c469274b802e748b6a"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2021_rules.pdf": {
+      "bytes": 287964,
+      "sha256": "3a7e3e378b169248bb9314accd749586a10af24028909e66ae0f1759d5151c3d"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_chinext_2020_rules.pdf": {
+      "bytes": 279208,
+      "sha256": "c4ea293e2f1e86c5083fa7b606ceb5cf621885ff539e05bf089a7efd5fa7c20f"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2023_rules.pdf": {
+      "bytes": 620843,
+      "sha256": "7018114a6e11deb239c2a72e71e49defc6e8841b3e2c093b3bbf809282c67222"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2023_revisions.pdf": {
+      "bytes": 337827,
+      "sha256": "4928b041c9d621b9a54a9a41c6d9f182ebf9891386f6500127e9e2a4bb6e0c08"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2014_sell_notice.html": {
+      "bytes": 30622,
+      "sha256": "9b5ce1d7af79539e2781ac4ad5767eebb1cdc0d0cc29876ae7627548326c40d9"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2014_sell_notice.html": {
+      "bytes": 21673,
+      "sha256": "9bf20e75707c6f69ed4778627bb6b5fd1ad67f460e05e3e86f1053c380733e34"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2019_t1_faq.html": {
+      "bytes": 40232,
+      "sha256": "1936b54af07057e331a06075ead1e52c6189aaa503b83d50b91695ac5237324d"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_1995_events.html": {
+      "bytes": 87042,
+      "sha256": "87a41248d5c64832142857d31d60d8850aa6d820a645eb68c52edca001418dec"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2026_revisions.pdf": {
+      "bytes": 141508,
+      "sha256": "3a309bf5b4f7b2ee170b897084397568c7a1db939b398f4ab8999587501c727a"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2026_revisions.docx": {
+      "bytes": 16084,
+      "sha256": "6c0ffbb11664654442ff0907c8ab109349c1b7665b6745998d34c1219ec98aa1"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/inventory.json": {
+      "bytes": 1440245,
+      "sha256": "47226e18c60dcc66d6cad9098b1c9a02b6cd8e8b328a2987cfb2aed55ad2387c"
+    },
+    "src/quantlab/execution/rules.py": {
+      "bytes": 18677,
+      "sha256": "2d7c9f975c5bd088b2e4357c934ab1cfb2d846fbb816ce3b6509297e97a72dfa"
+    },
+    "src/quantlab/personal/quantity_rules.py": {
+      "bytes": 4641,
+      "sha256": "76edb4e02ffc77fc9f183dd5130a163c2d152da4085ee2239c2d3ef9cad89278"
+    },
+    "data/products/rule_evidence/rule_catalogue_v2_20260911/sources/sse_2022_block_notice.html": {
+      "bytes": 28941,
+      "sha256": "7f4ef64896d5ea58ab6ea03e8f04e554621330a88667da9359a4cde828c0c57a"
+    },
+    "data/products/rule_evidence/rule_catalogue_v2_20260911/sources/sse_2020_notice.html": {
+      "bytes": 29986,
+      "sha256": "5b06079affb23be33261f6ba92d619c3fdf8aad71636b8ba15d6143e2e2d5f2e"
+    },
+    "data/products/rule_evidence/rule_catalogue_v2_20260911/sources/sse_star_2019_notice.html": {
+      "bytes": 28942,
+      "sha256": "e95dc6453674fba1f69f63d115a50dbcfccd01e8157cc0ca4e36b70baf83b831"
+    },
+    "data/products/rule_evidence/rule_catalogue_v2_20260911/sources/szse_chinext_2020_notice.html": {
+      "bytes": 19519,
+      "sha256": "d04a8f720ee0c3fbfcd8ff7b033148a952c7ab459f033eeadb1db06e6322dd47"
+    },
+    "data/products/rule_evidence/rule_catalogue_v2_20260911/sources/szse_chinext_2020_launch_faq.html": {
+      "bytes": 34508,
+      "sha256": "cba74610a5c582e2ac94f3bb21a04f2e5fa1fa175131b0cd287f9bbfc311b1ae"
+    },
+    "data/products/rule_evidence/rule_catalogue_v2_20260911/sources/szse_2022_block_notice.pdf": {
+      "bytes": 101119,
+      "sha256": "434ca639ad857e91c0cd3c008561f92d314db3d50560068339ef776d4b861a11"
+    },
+    "data/products/rule_evidence/rule_catalogue_v2_20260911/sources/sse_2020_deferred.docx": {
+      "bytes": 16581,
+      "sha256": "6cf12c92b1329d5a67f6313272b221b30a17aa6f83d76e9912b4e856d28a09ea"
+    },
+    "data/products/rule_evidence/rule_catalogue_v2_20260911/sources/sse_2020_revisions.docx": {
+      "bytes": 14290,
+      "sha256": "8e1b52144c3b27a9550dd3ef6e8e3562f59c55fc86f9e0da37b317af44a5a350"
+    },
+    "config/historical_rule_catalogue_v1.json": {
+      "bytes": 29767,
+      "sha256": "4c880455c60413fa3076812f2bb0197aae3ffa24289d5e59f9eac16a02bae3c1"
+    },
+    "config/historical_rule_sources_v1.json": {
+      "bytes": 20616,
+      "sha256": "624e7f892dad2dc54c5a4a6997e49d8640a28562187eb8f4c6dd4a2d4cef1350"
+    },
+    "src/quantlab/research/rule_evidence.py": {
+      "bytes": 11631,
+      "sha256": "b49b5e7f82831152c38d0ea6377aa872b10fb7a6e36292e22f1b8b322263b610"
+    },
+    "scripts/audit_historical_rules.py": {
+      "bytes": 4674,
+      "sha256": "5be4283cd6b4161e176c0ca87707f30d16604519ed356f0fd9ffa345925b036b"
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/report.json": {
+      "bytes": 1935617,
+      "sha256": "aeb32567dd902c545bd27ed75e3660614e0a59e3dfe6614c64a79750227e835c"
+    }
+  },
+  "retrieval_failures": [
+    {
+      "file": "szse_2023_notice.html",
+      "url": "https://investor.szse.cn/lawrules/index/rule/t20230217_598773.html",
+      "retrieved_at": "2026-09-11T10:50:21.455362+00:00",
+      "error": "HTTP Error 404: Not Found",
+      "seconds": 0.20300000003771856
+    },
+    {
+      "file": "szse_2023_rules.pdf",
+      "url": "https://docs.static.szse.cn/www/lawrules/rule/trade/W020230217564423808793.pdf",
+      "retrieved_at": "2026-09-11T10:56:19.176179+00:00",
+      "error": "HTTP Error 404: Not Found",
+      "seconds": 0.32900000002700835
+    },
+    {
+      "file": "sse_star_2019_manual.pdf",
+      "url": "https://edu.sse.com.cn/tib/manual/c/10608392/files/cd2f63893add490490f61a508b7c0ed2.pdf",
+      "retrieved_at": "2026-09-11T10:56:22.037452+00:00",
+      "error": "<urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1010)>",
+      "seconds": 2.905999999959022
+    },
+    {
+      "file": "sse_star_2019_manual.pdf",
+      "url": "https://edu.sse.com.cn/tib/manual/c/10608392/files/cd2f63893add490490f61a508b7c0ed2.pdf",
+      "retrieved_at": "2026-09-11T10:56:54.170422+00:00",
+      "error": "<urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1010)>",
+      "seconds": 4.01600000000326
+    },
+    {
+      "file": "szse_2023_manual.pdf",
+      "url": "https://investor.szse.cn/institute/bookshelf/manualseriesbook/P020230403389861343977.pdf",
+      "retrieved_at": "2026-09-11T10:59:05.776010+00:00",
+      "error": "single document exceeded fixed 5 MiB fetch bound",
+      "seconds": 10.921999999962281
+    }
+  ],
+  "download_notes": [
+    "被5MiB单文档上限中止的手册响应读取了5MiB+1字节且未落盘；这些字节计入50MiB下载预算。",
+    "旧科创板手册TLS失败和旧深交所链接404均保留，不以错误页作为规则。",
+    "v2复用24份v1原件，本轮新增8份原件；原来的失败读取和来源清单不被覆盖。"
+  ],
+  "source_bytes_saved": 3043467,
+  "failed_prefix_bytes_known": 5242881,
+  "new_source_ids": [
+    "sse_2022_block_notice",
+    "sse_2020_notice",
+    "sse_star_2019_notice",
+    "szse_chinext_2020_notice",
+    "szse_chinext_2020_launch_faq",
+    "szse_2022_block_notice",
+    "sse_2020_deferred",
+    "sse_2020_revisions"
+  ],
+  "new_source_bytes": 273886,
+  "parent_report_fingerprint": "bcf18f0cd996497500fbee8d77ef91d217b70572b9151c5120f2c73b12ae4b93",
+  "new_retrieval_failures": []
+}
