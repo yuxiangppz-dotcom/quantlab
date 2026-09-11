@@ -153,6 +153,7 @@ def test_report_rejects_tampering_incomplete_parity_and_authority(tmp_path):
         "real_future_invariant": True,
         "fixtures": {"all_provider_parity": True},
         "target_grid_rows": 10,
+        "target_active_rows": 9,
         "features": [
             {
                 "name": item["name"],
@@ -181,6 +182,7 @@ def test_report_rejects_tampering_incomplete_parity_and_authority(tmp_path):
         ("unfinished", {"status": "running"}),
         ("future", {"real_future_invariant": False}),
         ("fit", {"new_fit_attempts": 1}),
+        ("inactive", {"target_active_rows": 7}),
     ):
         with pytest.raises(DataValidationError):
             load_audit_report(attempt(name, {**report, **updates}))

@@ -54,3 +54,26 @@ Implementation validation before the real audit: 1,420 default tests passed,
 3 optional checks skipped by default; all 3 explicitly enabled runtime tests
 passed (including the native synthetic Alpha158 fixtures). Ruff and diff checks
 passed. Self-review added fail-closed report checks and a two-thread runtime gate.
+
+Actual audit at committed/pushed f4bbadc92272588b538fce912e12d4316f547f3d completed
+once in 10.901471 seconds: 362 sessions with warm-up, 1,210 target identities,
+968 active identities, all 158 expressions matched with zero differences,
+149,404 usable target factor cells and 908 fully usable identities. The exclusive
+output including report is 2,790,578 bytes. No failed real attempt or research
+fit occurred. Raw/native/usable outputs, source/code/runtime hashes, simulations
+and code exclusions remain separately inspectable. Independent verification
+checked all 1,032 inputs and 141 output artifacts before presentation edits,
+plus raw unit/adjustment calculations and code-switch exclusion boundaries.
+See docs/alpha158_findings_zh.md for report and verification fingerprints.
+
+Final local checks: 1,420 passed / 3 default skips; all 3 explicitly enabled
+runtime checks passed; Ruff and diff checks passed. Real headless Edge acceptance
+verified the Chinese factor table, 968 active rows, code boundaries, limitations,
+and both report/Chinese downloads with zero browser or Streamlit exceptions;
+the screenshot was visually inspected. Self-review also prevents a resealed
+report from claiming more usable observations than active code identities.
+Only precommit formatting/style issues were corrected; the real batch required
+no retry or scope change. The shared native engine is explicitly disclosed and
+not described as an independent implementation of 158 formulas. Freeze these
+artifacts; the next task should stage a resource-bounded historical universe
+before a separately predeclared rolling comparison. No alpha is promoted.

@@ -3,6 +3,23 @@
 This file distinguishes locally exercised product paths from planned work.
 It is evidence notes, not a substitute for tests or an investment claim.
 
+## Native Alpha158 audit (2026-09-11)
+
+- All 158 pinned Qlib 0.9.7 expressions passed file/in-memory provider parity on
+  five fixed codes, 2024-07-01 through 2025-06-30, plus 120 warm-up sessions.
+  There were zero numerical or missingness mismatches. This is transport parity
+  against the same native engine, supplemented by 13 independent analytic
+  formulas and split/gap/future fixtures, not a second 158-formula implementation.
+- Of 1,210 target code/date positions, 968 are within exact code lifecycles;
+  908 have all 158 factors usable under the stricter complete-history rule.
+  Canonical data and prior experiment outputs are unchanged. No research fits
+  or performance claims were added. The Chinese workbench now displays per-factor
+  coverage and the old/new code boundary; see [actual findings](alpha158_findings_zh.md).
+- Historical milestone notes below describe their respective earlier runs.
+  The earlier LightGBM system-library blocker has since been resolved; round two
+  completed six fixed fits. Native Alpha158 correctness does not close existing
+  portfolio costs, historical rules, corporate actions or execution blockers.
+
 ## Current delivery: guided workbench (2026-09-10)
 
 - Seven Chinese pages now join the existing services into an explicit local

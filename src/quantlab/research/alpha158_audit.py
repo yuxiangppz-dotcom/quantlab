@@ -377,12 +377,14 @@ def load_audit_report(out: Path, *, full_verify=False):
     features = report.get("features", [])
     if (
         report.get("status") != "complete"
+        or not (0 <= report["target_active_rows"] <= report["target_grid_rows"])
         or [item.get("name") for item in features] != names
         or report.get("real_prefix_invariant") is not True
         or report.get("real_future_invariant") is not True
         or report.get("fixtures", {}).get("all_provider_parity") is not True
         or any(
             item.get("mismatch_rows") != 0
+            or item["target_usable_rows"] > report["target_active_rows"]
             or not (
                 0
                 <= item["target_usable_rows"]
