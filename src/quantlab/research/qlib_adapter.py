@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 
 import pandas as pd
 
@@ -17,6 +18,8 @@ def qlib_integration_status() -> dict[str, object]:
         "qlib_backtest_used": False,
         "alpha158_subset": "KMID,KLEN exact mapping only",
         "alpha158_full_implementation": False,
+        "alpha158_native_engine": "pinned_Qlib_0.9.7_default_158",
+        "alpha158_data_completeness": "requires_per_run_coverage_and_parity_report",
         "status": "available" if available else "optional_dependency_not_installed",
     }
 
@@ -28,6 +31,14 @@ def to_qlib_static_loader(frame: pd.DataFrame, feature_columns: list[str]):
     adapter raises a clear optional-dependency error rather than substituting a
     lookalike object and claiming Qlib integration.
     """
+    if (
+        not feature_columns
+        or any(not isinstance(name, str) for name in feature_columns)
+        or len(feature_columns) != len(set(feature_columns))
+    ):
+        raise ValueError("Qlib feature allowlist must be nonempty, unique strings")
+    if any(re.match(r"(?i)^(future_|label(?:$|[_0-9]))", name) for name in feature_columns):
+        raise ValueError("future returns and labels cannot enter the feature allowlist")
     missing = {"instrument_id", "trade_date", *feature_columns} - set(frame.columns)
     if missing:
         raise ValueError(f"Qlib adapter input missing columns: {sorted(missing)}")

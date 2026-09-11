@@ -1,0 +1,1542 @@
+{
+  "schema_version": 1,
+  "audit_id": "qlib_alpha158_parity_20260911",
+  "qlib_version": "0.9.7",
+  "upstream_sources_sha256": {
+    "contrib/data/loader.py": "814b7f7ab3d418ae3c87ce352220080b239eba2670eac9e38376b794be4075cb",
+    "data/data.py": "9156bfef585b9e2d22d4d1ba5831efdb63b419d24846ee738eee237090ff6a24",
+    "data/ops.py": "6f648355725a85a9f17528d864281fc065f8a4f887261a9909f7495d5db42760",
+    "data/base.py": "30382dd1a3c47506e61514f37533a3407f63fd01c9a9fd5a12b8c0cce85c5d5c",
+    "data/storage/file_storage.py": "7261420971a2b6cc3de9a9dbac6288216fdc9653e2d99f269df01d1cf5ec55c0"
+  },
+  "feature_count": 158,
+  "features": [
+    {
+      "name": "KMID",
+      "expression": "($close-$open)/$open",
+      "dependencies": [
+        "close",
+        "open"
+      ],
+      "lookback_sessions": 0,
+      "future_sessions": 0
+    },
+    {
+      "name": "KLEN",
+      "expression": "($high-$low)/$open",
+      "dependencies": [
+        "high",
+        "low",
+        "open"
+      ],
+      "lookback_sessions": 0,
+      "future_sessions": 0
+    },
+    {
+      "name": "KMID2",
+      "expression": "($close-$open)/($high-$low+1e-12)",
+      "dependencies": [
+        "close",
+        "high",
+        "low",
+        "open"
+      ],
+      "lookback_sessions": 0,
+      "future_sessions": 0
+    },
+    {
+      "name": "KUP",
+      "expression": "($high-Greater($open, $close))/$open",
+      "dependencies": [
+        "close",
+        "high",
+        "open"
+      ],
+      "lookback_sessions": 0,
+      "future_sessions": 0
+    },
+    {
+      "name": "KUP2",
+      "expression": "($high-Greater($open, $close))/($high-$low+1e-12)",
+      "dependencies": [
+        "close",
+        "high",
+        "low",
+        "open"
+      ],
+      "lookback_sessions": 0,
+      "future_sessions": 0
+    },
+    {
+      "name": "KLOW",
+      "expression": "(Less($open, $close)-$low)/$open",
+      "dependencies": [
+        "close",
+        "low",
+        "open"
+      ],
+      "lookback_sessions": 0,
+      "future_sessions": 0
+    },
+    {
+      "name": "KLOW2",
+      "expression": "(Less($open, $close)-$low)/($high-$low+1e-12)",
+      "dependencies": [
+        "close",
+        "high",
+        "low",
+        "open"
+      ],
+      "lookback_sessions": 0,
+      "future_sessions": 0
+    },
+    {
+      "name": "KSFT",
+      "expression": "(2*$close-$high-$low)/$open",
+      "dependencies": [
+        "close",
+        "high",
+        "low",
+        "open"
+      ],
+      "lookback_sessions": 0,
+      "future_sessions": 0
+    },
+    {
+      "name": "KSFT2",
+      "expression": "(2*$close-$high-$low)/($high-$low+1e-12)",
+      "dependencies": [
+        "close",
+        "high",
+        "low"
+      ],
+      "lookback_sessions": 0,
+      "future_sessions": 0
+    },
+    {
+      "name": "OPEN0",
+      "expression": "$open/$close",
+      "dependencies": [
+        "close",
+        "open"
+      ],
+      "lookback_sessions": 0,
+      "future_sessions": 0
+    },
+    {
+      "name": "HIGH0",
+      "expression": "$high/$close",
+      "dependencies": [
+        "close",
+        "high"
+      ],
+      "lookback_sessions": 0,
+      "future_sessions": 0
+    },
+    {
+      "name": "LOW0",
+      "expression": "$low/$close",
+      "dependencies": [
+        "close",
+        "low"
+      ],
+      "lookback_sessions": 0,
+      "future_sessions": 0
+    },
+    {
+      "name": "VWAP0",
+      "expression": "$vwap/$close",
+      "dependencies": [
+        "close",
+        "vwap"
+      ],
+      "lookback_sessions": 0,
+      "future_sessions": 0
+    },
+    {
+      "name": "ROC5",
+      "expression": "Ref($close, 5)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 5,
+      "future_sessions": 0
+    },
+    {
+      "name": "ROC10",
+      "expression": "Ref($close, 10)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 10,
+      "future_sessions": 0
+    },
+    {
+      "name": "ROC20",
+      "expression": "Ref($close, 20)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 20,
+      "future_sessions": 0
+    },
+    {
+      "name": "ROC30",
+      "expression": "Ref($close, 30)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 30,
+      "future_sessions": 0
+    },
+    {
+      "name": "ROC60",
+      "expression": "Ref($close, 60)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 60,
+      "future_sessions": 0
+    },
+    {
+      "name": "MA5",
+      "expression": "Mean($close, 5)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 4,
+      "future_sessions": 0
+    },
+    {
+      "name": "MA10",
+      "expression": "Mean($close, 10)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 9,
+      "future_sessions": 0
+    },
+    {
+      "name": "MA20",
+      "expression": "Mean($close, 20)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 19,
+      "future_sessions": 0
+    },
+    {
+      "name": "MA30",
+      "expression": "Mean($close, 30)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 29,
+      "future_sessions": 0
+    },
+    {
+      "name": "MA60",
+      "expression": "Mean($close, 60)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 59,
+      "future_sessions": 0
+    },
+    {
+      "name": "STD5",
+      "expression": "Std($close, 5)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 4,
+      "future_sessions": 0
+    },
+    {
+      "name": "STD10",
+      "expression": "Std($close, 10)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 9,
+      "future_sessions": 0
+    },
+    {
+      "name": "STD20",
+      "expression": "Std($close, 20)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 19,
+      "future_sessions": 0
+    },
+    {
+      "name": "STD30",
+      "expression": "Std($close, 30)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 29,
+      "future_sessions": 0
+    },
+    {
+      "name": "STD60",
+      "expression": "Std($close, 60)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 59,
+      "future_sessions": 0
+    },
+    {
+      "name": "BETA5",
+      "expression": "Slope($close, 5)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 4,
+      "future_sessions": 0
+    },
+    {
+      "name": "BETA10",
+      "expression": "Slope($close, 10)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 9,
+      "future_sessions": 0
+    },
+    {
+      "name": "BETA20",
+      "expression": "Slope($close, 20)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 19,
+      "future_sessions": 0
+    },
+    {
+      "name": "BETA30",
+      "expression": "Slope($close, 30)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 29,
+      "future_sessions": 0
+    },
+    {
+      "name": "BETA60",
+      "expression": "Slope($close, 60)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 59,
+      "future_sessions": 0
+    },
+    {
+      "name": "RSQR5",
+      "expression": "Rsquare($close, 5)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 4,
+      "future_sessions": 0
+    },
+    {
+      "name": "RSQR10",
+      "expression": "Rsquare($close, 10)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 9,
+      "future_sessions": 0
+    },
+    {
+      "name": "RSQR20",
+      "expression": "Rsquare($close, 20)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 19,
+      "future_sessions": 0
+    },
+    {
+      "name": "RSQR30",
+      "expression": "Rsquare($close, 30)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 29,
+      "future_sessions": 0
+    },
+    {
+      "name": "RSQR60",
+      "expression": "Rsquare($close, 60)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 59,
+      "future_sessions": 0
+    },
+    {
+      "name": "RESI5",
+      "expression": "Resi($close, 5)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 4,
+      "future_sessions": 0
+    },
+    {
+      "name": "RESI10",
+      "expression": "Resi($close, 10)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 9,
+      "future_sessions": 0
+    },
+    {
+      "name": "RESI20",
+      "expression": "Resi($close, 20)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 19,
+      "future_sessions": 0
+    },
+    {
+      "name": "RESI30",
+      "expression": "Resi($close, 30)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 29,
+      "future_sessions": 0
+    },
+    {
+      "name": "RESI60",
+      "expression": "Resi($close, 60)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 59,
+      "future_sessions": 0
+    },
+    {
+      "name": "MAX5",
+      "expression": "Max($high, 5)/$close",
+      "dependencies": [
+        "close",
+        "high"
+      ],
+      "lookback_sessions": 4,
+      "future_sessions": 0
+    },
+    {
+      "name": "MAX10",
+      "expression": "Max($high, 10)/$close",
+      "dependencies": [
+        "close",
+        "high"
+      ],
+      "lookback_sessions": 9,
+      "future_sessions": 0
+    },
+    {
+      "name": "MAX20",
+      "expression": "Max($high, 20)/$close",
+      "dependencies": [
+        "close",
+        "high"
+      ],
+      "lookback_sessions": 19,
+      "future_sessions": 0
+    },
+    {
+      "name": "MAX30",
+      "expression": "Max($high, 30)/$close",
+      "dependencies": [
+        "close",
+        "high"
+      ],
+      "lookback_sessions": 29,
+      "future_sessions": 0
+    },
+    {
+      "name": "MAX60",
+      "expression": "Max($high, 60)/$close",
+      "dependencies": [
+        "close",
+        "high"
+      ],
+      "lookback_sessions": 59,
+      "future_sessions": 0
+    },
+    {
+      "name": "MIN5",
+      "expression": "Min($low, 5)/$close",
+      "dependencies": [
+        "close",
+        "low"
+      ],
+      "lookback_sessions": 4,
+      "future_sessions": 0
+    },
+    {
+      "name": "MIN10",
+      "expression": "Min($low, 10)/$close",
+      "dependencies": [
+        "close",
+        "low"
+      ],
+      "lookback_sessions": 9,
+      "future_sessions": 0
+    },
+    {
+      "name": "MIN20",
+      "expression": "Min($low, 20)/$close",
+      "dependencies": [
+        "close",
+        "low"
+      ],
+      "lookback_sessions": 19,
+      "future_sessions": 0
+    },
+    {
+      "name": "MIN30",
+      "expression": "Min($low, 30)/$close",
+      "dependencies": [
+        "close",
+        "low"
+      ],
+      "lookback_sessions": 29,
+      "future_sessions": 0
+    },
+    {
+      "name": "MIN60",
+      "expression": "Min($low, 60)/$close",
+      "dependencies": [
+        "close",
+        "low"
+      ],
+      "lookback_sessions": 59,
+      "future_sessions": 0
+    },
+    {
+      "name": "QTLU5",
+      "expression": "Quantile($close, 5, 0.8)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 4,
+      "future_sessions": 0
+    },
+    {
+      "name": "QTLU10",
+      "expression": "Quantile($close, 10, 0.8)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 9,
+      "future_sessions": 0
+    },
+    {
+      "name": "QTLU20",
+      "expression": "Quantile($close, 20, 0.8)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 19,
+      "future_sessions": 0
+    },
+    {
+      "name": "QTLU30",
+      "expression": "Quantile($close, 30, 0.8)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 29,
+      "future_sessions": 0
+    },
+    {
+      "name": "QTLU60",
+      "expression": "Quantile($close, 60, 0.8)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 59,
+      "future_sessions": 0
+    },
+    {
+      "name": "QTLD5",
+      "expression": "Quantile($close, 5, 0.2)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 4,
+      "future_sessions": 0
+    },
+    {
+      "name": "QTLD10",
+      "expression": "Quantile($close, 10, 0.2)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 9,
+      "future_sessions": 0
+    },
+    {
+      "name": "QTLD20",
+      "expression": "Quantile($close, 20, 0.2)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 19,
+      "future_sessions": 0
+    },
+    {
+      "name": "QTLD30",
+      "expression": "Quantile($close, 30, 0.2)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 29,
+      "future_sessions": 0
+    },
+    {
+      "name": "QTLD60",
+      "expression": "Quantile($close, 60, 0.2)/$close",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 59,
+      "future_sessions": 0
+    },
+    {
+      "name": "RANK5",
+      "expression": "Rank($close, 5)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 4,
+      "future_sessions": 0
+    },
+    {
+      "name": "RANK10",
+      "expression": "Rank($close, 10)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 9,
+      "future_sessions": 0
+    },
+    {
+      "name": "RANK20",
+      "expression": "Rank($close, 20)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 19,
+      "future_sessions": 0
+    },
+    {
+      "name": "RANK30",
+      "expression": "Rank($close, 30)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 29,
+      "future_sessions": 0
+    },
+    {
+      "name": "RANK60",
+      "expression": "Rank($close, 60)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 59,
+      "future_sessions": 0
+    },
+    {
+      "name": "RSV5",
+      "expression": "($close-Min($low, 5))/(Max($high, 5)-Min($low, 5)+1e-12)",
+      "dependencies": [
+        "close",
+        "high",
+        "low"
+      ],
+      "lookback_sessions": 4,
+      "future_sessions": 0
+    },
+    {
+      "name": "RSV10",
+      "expression": "($close-Min($low, 10))/(Max($high, 10)-Min($low, 10)+1e-12)",
+      "dependencies": [
+        "close",
+        "high",
+        "low"
+      ],
+      "lookback_sessions": 9,
+      "future_sessions": 0
+    },
+    {
+      "name": "RSV20",
+      "expression": "($close-Min($low, 20))/(Max($high, 20)-Min($low, 20)+1e-12)",
+      "dependencies": [
+        "close",
+        "high",
+        "low"
+      ],
+      "lookback_sessions": 19,
+      "future_sessions": 0
+    },
+    {
+      "name": "RSV30",
+      "expression": "($close-Min($low, 30))/(Max($high, 30)-Min($low, 30)+1e-12)",
+      "dependencies": [
+        "close",
+        "high",
+        "low"
+      ],
+      "lookback_sessions": 29,
+      "future_sessions": 0
+    },
+    {
+      "name": "RSV60",
+      "expression": "($close-Min($low, 60))/(Max($high, 60)-Min($low, 60)+1e-12)",
+      "dependencies": [
+        "close",
+        "high",
+        "low"
+      ],
+      "lookback_sessions": 59,
+      "future_sessions": 0
+    },
+    {
+      "name": "IMAX5",
+      "expression": "IdxMax($high, 5)/5",
+      "dependencies": [
+        "high"
+      ],
+      "lookback_sessions": 4,
+      "future_sessions": 0
+    },
+    {
+      "name": "IMAX10",
+      "expression": "IdxMax($high, 10)/10",
+      "dependencies": [
+        "high"
+      ],
+      "lookback_sessions": 9,
+      "future_sessions": 0
+    },
+    {
+      "name": "IMAX20",
+      "expression": "IdxMax($high, 20)/20",
+      "dependencies": [
+        "high"
+      ],
+      "lookback_sessions": 19,
+      "future_sessions": 0
+    },
+    {
+      "name": "IMAX30",
+      "expression": "IdxMax($high, 30)/30",
+      "dependencies": [
+        "high"
+      ],
+      "lookback_sessions": 29,
+      "future_sessions": 0
+    },
+    {
+      "name": "IMAX60",
+      "expression": "IdxMax($high, 60)/60",
+      "dependencies": [
+        "high"
+      ],
+      "lookback_sessions": 59,
+      "future_sessions": 0
+    },
+    {
+      "name": "IMIN5",
+      "expression": "IdxMin($low, 5)/5",
+      "dependencies": [
+        "low"
+      ],
+      "lookback_sessions": 4,
+      "future_sessions": 0
+    },
+    {
+      "name": "IMIN10",
+      "expression": "IdxMin($low, 10)/10",
+      "dependencies": [
+        "low"
+      ],
+      "lookback_sessions": 9,
+      "future_sessions": 0
+    },
+    {
+      "name": "IMIN20",
+      "expression": "IdxMin($low, 20)/20",
+      "dependencies": [
+        "low"
+      ],
+      "lookback_sessions": 19,
+      "future_sessions": 0
+    },
+    {
+      "name": "IMIN30",
+      "expression": "IdxMin($low, 30)/30",
+      "dependencies": [
+        "low"
+      ],
+      "lookback_sessions": 29,
+      "future_sessions": 0
+    },
+    {
+      "name": "IMIN60",
+      "expression": "IdxMin($low, 60)/60",
+      "dependencies": [
+        "low"
+      ],
+      "lookback_sessions": 59,
+      "future_sessions": 0
+    },
+    {
+      "name": "IMXD5",
+      "expression": "(IdxMax($high, 5)-IdxMin($low, 5))/5",
+      "dependencies": [
+        "high",
+        "low"
+      ],
+      "lookback_sessions": 4,
+      "future_sessions": 0
+    },
+    {
+      "name": "IMXD10",
+      "expression": "(IdxMax($high, 10)-IdxMin($low, 10))/10",
+      "dependencies": [
+        "high",
+        "low"
+      ],
+      "lookback_sessions": 9,
+      "future_sessions": 0
+    },
+    {
+      "name": "IMXD20",
+      "expression": "(IdxMax($high, 20)-IdxMin($low, 20))/20",
+      "dependencies": [
+        "high",
+        "low"
+      ],
+      "lookback_sessions": 19,
+      "future_sessions": 0
+    },
+    {
+      "name": "IMXD30",
+      "expression": "(IdxMax($high, 30)-IdxMin($low, 30))/30",
+      "dependencies": [
+        "high",
+        "low"
+      ],
+      "lookback_sessions": 29,
+      "future_sessions": 0
+    },
+    {
+      "name": "IMXD60",
+      "expression": "(IdxMax($high, 60)-IdxMin($low, 60))/60",
+      "dependencies": [
+        "high",
+        "low"
+      ],
+      "lookback_sessions": 59,
+      "future_sessions": 0
+    },
+    {
+      "name": "CORR5",
+      "expression": "Corr($close, Log($volume+1), 5)",
+      "dependencies": [
+        "close",
+        "volume"
+      ],
+      "lookback_sessions": 4,
+      "future_sessions": 0
+    },
+    {
+      "name": "CORR10",
+      "expression": "Corr($close, Log($volume+1), 10)",
+      "dependencies": [
+        "close",
+        "volume"
+      ],
+      "lookback_sessions": 9,
+      "future_sessions": 0
+    },
+    {
+      "name": "CORR20",
+      "expression": "Corr($close, Log($volume+1), 20)",
+      "dependencies": [
+        "close",
+        "volume"
+      ],
+      "lookback_sessions": 19,
+      "future_sessions": 0
+    },
+    {
+      "name": "CORR30",
+      "expression": "Corr($close, Log($volume+1), 30)",
+      "dependencies": [
+        "close",
+        "volume"
+      ],
+      "lookback_sessions": 29,
+      "future_sessions": 0
+    },
+    {
+      "name": "CORR60",
+      "expression": "Corr($close, Log($volume+1), 60)",
+      "dependencies": [
+        "close",
+        "volume"
+      ],
+      "lookback_sessions": 59,
+      "future_sessions": 0
+    },
+    {
+      "name": "CORD5",
+      "expression": "Corr($close/Ref($close,1), Log($volume/Ref($volume, 1)+1), 5)",
+      "dependencies": [
+        "close",
+        "volume"
+      ],
+      "lookback_sessions": 5,
+      "future_sessions": 0
+    },
+    {
+      "name": "CORD10",
+      "expression": "Corr($close/Ref($close,1), Log($volume/Ref($volume, 1)+1), 10)",
+      "dependencies": [
+        "close",
+        "volume"
+      ],
+      "lookback_sessions": 10,
+      "future_sessions": 0
+    },
+    {
+      "name": "CORD20",
+      "expression": "Corr($close/Ref($close,1), Log($volume/Ref($volume, 1)+1), 20)",
+      "dependencies": [
+        "close",
+        "volume"
+      ],
+      "lookback_sessions": 20,
+      "future_sessions": 0
+    },
+    {
+      "name": "CORD30",
+      "expression": "Corr($close/Ref($close,1), Log($volume/Ref($volume, 1)+1), 30)",
+      "dependencies": [
+        "close",
+        "volume"
+      ],
+      "lookback_sessions": 30,
+      "future_sessions": 0
+    },
+    {
+      "name": "CORD60",
+      "expression": "Corr($close/Ref($close,1), Log($volume/Ref($volume, 1)+1), 60)",
+      "dependencies": [
+        "close",
+        "volume"
+      ],
+      "lookback_sessions": 60,
+      "future_sessions": 0
+    },
+    {
+      "name": "CNTP5",
+      "expression": "Mean($close>Ref($close, 1), 5)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 5,
+      "future_sessions": 0
+    },
+    {
+      "name": "CNTP10",
+      "expression": "Mean($close>Ref($close, 1), 10)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 10,
+      "future_sessions": 0
+    },
+    {
+      "name": "CNTP20",
+      "expression": "Mean($close>Ref($close, 1), 20)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 20,
+      "future_sessions": 0
+    },
+    {
+      "name": "CNTP30",
+      "expression": "Mean($close>Ref($close, 1), 30)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 30,
+      "future_sessions": 0
+    },
+    {
+      "name": "CNTP60",
+      "expression": "Mean($close>Ref($close, 1), 60)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 60,
+      "future_sessions": 0
+    },
+    {
+      "name": "CNTN5",
+      "expression": "Mean($close<Ref($close, 1), 5)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 5,
+      "future_sessions": 0
+    },
+    {
+      "name": "CNTN10",
+      "expression": "Mean($close<Ref($close, 1), 10)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 10,
+      "future_sessions": 0
+    },
+    {
+      "name": "CNTN20",
+      "expression": "Mean($close<Ref($close, 1), 20)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 20,
+      "future_sessions": 0
+    },
+    {
+      "name": "CNTN30",
+      "expression": "Mean($close<Ref($close, 1), 30)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 30,
+      "future_sessions": 0
+    },
+    {
+      "name": "CNTN60",
+      "expression": "Mean($close<Ref($close, 1), 60)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 60,
+      "future_sessions": 0
+    },
+    {
+      "name": "CNTD5",
+      "expression": "Mean($close>Ref($close, 1), 5)-Mean($close<Ref($close, 1), 5)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 5,
+      "future_sessions": 0
+    },
+    {
+      "name": "CNTD10",
+      "expression": "Mean($close>Ref($close, 1), 10)-Mean($close<Ref($close, 1), 10)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 10,
+      "future_sessions": 0
+    },
+    {
+      "name": "CNTD20",
+      "expression": "Mean($close>Ref($close, 1), 20)-Mean($close<Ref($close, 1), 20)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 20,
+      "future_sessions": 0
+    },
+    {
+      "name": "CNTD30",
+      "expression": "Mean($close>Ref($close, 1), 30)-Mean($close<Ref($close, 1), 30)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 30,
+      "future_sessions": 0
+    },
+    {
+      "name": "CNTD60",
+      "expression": "Mean($close>Ref($close, 1), 60)-Mean($close<Ref($close, 1), 60)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 60,
+      "future_sessions": 0
+    },
+    {
+      "name": "SUMP5",
+      "expression": "Sum(Greater($close-Ref($close, 1), 0), 5)/(Sum(Abs($close-Ref($close, 1)), 5)+1e-12)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 5,
+      "future_sessions": 0
+    },
+    {
+      "name": "SUMP10",
+      "expression": "Sum(Greater($close-Ref($close, 1), 0), 10)/(Sum(Abs($close-Ref($close, 1)), 10)+1e-12)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 10,
+      "future_sessions": 0
+    },
+    {
+      "name": "SUMP20",
+      "expression": "Sum(Greater($close-Ref($close, 1), 0), 20)/(Sum(Abs($close-Ref($close, 1)), 20)+1e-12)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 20,
+      "future_sessions": 0
+    },
+    {
+      "name": "SUMP30",
+      "expression": "Sum(Greater($close-Ref($close, 1), 0), 30)/(Sum(Abs($close-Ref($close, 1)), 30)+1e-12)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 30,
+      "future_sessions": 0
+    },
+    {
+      "name": "SUMP60",
+      "expression": "Sum(Greater($close-Ref($close, 1), 0), 60)/(Sum(Abs($close-Ref($close, 1)), 60)+1e-12)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 60,
+      "future_sessions": 0
+    },
+    {
+      "name": "SUMN5",
+      "expression": "Sum(Greater(Ref($close, 1)-$close, 0), 5)/(Sum(Abs($close-Ref($close, 1)), 5)+1e-12)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 5,
+      "future_sessions": 0
+    },
+    {
+      "name": "SUMN10",
+      "expression": "Sum(Greater(Ref($close, 1)-$close, 0), 10)/(Sum(Abs($close-Ref($close, 1)), 10)+1e-12)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 10,
+      "future_sessions": 0
+    },
+    {
+      "name": "SUMN20",
+      "expression": "Sum(Greater(Ref($close, 1)-$close, 0), 20)/(Sum(Abs($close-Ref($close, 1)), 20)+1e-12)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 20,
+      "future_sessions": 0
+    },
+    {
+      "name": "SUMN30",
+      "expression": "Sum(Greater(Ref($close, 1)-$close, 0), 30)/(Sum(Abs($close-Ref($close, 1)), 30)+1e-12)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 30,
+      "future_sessions": 0
+    },
+    {
+      "name": "SUMN60",
+      "expression": "Sum(Greater(Ref($close, 1)-$close, 0), 60)/(Sum(Abs($close-Ref($close, 1)), 60)+1e-12)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 60,
+      "future_sessions": 0
+    },
+    {
+      "name": "SUMD5",
+      "expression": "(Sum(Greater($close-Ref($close, 1), 0), 5)-Sum(Greater(Ref($close, 1)-$close, 0), 5))/(Sum(Abs($close-Ref($close, 1)), 5)+1e-12)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 5,
+      "future_sessions": 0
+    },
+    {
+      "name": "SUMD10",
+      "expression": "(Sum(Greater($close-Ref($close, 1), 0), 10)-Sum(Greater(Ref($close, 1)-$close, 0), 10))/(Sum(Abs($close-Ref($close, 1)), 10)+1e-12)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 10,
+      "future_sessions": 0
+    },
+    {
+      "name": "SUMD20",
+      "expression": "(Sum(Greater($close-Ref($close, 1), 0), 20)-Sum(Greater(Ref($close, 1)-$close, 0), 20))/(Sum(Abs($close-Ref($close, 1)), 20)+1e-12)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 20,
+      "future_sessions": 0
+    },
+    {
+      "name": "SUMD30",
+      "expression": "(Sum(Greater($close-Ref($close, 1), 0), 30)-Sum(Greater(Ref($close, 1)-$close, 0), 30))/(Sum(Abs($close-Ref($close, 1)), 30)+1e-12)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 30,
+      "future_sessions": 0
+    },
+    {
+      "name": "SUMD60",
+      "expression": "(Sum(Greater($close-Ref($close, 1), 0), 60)-Sum(Greater(Ref($close, 1)-$close, 0), 60))/(Sum(Abs($close-Ref($close, 1)), 60)+1e-12)",
+      "dependencies": [
+        "close"
+      ],
+      "lookback_sessions": 60,
+      "future_sessions": 0
+    },
+    {
+      "name": "VMA5",
+      "expression": "Mean($volume, 5)/($volume+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 4,
+      "future_sessions": 0
+    },
+    {
+      "name": "VMA10",
+      "expression": "Mean($volume, 10)/($volume+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 9,
+      "future_sessions": 0
+    },
+    {
+      "name": "VMA20",
+      "expression": "Mean($volume, 20)/($volume+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 19,
+      "future_sessions": 0
+    },
+    {
+      "name": "VMA30",
+      "expression": "Mean($volume, 30)/($volume+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 29,
+      "future_sessions": 0
+    },
+    {
+      "name": "VMA60",
+      "expression": "Mean($volume, 60)/($volume+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 59,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSTD5",
+      "expression": "Std($volume, 5)/($volume+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 4,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSTD10",
+      "expression": "Std($volume, 10)/($volume+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 9,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSTD20",
+      "expression": "Std($volume, 20)/($volume+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 19,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSTD30",
+      "expression": "Std($volume, 30)/($volume+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 29,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSTD60",
+      "expression": "Std($volume, 60)/($volume+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 59,
+      "future_sessions": 0
+    },
+    {
+      "name": "WVMA5",
+      "expression": "Std(Abs($close/Ref($close, 1)-1)*$volume, 5)/(Mean(Abs($close/Ref($close, 1)-1)*$volume, 5)+1e-12)",
+      "dependencies": [
+        "close",
+        "volume"
+      ],
+      "lookback_sessions": 5,
+      "future_sessions": 0
+    },
+    {
+      "name": "WVMA10",
+      "expression": "Std(Abs($close/Ref($close, 1)-1)*$volume, 10)/(Mean(Abs($close/Ref($close, 1)-1)*$volume, 10)+1e-12)",
+      "dependencies": [
+        "close",
+        "volume"
+      ],
+      "lookback_sessions": 10,
+      "future_sessions": 0
+    },
+    {
+      "name": "WVMA20",
+      "expression": "Std(Abs($close/Ref($close, 1)-1)*$volume, 20)/(Mean(Abs($close/Ref($close, 1)-1)*$volume, 20)+1e-12)",
+      "dependencies": [
+        "close",
+        "volume"
+      ],
+      "lookback_sessions": 20,
+      "future_sessions": 0
+    },
+    {
+      "name": "WVMA30",
+      "expression": "Std(Abs($close/Ref($close, 1)-1)*$volume, 30)/(Mean(Abs($close/Ref($close, 1)-1)*$volume, 30)+1e-12)",
+      "dependencies": [
+        "close",
+        "volume"
+      ],
+      "lookback_sessions": 30,
+      "future_sessions": 0
+    },
+    {
+      "name": "WVMA60",
+      "expression": "Std(Abs($close/Ref($close, 1)-1)*$volume, 60)/(Mean(Abs($close/Ref($close, 1)-1)*$volume, 60)+1e-12)",
+      "dependencies": [
+        "close",
+        "volume"
+      ],
+      "lookback_sessions": 60,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSUMP5",
+      "expression": "Sum(Greater($volume-Ref($volume, 1), 0), 5)/(Sum(Abs($volume-Ref($volume, 1)), 5)+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 5,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSUMP10",
+      "expression": "Sum(Greater($volume-Ref($volume, 1), 0), 10)/(Sum(Abs($volume-Ref($volume, 1)), 10)+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 10,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSUMP20",
+      "expression": "Sum(Greater($volume-Ref($volume, 1), 0), 20)/(Sum(Abs($volume-Ref($volume, 1)), 20)+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 20,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSUMP30",
+      "expression": "Sum(Greater($volume-Ref($volume, 1), 0), 30)/(Sum(Abs($volume-Ref($volume, 1)), 30)+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 30,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSUMP60",
+      "expression": "Sum(Greater($volume-Ref($volume, 1), 0), 60)/(Sum(Abs($volume-Ref($volume, 1)), 60)+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 60,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSUMN5",
+      "expression": "Sum(Greater(Ref($volume, 1)-$volume, 0), 5)/(Sum(Abs($volume-Ref($volume, 1)), 5)+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 5,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSUMN10",
+      "expression": "Sum(Greater(Ref($volume, 1)-$volume, 0), 10)/(Sum(Abs($volume-Ref($volume, 1)), 10)+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 10,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSUMN20",
+      "expression": "Sum(Greater(Ref($volume, 1)-$volume, 0), 20)/(Sum(Abs($volume-Ref($volume, 1)), 20)+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 20,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSUMN30",
+      "expression": "Sum(Greater(Ref($volume, 1)-$volume, 0), 30)/(Sum(Abs($volume-Ref($volume, 1)), 30)+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 30,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSUMN60",
+      "expression": "Sum(Greater(Ref($volume, 1)-$volume, 0), 60)/(Sum(Abs($volume-Ref($volume, 1)), 60)+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 60,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSUMD5",
+      "expression": "(Sum(Greater($volume-Ref($volume, 1), 0), 5)-Sum(Greater(Ref($volume, 1)-$volume, 0), 5))/(Sum(Abs($volume-Ref($volume, 1)), 5)+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 5,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSUMD10",
+      "expression": "(Sum(Greater($volume-Ref($volume, 1), 0), 10)-Sum(Greater(Ref($volume, 1)-$volume, 0), 10))/(Sum(Abs($volume-Ref($volume, 1)), 10)+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 10,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSUMD20",
+      "expression": "(Sum(Greater($volume-Ref($volume, 1), 0), 20)-Sum(Greater(Ref($volume, 1)-$volume, 0), 20))/(Sum(Abs($volume-Ref($volume, 1)), 20)+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 20,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSUMD30",
+      "expression": "(Sum(Greater($volume-Ref($volume, 1), 0), 30)-Sum(Greater(Ref($volume, 1)-$volume, 0), 30))/(Sum(Abs($volume-Ref($volume, 1)), 30)+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 30,
+      "future_sessions": 0
+    },
+    {
+      "name": "VSUMD60",
+      "expression": "(Sum(Greater($volume-Ref($volume, 1), 0), 60)-Sum(Greater(Ref($volume, 1)-$volume, 0), 60))/(Sum(Abs($volume-Ref($volume, 1)), 60)+1e-12)",
+      "dependencies": [
+        "volume"
+      ],
+      "lookback_sessions": 60,
+      "future_sessions": 0
+    }
+  ],
+  "instruments": [
+    "000001.SZ",
+    "600000.SH",
+    "688001.SH",
+    "300114.SZ",
+    "302132.SZ"
+  ],
+  "start": "2024-07-01",
+  "end": "2025-06-30",
+  "warmup_sessions": 120,
+  "max_generated_bytes": 2147483648,
+  "max_workers": 2,
+  "model_fit_budget": 0,
+  "mapping": {
+    "price": "raw_OHLC_times_same_date_adj_factor_no_end_date_rebasing",
+    "volume": "raw_shares_divided_by_same_date_adj_factor; nonpositive_or_missing_volume_stays_unknown_for_features",
+    "vwap": "amount_CNY_divided_by_raw_volume_shares_times_adj_factor; derived_ratio_not_independent_observed_quote",
+    "invalid_rows": "retain_raw_values_and_reason; never_fill_or_bridge_missing_calendar_sessions",
+    "security_identity": "exact_independent_codes_with_frozen_inclusive_lifecycle_and_curated_code_switch_dates",
+    "arithmetic": "float32_inputs_and_native_Qlib_expression_outputs; native_1e-12_denominators_retained",
+    "eligibility": "per_expression_all_dependencies_complete_for_full_calendar_lookback_plus_current_session_and_finite_native_output; stricter_than_Qlib_partial_windows",
+    "vwap_plausibility": "require raw low <= amount/volume <= raw high; preserve out-of-range ratio but mask VWAP; no rounding tolerance assumed"
+  },
+  "parity": {
+    "primary": "Qlib_native_expressions_on_binary_cache",
+    "reference": "same_pinned_Qlib_expressions_on_independent_in_memory_field_provider",
+    "comparison": "exact_float32_values_and_missingness_on_all_rows; provenance_mapping_not_independent_formula_implementation",
+    "golden_checks": "independent_analytic_OHLC_ratios_and_scaling; synthetic_split_missing_gap_flat_zero_volume_cases",
+    "causality_cutoff": "2025-02-14",
+    "fixture_seed": 20260911,
+    "rtol": 1e-05,
+    "atol": 1e-06
+  },
+  "performance_eligible": false,
+  "execution_authority": false,
+  "fresh_forward_evidence": false,
+  "official_sources": [
+    "https://github.com/microsoft/qlib/blob/v0.9.7/qlib/contrib/data/loader.py",
+    "https://qlib.readthedocs.io/en/stable/component/data.html"
+  ]
+}
