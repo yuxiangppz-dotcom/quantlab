@@ -1,0 +1,841 @@
+{
+  "version": "historical-rule-evidence-v1",
+  "execution_authority": false,
+  "audit_interval": [
+    "2023-01-01",
+    "2026-09-10"
+  ],
+  "calendar": {
+    "path": "data/products/alpha158_staging/alpha158_history_20260911/inventory.json",
+    "fingerprint": "0869cd29048ef0649838ebd6f6c846e5ccd9174e90498a95941ae1b21cc6649c",
+    "expected_sessions": 895
+  },
+  "baseline_fingerprint": "944734411bfe3724c9f2bdb059d40b62ac297bd24e703e97b0a8181b0ef996a7",
+  "intervals": [
+    {
+      "id": "sse-main-2023-evidence-v1",
+      "exchange": "SSE",
+      "board": "MAIN",
+      "edition": "2023",
+      "from": "2023-04-10",
+      "through": "2026-07-05",
+      "legal_effective_from": "2023-04-10",
+      "superseded_on": "2026-07-06",
+      "source_ids": [
+        "sse_2023_rules",
+        "sse_2023_notice",
+        "sse_2019_t1_faq",
+        "sse_2023_launch_plan",
+        "szse_2023_actual_launch",
+        "sse_2023_deferred",
+        "sse_2014_sell_notice"
+      ],
+      "effective_evidence": [
+        {
+          "source_ids": [
+            "sse_2023_notice"
+          ],
+          "clause": "2023版首只注册制主板股票上市首日起施行"
+        },
+        {
+          "source_ids": [
+            "sse_2023_launch_plan",
+            "szse_2023_actual_launch"
+          ],
+          "clause": "4月4日联合上市安排和4月10日实际上市确认：生效日期2023-04-10；不采用网页标题区2023-02-17生效标记"
+        }
+      ],
+      "supersession_evidence": {
+        "source_ids": [
+          "sse_2026_notice"
+        ],
+        "clause": "2026年7月6日2023版同时废止"
+      },
+      "values": {
+        "price_tick": "0.01",
+        "buy_min_quantity": 100,
+        "buy_quantity_step": 100,
+        "sell_min_quantity": 100,
+        "sell_quantity_step": 100,
+        "max_limit_quantity": 1000000,
+        "allow_full_odd_lot_exit": true,
+        "sellability_lag_sessions": 1
+      },
+      "provisions": {
+        "price_tick": {
+          "source_ids": [
+            "sse_2023_rules"
+          ],
+          "clause": "3.3.11：A股价格最小变动单位0.01人民币；科创板未改该一般条款"
+        },
+        "buy_min_quantity": {
+          "source_ids": [
+            "sse_2023_rules"
+          ],
+          "clause": "3.3.8：买入100股或整数倍，零股余额一次申报"
+        },
+        "buy_quantity_step": {
+          "source_ids": [
+            "sse_2023_rules"
+          ],
+          "clause": "3.3.8：买入100股或整数倍，零股余额一次申报"
+        },
+        "sell_min_quantity": {
+          "source_ids": [
+            "sse_2023_rules",
+            "sse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "sell_quantity_step": {
+          "source_ids": [
+            "sse_2023_rules",
+            "sse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "max_limit_quantity": {
+          "source_ids": [
+            "sse_2023_rules"
+          ],
+          "clause": "3.3.9：一般100万股；深圳创业板限价30万股"
+        },
+        "allow_full_odd_lot_exit": {
+          "source_ids": [
+            "sse_2023_rules",
+            "sse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "sellability_lag_sessions": {
+          "source_ids": [
+            "sse_2023_rules",
+            "sse_2019_t1_faq"
+          ],
+          "clause": "3.1.4/3.1.5交收前禁售及回转例外；2019答记者问第七问说明A股T+1且科创板不纳入T+0；一交易日是普通最早滞后，非成交保证"
+        }
+      }
+    },
+    {
+      "id": "sse-main-2026-evidence-v1",
+      "exchange": "SSE",
+      "board": "MAIN",
+      "edition": "2026",
+      "from": "2026-07-06",
+      "through": "2026-09-10",
+      "legal_effective_from": "2026-07-06",
+      "superseded_on": null,
+      "source_ids": [
+        "sse_2026_rules",
+        "sse_2026_notice",
+        "sse_2019_t1_faq",
+        "sse_2026_deferred",
+        "sse_2014_sell_notice"
+      ],
+      "effective_evidence": [
+        {
+          "source_ids": [
+            "sse_2026_notice"
+          ],
+          "clause": "正文：2026年7月6日起施行，2023版同时废止"
+        }
+      ],
+      "supersession_evidence": null,
+      "values": {
+        "price_tick": "0.01",
+        "buy_min_quantity": 100,
+        "buy_quantity_step": 100,
+        "sell_min_quantity": 100,
+        "sell_quantity_step": 100,
+        "max_limit_quantity": 1000000,
+        "allow_full_odd_lot_exit": true,
+        "sellability_lag_sessions": 1
+      },
+      "provisions": {
+        "price_tick": {
+          "source_ids": [
+            "sse_2026_rules"
+          ],
+          "clause": "3.3.11：A股价格最小变动单位0.01人民币；科创板未改该一般条款"
+        },
+        "buy_min_quantity": {
+          "source_ids": [
+            "sse_2026_rules"
+          ],
+          "clause": "3.3.8：买入100股或整数倍，零股余额一次申报"
+        },
+        "buy_quantity_step": {
+          "source_ids": [
+            "sse_2026_rules"
+          ],
+          "clause": "3.3.8：买入100股或整数倍，零股余额一次申报"
+        },
+        "sell_min_quantity": {
+          "source_ids": [
+            "sse_2026_rules",
+            "sse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "sell_quantity_step": {
+          "source_ids": [
+            "sse_2026_rules",
+            "sse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "max_limit_quantity": {
+          "source_ids": [
+            "sse_2026_rules"
+          ],
+          "clause": "3.3.9：一般100万股；深圳创业板限价30万股"
+        },
+        "allow_full_odd_lot_exit": {
+          "source_ids": [
+            "sse_2026_rules",
+            "sse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "sellability_lag_sessions": {
+          "source_ids": [
+            "sse_2026_rules",
+            "sse_2019_t1_faq"
+          ],
+          "clause": "3.1.4/3.1.5交收前禁售及回转例外；2019答记者问第七问说明A股T+1且科创板不纳入T+0；一交易日是普通最早滞后，非成交保证"
+        }
+      }
+    },
+    {
+      "id": "sse-star-2023-evidence-v1",
+      "exchange": "SSE",
+      "board": "STAR",
+      "edition": "2023",
+      "from": "2023-04-10",
+      "through": "2026-07-05",
+      "legal_effective_from": "2023-04-10",
+      "superseded_on": "2026-07-06",
+      "source_ids": [
+        "sse_2023_rules",
+        "sse_2023_notice",
+        "sse_2019_t1_faq",
+        "sse_2023_launch_plan",
+        "szse_2023_actual_launch",
+        "sse_2023_deferred"
+      ],
+      "effective_evidence": [
+        {
+          "source_ids": [
+            "sse_2023_notice"
+          ],
+          "clause": "2023版首只注册制主板股票上市首日起施行"
+        },
+        {
+          "source_ids": [
+            "sse_2023_launch_plan",
+            "szse_2023_actual_launch"
+          ],
+          "clause": "4月4日联合上市安排和4月10日实际上市确认：生效日期2023-04-10；不采用网页标题区2023-02-17生效标记"
+        }
+      ],
+      "supersession_evidence": {
+        "source_ids": [
+          "sse_2026_notice"
+        ],
+        "clause": "2026年7月6日2023版同时废止"
+      },
+      "values": {
+        "price_tick": "0.01",
+        "buy_min_quantity": 200,
+        "buy_quantity_step": 1,
+        "sell_min_quantity": 200,
+        "sell_quantity_step": 1,
+        "max_limit_quantity": 100000,
+        "allow_full_odd_lot_exit": true,
+        "sellability_lag_sessions": 1
+      },
+      "provisions": {
+        "price_tick": {
+          "source_ids": [
+            "sse_2023_rules"
+          ],
+          "clause": "3.3.11：A股价格最小变动单位0.01人民币；科创板未改该一般条款"
+        },
+        "buy_min_quantity": {
+          "source_ids": [
+            "sse_2023_rules"
+          ],
+          "clause": "6.1.7：限价买卖均200至100000股（整数股）；低于200的余股一次申报"
+        },
+        "buy_quantity_step": {
+          "source_ids": [
+            "sse_2023_rules"
+          ],
+          "clause": "6.1.7：限价买卖均200至100000股（整数股）；低于200的余股一次申报"
+        },
+        "sell_min_quantity": {
+          "source_ids": [
+            "sse_2023_rules"
+          ],
+          "clause": "6.1.7：限价买卖均200至100000股（整数股）；低于200的余股一次申报"
+        },
+        "sell_quantity_step": {
+          "source_ids": [
+            "sse_2023_rules"
+          ],
+          "clause": "6.1.7：限价买卖均200至100000股（整数股）；低于200的余股一次申报"
+        },
+        "max_limit_quantity": {
+          "source_ids": [
+            "sse_2023_rules"
+          ],
+          "clause": "6.1.7：限价申报上限10万股"
+        },
+        "allow_full_odd_lot_exit": {
+          "source_ids": [
+            "sse_2023_rules"
+          ],
+          "clause": "6.1.7：限价买卖均200至100000股（整数股）；低于200的余股一次申报"
+        },
+        "sellability_lag_sessions": {
+          "source_ids": [
+            "sse_2023_rules",
+            "sse_2019_t1_faq"
+          ],
+          "clause": "3.1.4/3.1.5交收前禁售及回转例外；2019答记者问第七问说明A股T+1且科创板不纳入T+0；一交易日是普通最早滞后，非成交保证"
+        }
+      }
+    },
+    {
+      "id": "sse-star-2026-evidence-v1",
+      "exchange": "SSE",
+      "board": "STAR",
+      "edition": "2026",
+      "from": "2026-07-06",
+      "through": "2026-09-10",
+      "legal_effective_from": "2026-07-06",
+      "superseded_on": null,
+      "source_ids": [
+        "sse_2026_rules",
+        "sse_2026_notice",
+        "sse_2019_t1_faq",
+        "sse_2026_deferred"
+      ],
+      "effective_evidence": [
+        {
+          "source_ids": [
+            "sse_2026_notice"
+          ],
+          "clause": "正文：2026年7月6日起施行，2023版同时废止"
+        }
+      ],
+      "supersession_evidence": null,
+      "values": {
+        "price_tick": "0.01",
+        "buy_min_quantity": 200,
+        "buy_quantity_step": 1,
+        "sell_min_quantity": 200,
+        "sell_quantity_step": 1,
+        "max_limit_quantity": 100000,
+        "allow_full_odd_lot_exit": true,
+        "sellability_lag_sessions": 1
+      },
+      "provisions": {
+        "price_tick": {
+          "source_ids": [
+            "sse_2026_rules"
+          ],
+          "clause": "3.3.11：A股价格最小变动单位0.01人民币；科创板未改该一般条款"
+        },
+        "buy_min_quantity": {
+          "source_ids": [
+            "sse_2026_rules"
+          ],
+          "clause": "6.7：限价买卖均200至100000股（整数股）；低于200的余股一次申报"
+        },
+        "buy_quantity_step": {
+          "source_ids": [
+            "sse_2026_rules"
+          ],
+          "clause": "6.7：限价买卖均200至100000股（整数股）；低于200的余股一次申报"
+        },
+        "sell_min_quantity": {
+          "source_ids": [
+            "sse_2026_rules"
+          ],
+          "clause": "6.7：限价买卖均200至100000股（整数股）；低于200的余股一次申报"
+        },
+        "sell_quantity_step": {
+          "source_ids": [
+            "sse_2026_rules"
+          ],
+          "clause": "6.7：限价买卖均200至100000股（整数股）；低于200的余股一次申报"
+        },
+        "max_limit_quantity": {
+          "source_ids": [
+            "sse_2026_rules"
+          ],
+          "clause": "6.7：限价申报上限10万股"
+        },
+        "allow_full_odd_lot_exit": {
+          "source_ids": [
+            "sse_2026_rules"
+          ],
+          "clause": "6.7：限价买卖均200至100000股（整数股）；低于200的余股一次申报"
+        },
+        "sellability_lag_sessions": {
+          "source_ids": [
+            "sse_2026_rules",
+            "sse_2019_t1_faq"
+          ],
+          "clause": "3.1.4/3.1.5交收前禁售及回转例外；2019答记者问第七问说明A股T+1且科创板不纳入T+0；一交易日是普通最早滞后，非成交保证"
+        }
+      }
+    },
+    {
+      "id": "szse-main-2023-evidence-v1",
+      "exchange": "SZSE",
+      "board": "MAIN",
+      "edition": "2023",
+      "from": "2023-04-10",
+      "through": "2026-07-05",
+      "legal_effective_from": "2023-04-10",
+      "superseded_on": "2026-07-06",
+      "source_ids": [
+        "szse_2023_rules",
+        "szse_2023_notice",
+        "szse_1995_events",
+        "sse_2023_launch_plan",
+        "szse_2023_actual_launch",
+        "szse_2014_sell_notice"
+      ],
+      "effective_evidence": [
+        {
+          "source_ids": [
+            "szse_2023_notice"
+          ],
+          "clause": "2023版首只注册制主板股票上市首日起施行"
+        },
+        {
+          "source_ids": [
+            "sse_2023_launch_plan",
+            "szse_2023_actual_launch"
+          ],
+          "clause": "4月4日联合上市安排和4月10日实际上市确认：生效日期2023-04-10；不采用网页标题区2023-02-17生效标记"
+        }
+      ],
+      "supersession_evidence": {
+        "source_ids": [
+          "szse_2026_notice"
+        ],
+        "clause": "2026年7月6日2023版同时废止"
+      },
+      "values": {
+        "price_tick": "0.01",
+        "buy_min_quantity": 100,
+        "buy_quantity_step": 100,
+        "sell_min_quantity": 100,
+        "sell_quantity_step": 100,
+        "max_limit_quantity": 1000000,
+        "allow_full_odd_lot_exit": true,
+        "sellability_lag_sessions": 1
+      },
+      "provisions": {
+        "price_tick": {
+          "source_ids": [
+            "szse_2023_rules"
+          ],
+          "clause": "3.3.11：A股价格最小变动单位0.01人民币；科创板未改该一般条款"
+        },
+        "buy_min_quantity": {
+          "source_ids": [
+            "szse_2023_rules"
+          ],
+          "clause": "3.3.8：买入100股或整数倍，零股余额一次申报"
+        },
+        "buy_quantity_step": {
+          "source_ids": [
+            "szse_2023_rules"
+          ],
+          "clause": "3.3.8：买入100股或整数倍，零股余额一次申报"
+        },
+        "sell_min_quantity": {
+          "source_ids": [
+            "szse_2023_rules",
+            "szse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "sell_quantity_step": {
+          "source_ids": [
+            "szse_2023_rules",
+            "szse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "max_limit_quantity": {
+          "source_ids": [
+            "szse_2023_rules"
+          ],
+          "clause": "3.3.9：一般100万股；深圳创业板限价30万股"
+        },
+        "allow_full_odd_lot_exit": {
+          "source_ids": [
+            "szse_2023_rules",
+            "szse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "sellability_lag_sessions": {
+          "source_ids": [
+            "szse_2023_rules",
+            "szse_1995_events"
+          ],
+          "clause": "3.1.4/3.1.5交收前禁售及回转例外；1995大事记一月1日记录A股改为T+1交收；新交易规则未将A股列入当日回转品种；一交易日是普通最早滞后，非成交保证"
+        }
+      }
+    },
+    {
+      "id": "szse-main-2026-evidence-v1",
+      "exchange": "SZSE",
+      "board": "MAIN",
+      "edition": "2026",
+      "from": "2026-07-06",
+      "through": "2026-09-10",
+      "legal_effective_from": "2026-07-06",
+      "superseded_on": null,
+      "source_ids": [
+        "szse_2026_rules",
+        "szse_2026_notice",
+        "szse_1995_events",
+        "szse_2014_sell_notice"
+      ],
+      "effective_evidence": [
+        {
+          "source_ids": [
+            "szse_2026_notice"
+          ],
+          "clause": "正文：2026年7月6日起施行，2023版同时废止"
+        }
+      ],
+      "supersession_evidence": null,
+      "values": {
+        "price_tick": "0.01",
+        "buy_min_quantity": 100,
+        "buy_quantity_step": 100,
+        "sell_min_quantity": 100,
+        "sell_quantity_step": 100,
+        "max_limit_quantity": 1000000,
+        "allow_full_odd_lot_exit": true,
+        "sellability_lag_sessions": 1
+      },
+      "provisions": {
+        "price_tick": {
+          "source_ids": [
+            "szse_2026_rules"
+          ],
+          "clause": "3.3.11：A股价格最小变动单位0.01人民币；科创板未改该一般条款"
+        },
+        "buy_min_quantity": {
+          "source_ids": [
+            "szse_2026_rules"
+          ],
+          "clause": "3.3.8：买入100股或整数倍，零股余额一次申报"
+        },
+        "buy_quantity_step": {
+          "source_ids": [
+            "szse_2026_rules"
+          ],
+          "clause": "3.3.8：买入100股或整数倍，零股余额一次申报"
+        },
+        "sell_min_quantity": {
+          "source_ids": [
+            "szse_2026_rules",
+            "szse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "sell_quantity_step": {
+          "source_ids": [
+            "szse_2026_rules",
+            "szse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "max_limit_quantity": {
+          "source_ids": [
+            "szse_2026_rules"
+          ],
+          "clause": "3.3.9：一般100万股；深圳创业板限价30万股"
+        },
+        "allow_full_odd_lot_exit": {
+          "source_ids": [
+            "szse_2026_rules",
+            "szse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "sellability_lag_sessions": {
+          "source_ids": [
+            "szse_2026_rules",
+            "szse_1995_events"
+          ],
+          "clause": "3.1.4/3.1.5交收前禁售及回转例外；1995大事记一月1日记录A股改为T+1交收；新交易规则未将A股列入当日回转品种；一交易日是普通最早滞后，非成交保证"
+        }
+      }
+    },
+    {
+      "id": "szse-chinext-2023-evidence-v1",
+      "exchange": "SZSE",
+      "board": "CHINEXT",
+      "edition": "2023",
+      "from": "2023-04-10",
+      "through": "2026-07-05",
+      "legal_effective_from": "2023-04-10",
+      "superseded_on": "2026-07-06",
+      "source_ids": [
+        "szse_2023_rules",
+        "szse_2023_notice",
+        "szse_1995_events",
+        "sse_2023_launch_plan",
+        "szse_2023_actual_launch",
+        "szse_2014_sell_notice"
+      ],
+      "effective_evidence": [
+        {
+          "source_ids": [
+            "szse_2023_notice"
+          ],
+          "clause": "2023版首只注册制主板股票上市首日起施行"
+        },
+        {
+          "source_ids": [
+            "sse_2023_launch_plan",
+            "szse_2023_actual_launch"
+          ],
+          "clause": "4月4日联合上市安排和4月10日实际上市确认：生效日期2023-04-10；不采用网页标题区2023-02-17生效标记"
+        }
+      ],
+      "supersession_evidence": {
+        "source_ids": [
+          "szse_2026_notice"
+        ],
+        "clause": "2026年7月6日2023版同时废止"
+      },
+      "values": {
+        "price_tick": "0.01",
+        "buy_min_quantity": 100,
+        "buy_quantity_step": 100,
+        "sell_min_quantity": 100,
+        "sell_quantity_step": 100,
+        "max_limit_quantity": 300000,
+        "allow_full_odd_lot_exit": true,
+        "sellability_lag_sessions": 1
+      },
+      "provisions": {
+        "price_tick": {
+          "source_ids": [
+            "szse_2023_rules"
+          ],
+          "clause": "3.3.11：A股价格最小变动单位0.01人民币；科创板未改该一般条款"
+        },
+        "buy_min_quantity": {
+          "source_ids": [
+            "szse_2023_rules"
+          ],
+          "clause": "3.3.8：买入100股或整数倍，零股余额一次申报"
+        },
+        "buy_quantity_step": {
+          "source_ids": [
+            "szse_2023_rules"
+          ],
+          "clause": "3.3.8：买入100股或整数倍，零股余额一次申报"
+        },
+        "sell_min_quantity": {
+          "source_ids": [
+            "szse_2023_rules",
+            "szse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "sell_quantity_step": {
+          "source_ids": [
+            "szse_2023_rules",
+            "szse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "max_limit_quantity": {
+          "source_ids": [
+            "szse_2023_rules"
+          ],
+          "clause": "3.3.9：一般100万股；深圳创业板限价30万股"
+        },
+        "allow_full_odd_lot_exit": {
+          "source_ids": [
+            "szse_2023_rules",
+            "szse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "sellability_lag_sessions": {
+          "source_ids": [
+            "szse_2023_rules",
+            "szse_1995_events"
+          ],
+          "clause": "3.1.4/3.1.5交收前禁售及回转例外；1995大事记一月1日记录A股改为T+1交收；新交易规则未将A股列入当日回转品种；一交易日是普通最早滞后，非成交保证"
+        }
+      }
+    },
+    {
+      "id": "szse-chinext-2026-evidence-v1",
+      "exchange": "SZSE",
+      "board": "CHINEXT",
+      "edition": "2026",
+      "from": "2026-07-06",
+      "through": "2026-09-10",
+      "legal_effective_from": "2026-07-06",
+      "superseded_on": null,
+      "source_ids": [
+        "szse_2026_rules",
+        "szse_2026_notice",
+        "szse_1995_events",
+        "szse_2014_sell_notice"
+      ],
+      "effective_evidence": [
+        {
+          "source_ids": [
+            "szse_2026_notice"
+          ],
+          "clause": "正文：2026年7月6日起施行，2023版同时废止"
+        }
+      ],
+      "supersession_evidence": null,
+      "values": {
+        "price_tick": "0.01",
+        "buy_min_quantity": 100,
+        "buy_quantity_step": 100,
+        "sell_min_quantity": 100,
+        "sell_quantity_step": 100,
+        "max_limit_quantity": 300000,
+        "allow_full_odd_lot_exit": true,
+        "sellability_lag_sessions": 1
+      },
+      "provisions": {
+        "price_tick": {
+          "source_ids": [
+            "szse_2026_rules"
+          ],
+          "clause": "3.3.11：A股价格最小变动单位0.01人民币；科创板未改该一般条款"
+        },
+        "buy_min_quantity": {
+          "source_ids": [
+            "szse_2026_rules"
+          ],
+          "clause": "3.3.8：买入100股或整数倍，零股余额一次申报"
+        },
+        "buy_quantity_step": {
+          "source_ids": [
+            "szse_2026_rules"
+          ],
+          "clause": "3.3.8：买入100股或整数倍，零股余额一次申报"
+        },
+        "sell_min_quantity": {
+          "source_ids": [
+            "szse_2026_rules",
+            "szse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "sell_quantity_step": {
+          "source_ids": [
+            "szse_2026_rules",
+            "szse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "max_limit_quantity": {
+          "source_ids": [
+            "szse_2026_rules"
+          ],
+          "clause": "3.3.9：一般100万股；深圳创业板限价30万股"
+        },
+        "allow_full_odd_lot_exit": {
+          "source_ids": [
+            "szse_2026_rules",
+            "szse_2014_sell_notice"
+          ],
+          "clause": "3.3.8及2014通知第一项：整手卖出；全部零股一次或伴随整手卖出。本目录仅实现普通整手及全仓零股退出。"
+        },
+        "sellability_lag_sessions": {
+          "source_ids": [
+            "szse_2026_rules",
+            "szse_1995_events"
+          ],
+          "clause": "3.1.4/3.1.5交收前禁售及回转例外；1995大事记一月1日记录A股改为T+1交收；新交易规则未将A股列入当日回转品种；一交易日是普通最早滞后，非成交保证"
+        }
+      }
+    }
+  ],
+  "limitations": [
+    "仅为回顾性交易所一般规则证据，不赋予执行权限；不证明本项目在历史日期已取得资料。",
+    "仅适用于普通A股、连续竞价、限价申报。集合竞价、市价、盘后、大宗、做市、ETF、B股、存托凭证均不在实现范围。",
+    "不覆盖历史个股板块身份、退市/ST具体状态、账户准入、限售或可卖余额、交易日内规则变动、临时特别通知。",
+    "不覆盖涨跌幅、有效报价范围/价格笼子、队列、流动性、停牌与实际成交；不能返回笼统的可交易结论。",
+    "卖出最小量/步长表示普通整手分支。仅实现全仓零股退出这个保守子集；官方允许部分包含全部零股的拆分，当前模型不表达。",
+    "T+1为交易日维度的最早普通卖出滞后，由交收前禁售条款与官方T+1说明共同支持；不承诺解禁、结算完成或当日成交。",
+    "2026-09-10是本批审计上限，不是2026版法规失效日；不能据此断言上限后的规则。",
+    "未评价费用、公司行为现金记账、净收益或最大回撤20%目标；历史结果已观察，不能重标为真实前瞻。"
+  ],
+  "uncovered_reason": "2023-01-01至2023-04-09旧版规则、特别规定和修订通知链尚未在本独立目录完成绑定；已有默认结果仅保留为基线，不冒充新目录证据。",
+  "discrepancies": [
+    {
+      "id": "sse-2023-page-effective-metadata",
+      "severity": "resolved_metadata_discrepancy",
+      "sources": [
+        "sse_2023_notice",
+        "sse_2023_launch_plan",
+        "szse_2023_actual_launch"
+      ],
+      "detail": "上交所归档网页标题区标注2023-02-17生效，但正文为首只注册制主板股票上市首日；按原文及实际上市确认采用2023-04-10。"
+    },
+    {
+      "id": "szse-2021-baseline-date",
+      "severity": "unresolved_legacy_blocker",
+      "sources": [
+        "szse_2021_rules"
+      ],
+      "detail": "2021原件第1页通知及10.11写2021-04-06施行；冻结默认规则从2021-03-31起算。与本批2023起始日无交集，保留旧实现并登记后续版本迁移阻塞。"
+    },
+    {
+      "id": "odd-lot-subset",
+      "severity": "explicit_model_limitation",
+      "sources": [
+        "sse_2014_sell_notice",
+        "szse_2014_sell_notice"
+      ],
+      "detail": "官方允许持有299股拆为100+199或99+200；旧实现仅整手/全仓零股退出，拒绝部分合法拆分。本目录仍保留这个保守子集，并不声称穷尽官方卖出规则。"
+    },
+    {
+      "id": "pre-april-2023-gap",
+      "severity": "unresolved_evidence_gap",
+      "sources": [
+        "sse_2020_rules",
+        "sse_star_2019_rules",
+        "szse_2021_rules",
+        "szse_chinext_2020_rules",
+        "sse_2023_repeals"
+      ],
+      "detail": "已取回旧版原件，尚缺完整旧版特别规定生效及修订链审查（包括SSE 2022大宗修订）；不自动合并旧默认权限。"
+    }
+  ],
+  "resources": {
+    "max_source_bytes": 52428800,
+    "max_generated_bytes": 536870912,
+    "max_rss_bytes": 4294967296,
+    "reserve_host_D_bytes": 8589934592,
+    "max_wakeup_seconds": 2700,
+    "next_partition_time_reserve_seconds": 10,
+    "compute_threads": 2
+  }
+}
