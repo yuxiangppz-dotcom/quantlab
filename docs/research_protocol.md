@@ -16,8 +16,10 @@
    derived from those results can no longer claim Test as an untouched holdout.
    (`test_observed = true` is recorded in experiment metadata.)
 
-6. **New out-of-sample**: data accumulating after 2026-09-05 is genuine future
-   out-of-sample evidence.
+6. **New out-of-sample**: genuine forward evidence is specific to a frozen model
+   and its timely generated and registered predictions. No fixed calendar date
+   makes all subsequent data untouched. Data already inspected remains observed;
+   a model trained later cannot backfill historical predictions as forward evidence.
 
 7. **No hindsight lookback search**: do not scan the full history, pick the best
    lookback, and report a single best result as if it were pre-registered.
