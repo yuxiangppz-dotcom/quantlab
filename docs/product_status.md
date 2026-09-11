@@ -3,6 +3,22 @@
 This file distinguishes locally exercised product paths from planned work.
 It is evidence notes, not a substitute for tests or an investment claim.
 
+## Historical Alpha158 staging (2026-09-11)
+
+- All 171 fixed code batches and 87 raw-month partitions completed once for
+  5,443 historically observed SH/SZ v1 identities, target 2020-01-01 through
+  2026-09-10. All 158 features are usable on 7,432,010 target identities. Raw,
+  mapped, native and usable data remain distinct; 9,245 out-of-bar derived VWAP
+  observations and 23,455 missing active-code daily rows remain explicit.
+- Every batch passed its deterministic native/causal sample checks; frozen
+  five-code overlap passed predeclared tolerance with exact missingness.
+  Independent array-based masks, unit mappings, code/calendar identities and
+  bound files matched the report. Output is about 11.79 GiB; generation took
+  18.1 minutes with 0.48 GiB peak RSS and zero research fits or retries.
+- The Chinese workbench shows checkpoint progress or complete coverage with
+  downloads. See [actual findings](alpha158_history_findings_zh.md). The next task
+  is a fixed six-fit rolling comparison; no investable-return claim or promotion.
+
 ## Native Alpha158 audit (2026-09-11)
 
 - All 158 pinned Qlib 0.9.7 expressions passed file/in-memory provider parity on

@@ -28,6 +28,12 @@
   KMID/KLEN exact mappings. No full-market Alpha158 model has been evaluated;
   see [actual audit findings](alpha158_findings_zh.md). Qlib does not own Canonical
   data or accounting.
+- Historical native Alpha158 staging now covers 5,443 locally observed codes;
+  7,432,010 target identities have all 158 features usable. Coverage remains
+  retrospective and incomplete in the historical-market sense. There are 9,245
+  out-of-bar derived VWAP observations and 23,455 missing active-code daily rows;
+  these are retained as exclusions, not corrected from outcomes. No rolling
+  Alpha158 model has yet been fitted. See [coverage findings](alpha158_history_findings_zh.md).
 - The former `libgomp.so.1` blocker is resolved. Six predeclared LightGBM fits
   completed in round two; their historical results remain retrospective,
   test-observed and unpromoted. The Alpha158 parity batch adds no research fit.
