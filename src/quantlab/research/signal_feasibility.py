@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -46,6 +47,73 @@ def load_contract(root: Path = PROJECT_ROOT) -> dict:
     if hashlib.sha256(raw).hexdigest() != CONFIG_SHA:
         raise DataValidationError("predeclared feasibility contract changed")
     return json.loads(raw)
+
+
+def verify_historical_inputs(root: Path, manifest: dict):
+    """Verify original code at its Git commit and original data at its local path.
+
+    A later presentation commit must not invalidate a frozen experiment. Its
+    source code must still exist byte-for-byte in the recorded historical tree.
+    Canonical inputs have no such substitution and must retain their bound bytes.
+    """
+    head = manifest["code_head"]
+    if len(head) != 40 or any(c not in "0123456789abcdef" for c in head):
+        raise DataValidationError("invalid historical code HEAD")
+    tracked = set(
+        subprocess.check_output(["git", "ls-tree", "-r", "--name-only", "-z", head], cwd=root)
+        .decode()
+        .split("\0")
+    )
+    entries = manifest["inputs"]
+    names = [name for name in entries if name in tracked]
+    attr_raw = (
+        subprocess.check_output(
+            ["git", "check-attr", f"--source={head}", "-z", "--stdin", "eol"],
+            cwd=root,
+            input="\0".join(names).encode() + b"\0",
+        )
+        .decode()
+        .split("\0")
+    )
+    endings = {attr_raw[i]: attr_raw[i + 2] for i in range(0, len(attr_raw) - 1, 3)}
+    process = subprocess.run(
+        ["git", "cat-file", "--batch"],
+        cwd=root,
+        input="".join(f"{head}:{name}\n" for name in names).encode(),
+        stdout=subprocess.PIPE,
+        check=True,
+    )
+    raw, offset = process.stdout, 0
+    preserved_checkout_endings = []
+    for name in names:
+        line_end = raw.index(b"\n", offset)
+        header = raw[offset:line_end].split()
+        if len(header) != 3 or header[1] != b"blob":
+            raise DataValidationError(f"historical source unavailable: {name}")
+        size = int(header[2])
+        content = raw[line_end + 1 : line_end + 1 + size]
+        if endings.get(name) == "crlf":
+            # Reproduce only an explicitly versioned checkout transformation.
+            content = content.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+        if hashlib.sha256(content).hexdigest() != entries[name]["sha256"]:
+            # Older Windows checkouts retained mixed endings in a few test files.
+            # Require BOTH the original raw hash and Git content equality after
+            # newline normalization; never normalize data or accept changed code.
+            path = (root / name).resolve()
+            current = path.read_bytes() if path.is_relative_to(root.resolve()) else b""
+            if hashlib.sha256(current).hexdigest() != entries[name]["sha256"] or current.replace(
+                b"\r\n", b"\n"
+            ) != content.replace(b"\r\n", b"\n"):
+                raise DataValidationError(f"historical source changed: {name}")
+            preserved_checkout_endings.append(name)
+        offset = line_end + size + 2
+    verify_entries(root, {name: entry for name, entry in entries.items() if name not in tracked})
+    return {
+        "code_head": head,
+        "historical_code_files": len(names),
+        "preserved_checkout_endings": preserved_checkout_endings,
+        "data_and_other_files": len(entries) - len(names),
+    }
 
 
 def score_cohort(frame, contract, lists, delists):
@@ -167,9 +235,7 @@ def run_export(root: Path = PROJECT_ROOT, *, progress=print):
         or original["fingerprint"] != contract["diagnostic_report_fingerprint"]
     ):
         raise DataValidationError("source round is not the predeclared frozen round")
-    # Original input code is still unchanged at this implementation/run part.
-    # Later presentation edits do not rewrite the original sealed round.
-    verify_entries(root, stage["inputs"])
+    original_verification = verify_historical_inputs(root, stage)
     for path in (source / "stage/manifest.json", source / "results/report.json"):
         binding.read(path)
     models, identities = load_saved_models(source, stage, contract)
@@ -211,7 +277,7 @@ def run_export(root: Path = PROJECT_ROOT, *, progress=print):
         del selected
         scores = pd.concat(all_scores, ignore_index=True)
         audit = audit_portfolio_inputs(root, out, scores, contract, binding, progress=progress)
-        verify_entries(root, stage["inputs"])
+        verify_historical_inputs(root, stage)
         load_report(source, full_verify=True)
         binding.check()
         artifacts = {
@@ -227,6 +293,7 @@ def run_export(root: Path = PROJECT_ROOT, *, progress=print):
             "contract": contract,
             "source_stage": stage["fingerprint"],
             "source_report": original["fingerprint"],
+            "original_input_verification": original_verification,
             "models": identities,
             "new_fit_attempts": 0,
             "source_round_fit_attempts": original["fit_attempts"],

@@ -263,3 +263,43 @@ def test_actual_audit_writes_tail_unknowns_and_uses_fee_and_target_interfaces(tm
     assert all(item["complete_trading_cost_fen"] is None for item in result["fee_examples"])
     assert {item["stamp_duty_rate"] for item in result["fee_examples"]} == {"0", "0.001", "0.0005"}
     assert not pd.read_parquet(out / "hypothetical_targets.parquet").execution_eligible.any()
+
+
+def test_archived_code_binding_allows_later_ui_edits_but_never_data_tampering(tmp_path):
+    import subprocess
+
+    def git(*args):
+        return subprocess.check_output(["git", *args], cwd=tmp_path, text=True).strip()
+
+    git("init", "-q")
+    source = tmp_path / "ui.py"
+    source.write_text("old presentation\n")
+    windows = tmp_path / "launch.ps1"
+    windows.write_bytes(b"original windows launcher\r\n")
+    mixed = tmp_path / "mixed.py"
+    mixed.write_bytes(b"line 1\r\nline 2\n")
+    (tmp_path / ".gitattributes").write_text("* text=auto eol=lf\n*.ps1 text eol=crlf\n")
+    git("add", "ui.py", "launch.ps1", "mixed.py", ".gitattributes")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "test")
+    data = tmp_path / "canonical.parquet"
+    data.write_bytes(b"bound data")
+    manifest = {
+        "code_head": git("rev-parse", "HEAD"),
+        "inputs": {
+            "ui.py": {"sha256": signals._sha(source)},
+            "launch.ps1": {"sha256": signals._sha(windows)},
+            "mixed.py": {"sha256": signals._sha(mixed)},
+            "canonical.parquet": {"sha256": signals._sha(data)},
+        },
+    }
+    source.write_text("later presentation\n")
+    windows.write_bytes(b"later windows launcher\r\n")
+    checked = signals.verify_historical_inputs(tmp_path, manifest)
+    assert checked["preserved_checkout_endings"] == ["mixed.py"]
+    data.write_bytes(b"changed data")
+    with pytest.raises(DataValidationError, match="bound file changed"):
+        signals.verify_historical_inputs(tmp_path, manifest)
+    data.write_bytes(b"bound data")
+    manifest["inputs"]["ui.py"]["sha256"] = "0" * 64
+    with pytest.raises(DataValidationError, match="historical source changed"):
+        signals.verify_historical_inputs(tmp_path, manifest)

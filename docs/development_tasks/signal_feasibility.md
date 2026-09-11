@@ -44,3 +44,13 @@ review, PR, green CI, merge and master CI. Preserve failures and run evidence.
 
 Only local research products: no providers, canonical writes, orders, account or
 fill changes, registrations, C-drive cleanup, old agent-loop changes or promotion.
+
+The first real preflight on commit `3a8582f` stopped before creating the export:
+round-two presentation files had legitimately changed since staging. Verification
+now checks source code against the historical Git tree and explicitly versioned
+checkout endings, while preserving and checking the exact original bytes of five
+older test files with mixed Windows endings. Those files must ALSO normalize to
+the historical Git blob. Canonical data is never normalized or substituted.
+The original 292 source files and 5,232 data/other input files were verified.
+No export or model fit was produced by the failed preflight; its log is retained
+under ignored `data/runtime/research/signal_feasibility_20260911.log`.
