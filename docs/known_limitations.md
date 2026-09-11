@@ -25,15 +25,22 @@
 - Qlib 0.9.7 executes all 158 native expressions in the bounded five-code audit;
   transport parity passed, while complete-history eligibility is deliberately
   stricter than native defaults. The older handwritten style set still has only
-  KMID/KLEN exact mappings. No full-market Alpha158 model has been evaluated;
+  KMID/KLEN exact mappings. Observed-universe rolling models are diagnostic only;
   see [actual audit findings](alpha158_findings_zh.md). Qlib does not own Canonical
   data or accounting.
 - Historical native Alpha158 staging now covers 5,443 locally observed codes;
   7,432,010 target identities have all 158 features usable. Coverage remains
   retrospective and incomplete in the historical-market sense. There are 9,245
   out-of-bar derived VWAP observations and 23,455 missing active-code daily rows;
-  these are retained as exclusions, not corrected from outcomes. No rolling
-  Alpha158 model has yet been fitted. See [coverage findings](alpha158_history_findings_zh.md).
+  these are retained as exclusions, not corrected from outcomes.
+  See [coverage findings](alpha158_history_findings_zh.md).
+- Six fixed rolling Alpha158 fits now completed; ridge's higher evaluation RankIC
+  than LightGBM in all four reported periods does not establish net profitability.
+  Both weaken in observed 2026 and top-20 membership changes remain substantial.
+  All labels overlap and historical windows were already observed. No confidence
+  claim from independent samples, live prediction, or 20% drawdown certification
+  is justified. The metadata coordinator's Arrow thread cap was added after this
+  run; original model outcomes remain frozen. See [model findings](alpha158_rolling_findings_zh.md).
 - The former `libgomp.so.1` blocker is resolved. Six predeclared LightGBM fits
   completed in round two; their historical results remain retrospective,
   test-observed and unpromoted. The Alpha158 parity batch adds no research fit.

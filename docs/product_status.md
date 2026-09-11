@@ -3,6 +3,25 @@
 This file distinguishes locally exercised product paths from planned work.
 It is evidence notes, not a substitute for tests or an investment claim.
 
+## Fixed rolling Alpha158 models (2026-09-11)
+
+- All six predeclared Qlib ridge/LightGBM fits completed without retry. Three
+  expanding training windows score 2023/2024/2025; final saved models also score
+  observed 2026 without refitting. The two models share 4,442,616 evaluation-period
+  score identities each, including unavailable labels. Ridge has higher mean
+  daily RankIC and lower top-20 membership change in all four periods; both
+  weaken in observed 2026. This is retrospective diagnostic evidence, not return.
+- Independent exact-session labels, training-only moments, all score membership,
+  daily IC and bound hashes passed. Full saved-model predictions reproduce exactly.
+  The batch took 10.9 minutes, generated about 0.72 GiB and peaked at 7.05 GiB RSS.
+  Model workers pinned two computation threads; the coordinator's Arrow pool was
+  not explicitly pinned during metadata staging, and that constraint gap has been
+  fixed afterward without retraining. See [complete findings](alpha158_rolling_findings_zh.md).
+- The Chinese workbench displays every fit, training/evaluation gap, coverage,
+  stability, resources and limitations. Historical rule coverage and cost/execution
+  evidence remain the next prerequisites for portfolio evaluation and the unverified
+  20% drawdown target. No automatic promotion or provider/canonical writes occurred.
+
 ## Historical Alpha158 staging (2026-09-11)
 
 - All 171 fixed code batches and 87 raw-month partitions completed once for
@@ -16,8 +35,8 @@ It is evidence notes, not a substitute for tests or an investment claim.
   bound files matched the report. Output is about 11.79 GiB; generation took
   18.1 minutes with 0.48 GiB peak RSS and zero research fits or retries.
 - The Chinese workbench shows checkpoint progress or complete coverage with
-  downloads. See [actual findings](alpha158_history_findings_zh.md). The next task
-  is a fixed six-fit rolling comparison; no investable-return claim or promotion.
+  downloads. See [actual findings](alpha158_history_findings_zh.md). Its later fixed
+  rolling comparison is recorded above; no investable-return claim or promotion.
 
 ## Native Alpha158 audit (2026-09-11)
 
