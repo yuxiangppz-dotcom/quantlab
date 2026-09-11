@@ -68,3 +68,37 @@ by default, and all 4 explicitly enabled runtime tests passed. Ruff and diff
 checks passed. The source-bound contract SHA256 is
 e25fd138b4fdfccd504d80a76ac71301f2f72f7f7214a01253618430d5750a59.
 The Chinese view reads only sealed summaries and supports checkpoint progress.
+
+Actual generation at committed/pushed 1a882be9facdf02d3300f050845fdcb36c1855ed
+completed all 87 raw months and 171 factor batches, 258 attempts with zero failures
+or retries. Target coverage: 8,833,989 identities, 7,736,878 active-code positions,
+7,714,651 raw observed rows and 7,432,010 identities with all 158 features usable.
+Missing active-code daily rows (23,455), inactive positions (1,097,111), and
+out-of-bar derived VWAP (9,245) remain explicit. No post-outcome tolerance,
+identity, scope, source or resource adjustment occurred.
+
+The complete output is 12,658,968,511 bytes. Generation took 1,087.4068 seconds
+with peak RSS 511,717,376 bytes; all limits held. Frozen overlap kept exact keys
+and missingness; the maximum numerical difference was 5.96e-8, within the fixed
+rtol=1e-5/atol=1e-6. All 171 native/causal samples passed. Independent verification
+recomputed every factor's full-window mask using array cumulative counts and
+checked all identities, calendars, lifecycles, raw-unit mappings, source/code/
+runtime and output hashes in 57.84 seconds. It confirmed 1,202,233,331 usable
+factor cells, which are not independent samples or performance evidence.
+
+Report fingerprint: bd599dc16eb30853dc60f7f86266383543c06984d83979629d1a70c7215ea2f3.
+Independent verification: d6a78219790d7e3f8a294b260a7bf8523f361bb5e2c9ab0a64a3fe574c2e2492.
+See docs/alpha158_history_findings_zh.md for actual findings and limitations.
+
+Final local validation: 1,428 passed / 4 default optional skips; all 4 explicit
+runtime tests passed. Ruff and diff checks passed. Actual headless Edge acceptance
+covered partial and complete states, counts, limits, resource figures, both
+report/Chinese downloads, and no browser/Streamlit exceptions. Screenshots were
+visually inspected after waiting for table rendering. The owned local service
+was restarted to load the final helper-module presentation, then rechecked.
+Host D free space after generation was 94,868,316,160 bytes.
+
+Freeze the successful staging artifacts. The next task is a fixed six-fit ridge/
+LightGBM expanding-window comparison, with purged five-session labels and separate
+already-observed 2026 diagnostics from the saved final-fold models. Existing
+financial and point-in-time limitations remain; no strategy is promoted.

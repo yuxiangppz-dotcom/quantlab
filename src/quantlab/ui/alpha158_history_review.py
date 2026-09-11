@@ -38,7 +38,9 @@ def render_alpha158_history():
         )
         if report["years"]:
             st.dataframe(
-                pd.DataFrame(report["years"]).rename(
+                pd.DataFrame(report["years"])[
+                    ["year", "grid_rows", "active_rows", "observed_rows", "all158_usable_rows"]
+                ].rename(
                     columns={
                         "year": "年份",
                         "grid_rows": "代码日期位置",
@@ -85,6 +87,7 @@ def render_alpha158_history():
                 width="stretch",
             )
         if complete:
+            st.caption("本页核对摘要；整批文件与可用掩码的独立校验结果见中文报告。")
             st.caption(
                 f"文件占用约 {report['generated_bytes_before_receipt'] / 1024**3:.2f} GiB；"
                 f"进程内存峰值 {report['peak_rss_bytes'] / 1024**3:.2f} GiB；"
