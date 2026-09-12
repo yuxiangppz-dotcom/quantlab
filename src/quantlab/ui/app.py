@@ -326,6 +326,7 @@ elif page == "回测与基准":
     from quantlab.ui.cost_input_review import render_cost_input_review
     from quantlab.ui.dividend_events import render_dividend_events
     from quantlab.ui.dividend_review import render_dividend_acquisition
+    from quantlab.ui.extended_plan import render_extended_plan
     from quantlab.ui.research_controls import render_research_costs
     from quantlab.ui.round2_review import render_round2_review
     from quantlab.ui.rule_evidence_v2_review import render_rule_evidence_versions
@@ -334,6 +335,7 @@ elif page == "回测与基准":
     from quantlab.ui.weekly_plan import render_weekly_plan
 
     render_research_costs()
+    render_extended_plan()
     render_weekly_pilot()
     render_weekly_plan()
     render_dividend_events()

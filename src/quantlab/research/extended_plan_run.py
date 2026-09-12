@@ -179,6 +179,7 @@ def read_report(root):
     if not (out / "report.json").exists():
         return None
     report, plan = sealed_read(out / "report.json"), sealed_read(out / "plan.json")
+    config = json.loads((root / CONFIG).read_text())
     if report["plan_fingerprint"] != plan["fingerprint"] or plan["config_sha256"] != _sha(
         root / CONFIG
     ):
@@ -204,6 +205,48 @@ def read_report(root):
     ):
         raise DataValidationError("extended planner authority changed")
     slots = weekly["fit_slots"]
+    weeks = weekly["weeks"]
+    if len(weeks) != len(plan["schedule"]) or any(
+        any(row.get(key) != value for key, value in fixed.items())
+        for row, fixed in zip(weeks, plan["schedule"], strict=True)
+    ):
+        raise DataValidationError("extended schedule differs from fixed calendar")
+    expected_counts = {
+        "metadata_rows": 9487149,
+        "metadata_codes": 5443,
+        "weekly_rows": len(weeks),
+        "monthly_anchors": 12,
+        "reused_frozen_models": 6,
+        "required_unique_models": 2 * len(weeks),
+        "future_max_new_fit_attempts": 2 * len(weeks) - 6,
+    }
+    if any(
+        type(report.get(k)) is not int or report[k] != value for k, value in expected_counts.items()
+    ):
+        raise DataValidationError("extended population/budget summary changed")
+    if (
+        weekly["models"] != config["models"]
+        or weekly["monthly_anchor_weeks"]
+        != list(dict.fromkeys(row["monthly_anchor"] for row in weeks))
+        or weekly["signal_market_days"] != sum(len(row["prediction_sessions"]) for row in weeks)
+        or weekly["prediction_rows_per_policy_model"]
+        != sum(row["prediction_rows"] for row in weeks)
+        or weekly["evaluation_rows_per_policy_model"]
+        != sum(row["evaluation_rows"] for row in weeks)
+        or weekly["required_unique_models"] != len(slots)
+        or weekly["reused_frozen_models"] != 6
+        or weekly["future_max_attempts_per_segment"] != 6
+        or type(weekly["actual_new_fit_attempts"]) is not int
+        or type(weekly["new_prediction_rows"]) is not int
+    ):
+        raise DataValidationError("extended planned populations or action counters changed")
+    expected_slots = [f"{row['week_id']}_{kind}" for row in weeks for kind in ("ridge", "lightgbm")]
+    if [slot["slot"] for slot in slots] != expected_slots:
+        raise DataValidationError("extended fit slot coverage/order changed")
+    if {slot["reuse_slot"] for slot in slots if slot["reuse_slot"] is not None} != {
+        f"week{i}_{kind}" for i in (1, 2, 3) for kind in ("ridge", "lightgbm")
+    }:
+        raise DataValidationError("extended reused slot identity changed")
     if (
         len({row["slot"] for row in slots}) != len(slots)
         or len(slots) != 2 * len(weekly["weeks"])
