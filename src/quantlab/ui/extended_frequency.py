@@ -41,6 +41,20 @@ def render_extended_frequency():
         )
         if report["status"] == "failed":
             st.error("本批次存在失败或中断，已停止后续训练，保留原始名额与证据。")
+            repair = PROJECT_ROOT / "docs/extended_frequency_reuse_repair_zh.md"
+            if repair.exists():
+                explanation = repair.read_text(encoding="utf-8")
+                if report["fingerprint"] in explanation:
+                    st.caption(
+                        "旧模型扩展复用出现批量计算差异；软件修复已补齐，原批次仍保留失败，等待单独的恢复验证。"
+                    )
+                    st.download_button(
+                        "下载本轮失败与修复说明",
+                        explanation,
+                        "QuantLab_全年对照失败与修复.txt",
+                        "text/plain",
+                        on_click="ignore",
+                    )
         elif report["status"] == "checkpoint":
             st.info("全年对照尚未完成，暂不据部分周次判断每周训练是否更好。")
         else:

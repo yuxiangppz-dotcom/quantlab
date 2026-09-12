@@ -105,7 +105,15 @@ def predict_union(root, config, spec, folder, model, scaler, metadata):
                     ArrayDataset(x[missing], index=index[missing])
                 ).to_numpy()
                 computed += int(missing.sum())
-            replay = restored.predict(ArrayDataset(x, index=index)).to_numpy()
+            # Float32 matrix products may depend on batch geometry. Reproduce the
+            # original saved-row batch and the new-row batch separately, retaining
+            # exact comparison for every row instead of relaxing the tolerance.
+            replay = np.empty(len(part), dtype="float64")
+            for group in (existing, missing):
+                if group.any():
+                    replay[group] = restored.predict(
+                        ArrayDataset(x[group], index=index[group])
+                    ).to_numpy()
             if not np.isfinite(score).all() or not np.array_equal(score, replay):
                 raise DataValidationError("extended saved model fails exact union replay")
             part["score"] = score
