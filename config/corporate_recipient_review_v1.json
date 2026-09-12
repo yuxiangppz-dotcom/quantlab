@@ -1,0 +1,105 @@
+{
+  "schema": "corporate_recipient_review_v1",
+  "output": "data/products/research_program/launch_20260912/corporate_20_primary_review",
+  "terms": "data/products/research_program/launch_20260912/corporate_minimum_terms/terms.parquet",
+  "scope_fingerprint": "5f909d8edb981870817dfef8e0ff6e579a0e84f837cb9a9fcbd2a7fdcc8a4d65",
+  "annotations_fingerprint": "6d66e42a08df7e5e80b58e174ed69538389a5c5ac8fc7a1c782ef6e6f7267322",
+  "inputs": {
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/002217_20241225.pdf": {
+      "sha256": "76f75e2a4cd072a2ce58dcf4461bc8869719b82c1e23f59ccf73fddfa33f6a88",
+      "bytes": 746073
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/002217_20241225_intent.json": {
+      "sha256": "74bd1f820eaddcbc6e78c95facb8c21eec932df9a97cecd625fb8db57c634931",
+      "bytes": 256
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/002217_20241225_receipt.json": {
+      "sha256": "391f40b47851b4b14a1488a6cfb1ff3a50d15f6f379c93699979948dd9bfebfe",
+      "bytes": 544
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/300278_20211231.pdf": {
+      "sha256": "d8fd41910c83bb6569b0fe2c06a4ced58e861b01648be25eed2911686503a688",
+      "bytes": 161719
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/300278_20211231_intent.json": {
+      "sha256": "0839ffdb3c22750e2a341c302d7b30878475fd672a6d9036726e15770b4da305",
+      "bytes": 256
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/300278_20211231_receipt.json": {
+      "sha256": "58f5b0267c48f8d312a408b9ff68e1a9ee48ef8724560c2181349507d99a2d42",
+      "bytes": 544
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/300763_20220624.pdf": {
+      "sha256": "26cac45f2a299144c2412dfc01144f25288db4512a25ab6151569a3098dca4d3",
+      "bytes": 245541
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/300763_20220624_intent.json": {
+      "sha256": "2a775420c38860d0996aa86630a2a52358ade7ba32aa91f5798c3a51e6508d5e",
+      "bytes": 256
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/300763_20220624_receipt.json": {
+      "sha256": "4bacda15601891671b0f5cb68697697a4904e635cd88d6a8512062611fe87c19",
+      "bytes": 544
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/300795_20230526.pdf": {
+      "sha256": "791d4f79ed99da74b994bbe8cbd2612964777b6145d1d63f45f42ba473823012",
+      "bytes": 244390
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/300795_20230526_intent.json": {
+      "sha256": "485293e9a66c6d7b49c808c46c8ee154ebfe873bc4cf7365fcba97879db4c678",
+      "bytes": 293
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/300795_20230526_receipt.json": {
+      "sha256": "cedd362a936744025696763651b45a4908a65ac983aa2fb7075927828b067787",
+      "bytes": 581
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/click_batch_2.json": {
+      "sha256": "9958fc12721143688ab56d358b5f4c34dc848433a76cd73e0c8836b8c22cac45",
+      "bytes": 7017
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/downloads.json": {
+      "sha256": "57955e1be08cf9f0e38248a2ef8945a1a56012e17fab03afff78feb0e2f49a83",
+      "bytes": 2069
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/find_batch_1.json": {
+      "sha256": "9eac92fd415dfc19ca00c02c2f6c9720206fa1526009b9bb031182ed31d757b1",
+      "bytes": 21379
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/open_batch_1.json": {
+      "sha256": "83324c9f1ee791f5ba49585fcad67348415e0e93ea9f79c6efee742b1ff0f952",
+      "bytes": 25347
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/reviewed_annotations.json": {
+      "sha256": "f865955458942c050e57a44ffdf41ae8d75a09615c3cb673e65a9fd4dcce9a48",
+      "bytes": 14005
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/scope.json": {
+      "sha256": "0b58a4658bb6079dbb8e81a3d3fce68346d4d0fc6e5ad81d2a46a5e9184337f1",
+      "bytes": 12947
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/search_batch_1.json": {
+      "sha256": "f5855ee1fa626001b8da0d72e1f3551dee66d6dbe1737301280677e911f873ff",
+      "bytes": 27759
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/search_batch_2.json": {
+      "sha256": "82ee5818ad51af04fc4d5d04b90c7cdb4807a6ddd3e3954fc9779773935a79f9",
+      "bytes": 15147
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/search_batch_3.json": {
+      "sha256": "c4e0b05abeb664cf4859284fa4380ffeb219ae919d1ce4ac86fe5f5e670b58ad",
+      "bytes": 25826
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/search_batch_4.json": {
+      "sha256": "c0bad05f9047e4d72c7867ab0944311e9ff48b357f89d538004a8fd7fdb044b1",
+      "bytes": 17575
+    },
+    "data/products/research_program/launch_20260912/corporate_20_primary_review/search_batch_5.json": {
+      "sha256": "3d5cb44d82ac78f3593f7b6c87abf6c209565d02044c300596117739004127cb",
+      "bytes": 25851
+    },
+    "data/products/research_program/launch_20260912/corporate_minimum_terms/terms.parquet": {
+      "sha256": "5c6b0299c787c02ac95f4919dbfa2c6896f18044108307d2035229d99d126c4e",
+      "bytes": 98645
+    }
+  }
+}
