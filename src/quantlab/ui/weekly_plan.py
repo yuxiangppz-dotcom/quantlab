@@ -1,4 +1,4 @@
-"""Explain the saved diagnostics and the unexecuted weekly pilot."""
+"""Explain the saved diagnostics and the historical pilot preparation snapshot."""
 
 import json
 
@@ -15,14 +15,14 @@ def render_weekly_plan():
     try:
         loaded = read_report(PROJECT_ROOT)
         if loaded is None:
-            st.info("正在核对周更训练日历与标签成熟条件，尚未运行新模型。")
+            st.info("周更训练日历与标签成熟条件的准备报告尚未交付。")
             return
         report, monthly, weekly = loaded
         verification = read_verification(PROJECT_ROOT, report, weekly)
         a, b, c = st.columns(3)
         a.metric("已有月度诊断", f"{report['monthly_rows']} 组")
         b.metric("计划候选训练", "6 次")
-        c.metric("本计划实际训练", f"{report['new_fit_attempts']} 次")
+        c.metric("准备时训练快照", f"{report['new_fit_attempts']} 次")
         st.write(
             "使用全部已保存月份，比较岭回归和LightGBM的排序表现。"
             "RankIC是排序相关性，不是收益率；前20名变化也不是实际交易换手。"
@@ -91,7 +91,8 @@ def render_weekly_plan():
         )
         st.dataframe(week_table, hide_index=True, width="stretch")
         st.warning(
-            "这是尚未执行的六次训练计划。首周两种更新频率共享模型，第二、三周才能比较更新效果。"
+            "这是预先固定的六次训练方案；实际训练进度见上方周更对照。"
+            "首周两种更新频率共享模型，第二、三周才能比较更新效果。"
             "六次上限包含失败尝试，不追加搜索参数，也不自动替换策略。"
         )
         st.caption(
@@ -127,7 +128,7 @@ def render_weekly_plan():
             st.download_button(label, value, filename, mime, on_click="ignore")
         findings = PROJECT_ROOT / "docs/weekly_candidate_plan_findings_zh.md"
         if verification is not None:
-            st.success("全部月份与三个周次样本已独立核对；六次候选训练尚未执行。")
+            st.success("全部月份与三个周次样本已独立核对；此处保留准备阶段的零次拟合快照。")
             st.download_button(
                 "下载周更准备独立复核",
                 json.dumps(verification, ensure_ascii=False, indent=2),
