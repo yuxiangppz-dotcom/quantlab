@@ -324,6 +324,7 @@ elif page == "回测与基准":
     from quantlab.ui.alpha158_review import render_alpha158_review
     from quantlab.ui.alpha158_rolling_review import render_alpha158_rolling
     from quantlab.ui.cost_input_review import render_cost_input_review
+    from quantlab.ui.dividend_events import render_dividend_events
     from quantlab.ui.dividend_review import render_dividend_acquisition
     from quantlab.ui.research_controls import render_research_costs
     from quantlab.ui.round2_review import render_round2_review
@@ -331,6 +332,7 @@ elif page == "回测与基准":
     from quantlab.ui.signal_feasibility_review import render_signal_feasibility_review
 
     render_research_costs()
+    render_dividend_events()
     render_dividend_acquisition()
     render_cost_input_review()
     render_rule_evidence_versions()

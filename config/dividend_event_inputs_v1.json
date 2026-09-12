@@ -1,0 +1,71 @@
+{
+  "version": "dividend-event-inputs-v1",
+  "start": "2023-01-04",
+  "end": "2026-09-10",
+  "instrument_count": 4516,
+  "observation_count": 217007,
+  "window_count": 107400,
+  "codes_per_partition": 100,
+  "windows_path": "data/products/cost_input_audit/cost_inputs_20260911/target_windows.parquet",
+  "acquisition_fingerprint": "12bdabaa1bab610afa2dd078a11f23f66d1a36d72255b80b35863bacf1670406",
+  "verification_fingerprint": "bae0321f4e234ae88d2fe8366283795571e1ae863baa95f4f208e405cb5f7d01",
+  "cost_fingerprint": "c9d1c1ebf994a6c95bcda5f5191286c1636e5d295a72b2ccec06150ec3076e15",
+  "inputs": {
+    "config/dividend_acquisition_v1.json": {
+      "sha256": "d23054c0f64923bd93f39a5c98c36fc3ce82aaf9ccc9319bda0582c087ff3fde",
+      "bytes": 5123
+    },
+    "data/products/corporate_action_staging/dividend_targets_20260911/runs/8d36387797e6432f8719e835eecec1b7/report.json": {
+      "sha256": "f03cd7cff99594125eb1d6ee5a86f2cd095f6dfd1e8a7d77f9592c996972f267",
+      "bytes": 2161378
+    },
+    "data/products/corporate_action_staging/dividend_targets_20260911/independent_verification.json": {
+      "sha256": "83a77c33b8992375796d68f8e1258460e637acdb978f7ff10d2e430360f462cd",
+      "bytes": 8599
+    },
+    "data/products/corporate_action_staging/dividend_targets_20260911/scope_quality_audit.json": {
+      "sha256": "e94e2d74a4590ba27360a43c6b74a07f80224fda4ee2d400e1aca019e27e4b79",
+      "bytes": 93826
+    },
+    "data/products/corporate_action_staging/dividend_targets_20260911/post_fix_verification.json": {
+      "sha256": "55d7895e8fa065d6a9c388e4019657b61014432d0145e9ce128c30118173677f",
+      "bytes": 655
+    },
+    "data/products/cost_input_audit/cost_inputs_20260911/report.json": {
+      "sha256": "0b3591c1143df77ac7d950320abdc3761d46b6e62efd3d34661de3e19c64c932",
+      "bytes": 567312
+    },
+    "data/products/cost_input_audit/cost_inputs_20260911/targets.parquet": {
+      "sha256": "9a4177a8570c4f643d3f0275ae7b2e00f1662f9950850541d1c4e6e3f56f8efe",
+      "bytes": 95569
+    },
+    "data/products/cost_input_audit/cost_inputs_20260911/target_windows.parquet": {
+      "sha256": "d8ae2e8723b1ae86c8aefdbc55bfddabbf892ebfc72ebb4b46f63e6e187270ff",
+      "bytes": 305501
+    }
+  },
+  "schema": "Explicit Arrow schemas in dividend_event_run.py; original raw payload and request/response/row identities retained.",
+  "units": {
+    "stk_div": "shares/share total bonus+conversion",
+    "stk_bo_rate": "bonus shares/share",
+    "stk_co_rate": "conversion shares/share",
+    "cash_div": "CNY/share provider after-tax field, not account-specific receipt",
+    "cash_div_tax": "CNY/share before tax",
+    "base_share": "ten thousand shares"
+  },
+  "status_policy": "Keep original status; strip surrounding whitespace only in separate normalized_status and flag every change. Implementation means candidate only.",
+  "overlap_policy": "Exact code and inclusive saved intended entry through exit; unknown exit uses fixed cutoff for observation overlap only. No invented exit or account entitlement.",
+  "observation_policy": "Actual receipt UTC time; no announcement-date backdating; signal-close comparison at 15:00 Asia/Shanghai.",
+  "duplicate_policy": "Separate response-row observation IDs and content IDs; no deduplication or favorable version selection.",
+  "resources": {
+    "max_generated_bytes": 1073741824,
+    "max_rss_bytes": 4294967296,
+    "reserve_host_D_bytes": 8589934592,
+    "max_wakeup_seconds": 2700,
+    "next_partition_time_reserve_seconds": 300
+  },
+  "provider_calls": 0,
+  "new_fit_attempts": 0,
+  "performance_evidence": false,
+  "execution_authority": false
+}
