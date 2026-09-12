@@ -1,0 +1,25 @@
+"""Local-only planner with explicit numerical and Arrow thread caps."""
+
+import os
+
+for name in (
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "ARROW_NUM_THREADS",
+):
+    os.environ[name] = "2"
+
+import json  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+import pyarrow as pa  # noqa: E402
+
+pa.set_cpu_count(2)
+pa.set_io_thread_count(2)
+
+from quantlab.research.weekly_plan_run import run  # noqa: E402
+
+if __name__ == "__main__":
+    print(json.dumps(run(Path(__file__).resolve().parents[1])))
