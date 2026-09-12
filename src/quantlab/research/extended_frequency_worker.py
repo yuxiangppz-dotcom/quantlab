@@ -44,7 +44,7 @@ def model_path(root, spec, folder):
     )
 
 
-def predict_union(root, config, spec, folder, model, scaler, metadata):
+def predict_union(root, config, spec, folder, model, scaler, metadata, *, batch_observer=None):
     from quantlab.research.alpha158_rolling_models import ArrayDataset
 
     path = model_path(root, spec, folder)
@@ -69,11 +69,13 @@ def predict_union(root, config, spec, folder, model, scaler, metadata):
         raise DataValidationError("extended predictions cannot be overwritten")
     writer, total, reused, computed, digest = None, 0, 0, 0, hashlib.sha256()
     try:
-        for meta, values in batches(
-            root / config["history_root"],
-            root / config["metadata_root"],
-            metadata,
-            config["features"],
+        for ordinal, (meta, values) in enumerate(
+            batches(
+                root / config["history_root"],
+                root / config["metadata_root"],
+                metadata,
+                config["features"],
+            )
         ):
             selected = prediction_mask(meta, spec["prediction_sessions"]).to_numpy()
             if not selected.any():
@@ -116,6 +118,8 @@ def predict_union(root, config, spec, folder, model, scaler, metadata):
                     ).to_numpy()
             if not np.isfinite(score).all() or not np.array_equal(score, replay):
                 raise DataValidationError("extended saved model fails exact union replay")
+            if batch_observer is not None:
+                batch_observer(ordinal, part, existing, x)
             part["score"] = score
             table = pa.Table.from_pandas(part, preserve_index=False)
             if writer is None:
@@ -342,9 +346,13 @@ def utc(value):
 
 
 def validated_worker(root, plan, slot):
+    return validate_saved_result(root, plan, slot, folder_for(root, plan["config"], slot))
+
+
+def validate_saved_result(root, plan, slot, folder):
+    """Validate an explicitly located artifact without redirecting the original worker."""
     config = plan["config"]
     spec = config["model_specs"][slot]
-    folder = folder_for(root, config, slot)
     summary, start, prep = (
         sealed_read(folder / name)
         for name in ("worker_result.json", "started.json", "preprocessing.json")
