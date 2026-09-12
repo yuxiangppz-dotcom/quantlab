@@ -1,0 +1,37 @@
+{
+  "schema": "quantlab_funding_attribution_v1",
+  "expected_start_head": "c5eeef64a269cf331cabc9dbbd732b4cebfa81ea",
+  "inputs": {
+    "data/products/research_program/launch_20260912/funding_diagnostics/report.json": {
+      "sha256": "d78425b79717bdd96921c0ec2c04d6203a3ceb3193ab3368e579d8e2a91d7d29",
+      "bytes": 78215
+    },
+    "data/products/research_program/launch_20260912/funding_independent_proof.json": {
+      "sha256": "c4138bb14329d693e01836a33bb8b8e0b6e11a4a5ee8ef919f76ad43e8dc57df",
+      "bytes": 674
+    },
+    "data/products/research_program/launch_20260912/funding_diagnostics/features_and_labels.parquet": {
+      "sha256": "52d83a4afe0f34f0a9d1ba211fa6da2250273cb5dd7a2f9decab483cffe3721f",
+      "bytes": 31805405
+    }
+  },
+  "pilot_report_path": "data/products/research_program/launch_20260912/funding_diagnostics/report.json",
+  "pilot_proof_path": "data/products/research_program/launch_20260912/funding_independent_proof.json",
+  "features_path": "data/products/research_program/launch_20260912/funding_diagnostics/features_and_labels.parquet",
+  "pilot_report_fingerprint": "e9060d47734f52bb4dd11fc90876342f925a54ec51bf1fc92a3e9f3b989becf9",
+  "output": "data/products/research_program/launch_20260912/funding_attribution",
+  "minimum_pairs": 30,
+  "momentum_buckets": 5,
+  "max_actual_attempts": 1,
+  "new_funding_feature_ids": [],
+  "provider_calls_authorized": 0,
+  "economic_paths_authorized": 0,
+  "model_fits_authorized": 0,
+  "resources": {
+    "max_generated_bytes": 134217728,
+    "reserve_host_D_bytes": 8589934592,
+    "max_rss_bytes": 2147483648,
+    "max_wakeup_seconds": 600,
+    "next_partition_time_reserve_seconds": 60
+  }
+}
