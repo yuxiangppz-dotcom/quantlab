@@ -199,3 +199,48 @@ def read_report(root):
     ):
         raise DataValidationError("weekly plan population or model contract changed")
     return r, monthly, weekly
+
+
+def read_verification(root, report, weekly):
+    path = root / OUTPUT / "independent_verification.json"
+    if not path.exists():
+        return None
+    review = sealed_read(path)
+    plan = sealed_read(root / OUTPUT / "plan.json")
+    expected = {
+        key: report[key]
+        for key in ("metadata_rows", "metadata_codes", "daily_rows", "monthly_rows")
+    }
+    expected.update(
+        report_fingerprint=report["fingerprint"],
+        source_head=plan["code_head"],
+        new_fit_attempts=0,
+        provider_calls=0,
+    )
+    if any(
+        type(review.get(key)) is not type(value) or review[key] != value
+        for key, value in expected.items()
+    ):
+        raise DataValidationError("weekly independent review source or population mismatch")
+    fields = (
+        "train_feature_rows",
+        "train_rows",
+        "train_unmatured_or_unknown_end",
+        "train_missing_label_rows",
+        "prediction_rows",
+        "evaluation_rows",
+        "prediction_missing_label_rows",
+        "prediction_unmatured_or_unknown_end",
+    )
+    expected_counts = [{key: row[key] for key in fields} for row in weekly["rows"]]
+    if review.get("weekly_populations") != expected_counts or any(
+        type(value) is not int or value < 0
+        for row in review["weekly_populations"]
+        for value in row.values()
+    ):
+        raise DataValidationError("weekly independent review counts changed")
+    if review.get("six_future_fit_slots") is not True or any(
+        review.get(key) is not False for key in ("performance_evidence", "execution_authority")
+    ):
+        raise DataValidationError("weekly independent review authority changed")
+    return review

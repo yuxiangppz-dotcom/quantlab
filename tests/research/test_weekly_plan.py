@@ -211,3 +211,59 @@ def test_weekly_reader_rejects_changed_source_and_output(tmp_path, monkeypatch, 
     else:
         with pytest.raises(DataValidationError):
             module.read_report(tmp_path)
+
+
+@pytest.mark.parametrize("change", [None, "source", "counts", "authority", "boolean"])
+def test_independent_weekly_review_binds_exact_model_populations(tmp_path, change):
+    from quantlab.research.round2_dataset import sealed_write
+    from quantlab.research.weekly_plan_run import OUTPUT, read_verification
+
+    out = tmp_path / OUTPUT
+    out.mkdir(parents=True)
+    sealed_write(out / "plan.json", {"code_head": "a" * 40})
+    report = {
+        "fingerprint": "b" * 64,
+        "metadata_rows": 10,
+        "metadata_codes": 1,
+        "daily_rows": 5,
+        "monthly_rows": 1,
+    }
+    values = dict.fromkeys(
+        (
+            "train_feature_rows",
+            "train_rows",
+            "train_unmatured_or_unknown_end",
+            "train_missing_label_rows",
+            "prediction_rows",
+            "evaluation_rows",
+            "prediction_missing_label_rows",
+            "prediction_unmatured_or_unknown_end",
+        ),
+        0,
+    )
+    weekly = {"rows": [values]}
+    review = {
+        **{k: v for k, v in report.items() if k != "fingerprint"},
+        "report_fingerprint": report["fingerprint"],
+        "source_head": "a" * 40,
+        "new_fit_attempts": 0,
+        "provider_calls": 0,
+        "weekly_populations": [values.copy()],
+        "six_future_fit_slots": True,
+        "performance_evidence": False,
+        "execution_authority": False,
+    }
+    if change == "source":
+        review["source_head"] = "c" * 40
+    elif change == "counts":
+        review["weekly_populations"][0]["prediction_rows"] = 1
+    elif change == "authority":
+        review["execution_authority"] = 0
+    elif change == "boolean":
+        review["weekly_populations"][0]["prediction_missing_label_rows"] = False
+    sealed_write(out / "independent_verification.json", review)
+    if change is None:
+        assert read_verification(tmp_path, report, weekly)["source_head"] == "a" * 40
+    else:
+        with pytest.raises(DataValidationError):
+            read_verification(tmp_path, report, weekly)

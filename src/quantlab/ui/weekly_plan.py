@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from quantlab.daily.service import PROJECT_ROOT
-from quantlab.research.weekly_plan_run import read_report
+from quantlab.research.weekly_plan_run import read_report, read_verification
 from quantlab.ui.workbench import public_error
 
 
@@ -18,6 +18,7 @@ def render_weekly_plan():
             st.info("正在核对周更训练日历与标签成熟条件，尚未运行新模型。")
             return
         report, monthly, weekly = loaded
+        verification = read_verification(PROJECT_ROOT, report, weekly)
         a, b, c = st.columns(3)
         a.metric("已有月度诊断", f"{report['monthly_rows']} 组")
         b.metric("计划候选训练", "6 次")
@@ -53,6 +54,10 @@ def render_weekly_plan():
                 "mean_top20_membership_change": "前20名成员变化",
             }
         )
+        month_table["模型"] = month_table["模型"].replace(
+            {"ridge": "岭回归", "lightgbm": "LightGBM"}
+        )
+        month_table = month_table.sort_values(["信号月份", "模型"], ascending=[False, True])
         st.dataframe(month_table, hide_index=True, width="stretch")
         st.caption(
             "保留全部月份与空值。2026年9月仅截至10日；按信号月份分组，标签可能跨月，"
@@ -121,6 +126,15 @@ def render_weekly_plan():
         ):
             st.download_button(label, value, filename, mime, on_click="ignore")
         findings = PROJECT_ROOT / "docs/weekly_candidate_plan_findings_zh.md"
+        if verification is not None:
+            st.success("全部月份与三个周次样本已独立核对；六次候选训练尚未执行。")
+            st.download_button(
+                "下载周更准备独立复核",
+                json.dumps(verification, ensure_ascii=False, indent=2),
+                "QuantLab_周更准备独立复核.json",
+                "application/json",
+                on_click="ignore",
+            )
         if findings.exists():
             st.download_button(
                 "下载周更准备中文解读",
