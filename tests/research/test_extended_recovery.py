@@ -1,6 +1,7 @@
 """A failed parent cannot acquire fit authority through prediction-only recovery."""
 
 import json
+import sys
 from contextlib import nullcontext
 from types import SimpleNamespace
 
@@ -129,6 +130,11 @@ def test_original_tree_is_read_only_and_exact(tmp_path, damage):
 
 @pytest.fixture
 def coordinator(tmp_path, monkeypatch):
+    # Coordinator fixtures never compute scores; keep the optional ML runtime out
+    # of the default suite while exercising real locks and durable reservations.
+    monkeypatch.setitem(
+        sys.modules, "threadpoolctl", SimpleNamespace(threadpool_limits=lambda **k: nullcontext())
+    )
     c = json.loads((PROJECT_ROOT / protocol.CONFIG).read_text())
     path = tmp_path / protocol.CONFIG
     path.parent.mkdir(parents=True)
