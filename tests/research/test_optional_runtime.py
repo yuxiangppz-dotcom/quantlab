@@ -28,7 +28,7 @@ def test_fixed_rolling_qlib_models_synthetic_fit_and_saved_prediction(tmp_path):
     config = json.loads((PROJECT_ROOT / "config/alpha158_rolling_v1.json").read_text())
     random = np.random.default_rng(417)
     original = np.asarray(random.normal(size=(800, 158)), dtype="float32", order="F")
-    y = (original[:, 0] * .1 + original[:, 2] * .05).astype("float32")
+    y = (original[:, 0] * 0.1 + original[:, 2] * 0.05).astype("float32")
     init_qlib(tmp_path / "qlib", experiment_name="synthetic_compatibility")
     for kind in ("ridge", "lightgbm"):
         x = original.copy(order="F")
@@ -176,3 +176,80 @@ def test_historical_native_batch_handles_unknown_lifecycle_and_causal_samples(
     usable = pd.read_parquet(folder / "usable_features.parquet")
     names = [x["name"] for x in result["features"]]
     assert usable.loc[usable.instrument_id.eq("600000.SH"), names].isna().all().all()
+
+
+@pytest.mark.parametrize("kind", ["ridge", "lightgbm"])
+def test_weekly_worker_synthetic_fit_intent_and_full_saved_replay(tmp_path, monkeypatch, kind):
+    """Exercise the new worker end-to-end with artificial features and outcomes only."""
+    import hashlib
+    import json
+
+    import numpy as np
+
+    from quantlab.daily.service import PROJECT_ROOT
+    from quantlab.research import weekly_pilot as worker
+    from quantlab.research import weekly_pilot_data as data
+    from quantlab.research.alpha158_rolling_protocol import FitLedger, runtime_manifest
+    from quantlab.research.alpha158_store import atomic_seal
+    from quantlab.research.weekly_pilot_protocol import HEAVY, OUTPUT, inherited_locks
+
+    config = json.loads((PROJECT_ROOT / "config/alpha158_weekly_pilot_v1.json").read_text())
+    random = np.random.default_rng(9281)
+    values = random.normal(size=(860, 158)).astype("float32")
+    days = [day for week in config["weeks"] for day in week["prediction_sessions"]]
+    records = [
+        {"instrument_id": f"S{i}", "trade_date": pd.Timestamp("2026-07-17")} for i in range(800)
+    ]
+    records += [
+        {"instrument_id": f"S{i}", "trade_date": pd.Timestamp(day)}
+        for day in days
+        for i in range(4)
+    ]
+    meta = pd.DataFrame(records)
+    meta["label_end_date"] = meta.trade_date + pd.offsets.BDay(5)
+    meta["future_return_5d"] = (values[:, 0] * 0.1 + values[:, 2] * 0.05).astype("float64")
+    meta["complete_features"] = True
+    meta["label_reason"] = "available"
+    meta.loc[801, "future_return_5d"] = np.nan
+    meta.loc[801, "label_reason"] = "synthetic_missing_endpoint"
+    for week in config["weeks"]:
+        week["train_rows"] = int(data.train_mask(meta, week).sum())
+        week["prediction_rows"] = 20
+    config["metadata_root"] = "synthetic_metadata"
+    config["history_root"] = "synthetic_history"
+    config["membership_sha256"]["week1"]["train"] = data.membership(meta.iloc[:800])
+    digest = hashlib.sha256()
+    data.update_membership(digest, meta.iloc[800:])
+    config["all_weeks_prediction_sha256"] = digest.hexdigest()
+    metadata_dir = tmp_path / config["metadata_root"]
+    metadata_dir.mkdir()
+    atomic_seal(metadata_dir / "metadata.json", {"synthetic": True})
+    out = tmp_path / OUTPUT
+    out.mkdir(parents=True)
+    plan = atomic_seal(
+        out / "plan.json",
+        {
+            "config": config,
+            "code_files": {},
+            "code_head": "synthetic-only",
+            "sources": {"inputs": {}, "runtime": runtime_manifest()},
+        },
+    )
+    monkeypatch.setattr(data, "batches", lambda *args: iter([(meta.copy(), values.copy())]))
+    monkeypatch.setattr(worker, "batches", lambda *args: iter([(meta.copy(), values.copy())]))
+    slot = f"week1_{kind}"
+    ledger = FitLedger(out, plan["fingerprint"], config["slots"])
+    ledger.start(slot)
+    with inherited_locks([tmp_path / HEAVY, out]) as descriptors:
+        worker.fit_worker(tmp_path, slot, descriptors)
+    result = worker.validated_worker(tmp_path, plan, slot)
+    assert result["prediction_rows"] == 60 and result["saved_model_max_prediction_difference"] == 0
+    assert result["train_rows"] == 800 and result["history_already_observed"] is True
+    saved = pd.read_parquet(out / "fits" / slot / "predictions.parquet")
+    assert len(saved) == 60 and saved.future_return_5d.isna().sum() == 1
+    assert (
+        result["boosted_rounds"] == 100 if kind == "lightgbm" else result["ridge_n_iter"][0] <= 200
+    )
+    (out / "fits" / slot / "model.pkl").write_bytes(b"tampered")
+    with pytest.raises(Exception, match="bytes changed"):
+        worker.validated_worker(tmp_path, plan, slot)
