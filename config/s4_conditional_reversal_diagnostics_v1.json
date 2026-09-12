@@ -1,0 +1,739 @@
+{
+  "parent_report_path": "data/products/research_program/launch_20260912/funding_diagnostics/report.json",
+  "parent_proof_path": "data/products/research_program/launch_20260912/funding_independent_proof.json",
+  "parent_report_fingerprint": "e9060d47734f52bb4dd11fc90876342f925a54ec51bf1fc92a3e9f3b989becf9",
+  "features_path": "data/products/research_program/launch_20260912/funding_diagnostics/features_and_labels.parquet",
+  "calendar_manifest_path": "data/products/research_program/launch_20260912/funding_inputs.json",
+  "selection_path": "data/products/research_program/launch_20260912/selection.json",
+  "resources": {
+    "max_generated_bytes": 536870912,
+    "reserve_host_D_bytes": 8589934592,
+    "max_rss_bytes": 2147483648,
+    "max_wakeup_seconds": 600,
+    "next_partition_time_reserve_seconds": 60
+  },
+  "schema": "s4_conditional_reversal_diagnostics_v1",
+  "expected_start_head": "fa32bd455779872dcb8a5f518ddba9f87ff4f037",
+  "output": "data/products/research_program/launch_20260912/s4_conditional_reversal",
+  "variant_ids": [
+    "S4-A",
+    "S4-B",
+    "S4-C"
+  ],
+  "minimum_pairs": 30,
+  "max_actual_attempts": 1,
+  "provider_calls_authorized": 0,
+  "economic_paths_authorized": 0,
+  "model_fits_authorized": 0,
+  "inputs": {
+    "data/products/research_program/launch_20260912/funding_diagnostics/report.json": {
+      "sha256": "d78425b79717bdd96921c0ec2c04d6203a3ceb3193ab3368e579d8e2a91d7d29",
+      "bytes": 78215
+    },
+    "data/products/research_program/launch_20260912/funding_independent_proof.json": {
+      "sha256": "c4138bb14329d693e01836a33bb8b8e0b6e11a4a5ee8ef919f76ad43e8dc57df",
+      "bytes": 674
+    },
+    "data/products/research_program/launch_20260912/funding_diagnostics/features_and_labels.parquet": {
+      "sha256": "52d83a4afe0f34f0a9d1ba211fa6da2250273cb5dd7a2f9decab483cffe3721f",
+      "bytes": 31805405
+    },
+    "data/products/research_program/launch_20260912/funding_inputs.json": {
+      "sha256": "d872b6c0400d948af7388a17a9e497e729cf631b04d8f8ee2d84def6d7f50484",
+      "bytes": 784166
+    },
+    "data/products/research_program/launch_20260912/selection.json": {
+      "sha256": "e46e04b85208d3715b1dfaa1c7944f6f4b3ef37ef614ed7ed47cb9e4152c6dd9",
+      "bytes": 4117
+    },
+    "docs/development_tasks/s4_conditional_reversal_diagnostics_v1.md": {
+      "sha256": "64634c7c027bd90d2b434a9bb7d58866ded1dfdf414154faccf0723858d06cb3",
+      "bytes": 6853
+    },
+    ".git/quantlab-handoff/next_after_20260913_research.md": {
+      "sha256": "34a3a69335a08bfba0af5cd721ec05ad6f5db1962a7f0afbed41bbd9aa70a273",
+      "bytes": 2452
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-08.parquet": {
+      "sha256": "7b546998435a0f61eb17c82f9bde41ed12a14651e49a7f359f0a7cfbc777d5b5",
+      "bytes": 150504
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-08.parquet": {
+      "sha256": "9360124a79ee5f64aade25b07854156fcdc7687772420ab8923b8e5ce25e4562",
+      "bytes": 45546
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-09.parquet": {
+      "sha256": "944838c5e228f6393e6b61179fee8813e097966b9372f2b50375fb314b5d7941",
+      "bytes": 150708
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-09.parquet": {
+      "sha256": "09fa32575e02c63f2139615e5710a9473fbe945474f8939fd043ad799a14ad5f",
+      "bytes": 45538
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-10.parquet": {
+      "sha256": "06331f7df847c45976eccae41469e32544da9615d21fdab1b727015570cf6bbd",
+      "bytes": 151309
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-10.parquet": {
+      "sha256": "1589ee719acea09a8eba31c62ebd9656f0e9f537b03b0dfb265d904eb42b31a2",
+      "bytes": 45541
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-11.parquet": {
+      "sha256": "3e97ebb99f0519892e679a336058bbd2cbb7ae27688f8e24d42c089ac3c880dd",
+      "bytes": 151380
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-11.parquet": {
+      "sha256": "b9a75bc24928d5b89f8cfe918595b9d9ea0f1df4c3355587d6c96828a89bcc70",
+      "bytes": 45541
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-14.parquet": {
+      "sha256": "a583d0e49f711abb4d9ced996810044491b5e717cbce2c40febb66777acdd28f",
+      "bytes": 151827
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-14.parquet": {
+      "sha256": "6b32dd87335493e1c17737694f8b28d8b570bf69bd9368eb97f945cbfea6d6cd",
+      "bytes": 45550
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-15.parquet": {
+      "sha256": "ac5e7f5f79d4b532fcb84d8148257269528a478331f48dd24c110c51ed4ac679",
+      "bytes": 151708
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-15.parquet": {
+      "sha256": "b0dff5f8da7672f7bc90311ade57960a5ef1317b842947c2118c53c29902d150",
+      "bytes": 45558
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-16.parquet": {
+      "sha256": "29bcb61f57a6ec656d0b866f55c8577b1438d07f4b738d62fdfda2a91a8d8185",
+      "bytes": 151447
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-16.parquet": {
+      "sha256": "63c82e42fa493fb69e27b65c2a14f3dbeddf2a701efbaed68a4ae862289a5ec0",
+      "bytes": 45559
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-17.parquet": {
+      "sha256": "eb145c4d5f785b16690f9ff43a6bf4511e0ae523d8de785b52471dd00042bbb3",
+      "bytes": 151393
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-17.parquet": {
+      "sha256": "25ba200d37c885c25f138a2a58b0ac1911c88ca12ddef4d1fea58f15c836d030",
+      "bytes": 45557
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-18.parquet": {
+      "sha256": "e031401948b44c1adcba97cf5e82646ebc2753f38db0ccd692decab765abac97",
+      "bytes": 151266
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-18.parquet": {
+      "sha256": "21349a77cdf18dbc6e4dccbbfcdae0e8a2e27e07a0c45401ceb3832ff1059d1e",
+      "bytes": 45561
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-21.parquet": {
+      "sha256": "6cc04513d4c38700a2a6981b4e3a610cd8b2e9ef278b2739c022af54031d24bb",
+      "bytes": 150725
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-21.parquet": {
+      "sha256": "b8c7482b9a9fc924b443a31cdbd5b0c73544861b454b554d476eb3e7affb2fbd",
+      "bytes": 45579
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-22.parquet": {
+      "sha256": "e8e86b79f2dd17ae24ca6c4fc05b318651eb05b3698f2a8ad5257b7d9c9985d5",
+      "bytes": 150992
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-22.parquet": {
+      "sha256": "fecf09db5d99ad19d04ae783936c94ccbaa2b39df360dd769f033e28488c6697",
+      "bytes": 45568
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-23.parquet": {
+      "sha256": "308b5efe6e3045e4c12bd76955c7ff9c2fddae93c9f2aaf71808acf3d2362894",
+      "bytes": 151203
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-23.parquet": {
+      "sha256": "3e46147bd91173ae06a9c32a5fe9b482763538e9e2936de239eb32f1ec15493e",
+      "bytes": 45573
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-24.parquet": {
+      "sha256": "2fd4049507ecc0ed8df7e76eb803693517b6a0458d74812fe18c1373efa7d48b",
+      "bytes": 150874
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-24.parquet": {
+      "sha256": "73782a8d2e6994069c1db04320f3ffc7250bed75cac7b7c0c8cb9d4310c81c0f",
+      "bytes": 45573
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-25.parquet": {
+      "sha256": "c5c37b7c5873c387ccd5cf8c0b0fdf4a8dfbec629e01710f5ffc4af43561e590",
+      "bytes": 151363
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-25.parquet": {
+      "sha256": "ae41007288d61d2091b04f2a6cd10779c713bbcc9c6c5a1d629462493a98021d",
+      "bytes": 45589
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-28.parquet": {
+      "sha256": "b7244cee7ce48ebe9a01a49c697e1ce63dcb4d0019308d773ba3a70b76084c13",
+      "bytes": 151866
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-28.parquet": {
+      "sha256": "3a96cbd9d446ad2f2d8251af936aaaf1299ba3ae3254a21703669191957e85dc",
+      "bytes": 45606
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-29.parquet": {
+      "sha256": "b1fa84de441dcb50b46fd78b9c92ffdc70f0f6246a2bd4e105a0b3e7c287377d",
+      "bytes": 152188
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-29.parquet": {
+      "sha256": "4c0a11d521360d07b101f48047bdcd47300048a25981d714508cd2cab565bb5f",
+      "bytes": 45605
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-30.parquet": {
+      "sha256": "21247d1ffdc37d127d0f984c99fb601ff553a4313e0a36880ddaa0820053cea9",
+      "bytes": 151789
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-30.parquet": {
+      "sha256": "369ab7fa2e21de996ba6358a93ae552525f9d1b7c0e338737b1f3db3064ac6bf",
+      "bytes": 45637
+    },
+    "data/canonical/daily/year=2019/month=10/2019-10-31.parquet": {
+      "sha256": "852744c323f6dd5d6517599e890299e9df315f741ee81e54cbbe6316f36b229a",
+      "bytes": 151132
+    },
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-31.parquet": {
+      "sha256": "e5b403f5902c17e95933db279573874de6e88959283538b3e358ef8b73a758b0",
+      "bytes": 45645
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-01.parquet": {
+      "sha256": "86ff230bfa41722a9d731cd18a74544d16bdea6b455e4dbe03f90d70e6159d53",
+      "bytes": 151314
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-01.parquet": {
+      "sha256": "e2385656a03644e7efcfa3d52c604fcb4bfe82a6b64e36b38d26cdd6c888450a",
+      "bytes": 45633
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-04.parquet": {
+      "sha256": "6df8efb1bf7efec292ee6c997f75c01734b57139292bc6e6a5b13291693162c3",
+      "bytes": 152052
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-04.parquet": {
+      "sha256": "4afcce56f327c39e1820f72d3a0d8d9a3d15c735cc7dc687603461eeb491a756",
+      "bytes": 45633
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-05.parquet": {
+      "sha256": "b939ad7b3d363812acc74f297040d1f8db3b30cd0c993dc1c041aa6fd97c3cdb",
+      "bytes": 152440
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-05.parquet": {
+      "sha256": "af70a600196287f3583fa0e6cd0c0be621ab7fdf99eb5de99aa714a8923af949",
+      "bytes": 45666
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-06.parquet": {
+      "sha256": "7cb9b6875501e68701244852a569acb99a28ebdc693005631587bc755456a5c7",
+      "bytes": 152321
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-06.parquet": {
+      "sha256": "b60402ec3013e92c27d58d1cd70ed411c1a8a170ed06a97f112aa7f5325847e1",
+      "bytes": 45696
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-07.parquet": {
+      "sha256": "a2ea034642522a0a92d0bdeba2ed9babcd8ca8bec31bd2a48d8c66e1831c4051",
+      "bytes": 152276
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-07.parquet": {
+      "sha256": "944805d34531d8f03e4dd1503f9bb40fc828ac4decd4958a6398b28436ff6501",
+      "bytes": 45698
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-08.parquet": {
+      "sha256": "4627912e8886588f3a351463e034d828c3a48ec95a87e226f78277a20cbbe4c6",
+      "bytes": 152659
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-08.parquet": {
+      "sha256": "39f43c6e358537eecc28ee798be6f68a16d16be9dd475dda059f464f15137781",
+      "bytes": 45714
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-11.parquet": {
+      "sha256": "7d731990937c2f6776de5da09fe1e75b5bcf7e33701dfb5d892d450c0c217a01",
+      "bytes": 151859
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-11.parquet": {
+      "sha256": "7c850e57dec385462b74d385bcbf2145a98ed2805a018e17e1ff421e8f70dbdc",
+      "bytes": 45719
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-12.parquet": {
+      "sha256": "3006dc19b14aa87b680fc55df023b7d64063f1000d4588ac15ae7e18e5c4ee80",
+      "bytes": 151877
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-12.parquet": {
+      "sha256": "007165217400a4e008895311041ddf99ca2dcaad0445999dea2e2ecbb81cb1b1",
+      "bytes": 45726
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-13.parquet": {
+      "sha256": "53e00e97b7a0b8909ae939daf53035f6a2e8edc8f97127c297f7a6c71da23ca5",
+      "bytes": 151538
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-13.parquet": {
+      "sha256": "9a51823767534a0c2820bb7932ff8ddf3676730f2b1cd173bd53494e2c97dc84",
+      "bytes": 45726
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-14.parquet": {
+      "sha256": "1d8b1dc1f22c5cb1fabaa330b48647824cefd45bfe564b06c39074ca78cafbb9",
+      "bytes": 152014
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-14.parquet": {
+      "sha256": "36ca849eb0aaf8cb8ec88363ca1302bc33f0d96741d1cda434d4f6f80c747837",
+      "bytes": 45724
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-15.parquet": {
+      "sha256": "0640e01f82e447ae792bedd737d513ebaec2daf075f74a0a2cc1d71824191a33",
+      "bytes": 151957
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-15.parquet": {
+      "sha256": "191fd843d0e00a4632b371eb57caf3b713e075daeb030f3244dde782e3257e2a",
+      "bytes": 45749
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-18.parquet": {
+      "sha256": "5a6a52b85cf82018ea6ada3b653e30bc04e1fda7c91647add448e04ab15baf98",
+      "bytes": 151755
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-18.parquet": {
+      "sha256": "25d8ddbeee0d454b55e1251b17e3af0159326a7d9ea1515f67aff4151ea22d4b",
+      "bytes": 45756
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-19.parquet": {
+      "sha256": "68d2ec2f1d537f7b33ccd30de97ad0dcee9d9086f2a87d0b57de5a83ccd873fd",
+      "bytes": 152765
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-19.parquet": {
+      "sha256": "08232314f0837be6e015674f1e59b645dfaaa18208b7d375c5611377ea554721",
+      "bytes": 45746
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-20.parquet": {
+      "sha256": "76fc9a5278430c75c906908b311c620a9f91719e9ca4bdb5d6a7c5e5cb1289c7",
+      "bytes": 152633
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-20.parquet": {
+      "sha256": "8367c2a66130377a55f64e7fe60579e0c65acef28c93dedded17e0fa477b6a70",
+      "bytes": 45773
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-21.parquet": {
+      "sha256": "34b41ec4592780945dabd1106a5ad7a05d22f62d80d8448809d1674a7d7ea432",
+      "bytes": 152615
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-21.parquet": {
+      "sha256": "1743cb4b7dd50e8ad2ae733f01bfc7738f63bf8fa3a19b8253a12e62f63f15f0",
+      "bytes": 45779
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-22.parquet": {
+      "sha256": "609df85fdc40bcd5b67e9800a85bf269b54762d168339100dc7773c75a4bdc4f",
+      "bytes": 152859
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-22.parquet": {
+      "sha256": "05dd7b3265483bba26b1dc7d53deec29aac15f9273df6fd8c1361a14dbef7349",
+      "bytes": 45771
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-25.parquet": {
+      "sha256": "d378f273140a2e51d767fee798080a15565f022303b117ae97c7b1c653fe076d",
+      "bytes": 152421
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-25.parquet": {
+      "sha256": "f876579f0ff2de753704ee41eb76572456aa527e410a9acf89328da014629677",
+      "bytes": 45782
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-26.parquet": {
+      "sha256": "bf31d7ed6d44cc1a6cb2105df6bcd53e27eb334b759ee0afb3d41af2376f5dc0",
+      "bytes": 152119
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-26.parquet": {
+      "sha256": "5e8f65461979af12b5b3873f9ac937c4443b5f868de7ee44a0bb98553f5cc164",
+      "bytes": 45784
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-27.parquet": {
+      "sha256": "18d2a4eae540c19beb6d1c0b6c5617f6b5911988da96bdebb372637778db21c6",
+      "bytes": 151770
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-27.parquet": {
+      "sha256": "47d8d95d74fe51974899236ef4e7cb784fe037ed5b8178fc3d65fa1e683cd376",
+      "bytes": 45783
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-28.parquet": {
+      "sha256": "a19f847d5e00a48e6c141b86cb325a327fdfcb84531a5e3ab0d1a6c7c145f3e1",
+      "bytes": 151696
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-28.parquet": {
+      "sha256": "144f47fb21f073211585ece6f4300ac56526d7a68301dd44be53335288c95c20",
+      "bytes": 45793
+    },
+    "data/canonical/daily/year=2019/month=11/2019-11-29.parquet": {
+      "sha256": "a5f4ef874dd37c5e8a0e583de6ffa28f0521031c13ab8a713615aced479d5d99",
+      "bytes": 151799
+    },
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-29.parquet": {
+      "sha256": "754a06c043f4f6b58a1882d31ffeeeeb5d77546304f09cfcc73276a93c2fc857",
+      "bytes": 45780
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-02.parquet": {
+      "sha256": "4f046d24f97c4e0b18ba5e9051bd0f764cb69254582ef1c2bab8cfd2c379fd86",
+      "bytes": 151703
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-02.parquet": {
+      "sha256": "5dbe2e563e7409b457598a82667a15a1071e9fcc1eddd62aff38973a32ba43c8",
+      "bytes": 45777
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-03.parquet": {
+      "sha256": "1b3b222866d8911c09210cb64e10dcc2f9c34bcef8fde66706e8c7f5358e3e1d",
+      "bytes": 151784
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-03.parquet": {
+      "sha256": "25ac6b08afa88af8359c30bf929c51bdb61bcaf0163cf288dd86ec2a934ddc83",
+      "bytes": 45808
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-04.parquet": {
+      "sha256": "cc11b65aa3418c86d3c961deb397a671acd6460996032252dea992fb8beea415",
+      "bytes": 152244
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-04.parquet": {
+      "sha256": "d9589e5e7c6f301fd64381726c667ac44f0558266ac6ca77598f39384660f1e9",
+      "bytes": 45826
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-05.parquet": {
+      "sha256": "86b1990ee74f136373855dfba5a855be59380ef978773095934fa19adb7932f6",
+      "bytes": 153383
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-05.parquet": {
+      "sha256": "0e01158d0034cd3741911b535ebdc298f1312789f1d35410f05978cb207446b2",
+      "bytes": 45832
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-06.parquet": {
+      "sha256": "989d62697c97195541153886053d70146ff141079c0286719961e86f6abf6ef8",
+      "bytes": 153119
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-06.parquet": {
+      "sha256": "0ab1e56cc8bc5137268b6a8143f631188ab280bbb0f99b627f258d85b5948293",
+      "bytes": 45841
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-09.parquet": {
+      "sha256": "d145bcc54eead74babbd80b55f7390da4468725711510c71760831785080c4ae",
+      "bytes": 153207
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-09.parquet": {
+      "sha256": "594288c6577873878532a2f85d8bd5c2405adc3d0d4dbbdaf959fee6200e7c87",
+      "bytes": 45851
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-10.parquet": {
+      "sha256": "7d6f9affb7f4ba6cab6af14ab50f9b8f00b0a0635ae11ea8bcf265e4af187b34",
+      "bytes": 153500
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-10.parquet": {
+      "sha256": "797899cd46fda2d6ba441195a771c0026b986528d65f4eb3a9430acd86199c02",
+      "bytes": 45852
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-11.parquet": {
+      "sha256": "3773119ec085a9ee5056a90e06fa659935329104312148ca41e9a0ec43c820f7",
+      "bytes": 153838
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-11.parquet": {
+      "sha256": "b4ca761dd2da9bf3d129ae514c802c809bc316e2d5c2c8e35c27bd6e2665a0cf",
+      "bytes": 45867
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-12.parquet": {
+      "sha256": "6fe57112456256361ff1465a9ba18a4ddeed5a1665b8aa1b39035a613daef49a",
+      "bytes": 153507
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-12.parquet": {
+      "sha256": "4fe13be15126b3aa1f47606b776a8449bdb15eec376674ccab24edc1164414a2",
+      "bytes": 45856
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-13.parquet": {
+      "sha256": "64c2f7f0ef9cb132c27d8e269cf31f4e77639cf5143d207e06fe3a29c1da7927",
+      "bytes": 154096
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-13.parquet": {
+      "sha256": "76fcaa2fd46e95c623b04d875cdf134c294ee754dbc56604cf1f5ee0a57652b6",
+      "bytes": 45854
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-16.parquet": {
+      "sha256": "4c65eab0d311f1a2f3cdd78ee9778af9368be1569389487bb01fa4da5f2019e6",
+      "bytes": 154764
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-16.parquet": {
+      "sha256": "d6850f739babee58790a59f62f88f475b25ca524f2add207bca2289e96e62800",
+      "bytes": 45861
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-17.parquet": {
+      "sha256": "efd2bd52e9d23adc220caca67fbae7fe6c96ae913a5e2cfd5f9cb2bd6611aced",
+      "bytes": 155219
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-17.parquet": {
+      "sha256": "ff2909a008b7c7fda047ff718c5d4d49e7f27b502057da6d10c2b4f63edf3921",
+      "bytes": 45862
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-18.parquet": {
+      "sha256": "c46cd31cb8473200b89b9e7f46812e8df8d2640653a4f529e40dac8375161995",
+      "bytes": 155185
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-18.parquet": {
+      "sha256": "c70d7c99a11117169528160841ff80ae8aff3c67d69b8352cda706d48c238984",
+      "bytes": 45861
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-19.parquet": {
+      "sha256": "2b4e8d1daf1117cf63bf5b898c45961dc0f40aedfafb0661cb45da7fd8417381",
+      "bytes": 155340
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-19.parquet": {
+      "sha256": "037159c680d446181439ea488a91aad256b32d05e4a1d6bb81b46141c47707a8",
+      "bytes": 45887
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-20.parquet": {
+      "sha256": "b2512876792e75631fb128c772e50757ba9b81a7565e0f0e4c6424fc3b1e697f",
+      "bytes": 155179
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-20.parquet": {
+      "sha256": "b1a9726da30baff9bba8ffe89e203f922c7752bf0022fd0637d7adc7da6d951b",
+      "bytes": 45907
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-23.parquet": {
+      "sha256": "a7eb4b014c736a10257ee1e52087adc81e72c4cb63cfec5ae1a31aee0291c424",
+      "bytes": 154336
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-23.parquet": {
+      "sha256": "4bd430872d7d8ceeff63ba15469fb94fd879e569a18fee577a521bfddc8ca61b",
+      "bytes": 45932
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-24.parquet": {
+      "sha256": "bcf8d2546f5eba30d5e5816799ae69009fd6c463dab3c59176838f2a22682dd4",
+      "bytes": 154516
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-24.parquet": {
+      "sha256": "2d15bfdabd76cc4eb8b43c38408c979b8900a62330ed2afc1bda09dec60a9989",
+      "bytes": 45947
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-25.parquet": {
+      "sha256": "5efb53716ac3c21fa24669fc7d9df01170d3b8a356ea9b5cb9b7f400f7f454bf",
+      "bytes": 154805
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-25.parquet": {
+      "sha256": "1a838330ff2647c49b090f12be9c0a50a2878ec9f04d9d9d960fc80908fab4b8",
+      "bytes": 45947
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-26.parquet": {
+      "sha256": "67bb31708f6c61d34cbe3e6c43522df097788c9f75b3bf5e86ec99a159d0d83a",
+      "bytes": 155001
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-26.parquet": {
+      "sha256": "6008e403ea8319acdfa1f5e7f6b8e412e9c8c13eca4f37074cd8fa14dd4f333f",
+      "bytes": 45943
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-27.parquet": {
+      "sha256": "f947395157bf6d7872acfbc0f0492278d1f15c081f62fed6aa9a6ad00aeeb8f6",
+      "bytes": 155156
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-27.parquet": {
+      "sha256": "e568cff695ffc935579f72f9c9ba6aac5fa11ca90d34c5ca45e8efd66576165c",
+      "bytes": 45956
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-30.parquet": {
+      "sha256": "4d01dc57dd11a4bd566ac0a8dc1148592e9a45cf2ac039d95235774583a9243a",
+      "bytes": 155572
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-30.parquet": {
+      "sha256": "e2e38332252734b0cc4dab98251863da623251317599b8251b162eb29d3a1d0d",
+      "bytes": 45962
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-31.parquet": {
+      "sha256": "62b6b7fc088c57d6d36c58abaabf6c61fbda7368c36bc7c32760dec80a34031e",
+      "bytes": 155199
+    },
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-31.parquet": {
+      "sha256": "4957bc8222cd0970effa69d2aafec16effad128fd828240c3ad9e549dfcb4855",
+      "bytes": 45979
+    }
+  },
+  "warmup_paths": [
+    "data/canonical/daily/year=2019/month=10/2019-10-08.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-08.parquet",
+    "data/canonical/daily/year=2019/month=10/2019-10-09.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-09.parquet",
+    "data/canonical/daily/year=2019/month=10/2019-10-10.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-10.parquet",
+    "data/canonical/daily/year=2019/month=10/2019-10-11.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-11.parquet",
+    "data/canonical/daily/year=2019/month=10/2019-10-14.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-14.parquet",
+    "data/canonical/daily/year=2019/month=10/2019-10-15.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-15.parquet",
+    "data/canonical/daily/year=2019/month=10/2019-10-16.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-16.parquet",
+    "data/canonical/daily/year=2019/month=10/2019-10-17.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-17.parquet",
+    "data/canonical/daily/year=2019/month=10/2019-10-18.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-18.parquet",
+    "data/canonical/daily/year=2019/month=10/2019-10-21.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-21.parquet",
+    "data/canonical/daily/year=2019/month=10/2019-10-22.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-22.parquet",
+    "data/canonical/daily/year=2019/month=10/2019-10-23.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-23.parquet",
+    "data/canonical/daily/year=2019/month=10/2019-10-24.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-24.parquet",
+    "data/canonical/daily/year=2019/month=10/2019-10-25.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-25.parquet",
+    "data/canonical/daily/year=2019/month=10/2019-10-28.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-28.parquet",
+    "data/canonical/daily/year=2019/month=10/2019-10-29.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-29.parquet",
+    "data/canonical/daily/year=2019/month=10/2019-10-30.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-30.parquet",
+    "data/canonical/daily/year=2019/month=10/2019-10-31.parquet",
+    "data/canonical/adj_factor/year=2019/month=10/2019-10-31.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-01.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-01.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-04.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-04.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-05.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-05.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-06.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-06.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-07.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-07.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-08.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-08.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-11.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-11.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-12.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-12.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-13.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-13.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-14.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-14.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-15.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-15.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-18.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-18.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-19.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-19.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-20.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-20.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-21.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-21.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-22.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-22.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-25.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-25.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-26.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-26.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-27.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-27.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-28.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-28.parquet",
+    "data/canonical/daily/year=2019/month=11/2019-11-29.parquet",
+    "data/canonical/adj_factor/year=2019/month=11/2019-11-29.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-02.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-02.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-03.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-03.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-04.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-04.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-05.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-05.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-06.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-06.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-09.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-09.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-10.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-10.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-11.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-11.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-12.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-12.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-13.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-13.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-16.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-16.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-17.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-17.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-18.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-18.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-19.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-19.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-20.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-20.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-23.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-23.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-24.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-24.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-25.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-25.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-26.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-26.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-27.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-27.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-30.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-30.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-31.parquet",
+    "data/canonical/adj_factor/year=2019/month=12/2019-12-31.parquet"
+  ],
+  "warmup_sessions": [
+    "2019-10-08",
+    "2019-10-09",
+    "2019-10-10",
+    "2019-10-11",
+    "2019-10-14",
+    "2019-10-15",
+    "2019-10-16",
+    "2019-10-17",
+    "2019-10-18",
+    "2019-10-21",
+    "2019-10-22",
+    "2019-10-23",
+    "2019-10-24",
+    "2019-10-25",
+    "2019-10-28",
+    "2019-10-29",
+    "2019-10-30",
+    "2019-10-31",
+    "2019-11-01",
+    "2019-11-04",
+    "2019-11-05",
+    "2019-11-06",
+    "2019-11-07",
+    "2019-11-08",
+    "2019-11-11",
+    "2019-11-12",
+    "2019-11-13",
+    "2019-11-14",
+    "2019-11-15",
+    "2019-11-18",
+    "2019-11-19",
+    "2019-11-20",
+    "2019-11-21",
+    "2019-11-22",
+    "2019-11-25",
+    "2019-11-26",
+    "2019-11-27",
+    "2019-11-28",
+    "2019-11-29",
+    "2019-12-02",
+    "2019-12-03",
+    "2019-12-04",
+    "2019-12-05",
+    "2019-12-06",
+    "2019-12-09",
+    "2019-12-10",
+    "2019-12-11",
+    "2019-12-12",
+    "2019-12-13",
+    "2019-12-16",
+    "2019-12-17",
+    "2019-12-18",
+    "2019-12-19",
+    "2019-12-20",
+    "2019-12-23",
+    "2019-12-24",
+    "2019-12-25",
+    "2019-12-26",
+    "2019-12-27",
+    "2019-12-30",
+    "2019-12-31"
+  ],
+  "condition_windows": {
+    "relative_reversal": 3,
+    "positive_trend": 60,
+    "funding_cross_lag": 1
+  },
+  "warmup_bar_policy": "positive finite OHLCV and amount, valid range, positive adjustment factor; same parent valid-bar rule"
+}
