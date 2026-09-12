@@ -1,0 +1,33 @@
+{
+  "schema": "etf_event_progress_v1",
+  "output": "data/products/research_program/launch_20260912/etf_event_audit",
+  "inputs": {
+    "data/products/research_program/launch_20260912/etf_event_audit/report.json": {
+      "sha256": "8aa63c756eee6cc0a66385da96b42eb51d1065c3d67deb094326112efdade21c",
+      "bytes": 19826
+    },
+    "data/products/research_program/launch_20260912/etf_event_audit/independent_proof.json": {
+      "sha256": "c37c3ee7544683aad26465c1667e39a25f5d00aeead2b14502ed22a2c51b468a",
+      "bytes": 1358
+    },
+    "data/products/research_program/launch_20260912/etf_event_audit/started.json": {
+      "sha256": "5163525b884b2937c6b48f13d8d48af5640126f0bb2985fe9d427e11ce37b431",
+      "bytes": 13051
+    },
+    "data/products/research_program/launch_20260912/etf_intake/report.json": {
+      "sha256": "9d404c6d80ec2e1b0511fe6623d26fa891df0ed5988df341d18ddfade47da9d4",
+      "bytes": 936
+    },
+    "data/products/research_program/launch_20260912/etf_intake/independent_proof.json": {
+      "sha256": "85db2b7dac69e0e9f070627f626a98634348c71b9daaecebcd40ac8697b3a142",
+      "bytes": 8305
+    }
+  },
+  "report_fingerprint": "22e8a11424275377172eb74195ec4396cae8c280ceb47d113445911d49c58e2a",
+  "proof_fingerprint": "fbc4e237c6f327957ece5bb91e51e491d3e1d4c3ceed6d0b85d0d844619e7d37",
+  "parent_report_path": "data/products/research_program/launch_20260912/etf_intake/report.json",
+  "parent_proof_path": "data/products/research_program/launch_20260912/etf_intake/independent_proof.json",
+  "provider_calls_authorized": 0,
+  "economic_paths_authorized": 0,
+  "model_fits_authorized": 0
+}

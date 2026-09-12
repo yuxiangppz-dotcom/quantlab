@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from quantlab.daily.service import PROJECT_ROOT
+from quantlab.research.etf_event_progress import read_etf_progress
 from quantlab.research.funding_attribution import read_progress
 from quantlab.ui.workbench import public_error
 
@@ -24,9 +25,56 @@ COMPONENTS = {
 }
 
 
+def render_etf_progress():
+    st.markdown("**ETF：分红、拆分与历史资料核对**")
+    try:
+        report = read_etf_progress(PROJECT_ROOT)
+    except Exception as exc:
+        st.error(f"ETF核对记录无法校验：{public_error(exc)}")
+        return
+    if report is None:
+        st.info("ETF资料核对尚未完成复核，暂不展示结果。")
+        return
+    st.write(
+        f"已核对5只固定ETF、{report['pdf_count']}份公开原始文件。"
+        f"分红数据的{report['duplicate_groups']}组重复记录中，"
+        f"{report['exact_duplicate_groups']}组完全相同，"
+        f"{report['metadata_conflict_groups']}组辅助资料不同；每份现金及关键日期在各组内一致。"
+        "这些重复不能当成多次分红相加，原始记录已保留。"
+    )
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "代码": row["code"],
+                    "类别": row["name"],
+                    "已核实": row["verified_progress"],
+                    "收益回测尚缺": "；".join(row["s1_blockers"]),
+                }
+                for row in report["instruments"]
+            ]
+        ),
+        hide_index=True,
+        width="stretch",
+    )
+    st.caption(
+        "2022—2024无分配已有相应年报支持，但不能自动扩展到更早年份。"
+        "拆分造成的份额增加不能当作资金流入。ETF份额公开时间的缺口影响份额因子，"
+        "不单独阻塞只用价格的趋势／轮动版本。"
+    )
+    st.info("本批完成的是资料核对，尚未计算ETF策略收益。未决缺口已列出，接下来按封存规则推进对照。")
+    st.download_button(
+        "下载ETF资料核对报告",
+        json.dumps(report, ensure_ascii=False, indent=2),
+        "etf_event_audit_report.json",
+        "application/json",
+        on_click="ignore",
+    )
+
+
 def render_program():
     st.subheader("策略研究进度")
-    st.write("已启动你批准的五类策略计划。本页展示首批已复核记录，后续按有限批次继续推进。")
+    st.write("已启动你批准的五类策略计划。本页展示已复核记录，后续按有限批次继续推进。")
     try:
         reviewed = read_progress(PROJECT_ROOT)
     except Exception as exc:
@@ -34,6 +82,7 @@ def render_program():
         return
     if reviewed is None:
         st.info("首批研究尚未完成独立复核，暂不展示结果。")
+        render_etf_progress()
         return
     report = reviewed["pilot"]
     cols = st.columns(4)
@@ -47,7 +96,7 @@ def render_program():
             [
                 {
                     "方向": "ETF趋势与轮动",
-                    "当前进展": "已取得含退市产品的基金清单；待核实价格、分配与历史跟踪指数",
+                    "当前进展": "已采集固定5只ETF；分红、拆分与历史资料核对见下方",
                 },
                 {
                     "方向": "估值／盈利改善",
@@ -64,6 +113,7 @@ def render_program():
         hide_index=True,
         width="stretch",
     )
+    render_etf_progress()
     st.warning("尚无策略通过晋升。本页数值是历史样本中的排序关联，不是收益率，也不是交易建议。")
     st.write(
         "正的 RankIC 表示指标排名与随后5个交易日的价格涨跌排名倾向同向；"
