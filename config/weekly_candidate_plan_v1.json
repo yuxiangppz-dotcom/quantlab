@@ -1,0 +1,882 @@
+{
+  "version": "weekly-candidate-plan-v1",
+  "cutoff": "2026-09-10",
+  "expected_week_mondays": [
+    "2026-08-03",
+    "2026-08-10",
+    "2026-08-17"
+  ],
+  "evaluation_label_cutoff": "2026-08-28",
+  "rolling_path": "data/products/alpha158_rolling/alpha158_rolling_20260911",
+  "rolling_fingerprint": "845836fbcdf734f8fc266a82bb5b539df65d6fe90ff6e084725d3892092db7c3",
+  "inventory_path": "data/products/alpha158_staging/alpha158_history_20260911/inventory.json",
+  "metadata_rows": 9487149,
+  "metadata_codes": 5443,
+  "inputs": {
+    "config/alpha158_rolling_v1.json": {
+      "sha256": "b5463788d844e5583ab35fb3d883dc92cc76053a5b31d4396a85d40911fbb0e1",
+      "bytes": 3213
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold1_lightgbm/daily_evaluation.parquet": {
+      "sha256": "cfdbb3bb02b4a6d24f9d6140f5ed935d69d4d0fabd4c6c09846902d2f6932585",
+      "bytes": 28440
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold1_lightgbm/result.json": {
+      "sha256": "2b5652b497ef03eda408c339ad6f2bb405b72ea084d85a719242a9a8384d7311",
+      "bytes": 6519
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold1_ridge/daily_evaluation.parquet": {
+      "sha256": "506b8ab93f59eea5ed144e67c6305eea5ce0a53390b7bc4ccc816866f53a2871",
+      "bytes": 27862
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold1_ridge/result.json": {
+      "sha256": "cb19efe8a710026a9c46805cf00dd05669dcafb93e278a4cfaed6345b9ace3ca",
+      "bytes": 6329
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold2_lightgbm/daily_evaluation.parquet": {
+      "sha256": "fecdba0aeccd0b7188ecb4e4da82d325766ab18a439e391d0368ad322a30cf00",
+      "bytes": 27795
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold2_lightgbm/result.json": {
+      "sha256": "46cb7ac2bb72bc5716965f2581da48aa2b8d2cab5d3e6b5db686f250d7253c06",
+      "bytes": 6520
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold2_ridge/daily_evaluation.parquet": {
+      "sha256": "830b272745a18d4d79b73180fe26f4e2e1fa6bb9362922506e17c5f7eb0a6ae9",
+      "bytes": 27344
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold2_ridge/result.json": {
+      "sha256": "c34a0f0c7579a727aed33770a473a2c32d460ab98a6ea21fe03c1cfe0c1dac8c",
+      "bytes": 6329
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold3_lightgbm/daily_evaluation.parquet": {
+      "sha256": "c43377f01420508d228d56acca65fc349969082feb0c83af1fa3b4964dee234a",
+      "bytes": 27827
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold3_lightgbm/daily_observed_2026.parquet": {
+      "sha256": "2f757a559ccfa3d2539f3d4b8ae1c78198272f98df2d89695973eb5e7c5f1269",
+      "bytes": 22551
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold3_lightgbm/result.json": {
+      "sha256": "6697fc0e0ddd80ff98d39953d487a7de943e624cd4be0c5ea36d0b2d7192545f",
+      "bytes": 7202
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold3_ridge/daily_evaluation.parquet": {
+      "sha256": "3785514692da42a0675a6379a42bbce3b00c0f35faf2cf0db710064af9c4f161",
+      "bytes": 27227
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold3_ridge/daily_observed_2026.parquet": {
+      "sha256": "e5dfaf31de256e908928299a13d540ea29a0cef8008cbc2859b3648b18dc4842",
+      "bytes": 22215
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold3_ridge/result.json": {
+      "sha256": "d5cc80753075673925c52862cb948d1a3bf26cf150954ab9cd600e4b745e40ad",
+      "bytes": 7012
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0000.parquet": {
+      "sha256": "35138d0a6637f45464f2285ca283a0351c9f4d033187dca9047ca07a93012976",
+      "bytes": 585615
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0001.parquet": {
+      "sha256": "3e6a684e956317652a80fc1a821600a26652c6eae8be9b914977c6ce7e2b38c7",
+      "bytes": 593487
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0002.parquet": {
+      "sha256": "4a99e36b75806561d33e41e9b325ca904b291d6a4f5c7939a527f2f603433a7e",
+      "bytes": 593360
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0003.parquet": {
+      "sha256": "25cbd06e2f5bffb6222b7ea4c1d31cba70ddfe38d584ebe0c9d23bf4431d762a",
+      "bytes": 583610
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0004.parquet": {
+      "sha256": "a3881a7c52574f651d8156e47d497fdf5ba3f74e184f3f25d4100347ce49dcbe",
+      "bytes": 571081
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0005.parquet": {
+      "sha256": "1986e807bd240f35cc3f7f76adc85eb79caca4f178841e65ed816bea89528761",
+      "bytes": 540932
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0006.parquet": {
+      "sha256": "c59fb5e61f5a88b95469ab5eba5a3348b71eec72c5023ef260f197453dc6bd63",
+      "bytes": 558409
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0007.parquet": {
+      "sha256": "27df44322304f0cfbe46e745c750d71072475a1af9861bc88d48023f5f37f4cb",
+      "bytes": 567810
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0008.parquet": {
+      "sha256": "16b8ecd017392f76e1244679f99f90b0195298e9af0bd59df21e0545e9b62efd",
+      "bytes": 580629
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0009.parquet": {
+      "sha256": "482b75e8436dd1928e826d09c5db4346e82e0300f174388df15e84d64cf233f7",
+      "bytes": 572438
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0010.parquet": {
+      "sha256": "0e0e4b7c1cff0fadc0a152b43a4fee09bde28d6691fb94ac65dc5ba97a53f756",
+      "bytes": 591490
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0011.parquet": {
+      "sha256": "1e45e87dde32648b8befe9f6826036edc77c24008f7aad05a7ac50b3b918274e",
+      "bytes": 588245
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0012.parquet": {
+      "sha256": "ccb11c3308612727a5d60320a94eaf403003e2eddcc2cd689cfc2ae13248a9ca",
+      "bytes": 597362
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0013.parquet": {
+      "sha256": "8d50001db7d59d31cfa94de9ff91e419b7883c8cef4c44b2390626c52cad5c7d",
+      "bytes": 588931
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0014.parquet": {
+      "sha256": "a6d0de368d04ac85ac1f52ab431eceffd307ec88a2cb2f261121f10e8f0cb727",
+      "bytes": 521577
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0015.parquet": {
+      "sha256": "16dfc420fb3a58312f90760442967e19363d9cc835a0170e5be3e12e3a66c0d1",
+      "bytes": 392381
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0016.parquet": {
+      "sha256": "3264ff72118653e86b4d32e6cf38e4f69eb00bf336b257372c02978091c347b4",
+      "bytes": 434489
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0017.parquet": {
+      "sha256": "467d35b0a78b609dcc0a654c3a7b83346f48b9f42995a3a1b559d3e8e3c9b1f1",
+      "bytes": 378426
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0018.parquet": {
+      "sha256": "2c120a6476617d3260a1b77dc5012901b9b63afa3b2fce4be18c5873f9094d97",
+      "bytes": 614062
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0019.parquet": {
+      "sha256": "6d053b2d4b50ec1011a5138406237fa63f1242e02f52ece5012df47ab0fc981f",
+      "bytes": 631600
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0020.parquet": {
+      "sha256": "edda2e3d169e95f105c6ef735531f047a089f81e8be06172f91f7456b8b8ac58",
+      "bytes": 584268
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0021.parquet": {
+      "sha256": "9a79161ce0a5eb334c2bbd592dc6557ae1e1e483ff4e30c7cf8884fe7ce14d3d",
+      "bytes": 602766
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0022.parquet": {
+      "sha256": "3be5e4789adf0e52ca56dbca48acb24ee15f7a069ce3128f7c452847f517d047",
+      "bytes": 608712
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0023.parquet": {
+      "sha256": "d4c2f1680a64acc7a5f213ba36578892fac100be873f6d251a6d82ad82a0aeb8",
+      "bytes": 628062
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0024.parquet": {
+      "sha256": "e9d2043188c0d6dde24bbf06576da9f402a71faaa574d6b6f7a92116dbc9b554",
+      "bytes": 603793
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0025.parquet": {
+      "sha256": "6447f75ccfe5a158c5e4d8a075020b68711844e9e888ec25b46f40a65d83018b",
+      "bytes": 615358
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0026.parquet": {
+      "sha256": "dc6ce380d8d24142813e1196d5221f79d844138c8c92371e4e720eace6a59d07",
+      "bytes": 614478
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0027.parquet": {
+      "sha256": "3f53504a07a415c32aa280247bff2b1de1e19995bb63ddaa17a520eef3ada1b8",
+      "bytes": 609718
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0028.parquet": {
+      "sha256": "ca18f8dd7080225529482bbbd4f928d7d05ffd95f4cc056e7eebf6d1690f0186",
+      "bytes": 596351
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0029.parquet": {
+      "sha256": "5f9d823101371e4a3a54b41f731612b93777034bc999e161d0704f179853b05c",
+      "bytes": 605928
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0030.parquet": {
+      "sha256": "b2e90ea33bdea58a669282bbc63aa6854f239c326b02f41eb7be9b7af93118cf",
+      "bytes": 623277
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0031.parquet": {
+      "sha256": "6f42db150122edcfb9c661b46336dca890d6c427acff4294130ddab1fc976134",
+      "bytes": 575904
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0032.parquet": {
+      "sha256": "405065a01bf4c04fa317413c9e2b1e54cbf7ef9bcbd44467a1444805af5a65c7",
+      "bytes": 608310
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0033.parquet": {
+      "sha256": "18ebb246f799f9ba423d055e9fb06814baafa8532049834216cc4a9abed32266",
+      "bytes": 529442
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0034.parquet": {
+      "sha256": "67b1731b766eeab0189986e6aeabeacffdfed7846f5017cb4f2a4d749fb0e1e4",
+      "bytes": 603869
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0035.parquet": {
+      "sha256": "32d10cdc4d829cdb82fc004d9ca664ef06c371d3ba29f85f4bc6022be0694e9b",
+      "bytes": 621697
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0036.parquet": {
+      "sha256": "e39faedb04adecde1cdc2ebba9c932235abefebc4ee0a7140cc181c8fb1154f7",
+      "bytes": 606377
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0037.parquet": {
+      "sha256": "467416d481bed6aa4d97aa1806aa94c667c64e6b441d8e7904a0efa832d294a9",
+      "bytes": 592118
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0038.parquet": {
+      "sha256": "5cc75451a7f8dd09f193b8fa1fb95d8a8dbae1d3d595c019311afa8dd7dcc6cb",
+      "bytes": 610939
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0039.parquet": {
+      "sha256": "3632d25de4a86f1e33fd8cf65c28f749623773a8c96785773c10e687a17a76f2",
+      "bytes": 579870
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0040.parquet": {
+      "sha256": "01fb655d2561b0c095630300e35b2c41c63c31f5ba81197ca850ed6fc70b4a1a",
+      "bytes": 647689
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0041.parquet": {
+      "sha256": "a3b7170097676cc6b09c6445353ea279747758abb99cbed81c39cefabc099768",
+      "bytes": 623355
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0042.parquet": {
+      "sha256": "1b199368c03f280059f7d5c7b82394ad7cedad3de197718a1bcccd7a8f62df0a",
+      "bytes": 662028
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0043.parquet": {
+      "sha256": "e2a24381a6f1a000dc9c7cad4184598335865dbf66c2713a086262c7fdb86434",
+      "bytes": 678607
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0044.parquet": {
+      "sha256": "bad696e1ef7595dd3bd4edf5d40ac3143e76ff7b560dfd03f22b0100c2f8f769",
+      "bytes": 679019
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0045.parquet": {
+      "sha256": "f1fccb69e081d079657cca3fb106a322b96a97f0a70ab1f48a6a7e72d9b0479f",
+      "bytes": 686621
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0046.parquet": {
+      "sha256": "2013f96d6aa28e1039377fce441e9553f5b6b1ec191e771acbfb0f266bb70007",
+      "bytes": 675723
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0047.parquet": {
+      "sha256": "e0e1368feb10482e1789f5cd9994ed49eb4b920d19597ef084e8bebde3b5f25c",
+      "bytes": 650237
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0048.parquet": {
+      "sha256": "e5612fdb8a0bac5a464108d9488514c50b9845335b9ce5c3a6feb20560d63f57",
+      "bytes": 595993
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0049.parquet": {
+      "sha256": "4265c1b817558b5f13892a5544b29280651fa08ed64d873bcd9c679bdbba92c4",
+      "bytes": 603512
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0050.parquet": {
+      "sha256": "8e9fe4e93786fda39b3a98a624f210fc82e11b4fe98e2ec1af37def04890ee87",
+      "bytes": 608144
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0051.parquet": {
+      "sha256": "ef860754c51e1d57ea7fc91016c149bdf62ec9cdb121cdf64f229e888ac0fc41",
+      "bytes": 620379
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0052.parquet": {
+      "sha256": "ede7d4a34be139684cd63d81d77a71bd8f4b80ab030a38853f18174521ddcd78",
+      "bytes": 582970
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0053.parquet": {
+      "sha256": "8c4cd70e5ea5b90667fc81d50581982965cfa75d6f4f7c54ea0a35fc517142ec",
+      "bytes": 641362
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0054.parquet": {
+      "sha256": "63f1e83cb25297c1c866ec76713502a4658a69e49966fb216eb7302f16020b10",
+      "bytes": 596117
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0055.parquet": {
+      "sha256": "f4173eaab59c65c857bb3c35142b618b49282039880d829f72b0d86dab1d07b0",
+      "bytes": 602468
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0056.parquet": {
+      "sha256": "add44192e246a846d24bd095c1e6161eb718fb0d675dfe51408910a3ec56f409",
+      "bytes": 629263
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0057.parquet": {
+      "sha256": "650a78f935adae47f79aad57458468c905e5daf2247fbd2873b4f585bc9ddad4",
+      "bytes": 623612
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0058.parquet": {
+      "sha256": "51f3616d26b4851391a37c9123cf5f21809a3db94dabc95c8e7b74efd2f8cabc",
+      "bytes": 607902
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0059.parquet": {
+      "sha256": "5f3bbef3b3652d52b6e446f02ce42a06600e385b09f7d2080e11db253ba76ee8",
+      "bytes": 595949
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0060.parquet": {
+      "sha256": "df52cc40ad0273f681b60d11d6c56dbc922b8ae91ff4f7e1ba51d5ce2eec5c75",
+      "bytes": 626376
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0061.parquet": {
+      "sha256": "93c25b47fc89ef74e6be8d0c20a8c2a55bdb868c27fe4d025d7a623fda9e6de0",
+      "bytes": 657501
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0062.parquet": {
+      "sha256": "f2056ac9357bc349a98ba3a67328f018e55fe8689f1d0993cbe42b9a9afb0cd5",
+      "bytes": 647436
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0063.parquet": {
+      "sha256": "5969f9a81f0165ea5f993c0bc1c207a1d4cbb2845c224697901e0f9ef9b0234b",
+      "bytes": 672045
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0064.parquet": {
+      "sha256": "847fe75ec4e9f30b040d8ce327f1c9f063ec51e3c8ec4125120a6b2cae173579",
+      "bytes": 680140
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0065.parquet": {
+      "sha256": "7c8eda8ad68d188dc98fc025edce4625fc750007365ec3d363748f8933c7a9a3",
+      "bytes": 668420
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0066.parquet": {
+      "sha256": "e03f70e30a1317e1e0e5c5b8392a4cd96732dea3480471de4a4bb6756c75cf72",
+      "bytes": 686774
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0067.parquet": {
+      "sha256": "ee7feb109858cbe506dbed01b7aab7029283c5d2ff6c0c659319ad3e435ce0e4",
+      "bytes": 689436
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0068.parquet": {
+      "sha256": "39245c8df7773e87c79856b7a65d341b8dcbf924baafe24433e2acfa1ca6cc1e",
+      "bytes": 688378
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0069.parquet": {
+      "sha256": "ee4a003e9122a04d74c1f6e1dd107a62d31a36d5ebdba1f9680d21b28767e951",
+      "bytes": 683967
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0070.parquet": {
+      "sha256": "994d5c04dbd9200d29633e50d49270d1418ff53f78731242d347ec37bce01539",
+      "bytes": 692202
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0071.parquet": {
+      "sha256": "6b77187acd88e62134e7122490dd3cf58044876157a8ff6ebcb01bb825d4925c",
+      "bytes": 695398
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0072.parquet": {
+      "sha256": "7df68416484b3fb4d811dd99d76461590bea87b06a53c7ba692c7d868c0f83ea",
+      "bytes": 689583
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0073.parquet": {
+      "sha256": "9c9aa714b2d3f77b42a5e57ceadd88f810cbbc43a51c3ee51c136f8e102f4ac2",
+      "bytes": 677429
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0074.parquet": {
+      "sha256": "25c79cfd80230c81267898db50343be60d614972eaa69b07295a5e08e06d754f",
+      "bytes": 640067
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0075.parquet": {
+      "sha256": "f13af62492047b0129cccc46ba95914708f584ed9b256528ff3974059c5449d9",
+      "bytes": 618211
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0076.parquet": {
+      "sha256": "afa7dca5c3a5f78226aa8b7a9910d4274a7d25e8cbf2d69eb9aefd23ca669348",
+      "bytes": 609160
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0077.parquet": {
+      "sha256": "2c7f6013bc64cacd4318adfa1a222d0c2e85a2d1eb3a40dba6708e60177a6aeb",
+      "bytes": 588636
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0078.parquet": {
+      "sha256": "6457442af1a41d2f2fd892f73d994344ec798206b922d7f23c2a604f54d6a2f3",
+      "bytes": 572452
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0079.parquet": {
+      "sha256": "5b947c94117c77c66462036058aa4b0deeb469cd340c5ea8d59ad1573b483e80",
+      "bytes": 561090
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0080.parquet": {
+      "sha256": "9c42456673c430f069b121fc6f0beef29c0b70e8eed45a61eada39511e8bb6f5",
+      "bytes": 552885
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0081.parquet": {
+      "sha256": "54595e600824bd61cb326bbbcd6ef03c80e0cd88c176a360f4f04faf3d85d60f",
+      "bytes": 536358
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0082.parquet": {
+      "sha256": "bfc3c3e9052b821c9287ef3d47682b4d483a84cc56ebffa4d8fe42dca45bd1fe",
+      "bytes": 524865
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0083.parquet": {
+      "sha256": "31be70f515d09f31603e7c9e1f54b87645365db465fdc489a980584f79563f7b",
+      "bytes": 500225
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0084.parquet": {
+      "sha256": "b04f1d9ad4a3acc60cf2a2d35a75819772833b9cd07d08b97c0ff2e3f7ac298e",
+      "bytes": 477249
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0085.parquet": {
+      "sha256": "48b46860e6b2dd6743b353251658b7256e8f0b08bcc47e613e346e0a00689e90",
+      "bytes": 492450
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0086.parquet": {
+      "sha256": "79ce16914683d6f56e8b5ede7eb783c74219fb1f6874b000167775f2c26523f2",
+      "bytes": 474757
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0087.parquet": {
+      "sha256": "13df9cebf5fb60cb3aba58b9e2991deee924a2f7e9847977d17b7e411be1827d",
+      "bytes": 442690
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0088.parquet": {
+      "sha256": "be67a310668e6130372ed683a60330fc8d9b9df93486c2076d467aaf99d41aba",
+      "bytes": 445012
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0089.parquet": {
+      "sha256": "2aaaebf9103359313fc76eaa7cfe26a0c0a4320556ad5894920dabb3ca06fff8",
+      "bytes": 434604
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0090.parquet": {
+      "sha256": "7958b4567ed2054e770944354a62d96e94333c4dc026acdba7071ae356eda8b2",
+      "bytes": 406170
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0091.parquet": {
+      "sha256": "b84defce8b7ffb4efeb18e98d5ae885a65a600c1fe8c4602ddd6d0da98c0d428",
+      "bytes": 366713
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0092.parquet": {
+      "sha256": "ccada3cef95da80f5acb39572850d1d9460db044ccdcc55645deaa5c89e6da79",
+      "bytes": 322150
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0093.parquet": {
+      "sha256": "8a21a7cac1802254a9cc0a4b7729d58fe90a1b604b9fedc9b43e6eba55527581",
+      "bytes": 298344
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0094.parquet": {
+      "sha256": "4de3ed7491c1cdb0195ec0d8bc74c6f4d6c8170828ebddabf3823ec2ad654d4e",
+      "bytes": 301831
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0095.parquet": {
+      "sha256": "ddb794e243bc676dfc3f06cc5d21f69236f71238a5ee7a7551c336f30c7da8ab",
+      "bytes": 576773
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0096.parquet": {
+      "sha256": "97f88856ae04b636f7a7b2cdc1c700b2531ab36ba2fa22eae150ec82ecbfd57b",
+      "bytes": 563561
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0097.parquet": {
+      "sha256": "d3bd379c1c2c715828e25909178d75f352f14d708efd2c0d7d7c254a0b5575ee",
+      "bytes": 559479
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0098.parquet": {
+      "sha256": "ca4c20835555e516cdab1de4bf76f975bd6e999098688fc0eb3d123ddd3fec91",
+      "bytes": 590060
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0099.parquet": {
+      "sha256": "f1e514fd4881f7f409051b43f216b1fd9a48cc257692a7ab9a6e30d227507fd1",
+      "bytes": 572969
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0100.parquet": {
+      "sha256": "05741382c76027e9d7e195034970e1745656c15a7143649959e5c70e9c56c2e3",
+      "bytes": 571705
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0101.parquet": {
+      "sha256": "1812592bc9cea740e2b69fa2f39607955ffab30671726846c1dac39a5720d0f2",
+      "bytes": 553876
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0102.parquet": {
+      "sha256": "c88e26161ba4c4ce9ab2e485f5ccbe7993c3bbdf07017bb44ce533fbe7b69205",
+      "bytes": 549010
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0103.parquet": {
+      "sha256": "3b27a69687ff70d95231c6fa01fe6dc7dcb6cc50b13423f257ba018db68abe09",
+      "bytes": 584222
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0104.parquet": {
+      "sha256": "4b4c0725dfebb01461f5b258f09570059ed49d517968a709e16abae1f00314d4",
+      "bytes": 597790
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0105.parquet": {
+      "sha256": "3f7a88817c1baf542603ce380bb9d39e783a70451d7450552a969c0852a9aa70",
+      "bytes": 590913
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0106.parquet": {
+      "sha256": "303157a12e4e0e6e411de43bd917ccf6074fa51cbe049531e0516e6942af923c",
+      "bytes": 606009
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0107.parquet": {
+      "sha256": "ec6638909f910f131a954e4901d55e2a6784897ac149416a1658a6b4939c424d",
+      "bytes": 605383
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0108.parquet": {
+      "sha256": "4efc05c2b324cdc2e391a009f7566c97680a8c9caff2b558e4a1f9484d3d7693",
+      "bytes": 597826
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0109.parquet": {
+      "sha256": "b9f32ef800a399a7ccda6376dcd964dc7c010152d3fda30476fb120f13a7b880",
+      "bytes": 589109
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0110.parquet": {
+      "sha256": "8b586eed8b1649e81b6556da714932f202703a8a8ce9ebafced9f5025053bbd5",
+      "bytes": 593494
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0111.parquet": {
+      "sha256": "859f41234261035643f67bff2214c5a666ed002630f1e450fd32605f59becdd0",
+      "bytes": 565632
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0112.parquet": {
+      "sha256": "1e46b1b95bcf07c730006a6810524ef45f8d2d3439bb0250cbe83dc13781fb7d",
+      "bytes": 570691
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0113.parquet": {
+      "sha256": "cc036acf40f55e2cd4cb1f4b8d022e74643c5e5fbb50454095a18427be5a3399",
+      "bytes": 565634
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0114.parquet": {
+      "sha256": "e9696ee3142719df237a46b2ed27367149b9efd25ebda66142db9c863116b872",
+      "bytes": 620612
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0115.parquet": {
+      "sha256": "a938dc25c09972064979f4fadc6c37b2ee6fa8467e25c625851af90e6a9f307a",
+      "bytes": 575613
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0116.parquet": {
+      "sha256": "034436360ca36e41d94a7e112114a851360933903173c94d9ba6b8ca8b16f16b",
+      "bytes": 578618
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0117.parquet": {
+      "sha256": "57ab3c8a7006c7a1d9614beda9b10793133b68a0f6a275188d8294c080b4712a",
+      "bytes": 597961
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0118.parquet": {
+      "sha256": "c5c3689ace1a8607d0cee2c6fd914cdd9d7b157c19b676cb056bc63535c4854b",
+      "bytes": 561527
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0119.parquet": {
+      "sha256": "b3a7b7373dab513b250b03d4eb3a8b5d20d6175434668659dd3d19522af546da",
+      "bytes": 555421
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0120.parquet": {
+      "sha256": "440c0e7eb039bf80ab1a1174f8b63a8f889ee14add7d482c7da92f3f712f8c4f",
+      "bytes": 589625
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0121.parquet": {
+      "sha256": "880b0c7c072fc89687f5d77239cf192415ce0e1920680b78b1d004e27d967de3",
+      "bytes": 538670
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0122.parquet": {
+      "sha256": "fc05cc2cc8a149bb4b4c901758222c1f3558fa057200916640ce97cf0c4898bd",
+      "bytes": 573272
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0123.parquet": {
+      "sha256": "310798404ede3b48292f2d0b12ae64fac12399f858be89eef7372b0b4334bf7f",
+      "bytes": 560372
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0124.parquet": {
+      "sha256": "1a7f93767ef2e190d8b5265b3b86688abf4de35626a03d00f6b00bd1b2d62912",
+      "bytes": 579386
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0125.parquet": {
+      "sha256": "c26a79a33ad0613b451e8035a95a8f3dcd0ea1e84f96cd6c29e270faaf7766d9",
+      "bytes": 582873
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0126.parquet": {
+      "sha256": "897e8f3fd4c1a2a00eaac9b8f18f4b8b79af531a8fedce68bed8bf959bbfae5f",
+      "bytes": 583404
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0127.parquet": {
+      "sha256": "94388be614c14e7fb1df16de8ca3cca0117c312c197fff2f7e8508d6060be41e",
+      "bytes": 577239
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0128.parquet": {
+      "sha256": "a9f2cb5eaab0f9bccd6b2937cf9b3b25d30584823c176dd53f0597be322f4c08",
+      "bytes": 654289
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0129.parquet": {
+      "sha256": "d24eab2be9697bb07aae75c257462a43b63148d2649fae4fa9587f7e808d2a61",
+      "bytes": 566348
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0130.parquet": {
+      "sha256": "7a442482932e35cb2b90dbc37013fc6484e700275d184bb5c9e8e064f737c632",
+      "bytes": 601855
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0131.parquet": {
+      "sha256": "49e0ec0448ad460cb434fecedbd9ddaf5e705b1f7b5f526c69d23153724ae100",
+      "bytes": 552525
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0132.parquet": {
+      "sha256": "5b0bc719a5ae909104fde1fe87da2ec292cad5641f99aa3ce73c5ba016a1a9cd",
+      "bytes": 576585
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0133.parquet": {
+      "sha256": "47153275aaa9ed9bbc9cb02a76125191beb6e161e5e44fa958852c8b38f2d7ef",
+      "bytes": 567815
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0134.parquet": {
+      "sha256": "fead023d35ab3438168073b95d6741bf3fd6d30efaeb1b5f2098873fe4b3864e",
+      "bytes": 540658
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0135.parquet": {
+      "sha256": "928f3d82a3f4f16f5ab5cdd23b6e631456db6ef1b76d33465325e6449359fdd2",
+      "bytes": 591434
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0136.parquet": {
+      "sha256": "922891335ce75914be6b46f0b9993c9a0eeb8d60e13dd1d2eac8b674d82153bd",
+      "bytes": 598210
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0137.parquet": {
+      "sha256": "fc166242e5a82c2d95df0ca3c3a5e0b6aaa5ba2d67d03ab4ae941ba51b0cb114",
+      "bytes": 549454
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0138.parquet": {
+      "sha256": "c2161e5af06a332f6952ceb0b01a2361365fc219ca3a2662cd9f4147d428c5e1",
+      "bytes": 560178
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0139.parquet": {
+      "sha256": "713628cae9f5f1c52bc496261af0945bc51b1868aa64c448cb4506c373c16f5d",
+      "bytes": 656581
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0140.parquet": {
+      "sha256": "d5d8d9c8c966d776190df708e30e2a5fad4e098e6204f7f8584e00d2a1798c41",
+      "bytes": 668022
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0141.parquet": {
+      "sha256": "95552ae12a8a1f9c4a6ba3f425b3de9e2a8887bdbbd50aec5c52828260959e3d",
+      "bytes": 677980
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0142.parquet": {
+      "sha256": "f204213b96d5d3ca653cf924a702eb6797f6164c227525fbe9ae076e77d27923",
+      "bytes": 683257
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0143.parquet": {
+      "sha256": "d4a29803ab67651baddc8894dac7371b555a9bc20c4ba93c745d8bbacbfcbf02",
+      "bytes": 657796
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0144.parquet": {
+      "sha256": "d3c654965420b7e9374be02ac1b973ba74739c76591534613ea0d48ab159605e",
+      "bytes": 669333
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0145.parquet": {
+      "sha256": "43e3ce78c08ce63ade76d0d851c623b27bc7da960913594c3815f682743c2fad",
+      "bytes": 676265
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0146.parquet": {
+      "sha256": "4670c24379b24a6a2d9bdd7fcae274a54a05b7170489c5aee46305f2e422a50a",
+      "bytes": 668736
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0147.parquet": {
+      "sha256": "2e50f224b039567c8f4f022c3b2ef23767f9c474147b11469232c3ef094cff8c",
+      "bytes": 574845
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0148.parquet": {
+      "sha256": "cd225b095a918f7d68968133119a0eff10033b4271e68a1f17c9289aa57b604c",
+      "bytes": 584436
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0149.parquet": {
+      "sha256": "07592a79ddcaa6ab33571aed2352eb7eb5dea0d3377ca4b1a6ac0df8d6f3770e",
+      "bytes": 578324
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0150.parquet": {
+      "sha256": "8d51e62266265ed1c1dae764cabb94e26186a78514344db4001de5e0b92a265f",
+      "bytes": 591398
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0151.parquet": {
+      "sha256": "b512c09b672260a69fcc1ef210d4b8c8907770ea961c9a729905eb58b59bc1c2",
+      "bytes": 635782
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0152.parquet": {
+      "sha256": "0ed049e887b8f3c246f97568dc281d69370cf795757b70686f8d7aca2b78cc2e",
+      "bytes": 581366
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0153.parquet": {
+      "sha256": "48d82162a19112be15d239f5dbf5f4dcaf7d8a37f65973ae34ce2da490904278",
+      "bytes": 585274
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0154.parquet": {
+      "sha256": "b8f40dbdcd8413f745c1b7e90abf3e19c4970a416eb8126ab8aefd32eca29b64",
+      "bytes": 550698
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0155.parquet": {
+      "sha256": "f4cf43e742ae6c403678cc9a3bad64221fa3e54f0a3c883de89a3c7a9279f974",
+      "bytes": 582488
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0156.parquet": {
+      "sha256": "0fbf49345e8023f258bb78d8c281e0afaca9d350e0c946854ce3fdab5e67a67a",
+      "bytes": 562512
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0157.parquet": {
+      "sha256": "0e4c018e2c1aebc924dd35e1e45ed21e0da69a09f9763f44c95001333021ae63",
+      "bytes": 531004
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0158.parquet": {
+      "sha256": "d723383e25e0bf8975b05ba5991a4a588424a2da73583e31bc1a8a4d30457298",
+      "bytes": 544445
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0159.parquet": {
+      "sha256": "52f953b5cd51501b8dc783aacd67f7cfa7935c898554a4eb8803dbb2a7f85c08",
+      "bytes": 562832
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0160.parquet": {
+      "sha256": "b189b1838cb4628c4f94c373b45991cbe5b4cd3262d627816bb75df24866b44f",
+      "bytes": 539949
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0161.parquet": {
+      "sha256": "a923452e3148b00cd6fd1ab4a9271eed7a3aa4fd4aa10bc751403e44bc046187",
+      "bytes": 537197
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0162.parquet": {
+      "sha256": "b4b7a8dff4cfbb54898b5b77616fa91e49af638edf4a73a967887d11e296f8a7",
+      "bytes": 456260
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0163.parquet": {
+      "sha256": "cceb34d18f613499c10b39bfd241ae66ee289bb0d387244be221222c46b69b78",
+      "bytes": 518792
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0164.parquet": {
+      "sha256": "7384bf510c9c0f2d81cb16ff30d76d659e356ac27fdf7b3bb105305bb2dfe44e",
+      "bytes": 521950
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0165.parquet": {
+      "sha256": "c12c49aa7f79a1205e9eb65c66ef846539e9c885612768450986244444e6eec1",
+      "bytes": 509803
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0166.parquet": {
+      "sha256": "06f2cb5521d4c36dcdd7936f224105576762bbf299859137a19a4caabeba1cd8",
+      "bytes": 492091
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0167.parquet": {
+      "sha256": "f667bd8f5477160de5a345a37c52e32a9fd1bf4d0860cb1f5772773892f2ebae",
+      "bytes": 525002
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0168.parquet": {
+      "sha256": "7ee87d07b75337b855f224500a8a718738773f762d5f2fe006e9b799d74cf115",
+      "bytes": 402421
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0169.parquet": {
+      "sha256": "286b1c57c10242ba1136c82d15a0650effcc690ec1924c477aa6cae6ff69abc2",
+      "bytes": 310865
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0170.parquet": {
+      "sha256": "0b3bee8f96cfbffda439f9fb6b2efdd9f3b6504e602923fcdc6b51945a1b0700",
+      "bytes": 69268
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata.json": {
+      "sha256": "54faead287c889a3897f8045ab457b309f825bbf0378de8fd94cf4841bb85dc6",
+      "bytes": 37502
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/plan.json": {
+      "sha256": "f4d30ab40759562e01b139daed5d1a0b128df63fb52fd57810f6a650a04e43ef",
+      "bytes": 97613
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/report.json": {
+      "sha256": "808af52890c63d8d5fa5a6510ced744937808135664dd1e7c7d8dbfcec4f89c4",
+      "bytes": 41595
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/inventory.json": {
+      "sha256": "47226e18c60dcc66d6cad9098b1c9a02b6cd8e8b328a2987cfb2aed55ad2387c",
+      "bytes": 1440245
+    }
+  },
+  "daily_sources": [
+    {
+      "path": "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold1_ridge/daily_evaluation.parquet",
+      "model": "ridge",
+      "period": "2023",
+      "start": "2023-01-01",
+      "end": "2023-12-31"
+    },
+    {
+      "path": "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold2_ridge/daily_evaluation.parquet",
+      "model": "ridge",
+      "period": "2024",
+      "start": "2024-01-01",
+      "end": "2024-12-31"
+    },
+    {
+      "path": "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold3_ridge/daily_evaluation.parquet",
+      "model": "ridge",
+      "period": "2025",
+      "start": "2025-01-01",
+      "end": "2025-12-31"
+    },
+    {
+      "path": "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold3_ridge/daily_observed_2026.parquet",
+      "model": "ridge",
+      "period": "2026",
+      "start": "2026-01-01",
+      "end": "2026-09-10"
+    },
+    {
+      "path": "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold1_lightgbm/daily_evaluation.parquet",
+      "model": "lightgbm",
+      "period": "2023",
+      "start": "2023-01-01",
+      "end": "2023-12-31"
+    },
+    {
+      "path": "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold2_lightgbm/daily_evaluation.parquet",
+      "model": "lightgbm",
+      "period": "2024",
+      "start": "2024-01-01",
+      "end": "2024-12-31"
+    },
+    {
+      "path": "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold3_lightgbm/daily_evaluation.parquet",
+      "model": "lightgbm",
+      "period": "2025",
+      "start": "2025-01-01",
+      "end": "2025-12-31"
+    },
+    {
+      "path": "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold3_lightgbm/daily_observed_2026.parquet",
+      "model": "lightgbm",
+      "period": "2026",
+      "start": "2026-01-01",
+      "end": "2026-09-10"
+    }
+  ],
+  "models": {
+    "ridge": {
+      "alpha": 1.0,
+      "fit_intercept": true,
+      "copy_X": false,
+      "solver": "lsqr",
+      "tol": 0.0001,
+      "max_iter": 200
+    },
+    "lightgbm": {
+      "loss": "mse",
+      "early_stopping_rounds": 0,
+      "num_boost_round": 100,
+      "learning_rate": 0.05,
+      "num_leaves": 31,
+      "max_depth": 6,
+      "min_data_in_leaf": 200,
+      "feature_fraction": 1.0,
+      "bagging_fraction": 1.0,
+      "bagging_freq": 0,
+      "seed": 20260911,
+      "feature_fraction_seed": 20260911,
+      "bagging_seed": 20260911,
+      "data_random_seed": 20260911,
+      "deterministic": true,
+      "force_col_wise": true,
+      "num_threads": 2,
+      "max_bin": 255
+    }
+  },
+  "features": "all158 in original plan order",
+  "label_horizon_sessions": 5,
+  "training_window": "three calendar years ending at previous last market session; exact label endpoint <= cutoff",
+  "monthly_policy": "all saved daily rows grouped by signal month; retain original annual label containment; equal valid-day weights; no new ranks or period selection",
+  "future_pilot_fit_budget": 6,
+  "anchor_policy": "reuse first-week model for all three weeks, no extra fits; first week shared, weeks2/3 paired",
+  "new_fit_attempts": 0,
+  "provider_calls": 0,
+  "execution_authority": false,
+  "performance_evidence": false,
+  "resources": {
+    "max_generated_bytes": 1073741824,
+    "max_rss_bytes": 4294967296,
+    "reserve_host_D_bytes": 8589934592,
+    "max_wakeup_seconds": 2700,
+    "next_partition_time_reserve_seconds": 300
+  }
+}

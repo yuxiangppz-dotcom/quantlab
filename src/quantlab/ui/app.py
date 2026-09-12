@@ -330,8 +330,10 @@ elif page == "回测与基准":
     from quantlab.ui.round2_review import render_round2_review
     from quantlab.ui.rule_evidence_v2_review import render_rule_evidence_versions
     from quantlab.ui.signal_feasibility_review import render_signal_feasibility_review
+    from quantlab.ui.weekly_plan import render_weekly_plan
 
     render_research_costs()
+    render_weekly_plan()
     render_dividend_events()
     render_dividend_acquisition()
     render_cost_input_review()
