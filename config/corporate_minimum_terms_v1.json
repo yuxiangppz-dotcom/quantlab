@@ -1,0 +1,61 @@
+{
+  "schema": "corporate_minimum_terms_v1",
+  "expected_base_head": "9bbe12171dfc121a788d0df417bf56eb4a862e7e",
+  "output": "data/products/research_program/launch_20260912/corporate_minimum_terms",
+  "window": [
+    "2020-01-01",
+    "2024-12-31"
+  ],
+  "occurrences": 945,
+  "implementation_occurrences": 924,
+  "paths": {
+    "selection": "data/products/research_program/launch_20260912/selection.json",
+    "parent_report": "data/products/research_program/launch_20260912/cohort_dividend_readiness/report.json",
+    "parent_proof": "data/products/research_program/launch_20260912/cohort_dividend_readiness/independent_proof.json",
+    "occurrences": "data/products/research_program/launch_20260912/cohort_dividend_readiness/occurrences.parquet",
+    "prior_definition": "data/products/research_program/launch_20260912/dividend_gap_sources/source.json",
+    "definition": "data/products/research_program/launch_20260912/corporate_minimum_terms_sources/definition.json",
+    "card": "docs/development_tasks/corporate_minimum_terms_v1.md"
+  },
+  "inputs": {
+    "data/products/research_program/launch_20260912/selection.json": {
+      "sha256": "e46e04b85208d3715b1dfaa1c7944f6f4b3ef37ef614ed7ed47cb9e4152c6dd9",
+      "bytes": 4117
+    },
+    "data/products/research_program/launch_20260912/cohort_dividend_readiness/report.json": {
+      "sha256": "c105e2cf56147839871e01323dc1335248177cf0dc92afe6a805b927807cdf0d",
+      "bytes": 3038
+    },
+    "data/products/research_program/launch_20260912/cohort_dividend_readiness/independent_proof.json": {
+      "sha256": "61ea01ad37fde308c21bac9f22e6c5cf63e7b04b85387218b14202a97d436f22",
+      "bytes": 599
+    },
+    "data/products/research_program/launch_20260912/cohort_dividend_readiness/occurrences.parquet": {
+      "sha256": "da050d1bd72564bdcabdcf6f18aaff2cd3b8c6946766d1812ce7a129aca111c5",
+      "bytes": 2228128
+    },
+    "data/products/research_program/launch_20260912/dividend_gap_sources/source.json": {
+      "sha256": "96a80ddd49f042b270368c37094bb43e1c5fc02ce3449bc8a1d38f2dd0732079",
+      "bytes": 743
+    },
+    "data/products/research_program/launch_20260912/corporate_minimum_terms_sources/definition.json": {
+      "sha256": "25ef5bab89d5e0dfced01bd3370317b4e5440df59a792ea6984b2a599689c674",
+      "bytes": 653
+    },
+    "docs/development_tasks/corporate_minimum_terms_v1.md": {
+      "sha256": "3ef03a80b76edd4df79f83bd437266da05779ce0b92a22c2f85eebe31b495dbd",
+      "bytes": 3888
+    }
+  },
+  "provider_requests": 0,
+  "economic_paths": 0,
+  "model_fits": 0,
+  "execution_authority": false,
+  "resources": {
+    "max_generated_bytes": 67108864,
+    "max_rss_bytes": 2147483648,
+    "reserve_host_D_bytes": 8589934592,
+    "max_wakeup_seconds": 600,
+    "next_partition_time_reserve_seconds": 60
+  }
+}
