@@ -391,3 +391,40 @@ def read_report(root):
     verify_entries(root, plan["source_inputs"])
     verify_entries(out, report["artifacts"])
     return report
+
+
+def read_event_verification(root, report):
+    """Bind an optional independent review to the same sealed population and source."""
+    out = root / OUTPUT
+    path = out / "independent_verification.json"
+    if not path.exists():
+        return None
+    review = sealed_read(path)
+    plan = sealed_read(out / "plan.json")
+    expected = {
+        "event_report_fingerprint": report["fingerprint"],
+        "source_head": plan["code_head"],
+        "observations": report["totals"]["observations_written"],
+        "windows": report["totals"]["windows_written"],
+        "links": report["totals"]["links_written"],
+        "codes": report["instrument_count"],
+        "raw_duplicates": report["exact_duplicate_rows"],
+        "candidate_conflict_groups": report["candidate_conflict_groups"],
+        "date_window_conflict_groups": report["candidate_conflict_groups_date_window"],
+        "new_fit_attempts": 0,
+        "provider_calls": 0,
+    }
+    for target, source in (
+        ("unknown_entry_windows", "windows_without_known_entry"),
+        ("unknown_exit_windows", "windows_without_known_exit"),
+        ("locally_observed_candidates_at_signal_close", "observed_candidates_at_signal_close"),
+    ):
+        expected[target] = sum(row[source] for row in report["window_summary"])
+    if any(
+        type(review.get(key)) is not type(value) or review[key] != value
+        for key, value in expected.items()
+    ):
+        raise DataValidationError("independent event review does not match sealed evidence")
+    if any(review.get(key) is not False for key in ("performance_evidence", "execution_authority")):
+        raise DataValidationError("independent event review gained financial authority")
+    return review

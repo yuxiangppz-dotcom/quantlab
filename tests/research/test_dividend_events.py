@@ -315,3 +315,73 @@ def test_report_reader_checks_sources_outputs_counts_and_authority(tmp_path, mon
     else:
         with pytest.raises(DataValidationError):
             module.read_report(root)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [None, "missing", "source_head", "links", "unknown", "authority", "boolean_count", "tamper"],
+)
+def test_independent_review_cannot_attach_to_changed_population_or_source(tmp_path, change):
+    from quantlab.research.dividend_event_run import OUTPUT, read_event_verification
+    from quantlab.research.round2_dataset import sealed_write
+
+    out = tmp_path / OUTPUT
+    out.mkdir(parents=True)
+    sealed_write(out / "plan.json", {"code_head": "a" * 40})
+    report = {
+        "fingerprint": "b" * 64,
+        "totals": {"observations_written": 2, "windows_written": 1, "links_written": 1},
+        "instrument_count": 1,
+        "exact_duplicate_rows": 0,
+        "candidate_conflict_groups": 0,
+        "candidate_conflict_groups_date_window": 0,
+        "window_summary": [
+            {
+                "windows_without_known_entry": 0,
+                "windows_without_known_exit": 1,
+                "observed_candidates_at_signal_close": 0,
+            }
+        ],
+    }
+    review = {
+        "event_report_fingerprint": report["fingerprint"],
+        "source_head": "a" * 40,
+        "observations": 2,
+        "windows": 1,
+        "links": 1,
+        "codes": 1,
+        "raw_duplicates": 0,
+        "candidate_conflict_groups": 0,
+        "date_window_conflict_groups": 0,
+        "unknown_entry_windows": 0,
+        "unknown_exit_windows": 1,
+        "locally_observed_candidates_at_signal_close": 0,
+        "new_fit_attempts": 0,
+        "provider_calls": 0,
+        "performance_evidence": False,
+        "execution_authority": False,
+    }
+    if change == "missing":
+        assert read_event_verification(tmp_path, report) is None
+        return
+    if change == "source_head":
+        review["source_head"] = "c" * 40
+    elif change == "links":
+        review["links"] = 0
+    elif change == "unknown":
+        review["unknown_exit_windows"] = 0
+    elif change == "authority":
+        review["execution_authority"] = 0
+    elif change == "boolean_count":
+        review["provider_calls"] = False
+    path = out / "independent_verification.json"
+    sealed_write(path, review)
+    if change == "tamper":
+        payload = json.loads(path.read_text())
+        payload["observations"] = 200
+        path.write_text(json.dumps(payload))
+    if change is None:
+        assert read_event_verification(tmp_path, report)["unknown_exit_windows"] == 1
+    else:
+        with pytest.raises(DataValidationError):
+            read_event_verification(tmp_path, report)
