@@ -243,6 +243,17 @@ def test_shared_lock_prevents_parallel_recovery(coordinator):
     assert calls == []
 
 
+def test_terminal_recovery_cannot_hide_later_reservations(coordinator):
+    root, plan, _ = coordinator
+    book = protocol.ledger(root, plan)
+    book.start(protocol.SLOTS[0])
+    report = runner.run(root)
+    assert report["status"] == "failed"
+    (book.base / protocol.SLOTS[1]).mkdir()
+    with pytest.raises(DataValidationError, match="unreported reservation"):
+        runner.load_report(root)
+
+
 @pytest.mark.parametrize(
     "key,value",
     [

@@ -258,6 +258,10 @@ def load_report(root):
     check_carried_budget(report["carried_budget"])
     book = ledger(root, plan)
     values = report["attempts"]
+    if report["status"] in ("failed", "complete") and {p.name for p in book.base.iterdir()} != {
+        value["slot"] for value in values
+    }:
+        raise DataValidationError("terminal recovery has an unreported reservation")
     if [v["slot"] for v in values] != SLOTS[: len(values)]:
         raise DataValidationError("recovery report skips or duplicates jobs")
     for value in values:
