@@ -1,0 +1,93 @@
+{
+  "version": "historical-rule-evidence-v3",
+  "execution_authority": false,
+  "audit_interval": [
+    "2020-01-01",
+    "2026-09-10"
+  ],
+  "calendar": {
+    "path": "data/products/alpha158_staging/alpha158_history_20260911/inventory.json",
+    "fingerprint": "0869cd29048ef0649838ebd6f6c846e5ccd9174e90498a95941ae1b21cc6649c",
+    "expected_sessions": 1623
+  },
+  "parent_contract_fingerprint": "8b495af409bbbf7b943ab12bf1c65c729dea636d4a73ed90e398725ec2c05aec",
+  "baseline_fingerprint": "944734411bfe3724c9f2bdb059d40b62ac297bd24e703e97b0a8181b0ef996a7",
+  "additions": [
+    {
+      "id": "sse-main-base-pre2023-evidence-v3",
+      "parent_interval_id": "sse-main-pre2023-evidence-v2",
+      "from": "2020-03-13",
+      "through": "2022-09-04",
+      "legal_effective_from": "2020-03-13",
+      "superseded_on": "2022-09-05"
+    },
+    {
+      "id": "sse-main-amended-pre2023-evidence-v3",
+      "parent_interval_id": "sse-main-pre2023-evidence-v2",
+      "from": "2022-09-05",
+      "through": "2022-12-31",
+      "legal_effective_from": "2022-09-05",
+      "superseded_on": "2023-04-10"
+    },
+    {
+      "id": "sse-star-base-pre2023-evidence-v3",
+      "parent_interval_id": "sse-star-pre2023-evidence-v2",
+      "from": "2020-03-13",
+      "through": "2022-09-04",
+      "legal_effective_from": "2020-03-13",
+      "superseded_on": "2022-09-05"
+    },
+    {
+      "id": "sse-star-amended-pre2023-evidence-v3",
+      "parent_interval_id": "sse-star-pre2023-evidence-v2",
+      "from": "2022-09-05",
+      "through": "2022-12-31",
+      "legal_effective_from": "2022-09-05",
+      "superseded_on": "2023-04-10"
+    },
+    {
+      "id": "szse-main-base-pre2023-evidence-v3",
+      "parent_interval_id": "szse-main-pre2023-evidence-v2",
+      "from": "2021-04-06",
+      "through": "2022-08-21",
+      "legal_effective_from": "2021-04-06",
+      "superseded_on": "2022-08-22"
+    },
+    {
+      "id": "szse-main-amended-pre2023-evidence-v3",
+      "parent_interval_id": "szse-main-pre2023-evidence-v2",
+      "from": "2022-08-22",
+      "through": "2022-12-31",
+      "legal_effective_from": "2022-08-22",
+      "superseded_on": "2023-04-10"
+    },
+    {
+      "id": "szse-chinext-base-pre2023-evidence-v3",
+      "parent_interval_id": "szse-chinext-pre2023-evidence-v2",
+      "from": "2021-04-06",
+      "through": "2022-08-21",
+      "legal_effective_from": "2021-04-06",
+      "superseded_on": "2022-08-22"
+    },
+    {
+      "id": "szse-chinext-amended-pre2023-evidence-v3",
+      "parent_interval_id": "szse-chinext-pre2023-evidence-v2",
+      "from": "2022-08-22",
+      "through": "2022-12-31",
+      "legal_effective_from": "2022-08-22",
+      "superseded_on": "2023-04-10"
+    }
+  ],
+  "additional_limitations": [
+    "新增区间仍只证明连续竞价限价申报的少量规则字段，不支持收盘集合竞价成交或完整历史调度器。",
+    "沪2020-03-13前、深2021-04-06前继续未知；2022修订只改变本目录范围外的大宗机制，分开版次不表示普通申报数量改变。"
+  ],
+  "resources": {
+    "max_generated_bytes": 67108864,
+    "max_rss_bytes": 2147483648,
+    "reserve_host_D_bytes": 8589934592,
+    "max_wakeup_seconds": 600,
+    "next_partition_time_reserve_seconds": 30,
+    "compute_threads": 2
+  }
+}

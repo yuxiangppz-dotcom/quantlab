@@ -1,0 +1,50 @@
+{
+  "schema": "historical_rule_sources_v3",
+  "contract_sha256": "c49ab9fb23eca9d07615b46755fabdee98c4d413d1a94cfaf084e5ebd7680dff",
+  "parent_report_fingerprint": "0875df1c23e547c209658fd8c9440af6f3b0e22feeb487231dd80b73c0cbba28",
+  "files": {
+    "config/historical_rule_catalogue_v2.json": {
+      "sha256": "089db23e3870c5c50f9d2db059d23c921c01ee38a25a388349bdfc0c2bb10b73",
+      "bytes": 51681
+    },
+    "config/historical_rule_sources_v2.json": {
+      "sha256": "4e6bb507e8d985b5e26902c2730a6d0115b2981c86db877f993b6d8ba84f0562",
+      "bytes": 28242
+    },
+    "src/quantlab/research/rule_evidence.py": {
+      "sha256": "b49b5e7f82831152c38d0ea6377aa872b10fb7a6e36292e22f1b8b322263b610",
+      "bytes": 11631
+    },
+    "src/quantlab/research/rule_evidence_v2.py": {
+      "sha256": "42b8578cc4d45315130801e177e3082742dd5dda97ef76a7969c1eba906c9b1f",
+      "bytes": 7115
+    },
+    "src/quantlab/execution/rules.py": {
+      "sha256": "2d7c9f975c5bd088b2e4357c934ab1cfb2d846fbb816ce3b6509297e97a72dfa",
+      "bytes": 18677
+    },
+    "src/quantlab/personal/quantity_rules.py": {
+      "sha256": "76edb4e02ffc77fc9f183dd5130a163c2d152da4085ee2239c2d3ef9cad89278",
+      "bytes": 4641
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/inventory.json": {
+      "sha256": "47226e18c60dcc66d6cad9098b1c9a02b6cd8e8b328a2987cfb2aed55ad2387c",
+      "bytes": 1440245
+    },
+    "data/products/rule_evidence/rule_catalogue_v2_20260911/report.json": {
+      "sha256": "adb3ffbbe5db7d5c74e1aaf735310d2c07057ce1b90f7f159acc5430a4108f53",
+      "bytes": 1979565
+    },
+    "data/products/rule_evidence/rule_catalogue_v3_20260913/public_review.json": {
+      "sha256": "3fa124613ed9c706f89b02a0a0fd6c4571ee612988213c9f88e73707806f37f9",
+      "bytes": 17042
+    }
+  },
+  "new_source_documents": 0,
+  "public_opens": 4,
+  "public_successes": 2,
+  "public_timeouts": 2,
+  "downloads": 0,
+  "retries": 0,
+  "note": "SZSE refresh timeouts remain recorded; reuse previously downloaded hashed originals already read locally, no retry."
+}
