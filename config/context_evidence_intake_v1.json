@@ -1,0 +1,63 @@
+{
+  "schema": "context_evidence_intake_v1",
+  "expected_start_head": "ba1eb77b3936cad5bf0e1f363a7e407d6470907c",
+  "output": "data/products/research_program/launch_20260912/context_evidence_intake",
+  "endpoint": "https://api.tushare.pro",
+  "codes": [
+    "000004.SZ",
+    "002024.SZ",
+    "002517.SZ",
+    "300022.SZ",
+    "300558.SZ",
+    "600303.SH",
+    "600845.SH",
+    "603127.SH"
+  ],
+  "days": [
+    "20191231",
+    "20200102",
+    "20201231",
+    "20211231",
+    "20220104",
+    "20221230",
+    "20230103",
+    "20231229",
+    "20240102",
+    "20241231",
+    "20260911"
+  ],
+  "feasibility_report_path": "data/products/research_program/launch_20260912/s2_s3_feasibility/report.json",
+  "feasibility_proof_path": "data/products/research_program/launch_20260912/s2_s3_feasibility/independent_proof.json",
+  "selection_path": "data/products/research_program/launch_20260912/selection.json",
+  "inputs": {
+    "data/products/research_program/launch_20260912/s2_s3_feasibility/report.json": {
+      "sha256": "01c9c46964451f06450d2f66180203910cb21e2cef9c605fcf759cd7bf1d68a1",
+      "bytes": 6116
+    },
+    "data/products/research_program/launch_20260912/s2_s3_feasibility/independent_proof.json": {
+      "sha256": "2cd8d65ee8475d4eca3490b02e5766f0a94aae0273f24ef0dbd7d5e7d1f018a1",
+      "bytes": 571
+    },
+    "data/products/research_program/launch_20260912/selection.json": {
+      "sha256": "e46e04b85208d3715b1dfaa1c7944f6f4b3ef37ef614ed7ed47cb9e4152c6dd9",
+      "bytes": 4117
+    }
+  },
+  "max_requests": 43,
+  "max_retries": 0,
+  "requests_per_minute": 100,
+  "per_response_bytes": 2097152,
+  "max_body_bytes": 67108864,
+  "economic_paths_authorized": 0,
+  "model_fits_authorized": 0,
+  "canonical_writes_authorized": false,
+  "execution_authority": false,
+  "historical_pit_certified": false,
+  "resources": {
+    "max_generated_bytes": 134217728,
+    "reserve_host_D_bytes": 8589934592,
+    "max_rss_bytes": 2147483648,
+    "max_wakeup_seconds": 600,
+    "next_partition_time_reserve_seconds": 60
+  }
+}
