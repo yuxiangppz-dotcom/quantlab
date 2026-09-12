@@ -9,6 +9,7 @@ from quantlab.daily.service import PROJECT_ROOT
 from quantlab.research.alpha101_pilot import read_progress as read_alpha_progress
 from quantlab.research.etf_event_progress import read_etf_progress
 from quantlab.research.funding_attribution import read_progress
+from quantlab.research.replay_readiness import read_preparation
 from quantlab.research.s4_pilot import read_progress as read_s4_progress
 from quantlab.ui.workbench import public_error
 
@@ -200,6 +201,69 @@ def render_s4_progress():
     )
 
 
+def render_replay_preparation():
+    st.markdown("**扣费回测准备：已补齐什么，还差什么**")
+    try:
+        preparation = read_preparation(PROJECT_ROOT)
+    except Exception as exc:
+        st.error(f"回放准备度记录无法校验：{public_error(exc)}")
+        return
+    if preparation is None:
+        st.info("分红与历史规则的本批核对记录尚未齐备，暂不展示准备度。")
+        return
+    terms = preparation["terms"]
+    notice = preparation["cash_notice_annotations"]
+    shares = preparation["share_notice_annotations"]
+    comparison = preparation["rule_comparison"]
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "环节": "分红与送转基本字段",
+                    "核对范围": f"2020—2024年，{terms['occurrences']}条实施记录",
+                    "已经核对": f"{terms['cash_fields_complete']}条现金字段齐全；"
+                    f"{terms['quantity_fields_complete']}条数量字段齐全",
+                    "仍需完成": "事件是否完整、谁有权收款收股、税务、实际到账及可售日期",
+                },
+                {
+                    "环节": "现金未知记录的原件",
+                    "核对范围": f"固定{preparation['recipient_occurrences']}条记录",
+                    "已经核对": f"{notice.get('explicit_zero', 0)}条明确不派现金；"
+                    f"{shares.get('restructuring_allocation', 0)}条重整定向分配",
+                    "仍需完成": f"{notice.get('unknown', 0)}条现金仍未知；"
+                    f"{preparation['ordinary_recipient_evidence_blocked']}条未通过普通分配对象检查",
+                },
+                {
+                    "环节": "历史数量规则",
+                    "核对范围": "2022年，4个市场板块",
+                    "已经核对": f"{comparison['covered_2022']}条板块／交易日记录覆盖；"
+                    f"此前{comparison['unchanged_rows']}条记录保持一致",
+                    "仍需完成": "收盘成交情景、逐股状态、公司行为与逐日股数现金连接",
+                },
+            ]
+        ),
+        hide_index=True,
+        width="stretch",
+    )
+    st.write(
+        "重整增发可能分给债权人或投资人，不能按公司总股本增加比例给原股东加仓。"
+        f"本批{preparation['recipient_occurrences']}条中仅"
+        f"{preparation['ordinary_recipient_evidence_complete']}条具备所要求的普通分配对象原始公告；"
+        "这仍不等于可以直接入账。"
+    )
+    st.caption(
+        "字段齐全不等于完整现金流；股票供应商原始空值仍保留。历史规则只覆盖连续竞价限价单的基础数量条款，"
+        "不能证明收盘集合竞价可成交。这些准备工作尚未产生本轮策略的扣费净收益。"
+    )
+    st.download_button(
+        "下载回放准备度摘要",
+        json.dumps(preparation, ensure_ascii=False, indent=2),
+        "replay_preparation_summary.json",
+        "application/json",
+        on_click="ignore",
+    )
+
+
 def render_program():
     st.subheader("策略研究进度")
     st.write("已启动你批准的五类策略计划。本页展示已复核记录，后续按有限批次继续推进。")
@@ -213,6 +277,7 @@ def render_program():
         render_etf_progress()
         render_alpha_progress()
         render_s4_progress()
+        render_replay_preparation()
         return
     report = reviewed["pilot"]
     cols = st.columns(4)
@@ -246,6 +311,7 @@ def render_program():
     render_etf_progress()
     render_alpha_progress()
     render_s4_progress()
+    render_replay_preparation()
     st.warning("尚无策略通过晋升。本页数值是历史样本中的排序关联，不是收益率，也不是交易建议。")
     st.write(
         "正的 RankIC 表示指标排名与随后5个交易日的价格涨跌排名倾向同向；"
