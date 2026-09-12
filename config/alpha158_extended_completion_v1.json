@@ -1,0 +1,32 @@
+{
+  "schema": "alpha158_extended_completion_v1",
+  "experiment_id": "alpha158_extended_completion_20260912",
+  "parent_plan": "cfe72f5dec112918cc1ca325b4d950d883e6999a19486566065264438b253c45",
+  "parent_report": "1522e7b2bc40b33e2031901759ab09033b4df585657f46a12375be3b0de14071",
+  "recovery_report": "9fa8181a2b6fb3ed873c399548309017137c3c9b856b7b4dc84041e020e85bde",
+  "recovery_proof": "eb2ad642eb5032b588f4d8df9cc51390518e53135c9ddb50a1f0a9b04311e9d7",
+  "slots": [
+    "2026w35_ridge",
+    "2026w35_lightgbm",
+    "2026w36_ridge",
+    "2026w36_lightgbm"
+  ],
+  "global_fit_ceiling": 98,
+  "inherited_consumed_fits": 94,
+  "remaining_slot_authority": 4,
+  "global_attempt_numbers": [
+    95,
+    96,
+    97,
+    98
+  ],
+  "prediction_rows": 60998,
+  "max_jobs_per_segment": 4,
+  "max_generated_bytes": 1073741824,
+  "max_rss_bytes": 8589934592,
+  "minimum_available_memory_bytes": 10737418240,
+  "reserve_host_D_bytes": 8589934592,
+  "max_wakeup_seconds": 2700,
+  "next_partition_time_reserve_seconds": 420,
+  "threads": 2
+}

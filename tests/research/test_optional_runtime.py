@@ -416,3 +416,78 @@ def test_extended_new_worker_and_expanded_old_model_reuse(tmp_path, monkeypatch,
     (old / "model.pkl").write_bytes(b"tampered")
     with pytest.raises(DataValidationError, match="bytes changed"):
         worker.validated_worker(reused_root, reused_plan, reused_slot)
+
+
+def test_remaining_slot_worker_fits_both_original_model_families_once(tmp_path, monkeypatch):
+    """Real Qlib adapters, artificial rows, real global95/96 reservations and inherited locks."""
+    import json
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    from quantlab.daily.service import PROJECT_ROOT
+    from quantlab.data.models import DataValidationError
+    from quantlab.research import extended_completion as completion
+    from quantlab.research import extended_frequency_worker as predictor
+    from quantlab.research import weekly_pilot_data as data
+    from quantlab.research.alpha158_store import atomic_seal
+    from quantlab.research.extended_completion_protocol import LIMITS, OUTPUT, SLOTS, CarryLedger
+    from quantlab.research.round2_dataset import sealed_read
+    from quantlab.research.weekly_pilot_protocol import HEAVY, inherited_locks
+
+    config = json.loads((PROJECT_ROOT / "config/alpha158_extended_frequency_v1.json").read_text())
+    rng = np.random.default_rng(1731)
+    x = rng.normal(size=(808, 158)).astype("float32")
+    x[:, -1] = 7
+    dates = ["2026-08-24", "2026-08-25"]
+    meta = pd.DataFrame(
+        [{"instrument_id": f"S{i}", "trade_date": pd.Timestamp("2026-07-01")} for i in range(800)]
+        + [
+            {"instrument_id": f"S{i}", "trade_date": pd.Timestamp(d)}
+            for d in dates
+            for i in range(4)
+        ]
+    )
+    meta["label_end_date"] = meta.trade_date + pd.offsets.BDay(5)
+    meta["future_return_5d"] = (x[:, 0] * 0.1 + x[:, 2] * 0.05).astype("float64")
+    meta["complete_features"], meta["label_reason"] = True, "available"
+    meta.loc[799, "label_end_date"] = pd.Timestamp("2026-08-24")
+    meta.loc[801, "future_return_5d"] = np.nan
+    meta.loc[801, "label_reason"] = "synthetic_missing"
+    config["metadata_root"], config["history_root"] = "synthetic_meta", "synthetic_history"
+    for slot in SLOTS[:2]:
+        config["model_specs"][slot].update(
+            train_rows=799,
+            train_sha256=data.membership(meta.iloc[:799]),
+            prediction_sessions=dates,
+            prediction_rows=8,
+            prediction_sha256=data.membership(meta.iloc[800:]),
+        )
+    atomic_seal(tmp_path / "synthetic_meta/metadata.json", {"synthetic": True})
+    out = tmp_path / OUTPUT
+    plan = atomic_seal(
+        out / "plan.json", {"config": config, "contract": LIMITS, "code_head": "synthetic-only"}
+    )
+    monkeypatch.setattr(data, "batches", lambda *a: iter([(meta.copy(), x.copy())]))
+    monkeypatch.setattr(predictor, "batches", lambda *a: iter([(meta.copy(), x.copy())]))
+    monkeypatch.setattr(completion, "verify_context", lambda *a, **k: None)
+    monkeypatch.setattr(
+        completion, "Budget", lambda *a: SimpleNamespace(check=lambda: None, watchdog=nullcontext)
+    )
+    book = CarryLedger(out, plan["fingerprint"])
+    for number, slot in enumerate(SLOTS[:2], start=95):
+        folder = book.start(slot)
+        with inherited_locks([tmp_path / HEAVY, out]) as descriptors:
+            completion.worker(tmp_path, slot, descriptors)
+        summary = completion.validated_job(tmp_path, plan, slot)
+        assert summary["new_fit_invocations"] == 1 and summary["prediction_rows"] == 8
+        assert (
+            summary["train_rows"] == 799 and summary["saved_model_max_prediction_difference"] == 0.0
+        )
+        assert sealed_read(folder / "started.json")["global_attempt_number"] == number
+        assert pd.read_parquet(folder / "predictions.parquet").future_return_5d.isna().sum() == 1
+        with inherited_locks([tmp_path / HEAVY, out]) as descriptors:
+            with pytest.raises(DataValidationError, match="cannot restart"):
+                completion.worker(tmp_path, slot, descriptors)
+        book.finish(slot, "completed", summary=summary)
