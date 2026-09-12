@@ -253,3 +253,166 @@ def test_weekly_worker_synthetic_fit_intent_and_full_saved_replay(tmp_path, monk
     (out / "fits" / slot / "model.pkl").write_bytes(b"tampered")
     with pytest.raises(Exception, match="bytes changed"):
         worker.validated_worker(tmp_path, plan, slot)
+
+
+@pytest.mark.parametrize("kind", ["ridge", "lightgbm"])
+def test_extended_new_worker_and_expanded_old_model_reuse(tmp_path, monkeypatch, kind):
+    """Artificial fits only: reuse must never call fit and must retain missing-label members."""
+    import copy
+    import json
+    import shutil
+
+    import numpy as np
+
+    from quantlab.daily.service import PROJECT_ROOT
+    from quantlab.data.models import DataValidationError
+    from quantlab.research import alpha158_rolling_models as models
+    from quantlab.research import extended_frequency_worker as worker
+    from quantlab.research import weekly_pilot_data as data
+    from quantlab.research.alpha158_rolling_protocol import runtime_manifest
+    from quantlab.research.alpha158_store import atomic_seal
+    from quantlab.research.extended_frequency_protocol import (
+        CONFIG,
+        HEAVY,
+        OLD,
+        OUTPUT,
+        Ledger,
+        folder_for,
+    )
+    from quantlab.research.input_audit import _sha
+    from quantlab.research.round2_dataset import sealed_read
+    from quantlab.research.weekly_pilot_protocol import inherited_locks
+
+    config = json.loads((PROJECT_ROOT / CONFIG).read_text())
+    dates = ["2025-09-01", "2025-09-02", "2025-09-03", "2025-09-08"]
+    rng = np.random.default_rng(7110)
+    values = rng.normal(size=(816, 158)).astype("float32")
+    values[:, -1] = 7  # A constant training feature uses scale one.
+    meta = pd.DataFrame(
+        [{"instrument_id": f"S{i}", "trade_date": pd.Timestamp("2025-08-01")} for i in range(800)]
+        + [
+            {"instrument_id": f"S{i}", "trade_date": pd.Timestamp(day)}
+            for day in dates
+            for i in range(4)
+        ]
+    )
+    meta["label_end_date"] = meta.trade_date + pd.offsets.BDay(5)
+    meta["future_return_5d"] = (values[:, 0] * 0.1 + values[:, 2] * 0.05).astype("float64")
+    meta["complete_features"], meta["label_reason"] = True, "available"
+    # Exclude one not-yet-mature row and a missing label from fitting, not prediction.
+    meta.loc[799, "label_end_date"] = pd.Timestamp("2025-09-01")
+    meta.loc[801, "future_return_5d"] = np.nan
+    meta.loc[801, "label_reason"] = "synthetic_missing"
+    config["metadata_root"], config["history_root"] = "synthetic_meta", "synthetic_history"
+    slot = f"{config['weeks'][0]['week_id']}_{kind}"
+    # Synthetic independent model fixtures may choose either family as their first slot.
+    config["new_slots"].remove(slot)
+    config["new_slots"].insert(0, slot)
+    spec = config["model_specs"][slot]
+    spec.update(
+        train_rows=799,
+        train_sha256=data.membership(meta.iloc[:799]),
+        prediction_sessions=dates[:3],
+        prediction_rows=12,
+        prediction_sha256=data.membership(meta.iloc[800:812]),
+    )
+    monkeypatch.setattr(data, "batches", lambda *a: iter([(meta.copy(), values.copy())]))
+    monkeypatch.setattr(worker, "batches", lambda *a: iter([(meta.copy(), values.copy())]))
+
+    def setup(root, cfg):
+        (root / cfg["metadata_root"]).mkdir(parents=True)
+        atomic_seal(root / cfg["metadata_root"] / "metadata.json", {"synthetic": True})
+        (root / OUTPUT).mkdir(parents=True)
+        return atomic_seal(
+            root / OUTPUT / "plan.json",
+            {
+                "config": cfg,
+                "code_files": {},
+                "code_head": "synthetic-only",
+                "sources": {"inputs": {}, "runtime": runtime_manifest()},
+            },
+        )
+
+    plan = setup(tmp_path, config)
+    ledger = Ledger(tmp_path / OUTPUT, plan["fingerprint"], config["new_slots"], "fits")
+    folder = ledger.start(slot)
+    with inherited_locks([tmp_path / HEAVY, tmp_path / OUTPUT]) as descriptors:
+        worker.worker(tmp_path, slot, descriptors)
+    result = worker.validated_worker(tmp_path, plan, slot)
+    assert result["train_rows"] == 799 and result["new_fit_invocations"] == 1
+    assert result["prediction_rows"] == result["newly_scored_rows"] == 12
+    assert result["replay_verification_rows"] == 12 and result["reused_prediction_rows"] == 0
+    prep = sealed_read(folder / "preprocessing.json")
+    if kind == "ridge":
+        np.testing.assert_allclose(
+            prep["scaler"]["mean"], values[:799].mean(axis=0, dtype="float64")
+        )
+        assert prep["scaler"]["scale"][-1] == 1
+    assert pd.read_parquet(folder / "predictions.parquet").future_return_5d.isna().sum() == 1
+    with inherited_locks([tmp_path / HEAVY, tmp_path / OUTPUT]) as descriptors:
+        with pytest.raises(DataValidationError, match="cannot run again"):
+            worker.worker(tmp_path, slot, descriptors)
+
+    reused_root = tmp_path / "reuse_case"
+    old = reused_root / OLD / "fits" / slot
+    old.mkdir(parents=True)
+    for name in ("model.pkl", "predictions.parquet", "preprocessing.json"):
+        shutil.copyfile(folder / name, old / name)
+    hashes = {p.name: _sha(p) for p in old.iterdir()}
+    reused_config = copy.deepcopy(config)
+    reused_slot = reused_config["reuse_slots"][0]
+    reused_spec = {
+        **spec,
+        "slot": reused_slot,
+        "reuse_slot": slot,
+        "source_head": "synthetic-original",
+        "model_sha256": _sha(old / "model.pkl"),
+        "original_preprocessing_fingerprint": prep["fingerprint"],
+        "original_summary": result,
+        "prediction_sessions": dates,
+        "prediction_rows": 16,
+        "prediction_sha256": data.membership(meta.iloc[800:]),
+    }
+    reused_config["model_specs"][reused_slot] = reused_spec
+    reused_plan = setup(reused_root, reused_config)
+    reuse = Ledger(
+        reused_root / OUTPUT, reused_plan["fingerprint"], reused_config["reuse_slots"], "reuse"
+    )
+    target = reuse.start(reused_slot)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("reuse tried to create or fit a model")
+
+    monkeypatch.setattr(models, "make_model", forbidden)
+    monkeypatch.setattr(worker, "fit_new", forbidden)
+    with inherited_locks([reused_root / HEAVY, reused_root / OUTPUT]) as descriptors:
+        worker.worker(reused_root, reused_slot, descriptors)
+    reused_result = worker.validated_worker(reused_root, reused_plan, reused_slot)
+    assert reused_result["new_fit_invocations"] == 0 and reused_result["fit_seconds"] == 0
+    assert reused_result["reused_prediction_rows"] == 12
+    assert reused_result["newly_scored_rows"] == 4
+    assert reused_result["replay_verification_rows"] == 16
+    assert hashes == {p.name: _sha(p) for p in old.iterdir()}
+    assert not (target / "model.pkl").exists() and not (target / "invoked.json").exists()
+    assert folder_for(reused_root, reused_config, reused_slot) == target
+
+    def tamper(name, key, value, match):
+        path = target / name
+        original = path.read_bytes()
+        changed = sealed_read(path)
+        changed.pop("fingerprint")
+        changed[key] = value
+        path.unlink()
+        atomic_seal(path, changed)
+        with pytest.raises(DataValidationError, match=match):
+            worker.validated_worker(reused_root, reused_plan, reused_slot)
+        path.write_bytes(original)
+
+    tamper("model_reference.json", "source_head", "wrong", "original source")
+    tamper("worker_result.json", "performance_evidence", True, "authority")
+    tamper("worker_result.json", "new_fit_invocations", 1, "fit authority")
+    tamper("worker_result.json", "trained_at_utc", "2025-01-01T00:00:00+00:00", "original source")
+    tamper("preprocessing.json", "label_transform", "rank", "preprocessing")
+    (old / "model.pkl").write_bytes(b"tampered")
+    with pytest.raises(DataValidationError, match="bytes changed"):
+        worker.validated_worker(reused_root, reused_plan, reused_slot)
