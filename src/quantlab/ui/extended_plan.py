@@ -13,11 +13,11 @@ from quantlab.ui.workbench import public_error
 
 
 def render_extended_plan():
-    st.subheader("下一阶段：全年训练频率对照")
+    st.subheader("全年训练频率对照：事先固定的规划")
     try:
         report = read_report(PROJECT_ROOT)
         if report is None:
-            st.info("正在规划更长区间和最小组合成本评价，尚未启动扩展训练。")
+            st.info("尚无可核验的全年规划报告。")
             return
         out = PROJECT_ROOT / OUTPUT
         weekly = sealed_read(out / "schedule.json")
@@ -32,7 +32,7 @@ def render_extended_plan():
             "后者在当月剩余周次复用同一个模型。"
         )
         st.warning(
-            "这是一份已经核对的规划，扩展训练尚未启动。六个旧模型已消耗的名额保持封闭；"
+            "下方展示执行前固定的规划，当前执行进度见上方。六个旧模型已消耗的名额保持封闭；"
             "后续全部新尝试共用一个累计预算，失败也计数，每段最多六次。"
             "更长区间仍是已观察历史，不构成新前瞻，也不保证提高收益。"
         )
@@ -118,7 +118,7 @@ def render_extended_plan():
             st.download_button(label, value, f"QuantLab_全年{name}", mime, on_click="ignore")
         if verification is not None:
             st.success(
-                "全部周次样本、日历和六个旧模型复用条件已独立复核；新增拟合与新增预测均为零。"
+                "规划阶段已独立复核全部周次样本、日历和六个旧模型复用条件；该规划阶段新增拟合与新增预测均为零。"
             )
             st.download_button(
                 "下载全年规划独立复核",
