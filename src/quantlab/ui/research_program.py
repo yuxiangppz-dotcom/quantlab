@@ -9,6 +9,7 @@ from quantlab.daily.service import PROJECT_ROOT
 from quantlab.research.alpha101_pilot import read_progress as read_alpha_progress
 from quantlab.research.etf_event_progress import read_etf_progress
 from quantlab.research.funding_attribution import read_progress
+from quantlab.research.s4_pilot import read_progress as read_s4_progress
 from quantlab.ui.workbench import public_error
 
 NAMES = {
@@ -137,6 +138,68 @@ def render_alpha_progress():
     )
 
 
+def render_s4_progress():
+    st.markdown("**条件反转：下跌后的修复是否需要额外条件**")
+    try:
+        report = read_s4_progress(PROJECT_ROOT)
+    except Exception as exc:
+        st.error(f"条件反转记录无法校验：{public_error(exc)}")
+        return
+    if report is None:
+        st.info("S4三种条件反转规则尚未完成复核，暂不展示结果。")
+        return
+    names = {
+        "S4-A": "三日相对下跌",
+        "S4-B": "相同信号＋60日正趋势",
+        "S4-C": "相同信号＋5日资金流转正",
+    }
+    table = pd.DataFrame(report["summaries"])
+    annual = table[table.period.isin([str(y) for y in range(2020, 2025)])]
+    pivot = annual.pivot(index="variant", columns="period", values="mean_rank_ic").reindex(names)
+    pivot.index = pivot.index.map(names)
+    pivot.index.name = "规则"
+    st.caption(
+        "固定256只历史股票；比较随后5个交易日的排序关联。三条使用原计划15个规则中的3个身份；未运行组合回测或模型。"
+    )
+    st.dataframe(pivot.round(4), width="stretch")
+    whole = table[table.period == "2020-2024"]
+
+    def number(x):
+        return f"{x:.4f}" if pd.notna(x) else "未知"
+
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "规则": names[row.variant],
+                    "每日平均保留股票": f"{row.mean_retained_signal_count:.1f}",
+                    "有效关联交易日": f"{row.valid_ic_sessions} / {row.calendar_sessions}",
+                    "每日平均条件未知": f"{row.mean_condition_unknown_count:.1f}",
+                    "规则关联": number(row.mean_rank_ic),
+                    "同样本20日反转关联": number(row.mean_reversal_rank_ic),
+                    "关联差": number(row.mean_paired_ic_difference),
+                }
+                for row in whole.itertuples()
+            ]
+        ),
+        hide_index=True,
+        width="stretch",
+    )
+    st.write(
+        "条件不满足和条件资料未知分别保留。每天不足30个有效对照样本时不计算关联，也不会为得到结果临时放宽条件。"
+    )
+    st.caption(
+        "B/C筛出的股票群体与A不同，关联变化不能直接解释成条件带来的增量收益。资金流的历史发布版本仍未证实；这些指标不含手续费、无法卖出或账户回撤。"
+    )
+    st.download_button(
+        "下载条件反转诊断报告",
+        json.dumps(report, ensure_ascii=False, indent=2),
+        "s4_signal_report.json",
+        "application/json",
+        on_click="ignore",
+    )
+
+
 def render_program():
     st.subheader("策略研究进度")
     st.write("已启动你批准的五类策略计划。本页展示已复核记录，后续按有限批次继续推进。")
@@ -149,6 +212,7 @@ def render_program():
         st.info("首批研究尚未完成独立复核，暂不展示结果。")
         render_etf_progress()
         render_alpha_progress()
+        render_s4_progress()
         return
     report = reviewed["pilot"]
     cols = st.columns(4)
@@ -171,7 +235,7 @@ def render_program():
                 {"方向": "行业趋势选股", "当前进展": "先审计历史行业成员，资料不足按计划降级"},
                 {
                     "方向": "条件反转",
-                    "当前进展": "已做资金流诊断，继续检查价格反转与资金流的各自贡献",
+                    "当前进展": "固定三种条件反转规则；实际复核结果与样本覆盖见下方",
                 },
                 {"方向": "结构化事件", "当前进展": "待封存首批事件规则与输入，暂未开展经济回测"},
             ]
@@ -181,6 +245,7 @@ def render_program():
     )
     render_etf_progress()
     render_alpha_progress()
+    render_s4_progress()
     st.warning("尚无策略通过晋升。本页数值是历史样本中的排序关联，不是收益率，也不是交易建议。")
     st.write(
         "正的 RankIC 表示指标排名与随后5个交易日的价格涨跌排名倾向同向；"
