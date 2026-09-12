@@ -1,0 +1,66 @@
+{
+  "schema": "alpha101_price_volume_pilot_v1",
+  "expected_start_head": "2d1451c557009231669564240cc36082a3b40286",
+  "parent_report_path": "data/products/research_program/launch_20260912/funding_diagnostics/report.json",
+  "parent_proof_path": "data/products/research_program/launch_20260912/funding_independent_proof.json",
+  "features_path": "data/products/research_program/launch_20260912/funding_diagnostics/features_and_labels.parquet",
+  "parent_report_fingerprint": "e9060d47734f52bb4dd11fc90876342f925a54ec51bf1fc92a3e9f3b989becf9",
+  "formula_source_path": "data/products/research_program/launch_20260912/alpha101_sources/observed_formulas.json",
+  "inputs": {
+    "data/products/research_program/launch_20260912/funding_diagnostics/report.json": {
+      "sha256": "d78425b79717bdd96921c0ec2c04d6203a3ceb3193ab3368e579d8e2a91d7d29",
+      "bytes": 78215
+    },
+    "data/products/research_program/launch_20260912/funding_independent_proof.json": {
+      "sha256": "c4138bb14329d693e01836a33bb8b8e0b6e11a4a5ee8ef919f76ad43e8dc57df",
+      "bytes": 674
+    },
+    "data/products/research_program/launch_20260912/funding_diagnostics/features_and_labels.parquet": {
+      "sha256": "52d83a4afe0f34f0a9d1ba211fa6da2250273cb5dd7a2f9decab483cffe3721f",
+      "bytes": 31805405
+    },
+    "data/products/research_program/launch_20260912/alpha101_sources/observed_formulas.json": {
+      "sha256": "5fb20b9a654c623000a3dd15f515c902272e875e629703b6ae9e63903ab651cf",
+      "bytes": 720
+    },
+    "data/products/research_program/launch_20260912/alpha101_sources/started.json": {
+      "sha256": "9131e161cf12b248f003c3cd7410712ede9681a5f9969a3d27efeccc901b7a41",
+      "bytes": 308
+    },
+    "data/products/research_program/launch_20260912/alpha101_sources/download_stopped.json": {
+      "sha256": "b20cf6ca89e8cc86628f6bd7a22ee652a8f5b93e0f97680c170c82d5bb59a061",
+      "bytes": 302
+    },
+    "data/products/research_program/launch_20260912/alpha101_sources/download_outcome.json": {
+      "sha256": "6930454db3d964cef98ba075f15de32a5af24f2736538676e7a58ef0e46e509f",
+      "bytes": 410
+    },
+    "data/products/research_program/launch_20260912/funding_inputs.json": {
+      "sha256": "d872b6c0400d948af7388a17a9e497e729cf631b04d8f8ee2d84def6d7f50484",
+      "bytes": 784166
+    },
+    "data/products/research_program/launch_20260912/selection.json": {
+      "sha256": "e46e04b85208d3715b1dfaa1c7944f6f4b3ef37ef614ed7ed47cb9e4152c6dd9",
+      "bytes": 4117
+    }
+  },
+  "output": "data/products/research_program/launch_20260912/alpha101_price_volume",
+  "formula_ids": [
+    "alpha101_12",
+    "alpha101_101"
+  ],
+  "minimum_pairs": 30,
+  "max_actual_attempts": 1,
+  "provider_calls_authorized": 0,
+  "economic_paths_authorized": 0,
+  "model_fits_authorized": 0,
+  "resources": {
+    "max_generated_bytes": 536870912,
+    "reserve_host_D_bytes": 8589934592,
+    "max_rss_bytes": 2147483648,
+    "max_wakeup_seconds": 600,
+    "next_partition_time_reserve_seconds": 60
+  },
+  "calendar_manifest_path": "data/products/research_program/launch_20260912/funding_inputs.json",
+  "selection_path": "data/products/research_program/launch_20260912/selection.json"
+}
