@@ -9,11 +9,14 @@ from quantlab.daily.service import PROJECT_ROOT
 from quantlab.research.extended_frequency import load_status
 from quantlab.research.extended_frequency_protocol import OUTPUT
 from quantlab.research.round2_dataset import sealed_read
+from quantlab.ui.extended_annual import render_annual
 from quantlab.ui.extended_recovery import render_extended_recovery
 from quantlab.ui.workbench import public_error
 
 
 def render_extended_frequency():
+    if render_annual():
+        return
     st.subheader("全年训练频率对照：执行进度")
     try:
         report = load_status(PROJECT_ROOT)
