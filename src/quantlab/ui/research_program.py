@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from quantlab.daily.service import PROJECT_ROOT
+from quantlab.research.alpha101_pilot import read_progress as read_alpha_progress
 from quantlab.research.etf_event_progress import read_etf_progress
 from quantlab.research.funding_attribution import read_progress
 from quantlab.ui.workbench import public_error
@@ -72,6 +73,70 @@ def render_etf_progress():
     )
 
 
+def render_alpha_progress():
+    st.markdown("**新增价量公式：是否比已有价格反转多提供信息**")
+    try:
+        report = read_alpha_progress(PROJECT_ROOT)
+    except Exception as exc:
+        st.error(f"价量公式记录无法校验：{public_error(exc)}")
+        return
+    if report is None:
+        st.info("首批Alpha101价量公式尚未完成复核，暂不展示结果。")
+        return
+    names = {
+        "alpha101_12": "Alpha101 #12：量变与短期反转",
+        "alpha101_101": "Alpha101 #101：日内方向与振幅",
+    }
+    table = pd.DataFrame(report["summaries"])
+    annual = table[table.period.isin([str(y) for y in range(2020, 2025)])]
+    pivot = annual.pivot(index="formula", columns="period", values="mean_rank_ic").reindex(names)
+    pivot.index = pivot.index.map(names)
+    pivot.index.name = "公式"
+    st.caption(
+        "本批完成2项／首批上限20项公式。固定256只历史股票、随后5个交易日的排序关联；没有训练模型。"
+    )
+    st.dataframe(pivot.round(4), width="stretch")
+    whole = table[table.period == "2020-2024"].copy()
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "公式": names[row.formula],
+                    "公式关联": f"{row.mean_rank_ic:.4f}" if pd.notna(row.mean_rank_ic) else "未知",
+                    "同样本价格反转关联": f"{row.mean_reversal_rank_ic:.4f}"
+                    if pd.notna(row.mean_reversal_rank_ic)
+                    else "未知",
+                    "关联差": f"{row.mean_paired_ic_difference:.4f}"
+                    if pd.notna(row.mean_paired_ic_difference)
+                    else "未知",
+                    "差的95%区间": (
+                        f"[{row.difference_block_95_interval[0]:.4f}, "
+                        f"{row.difference_block_95_interval[1]:.4f}]"
+                    )
+                    if isinstance(row.difference_block_95_interval, list)
+                    else "未知",
+                }
+                for row in whole.itertuples()
+            ]
+        ),
+        hide_index=True,
+        width="stretch",
+    )
+    st.write(
+        "公式保留原来的正负方向，没有看完结果再反过来选股。这些数值不是收益率，尚不能据此确定股票或启用策略。"
+    )
+    st.caption(
+        "#12遇到记录的复权因子变化时，不跨该日计算原始价差。历史可得信息和实际成交条件仍需另行验入；Alpha191留在后续有限批次。"
+    )
+    st.download_button(
+        "下载价量公式诊断报告",
+        json.dumps(report, ensure_ascii=False, indent=2),
+        "alpha101_price_volume_report.json",
+        "application/json",
+        on_click="ignore",
+    )
+
+
 def render_program():
     st.subheader("策略研究进度")
     st.write("已启动你批准的五类策略计划。本页展示已复核记录，后续按有限批次继续推进。")
@@ -83,6 +148,7 @@ def render_program():
     if reviewed is None:
         st.info("首批研究尚未完成独立复核，暂不展示结果。")
         render_etf_progress()
+        render_alpha_progress()
         return
     report = reviewed["pilot"]
     cols = st.columns(4)
@@ -114,6 +180,7 @@ def render_program():
         width="stretch",
     )
     render_etf_progress()
+    render_alpha_progress()
     st.warning("尚无策略通过晋升。本页数值是历史样本中的排序关联，不是收益率，也不是交易建议。")
     st.write(
         "正的 RankIC 表示指标排名与随后5个交易日的价格涨跌排名倾向同向；"
