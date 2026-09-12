@@ -9,6 +9,7 @@ from quantlab.daily.service import PROJECT_ROOT
 from quantlab.research.extended_frequency import load_status
 from quantlab.research.extended_frequency_protocol import OUTPUT
 from quantlab.research.round2_dataset import sealed_read
+from quantlab.ui.extended_recovery import render_extended_recovery
 from quantlab.ui.workbench import public_error
 
 
@@ -40,13 +41,13 @@ def render_extended_frequency():
             f"新增计算 {report['newly_scored_rows']:,} 条。"
         )
         if report["status"] == "failed":
-            st.error("本批次存在失败或中断，已停止后续训练，保留原始名额与证据。")
+            st.error("原全年批次存在失败或中断，已停止该批后续训练，保留原始名额与证据。")
             repair = PROJECT_ROOT / "docs/extended_frequency_reuse_repair_zh.md"
             if repair.exists():
                 explanation = repair.read_text(encoding="utf-8")
                 if report["fingerprint"] in explanation:
                     st.caption(
-                        "旧模型扩展复用出现批量计算差异；软件修复已补齐，原批次仍保留失败，等待单独的恢复验证。"
+                        "旧模型扩展复用出现批量计算差异；原批次仍保留失败。单独的恢复验证结果见下方。"
                     )
                     st.download_button(
                         "下载本轮失败与修复说明",
@@ -60,6 +61,7 @@ def render_extended_frequency():
         else:
             st.success("98个新模型与6个旧模型复用均已完成，全年描述性对照已生成。")
             st.caption("这里是执行与预测复算检查。全量独立复核及中文研究结论另行交付。")
+        render_extended_recovery()
         st.warning(
             "这是已观察历史的回放，实际训练时间记录在本次运行。预测排序指标不等于收益；"
             "本页没有组合净收益、20%回撤达标结论或自动交易权限。"
