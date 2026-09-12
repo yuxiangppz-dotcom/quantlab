@@ -1,0 +1,97 @@
+{
+  "schema": "dividend_gap_intake_v1",
+  "expected_start_head": "a67cfe527dd95f25aeae33962acc8e98d0dfb67f",
+  "output": "data/products/research_program/launch_20260912/dividend_gap_intake",
+  "endpoint": "https://api.tushare.pro",
+  "codes": [
+    "000301.SZ",
+    "000333.SZ",
+    "000548.SZ",
+    "000753.SZ",
+    "000760.SZ",
+    "000786.SZ",
+    "002366.SZ",
+    "002462.SZ",
+    "002474.SZ",
+    "002770.SZ",
+    "300016.SZ",
+    "300105.SZ",
+    "300261.SZ",
+    "300409.SZ",
+    "300471.SZ",
+    "600075.SH",
+    "600125.SH",
+    "600240.SH",
+    "600262.SH",
+    "600298.SH",
+    "600305.SH",
+    "600308.SH",
+    "600371.SH",
+    "600497.SH",
+    "601009.SH",
+    "601126.SH",
+    "601139.SH",
+    "601318.SH",
+    "601579.SH",
+    "601668.SH",
+    "603181.SH"
+  ],
+  "max_requests": 31,
+  "max_retries": 0,
+  "requests_per_minute": 100,
+  "per_response_bytes": 2097152,
+  "max_body_bytes": 67108864,
+  "resources": {
+    "max_generated_bytes": 134217728,
+    "reserve_host_D_bytes": 8589934592,
+    "max_rss_bytes": 2147483648,
+    "max_wakeup_seconds": 600,
+    "next_partition_time_reserve_seconds": 60
+  },
+  "economic_paths_authorized": 0,
+  "model_fits_authorized": 0,
+  "canonical_writes_authorized": false,
+  "execution_authority": false,
+  "historical_pit_certified": false,
+  "selection_path": "data/products/research_program/launch_20260912/selection.json",
+  "parent_report_path": "data/products/corporate_action_staging/dividend_targets_20260911/runs/8d36387797e6432f8719e835eecec1b7/report.json",
+  "coverage_path": "data/products/research_program/launch_20260912/s4_execution_audit/dividend_cohort_presence.json",
+  "audit_report_path": "data/products/research_program/launch_20260912/s4_execution_audit/report.json",
+  "audit_proof_path": "data/products/research_program/launch_20260912/s4_execution_audit/verification.json",
+  "source_receipt_path": "data/products/research_program/launch_20260912/dividend_gap_sources/source.json",
+  "task_card_path": "docs/development_tasks/dividend_gap_intake_v1.md",
+  "inputs": {
+    "data/products/research_program/launch_20260912/selection.json": {
+      "sha256": "e46e04b85208d3715b1dfaa1c7944f6f4b3ef37ef614ed7ed47cb9e4152c6dd9",
+      "bytes": 4117
+    },
+    "data/products/corporate_action_staging/dividend_targets_20260911/runs/8d36387797e6432f8719e835eecec1b7/report.json": {
+      "sha256": "f03cd7cff99594125eb1d6ee5a86f2cd095f6dfd1e8a7d77f9592c996972f267",
+      "bytes": 2161378
+    },
+    "data/products/research_program/launch_20260912/s4_execution_audit/dividend_cohort_presence.json": {
+      "sha256": "913e429a430d5c7892da48d8381d8eb145e7879f5787fa9fb31c664f708ed816",
+      "bytes": 751
+    },
+    "data/products/research_program/launch_20260912/s4_execution_audit/report.json": {
+      "sha256": "46f056d79d82d37e04f2b274df03c635e811af83a97e9a4cda884f36f4c21d6f",
+      "bytes": 5755
+    },
+    "data/products/research_program/launch_20260912/s4_execution_audit/verification.json": {
+      "sha256": "9ba34429409c5e1020dd384f814cc4e88e7b711a65fb57d3b987c290c7a1b0e3",
+      "bytes": 1390
+    },
+    "data/products/research_program/launch_20260912/dividend_gap_sources/source.json": {
+      "sha256": "96a80ddd49f042b270368c37094bb43e1c5fc02ce3449bc8a1d38f2dd0732079",
+      "bytes": 743
+    },
+    "docs/development_tasks/dividend_gap_intake_v1.md": {
+      "sha256": "c08f8f5f750b668d41467341f456d9cb5198d972b868e0cca06ee023a0d11543",
+      "bytes": 3924
+    },
+    "data/products/research_program/launch_20260912/dividend_gap_sources/dividend_doc_observation.txt": {
+      "sha256": "329bd21a08fb95ed4d79dd1e713042598732af28c6205f4d34bd50c96430638a",
+      "bytes": 13715
+    }
+  }
+}
