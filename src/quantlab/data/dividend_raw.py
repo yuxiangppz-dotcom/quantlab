@@ -164,7 +164,7 @@ def profile_rows(rows):
         relevant += any("2023-01-04" <= day <= "2026-09-10" for day in event_dates)
         unknown_relevance += not event_dates
         cash = row.get("cash_div_tax")
-        if status == "实施" and isinstance(cash, (float, int)) and cash > 0:
+        if status == "实施" and type(cash) in (float, int) and math.isfinite(cash) and cash > 0:
             implemented_cash_missing_pay += "pay_date" not in parsed
         # A collision is only a review candidate. No provider event ID exists here.
         key = tuple(str(row.get(x)) for x in ("end_date", "ann_date", "div_proc", "imp_ann_date"))
@@ -196,6 +196,7 @@ class WireClient:
 
     def fetch(self, parameters, cap):
         body, status, http_status = bytearray(), "received", None
+        body_count_complete = False
         started = time.monotonic()
         try:
             with self.session.post(
@@ -211,6 +212,7 @@ class WireClient:
                 while len(body) < cap:
                     chunk = response.raw.read(min(8192, cap - len(body)))
                     if not chunk:
+                        body_count_complete = True
                         break
                     body.extend(chunk)
                     if time.monotonic() - started > 30:
@@ -228,6 +230,7 @@ class WireClient:
         except Exception as exc:
             # Exception text can contain request details. Keep only its class name.
             status = "transport_error"
+            body_count_complete = False
             error_type = type(exc).__name__
         else:
             error_type = None
@@ -240,6 +243,8 @@ class WireClient:
             "transport_status": status,
             "http_status": http_status,
             "received_bytes": len(body),
+            "body_count_complete": body_count_complete,
+            "budget_body_bytes": len(body) if body_count_complete else cap,
             "wire_sha256": digest,
             "error_type": error_type,
             "seconds": time.monotonic() - started,

@@ -80,3 +80,104 @@ def test_population_aggregation_and_path_escape_fail_closed(fixture, change):
     sealed_write(out / "progress.json", report)
     with pytest.raises(DataValidationError):
         read_acquisition(root)
+
+
+@pytest.fixture
+def historical_sources(tmp_path):
+    import hashlib
+    import subprocess
+
+    from quantlab.data.dividend_review import PINNED_CODE
+
+    def git(*args):
+        return subprocess.check_output(["git", *args], cwd=tmp_path).decode().strip()
+
+    git("init", "--quiet")
+    git("config", "user.name", "Synthetic Test")
+    git("config", "user.email", "synthetic@example.invalid")
+    inputs = {}
+    for name in [*sorted(PINNED_CODE), "data/source.json"]:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        raw = b"original source"
+        path.write_bytes(raw)
+        inputs[name] = {"sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}
+    git("add", ".")
+    git("commit", "--quiet", "-m", "sealed synthetic acquisition source")
+    return tmp_path, inputs, git("rev-parse", "HEAD")
+
+
+def test_snapshot_uses_bound_historical_code_but_current_data(historical_sources):
+    from quantlab.data.dividend_review import PINNED_CODE, verify_snapshot_inputs
+
+    root, inputs, head = historical_sources
+    for name in PINNED_CODE:
+        (root / name).write_text("later implementation")
+    verify_snapshot_inputs(root, inputs, head)
+    # Live progress cannot use historical source to authorize a different running version.
+    with pytest.raises(DataValidationError):
+        verify_snapshot_inputs(root, inputs)
+    (root / "data/source.json").write_text("changed data")
+    with pytest.raises(DataValidationError):
+        verify_snapshot_inputs(root, inputs, head)
+
+
+@pytest.mark.parametrize("head", ["0" * 40, "HEAD", "--help", "../HEAD", 123])
+def test_unavailable_or_unpinned_history_is_rejected(historical_sources, head):
+    from quantlab.data.dividend_review import verify_snapshot_inputs
+
+    root, inputs, _ = historical_sources
+    with pytest.raises(DataValidationError):
+        verify_snapshot_inputs(root, inputs, head)
+
+
+def test_historical_source_hash_and_size_must_both_match(historical_sources):
+    from quantlab.data.dividend_review import PINNED_CODE, verify_snapshot_inputs
+
+    root, inputs, head = historical_sources
+    name = sorted(PINNED_CODE)[0]
+    inputs[name]["bytes"] += 1
+    with pytest.raises(DataValidationError):
+        verify_snapshot_inputs(root, inputs, head)
+    inputs[name]["bytes"] -= 1
+    inputs[name]["sha256"] = "0" * 64
+    with pytest.raises(DataValidationError):
+        verify_snapshot_inputs(root, inputs, head)
+
+
+@pytest.mark.parametrize("change", [None, "wrong_report", "undercount", "correction", "authority"])
+def test_budget_correction_stays_bound_and_conservative(fixture, change):
+    from quantlab.data.dividend_review import read_verification
+
+    root, out, report = fixture
+    report.update(fingerprint="fixed-report", retries=0, charged_body_bytes=5)
+    config = json.loads((root / CONFIG).read_text())
+    config["max_body_bytes"] = 100
+    (root / CONFIG).write_text(json.dumps(config))
+    verified = {
+        "report_fingerprint": report["fingerprint"],
+        "exact_codes": 1,
+        "attempts": 1,
+        "retries": 0,
+        "returned_rows": 0,
+        "status_counts": {"empty": 1},
+        "charged_body_bytes_as_recorded": 5,
+        "conservative_body_budget_bytes": 20,
+        "failure_budget_correction_bytes": 15,
+        "performance_evidence": False,
+        "execution_authority": False,
+    }
+    if change == "wrong_report":
+        verified["report_fingerprint"] = "another"
+    elif change == "undercount":
+        verified["conservative_body_budget_bytes"] = 4
+    elif change == "correction":
+        verified["failure_budget_correction_bytes"] = 0
+    elif change == "authority":
+        verified["execution_authority"] = 0
+    sealed_write(out / "independent_verification.json", verified)
+    if change is None:
+        assert read_verification(root, report)["conservative_body_budget_bytes"] == 20
+    else:
+        with pytest.raises(DataValidationError):
+            read_verification(root, report)

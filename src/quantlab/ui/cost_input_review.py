@@ -11,6 +11,7 @@ from quantlab.ui.workbench import public_error
 
 def render_cost_input_review():
     st.subheader("扣费评价准备度：费用与分红送转")
+    st.caption("补数前审计快照：保留原始检查时点；新取回的原始资料见上方补数进度。")
     try:
         report = read_report(PROJECT_ROOT)
         if report is None:
@@ -21,9 +22,9 @@ def render_cost_input_review():
         a, b, c = st.columns(3)
         a.metric("已核对模型分数", f"{report['score_rows']:,} 条")
         b.metric("目标股票范围", f"{request['instrument_count']:,} 只")
-        c.metric("暂无本地分红送转记录", f"{missing:,} 只")
+        c.metric("审计当时缺少本地记录", f"{missing:,} 只")
         st.warning(
-            f"目前无法完成扣费收益评价：{missing:,} 只目标股票暂无本地分红送转记录。"
+            f"补数前审计发现：{missing:,} 只目标股票当时缺少本地分红送转记录。"
             "没有记录不能理解为没有分红；复权因子也不能代替实际到账现金、股份和股息税。"
         )
         rows = []
@@ -49,7 +50,7 @@ def render_cost_input_review():
             profile = report["corporate_profile"]
             codes = "、".join(profile["instrument_ids"])
             st.write(
-                f"本地共有 {profile['rows']} 条分红送转记录，"
+                f"审计当时本地共有 {profile['rows']} 条分红送转记录，"
                 f"仅涉及 {profile['instruments']} 只股票，"
                 f"代码为 {codes}。"
                 "实施记录与预案、股东大会通过等记录需要分别核对；"
@@ -70,7 +71,7 @@ def render_cost_input_review():
                 "原有六次模型训练未重做；本轮读取八份评价文件，包含两份 2026 年预测。"
             )
         st.info(
-            "下一步按固定的目标股票清单补齐公司行为原始资料和取回记录，再核对现金与股份处理。"
+            "该快照提出按固定目标股票清单补数；最新进展见上方。后续仍需核对现金与股份处理。"
             "本轮没有收益回测，最大回撤 20% 的目标仍未验证。"
         )
         for label, path, filename in (

@@ -59,6 +59,30 @@ def parameters(code, config):
     }
 
 
+def body_accounting(result, cap):
+    """Uncertain transport reads retain a full reservation, including legacy receipts."""
+    retained = result["received_bytes"]
+    if type(retained) is not int or not 0 <= retained <= cap:
+        raise DataValidationError("invalid retained response byte count")
+    uncertain_status = result["transport_status"] in {"transport_error", "body_limit"}
+    complete = result.get(
+        "body_count_complete",
+        not uncertain_status and result["transport_status"] != "secret_echo",
+    )
+    if (
+        type(complete) is not bool
+        or (uncertain_status and complete)
+        or (result["transport_status"] == "received" and not complete)
+    ):
+        raise DataValidationError("invalid response completeness claim")
+    charged = retained if complete else cap
+    if "budget_body_bytes" in result and (
+        type(result["budget_body_bytes"]) is not int or result["budget_body_bytes"] != charged
+    ):
+        raise DataValidationError("response budget charge differs from conservative policy")
+    return {"body_count_complete": complete, "budget_body_bytes": charged}
+
+
 class Journal:
     def __init__(self, out, config, codes, identity):
         self.out, self.config, self.codes, self.identity = out, config, codes, identity
@@ -128,7 +152,9 @@ class Journal:
         self.attempts += 1
         self.retries += intent["attempt"] > 1
         self.used_bytes += (
-            result["received_bytes"] if result is not None else intent["reserved_body_bytes"]
+            body_accounting(result, intent["reserved_body_bytes"])["budget_body_bytes"]
+            if result is not None
+            else intent["reserved_body_bytes"]
         )
 
     def next_code(self):
@@ -166,6 +192,7 @@ class Journal:
     def finish(self, path, intent, raw, transport):
         if len(raw) > self.config["per_response_bytes"]:
             raise DataValidationError("raw response exceeds reserved budget")
+        accounting = body_accounting(transport, intent["reserved_body_bytes"])
         with (path / "response.body").open("xb") as stream:
             stream.write(raw)
             stream.flush()
@@ -180,6 +207,7 @@ class Journal:
             path / "result.json",
             {
                 **transport,
+                **accounting,
                 **result,
                 "identity": self.identity,
                 "observed_at": now(),
@@ -194,7 +222,7 @@ class Journal:
         )
         code = intent["instrument_id"]
         self.records[code][-1] = (intent, result)
-        self.used_bytes += result["received_bytes"] - intent["reserved_body_bytes"]
+        self.used_bytes += result["budget_body_bytes"] - intent["reserved_body_bytes"]
         return result
 
     def summary(self):
@@ -232,6 +260,18 @@ class Journal:
             "attempts": self.attempts,
             "retries": self.retries,
             "charged_body_bytes": self.used_bytes,
+            "retained_response_bytes": sum(
+                result["received_bytes"]
+                for attempts in self.records.values()
+                for _, result in attempts
+                if result is not None
+            ),
+            "uncertain_body_attempts": sum(
+                result is None
+                or not body_accounting(result, intent["reserved_body_bytes"])["body_count_complete"]
+                for attempts in self.records.values()
+                for intent, result in attempts
+            ),
             "returned_rows": total_rows,
             "per_code": per_code,
             "observation_profile": {

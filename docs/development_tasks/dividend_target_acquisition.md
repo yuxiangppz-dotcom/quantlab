@@ -59,3 +59,19 @@ verification; Chinese browser status and download acceptance; PR, green CI,
 merge, exact master CI, delivery and a next/resume card. No real model fit,
 factor/score recomputation, performance backtest, canonical/account write, order,
 fill synthesis, forward registration or strategy promotion.
+
+
+## Actual execution and post-run fix
+
+The pinned source completed all 4,516 codes in 4,517 calls, with one pre-header
+ReadTimeout and one successful retry. Full raw and previous-input verification
+passed. The v1 receipt charged retained chunks only; an independent companion
+preserves it and adds the failed request's full 4 MiB reservation. Exact failed
+wire bytes remain unknown; conservative total 31,631,334 bytes is within budget.
+After the worker completed, the transport/journal were hardened and regression
+tested in an isolated checkout, then applied here. Historical reports verify the
+three pinned source blobs from their exact source_head, and saved data/documents
+from disk. The original v1 source inventory and response/report bytes stay frozen;
+its new-run gate rejects changed current source rather than silently reauthorizing
+provider calls. Future acquisitions require a reviewed version and cumulative
+resume accounting, not refetches or a new budget for the completed population.

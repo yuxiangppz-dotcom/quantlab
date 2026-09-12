@@ -385,3 +385,100 @@ def test_unexpected_failure_retains_intent_without_secret_traceback(runner):
     assert r["charged_body_bytes"] == 4096
     for path in (root / module.OUTPUT).rglob("*.json"):
         assert "fixture-secret" not in path.read_text()
+
+
+def test_truncated_chunked_wire_charges_consumed_but_unretained_bytes(journal):
+    from http.client import HTTPResponse as NativeResponse
+
+    from urllib3.response import HTTPResponse
+
+    class Socket:
+        def makefile(self, *args):
+            return io.BytesIO(
+                b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2000\r\npartial"
+            )
+
+    native = NativeResponse(Socket())
+    native.begin()
+    response = FakeResponse(b"")
+    response.raw = HTTPResponse(
+        body=native,
+        headers=dict(native.getheaders()),
+        original_response=native,
+        preload_content=False,
+    )
+    client = WireClient("test-secret", "https://api.tushare.pro", session=FakeSession(response))
+    raw, result = client.fetch({}, 4096)
+    assert raw == b""  # The underlying chunked reader consumed seven bytes before failing.
+    assert result["transport_status"] == "transport_error"
+    assert result["body_count_complete"] is False
+    assert result["budget_body_bytes"] == 4096
+    path, intent = journal.begin(journal.next_code())
+    journal.finish(path, intent, raw, result)
+    assert journal.used_bytes == reload(journal).used_bytes == 4096
+    assert journal.summary()["retained_response_bytes"] == 0
+    assert journal.summary()["uncertain_body_attempts"] == 1
+
+
+def test_complete_wire_only_charges_exact_body_bytes(journal):
+    raw = payload()
+    client = WireClient(
+        "test-secret", "https://api.tushare.pro", session=FakeSession(FakeResponse(raw))
+    )
+    body, result = client.fetch({}, 4096)
+    assert result["body_count_complete"] is True
+    assert result["budget_body_bytes"] == len(body) == len(raw)
+    path, intent = journal.begin(journal.next_code())
+    journal.finish(path, intent, body, result)
+    assert journal.used_bytes == reload(journal).used_bytes == len(raw)
+
+
+def test_legacy_failure_conservatively_reserves_without_rewriting_receipt(journal):
+    result = finish(journal, "transport_error")
+    path = journal.out / "attempts/000001.SZ/01/result.json"
+    result = {
+        key: value
+        for key, value in result.items()
+        if key not in ("fingerprint", "body_count_complete", "budget_body_bytes")
+    }
+    result["fingerprint"] = canonical_payload_fingerprint(result)
+    raw = json.dumps(result).encode()
+    path.write_bytes(raw)
+    assert reload(journal).used_bytes == 4096
+    assert path.read_bytes() == raw
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"budget_body_bytes": 0},
+        {"body_count_complete": True},
+        {"budget_body_bytes": True},
+        {"body_count_complete": 1},
+    ],
+)
+def test_failure_receipt_cannot_release_uncertain_reservation(journal, changes):
+    result = finish(journal, "transport_error")
+    path = journal.out / "attempts/000001.SZ/01/result.json"
+    result.pop("fingerprint")
+    result.update(changes)
+    result["fingerprint"] = canonical_payload_fingerprint(result)
+    path.write_text(json.dumps(result))
+    with pytest.raises(DataValidationError):
+        reload(journal)
+
+
+def test_boolean_cash_cannot_be_counted_as_positive_dividend():
+    result = inspect_response(payload(cash_div_tax=True, pay_date=None), "000001.SZ")
+    assert result["profile"]["malformed_counts"]["cash_div_tax"] == 1
+    assert result["profile"]["implemented_positive_cash_without_valid_pay_date"] == 0
+
+
+def test_incomplete_transport_cannot_be_treated_as_received(journal):
+    raw = payload()
+    state = {**transport(raw), "body_count_complete": False, "budget_body_bytes": 4096}
+    path, intent = journal.begin(journal.next_code())
+    with pytest.raises(DataValidationError):
+        journal.finish(path, intent, raw, state)
+    assert not (path / "result.json").exists()
+    assert reload(journal).used_bytes == 4096
