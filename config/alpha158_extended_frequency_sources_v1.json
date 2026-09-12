@@ -1,0 +1,2969 @@
+{
+  "config_sha256": "94fcf15200d83f31c94654bd8b2cc413849493c9f888878e080e23b308910552",
+  "inputs": {
+    "config/alpha158_rolling_v1.json": {
+      "bytes": 3213,
+      "sha256": "b5463788d844e5583ab35fb3d883dc92cc76053a5b31d4396a85d40911fbb0e1"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold1_lightgbm/daily_evaluation.parquet": {
+      "bytes": 28440,
+      "sha256": "cfdbb3bb02b4a6d24f9d6140f5ed935d69d4d0fabd4c6c09846902d2f6932585"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold1_lightgbm/result.json": {
+      "bytes": 6519,
+      "sha256": "2b5652b497ef03eda408c339ad6f2bb405b72ea084d85a719242a9a8384d7311"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold1_ridge/daily_evaluation.parquet": {
+      "bytes": 27862,
+      "sha256": "506b8ab93f59eea5ed144e67c6305eea5ce0a53390b7bc4ccc816866f53a2871"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold1_ridge/result.json": {
+      "bytes": 6329,
+      "sha256": "cb19efe8a710026a9c46805cf00dd05669dcafb93e278a4cfaed6345b9ace3ca"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold2_lightgbm/daily_evaluation.parquet": {
+      "bytes": 27795,
+      "sha256": "fecdba0aeccd0b7188ecb4e4da82d325766ab18a439e391d0368ad322a30cf00"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold2_lightgbm/result.json": {
+      "bytes": 6520,
+      "sha256": "46cb7ac2bb72bc5716965f2581da48aa2b8d2cab5d3e6b5db686f250d7253c06"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold2_ridge/daily_evaluation.parquet": {
+      "bytes": 27344,
+      "sha256": "830b272745a18d4d79b73180fe26f4e2e1fa6bb9362922506e17c5f7eb0a6ae9"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold2_ridge/result.json": {
+      "bytes": 6329,
+      "sha256": "c34a0f0c7579a727aed33770a473a2c32d460ab98a6ea21fe03c1cfe0c1dac8c"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold3_lightgbm/daily_evaluation.parquet": {
+      "bytes": 27827,
+      "sha256": "c43377f01420508d228d56acca65fc349969082feb0c83af1fa3b4964dee234a"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold3_lightgbm/daily_observed_2026.parquet": {
+      "bytes": 22551,
+      "sha256": "2f757a559ccfa3d2539f3d4b8ae1c78198272f98df2d89695973eb5e7c5f1269"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold3_lightgbm/result.json": {
+      "bytes": 7202,
+      "sha256": "6697fc0e0ddd80ff98d39953d487a7de943e624cd4be0c5ea36d0b2d7192545f"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold3_ridge/daily_evaluation.parquet": {
+      "bytes": 27227,
+      "sha256": "3785514692da42a0675a6379a42bbce3b00c0f35faf2cf0db710064af9c4f161"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold3_ridge/daily_observed_2026.parquet": {
+      "bytes": 22215,
+      "sha256": "e5dfaf31de256e908928299a13d540ea29a0cef8008cbc2859b3648b18dc4842"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/fits/fold3_ridge/result.json": {
+      "bytes": 7012,
+      "sha256": "d5cc80753075673925c52862cb948d1a3bf26cf150954ab9cd600e4b745e40ad"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata.json": {
+      "bytes": 37502,
+      "sha256": "54faead287c889a3897f8045ab457b309f825bbf0378de8fd94cf4841bb85dc6"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0000.parquet": {
+      "bytes": 585615,
+      "sha256": "35138d0a6637f45464f2285ca283a0351c9f4d033187dca9047ca07a93012976"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0001.parquet": {
+      "bytes": 593487,
+      "sha256": "3e6a684e956317652a80fc1a821600a26652c6eae8be9b914977c6ce7e2b38c7"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0002.parquet": {
+      "bytes": 593360,
+      "sha256": "4a99e36b75806561d33e41e9b325ca904b291d6a4f5c7939a527f2f603433a7e"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0003.parquet": {
+      "bytes": 583610,
+      "sha256": "25cbd06e2f5bffb6222b7ea4c1d31cba70ddfe38d584ebe0c9d23bf4431d762a"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0004.parquet": {
+      "bytes": 571081,
+      "sha256": "a3881a7c52574f651d8156e47d497fdf5ba3f74e184f3f25d4100347ce49dcbe"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0005.parquet": {
+      "bytes": 540932,
+      "sha256": "1986e807bd240f35cc3f7f76adc85eb79caca4f178841e65ed816bea89528761"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0006.parquet": {
+      "bytes": 558409,
+      "sha256": "c59fb5e61f5a88b95469ab5eba5a3348b71eec72c5023ef260f197453dc6bd63"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0007.parquet": {
+      "bytes": 567810,
+      "sha256": "27df44322304f0cfbe46e745c750d71072475a1af9861bc88d48023f5f37f4cb"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0008.parquet": {
+      "bytes": 580629,
+      "sha256": "16b8ecd017392f76e1244679f99f90b0195298e9af0bd59df21e0545e9b62efd"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0009.parquet": {
+      "bytes": 572438,
+      "sha256": "482b75e8436dd1928e826d09c5db4346e82e0300f174388df15e84d64cf233f7"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0010.parquet": {
+      "bytes": 591490,
+      "sha256": "0e0e4b7c1cff0fadc0a152b43a4fee09bde28d6691fb94ac65dc5ba97a53f756"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0011.parquet": {
+      "bytes": 588245,
+      "sha256": "1e45e87dde32648b8befe9f6826036edc77c24008f7aad05a7ac50b3b918274e"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0012.parquet": {
+      "bytes": 597362,
+      "sha256": "ccb11c3308612727a5d60320a94eaf403003e2eddcc2cd689cfc2ae13248a9ca"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0013.parquet": {
+      "bytes": 588931,
+      "sha256": "8d50001db7d59d31cfa94de9ff91e419b7883c8cef4c44b2390626c52cad5c7d"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0014.parquet": {
+      "bytes": 521577,
+      "sha256": "a6d0de368d04ac85ac1f52ab431eceffd307ec88a2cb2f261121f10e8f0cb727"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0015.parquet": {
+      "bytes": 392381,
+      "sha256": "16dfc420fb3a58312f90760442967e19363d9cc835a0170e5be3e12e3a66c0d1"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0016.parquet": {
+      "bytes": 434489,
+      "sha256": "3264ff72118653e86b4d32e6cf38e4f69eb00bf336b257372c02978091c347b4"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0017.parquet": {
+      "bytes": 378426,
+      "sha256": "467d35b0a78b609dcc0a654c3a7b83346f48b9f42995a3a1b559d3e8e3c9b1f1"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0018.parquet": {
+      "bytes": 614062,
+      "sha256": "2c120a6476617d3260a1b77dc5012901b9b63afa3b2fce4be18c5873f9094d97"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0019.parquet": {
+      "bytes": 631600,
+      "sha256": "6d053b2d4b50ec1011a5138406237fa63f1242e02f52ece5012df47ab0fc981f"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0020.parquet": {
+      "bytes": 584268,
+      "sha256": "edda2e3d169e95f105c6ef735531f047a089f81e8be06172f91f7456b8b8ac58"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0021.parquet": {
+      "bytes": 602766,
+      "sha256": "9a79161ce0a5eb334c2bbd592dc6557ae1e1e483ff4e30c7cf8884fe7ce14d3d"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0022.parquet": {
+      "bytes": 608712,
+      "sha256": "3be5e4789adf0e52ca56dbca48acb24ee15f7a069ce3128f7c452847f517d047"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0023.parquet": {
+      "bytes": 628062,
+      "sha256": "d4c2f1680a64acc7a5f213ba36578892fac100be873f6d251a6d82ad82a0aeb8"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0024.parquet": {
+      "bytes": 603793,
+      "sha256": "e9d2043188c0d6dde24bbf06576da9f402a71faaa574d6b6f7a92116dbc9b554"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0025.parquet": {
+      "bytes": 615358,
+      "sha256": "6447f75ccfe5a158c5e4d8a075020b68711844e9e888ec25b46f40a65d83018b"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0026.parquet": {
+      "bytes": 614478,
+      "sha256": "dc6ce380d8d24142813e1196d5221f79d844138c8c92371e4e720eace6a59d07"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0027.parquet": {
+      "bytes": 609718,
+      "sha256": "3f53504a07a415c32aa280247bff2b1de1e19995bb63ddaa17a520eef3ada1b8"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0028.parquet": {
+      "bytes": 596351,
+      "sha256": "ca18f8dd7080225529482bbbd4f928d7d05ffd95f4cc056e7eebf6d1690f0186"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0029.parquet": {
+      "bytes": 605928,
+      "sha256": "5f9d823101371e4a3a54b41f731612b93777034bc999e161d0704f179853b05c"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0030.parquet": {
+      "bytes": 623277,
+      "sha256": "b2e90ea33bdea58a669282bbc63aa6854f239c326b02f41eb7be9b7af93118cf"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0031.parquet": {
+      "bytes": 575904,
+      "sha256": "6f42db150122edcfb9c661b46336dca890d6c427acff4294130ddab1fc976134"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0032.parquet": {
+      "bytes": 608310,
+      "sha256": "405065a01bf4c04fa317413c9e2b1e54cbf7ef9bcbd44467a1444805af5a65c7"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0033.parquet": {
+      "bytes": 529442,
+      "sha256": "18ebb246f799f9ba423d055e9fb06814baafa8532049834216cc4a9abed32266"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0034.parquet": {
+      "bytes": 603869,
+      "sha256": "67b1731b766eeab0189986e6aeabeacffdfed7846f5017cb4f2a4d749fb0e1e4"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0035.parquet": {
+      "bytes": 621697,
+      "sha256": "32d10cdc4d829cdb82fc004d9ca664ef06c371d3ba29f85f4bc6022be0694e9b"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0036.parquet": {
+      "bytes": 606377,
+      "sha256": "e39faedb04adecde1cdc2ebba9c932235abefebc4ee0a7140cc181c8fb1154f7"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0037.parquet": {
+      "bytes": 592118,
+      "sha256": "467416d481bed6aa4d97aa1806aa94c667c64e6b441d8e7904a0efa832d294a9"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0038.parquet": {
+      "bytes": 610939,
+      "sha256": "5cc75451a7f8dd09f193b8fa1fb95d8a8dbae1d3d595c019311afa8dd7dcc6cb"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0039.parquet": {
+      "bytes": 579870,
+      "sha256": "3632d25de4a86f1e33fd8cf65c28f749623773a8c96785773c10e687a17a76f2"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0040.parquet": {
+      "bytes": 647689,
+      "sha256": "01fb655d2561b0c095630300e35b2c41c63c31f5ba81197ca850ed6fc70b4a1a"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0041.parquet": {
+      "bytes": 623355,
+      "sha256": "a3b7170097676cc6b09c6445353ea279747758abb99cbed81c39cefabc099768"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0042.parquet": {
+      "bytes": 662028,
+      "sha256": "1b199368c03f280059f7d5c7b82394ad7cedad3de197718a1bcccd7a8f62df0a"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0043.parquet": {
+      "bytes": 678607,
+      "sha256": "e2a24381a6f1a000dc9c7cad4184598335865dbf66c2713a086262c7fdb86434"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0044.parquet": {
+      "bytes": 679019,
+      "sha256": "bad696e1ef7595dd3bd4edf5d40ac3143e76ff7b560dfd03f22b0100c2f8f769"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0045.parquet": {
+      "bytes": 686621,
+      "sha256": "f1fccb69e081d079657cca3fb106a322b96a97f0a70ab1f48a6a7e72d9b0479f"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0046.parquet": {
+      "bytes": 675723,
+      "sha256": "2013f96d6aa28e1039377fce441e9553f5b6b1ec191e771acbfb0f266bb70007"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0047.parquet": {
+      "bytes": 650237,
+      "sha256": "e0e1368feb10482e1789f5cd9994ed49eb4b920d19597ef084e8bebde3b5f25c"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0048.parquet": {
+      "bytes": 595993,
+      "sha256": "e5612fdb8a0bac5a464108d9488514c50b9845335b9ce5c3a6feb20560d63f57"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0049.parquet": {
+      "bytes": 603512,
+      "sha256": "4265c1b817558b5f13892a5544b29280651fa08ed64d873bcd9c679bdbba92c4"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0050.parquet": {
+      "bytes": 608144,
+      "sha256": "8e9fe4e93786fda39b3a98a624f210fc82e11b4fe98e2ec1af37def04890ee87"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0051.parquet": {
+      "bytes": 620379,
+      "sha256": "ef860754c51e1d57ea7fc91016c149bdf62ec9cdb121cdf64f229e888ac0fc41"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0052.parquet": {
+      "bytes": 582970,
+      "sha256": "ede7d4a34be139684cd63d81d77a71bd8f4b80ab030a38853f18174521ddcd78"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0053.parquet": {
+      "bytes": 641362,
+      "sha256": "8c4cd70e5ea5b90667fc81d50581982965cfa75d6f4f7c54ea0a35fc517142ec"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0054.parquet": {
+      "bytes": 596117,
+      "sha256": "63f1e83cb25297c1c866ec76713502a4658a69e49966fb216eb7302f16020b10"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0055.parquet": {
+      "bytes": 602468,
+      "sha256": "f4173eaab59c65c857bb3c35142b618b49282039880d829f72b0d86dab1d07b0"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0056.parquet": {
+      "bytes": 629263,
+      "sha256": "add44192e246a846d24bd095c1e6161eb718fb0d675dfe51408910a3ec56f409"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0057.parquet": {
+      "bytes": 623612,
+      "sha256": "650a78f935adae47f79aad57458468c905e5daf2247fbd2873b4f585bc9ddad4"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0058.parquet": {
+      "bytes": 607902,
+      "sha256": "51f3616d26b4851391a37c9123cf5f21809a3db94dabc95c8e7b74efd2f8cabc"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0059.parquet": {
+      "bytes": 595949,
+      "sha256": "5f3bbef3b3652d52b6e446f02ce42a06600e385b09f7d2080e11db253ba76ee8"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0060.parquet": {
+      "bytes": 626376,
+      "sha256": "df52cc40ad0273f681b60d11d6c56dbc922b8ae91ff4f7e1ba51d5ce2eec5c75"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0061.parquet": {
+      "bytes": 657501,
+      "sha256": "93c25b47fc89ef74e6be8d0c20a8c2a55bdb868c27fe4d025d7a623fda9e6de0"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0062.parquet": {
+      "bytes": 647436,
+      "sha256": "f2056ac9357bc349a98ba3a67328f018e55fe8689f1d0993cbe42b9a9afb0cd5"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0063.parquet": {
+      "bytes": 672045,
+      "sha256": "5969f9a81f0165ea5f993c0bc1c207a1d4cbb2845c224697901e0f9ef9b0234b"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0064.parquet": {
+      "bytes": 680140,
+      "sha256": "847fe75ec4e9f30b040d8ce327f1c9f063ec51e3c8ec4125120a6b2cae173579"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0065.parquet": {
+      "bytes": 668420,
+      "sha256": "7c8eda8ad68d188dc98fc025edce4625fc750007365ec3d363748f8933c7a9a3"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0066.parquet": {
+      "bytes": 686774,
+      "sha256": "e03f70e30a1317e1e0e5c5b8392a4cd96732dea3480471de4a4bb6756c75cf72"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0067.parquet": {
+      "bytes": 689436,
+      "sha256": "ee7feb109858cbe506dbed01b7aab7029283c5d2ff6c0c659319ad3e435ce0e4"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0068.parquet": {
+      "bytes": 688378,
+      "sha256": "39245c8df7773e87c79856b7a65d341b8dcbf924baafe24433e2acfa1ca6cc1e"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0069.parquet": {
+      "bytes": 683967,
+      "sha256": "ee4a003e9122a04d74c1f6e1dd107a62d31a36d5ebdba1f9680d21b28767e951"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0070.parquet": {
+      "bytes": 692202,
+      "sha256": "994d5c04dbd9200d29633e50d49270d1418ff53f78731242d347ec37bce01539"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0071.parquet": {
+      "bytes": 695398,
+      "sha256": "6b77187acd88e62134e7122490dd3cf58044876157a8ff6ebcb01bb825d4925c"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0072.parquet": {
+      "bytes": 689583,
+      "sha256": "7df68416484b3fb4d811dd99d76461590bea87b06a53c7ba692c7d868c0f83ea"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0073.parquet": {
+      "bytes": 677429,
+      "sha256": "9c9aa714b2d3f77b42a5e57ceadd88f810cbbc43a51c3ee51c136f8e102f4ac2"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0074.parquet": {
+      "bytes": 640067,
+      "sha256": "25c79cfd80230c81267898db50343be60d614972eaa69b07295a5e08e06d754f"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0075.parquet": {
+      "bytes": 618211,
+      "sha256": "f13af62492047b0129cccc46ba95914708f584ed9b256528ff3974059c5449d9"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0076.parquet": {
+      "bytes": 609160,
+      "sha256": "afa7dca5c3a5f78226aa8b7a9910d4274a7d25e8cbf2d69eb9aefd23ca669348"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0077.parquet": {
+      "bytes": 588636,
+      "sha256": "2c7f6013bc64cacd4318adfa1a222d0c2e85a2d1eb3a40dba6708e60177a6aeb"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0078.parquet": {
+      "bytes": 572452,
+      "sha256": "6457442af1a41d2f2fd892f73d994344ec798206b922d7f23c2a604f54d6a2f3"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0079.parquet": {
+      "bytes": 561090,
+      "sha256": "5b947c94117c77c66462036058aa4b0deeb469cd340c5ea8d59ad1573b483e80"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0080.parquet": {
+      "bytes": 552885,
+      "sha256": "9c42456673c430f069b121fc6f0beef29c0b70e8eed45a61eada39511e8bb6f5"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0081.parquet": {
+      "bytes": 536358,
+      "sha256": "54595e600824bd61cb326bbbcd6ef03c80e0cd88c176a360f4f04faf3d85d60f"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0082.parquet": {
+      "bytes": 524865,
+      "sha256": "bfc3c3e9052b821c9287ef3d47682b4d483a84cc56ebffa4d8fe42dca45bd1fe"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0083.parquet": {
+      "bytes": 500225,
+      "sha256": "31be70f515d09f31603e7c9e1f54b87645365db465fdc489a980584f79563f7b"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0084.parquet": {
+      "bytes": 477249,
+      "sha256": "b04f1d9ad4a3acc60cf2a2d35a75819772833b9cd07d08b97c0ff2e3f7ac298e"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0085.parquet": {
+      "bytes": 492450,
+      "sha256": "48b46860e6b2dd6743b353251658b7256e8f0b08bcc47e613e346e0a00689e90"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0086.parquet": {
+      "bytes": 474757,
+      "sha256": "79ce16914683d6f56e8b5ede7eb783c74219fb1f6874b000167775f2c26523f2"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0087.parquet": {
+      "bytes": 442690,
+      "sha256": "13df9cebf5fb60cb3aba58b9e2991deee924a2f7e9847977d17b7e411be1827d"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0088.parquet": {
+      "bytes": 445012,
+      "sha256": "be67a310668e6130372ed683a60330fc8d9b9df93486c2076d467aaf99d41aba"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0089.parquet": {
+      "bytes": 434604,
+      "sha256": "2aaaebf9103359313fc76eaa7cfe26a0c0a4320556ad5894920dabb3ca06fff8"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0090.parquet": {
+      "bytes": 406170,
+      "sha256": "7958b4567ed2054e770944354a62d96e94333c4dc026acdba7071ae356eda8b2"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0091.parquet": {
+      "bytes": 366713,
+      "sha256": "b84defce8b7ffb4efeb18e98d5ae885a65a600c1fe8c4602ddd6d0da98c0d428"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0092.parquet": {
+      "bytes": 322150,
+      "sha256": "ccada3cef95da80f5acb39572850d1d9460db044ccdcc55645deaa5c89e6da79"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0093.parquet": {
+      "bytes": 298344,
+      "sha256": "8a21a7cac1802254a9cc0a4b7729d58fe90a1b604b9fedc9b43e6eba55527581"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0094.parquet": {
+      "bytes": 301831,
+      "sha256": "4de3ed7491c1cdb0195ec0d8bc74c6f4d6c8170828ebddabf3823ec2ad654d4e"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0095.parquet": {
+      "bytes": 576773,
+      "sha256": "ddb794e243bc676dfc3f06cc5d21f69236f71238a5ee7a7551c336f30c7da8ab"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0096.parquet": {
+      "bytes": 563561,
+      "sha256": "97f88856ae04b636f7a7b2cdc1c700b2531ab36ba2fa22eae150ec82ecbfd57b"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0097.parquet": {
+      "bytes": 559479,
+      "sha256": "d3bd379c1c2c715828e25909178d75f352f14d708efd2c0d7d7c254a0b5575ee"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0098.parquet": {
+      "bytes": 590060,
+      "sha256": "ca4c20835555e516cdab1de4bf76f975bd6e999098688fc0eb3d123ddd3fec91"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0099.parquet": {
+      "bytes": 572969,
+      "sha256": "f1e514fd4881f7f409051b43f216b1fd9a48cc257692a7ab9a6e30d227507fd1"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0100.parquet": {
+      "bytes": 571705,
+      "sha256": "05741382c76027e9d7e195034970e1745656c15a7143649959e5c70e9c56c2e3"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0101.parquet": {
+      "bytes": 553876,
+      "sha256": "1812592bc9cea740e2b69fa2f39607955ffab30671726846c1dac39a5720d0f2"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0102.parquet": {
+      "bytes": 549010,
+      "sha256": "c88e26161ba4c4ce9ab2e485f5ccbe7993c3bbdf07017bb44ce533fbe7b69205"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0103.parquet": {
+      "bytes": 584222,
+      "sha256": "3b27a69687ff70d95231c6fa01fe6dc7dcb6cc50b13423f257ba018db68abe09"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0104.parquet": {
+      "bytes": 597790,
+      "sha256": "4b4c0725dfebb01461f5b258f09570059ed49d517968a709e16abae1f00314d4"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0105.parquet": {
+      "bytes": 590913,
+      "sha256": "3f7a88817c1baf542603ce380bb9d39e783a70451d7450552a969c0852a9aa70"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0106.parquet": {
+      "bytes": 606009,
+      "sha256": "303157a12e4e0e6e411de43bd917ccf6074fa51cbe049531e0516e6942af923c"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0107.parquet": {
+      "bytes": 605383,
+      "sha256": "ec6638909f910f131a954e4901d55e2a6784897ac149416a1658a6b4939c424d"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0108.parquet": {
+      "bytes": 597826,
+      "sha256": "4efc05c2b324cdc2e391a009f7566c97680a8c9caff2b558e4a1f9484d3d7693"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0109.parquet": {
+      "bytes": 589109,
+      "sha256": "b9f32ef800a399a7ccda6376dcd964dc7c010152d3fda30476fb120f13a7b880"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0110.parquet": {
+      "bytes": 593494,
+      "sha256": "8b586eed8b1649e81b6556da714932f202703a8a8ce9ebafced9f5025053bbd5"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0111.parquet": {
+      "bytes": 565632,
+      "sha256": "859f41234261035643f67bff2214c5a666ed002630f1e450fd32605f59becdd0"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0112.parquet": {
+      "bytes": 570691,
+      "sha256": "1e46b1b95bcf07c730006a6810524ef45f8d2d3439bb0250cbe83dc13781fb7d"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0113.parquet": {
+      "bytes": 565634,
+      "sha256": "cc036acf40f55e2cd4cb1f4b8d022e74643c5e5fbb50454095a18427be5a3399"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0114.parquet": {
+      "bytes": 620612,
+      "sha256": "e9696ee3142719df237a46b2ed27367149b9efd25ebda66142db9c863116b872"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0115.parquet": {
+      "bytes": 575613,
+      "sha256": "a938dc25c09972064979f4fadc6c37b2ee6fa8467e25c625851af90e6a9f307a"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0116.parquet": {
+      "bytes": 578618,
+      "sha256": "034436360ca36e41d94a7e112114a851360933903173c94d9ba6b8ca8b16f16b"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0117.parquet": {
+      "bytes": 597961,
+      "sha256": "57ab3c8a7006c7a1d9614beda9b10793133b68a0f6a275188d8294c080b4712a"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0118.parquet": {
+      "bytes": 561527,
+      "sha256": "c5c3689ace1a8607d0cee2c6fd914cdd9d7b157c19b676cb056bc63535c4854b"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0119.parquet": {
+      "bytes": 555421,
+      "sha256": "b3a7b7373dab513b250b03d4eb3a8b5d20d6175434668659dd3d19522af546da"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0120.parquet": {
+      "bytes": 589625,
+      "sha256": "440c0e7eb039bf80ab1a1174f8b63a8f889ee14add7d482c7da92f3f712f8c4f"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0121.parquet": {
+      "bytes": 538670,
+      "sha256": "880b0c7c072fc89687f5d77239cf192415ce0e1920680b78b1d004e27d967de3"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0122.parquet": {
+      "bytes": 573272,
+      "sha256": "fc05cc2cc8a149bb4b4c901758222c1f3558fa057200916640ce97cf0c4898bd"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0123.parquet": {
+      "bytes": 560372,
+      "sha256": "310798404ede3b48292f2d0b12ae64fac12399f858be89eef7372b0b4334bf7f"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0124.parquet": {
+      "bytes": 579386,
+      "sha256": "1a7f93767ef2e190d8b5265b3b86688abf4de35626a03d00f6b00bd1b2d62912"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0125.parquet": {
+      "bytes": 582873,
+      "sha256": "c26a79a33ad0613b451e8035a95a8f3dcd0ea1e84f96cd6c29e270faaf7766d9"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0126.parquet": {
+      "bytes": 583404,
+      "sha256": "897e8f3fd4c1a2a00eaac9b8f18f4b8b79af531a8fedce68bed8bf959bbfae5f"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0127.parquet": {
+      "bytes": 577239,
+      "sha256": "94388be614c14e7fb1df16de8ca3cca0117c312c197fff2f7e8508d6060be41e"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0128.parquet": {
+      "bytes": 654289,
+      "sha256": "a9f2cb5eaab0f9bccd6b2937cf9b3b25d30584823c176dd53f0597be322f4c08"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0129.parquet": {
+      "bytes": 566348,
+      "sha256": "d24eab2be9697bb07aae75c257462a43b63148d2649fae4fa9587f7e808d2a61"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0130.parquet": {
+      "bytes": 601855,
+      "sha256": "7a442482932e35cb2b90dbc37013fc6484e700275d184bb5c9e8e064f737c632"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0131.parquet": {
+      "bytes": 552525,
+      "sha256": "49e0ec0448ad460cb434fecedbd9ddaf5e705b1f7b5f526c69d23153724ae100"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0132.parquet": {
+      "bytes": 576585,
+      "sha256": "5b0bc719a5ae909104fde1fe87da2ec292cad5641f99aa3ce73c5ba016a1a9cd"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0133.parquet": {
+      "bytes": 567815,
+      "sha256": "47153275aaa9ed9bbc9cb02a76125191beb6e161e5e44fa958852c8b38f2d7ef"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0134.parquet": {
+      "bytes": 540658,
+      "sha256": "fead023d35ab3438168073b95d6741bf3fd6d30efaeb1b5f2098873fe4b3864e"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0135.parquet": {
+      "bytes": 591434,
+      "sha256": "928f3d82a3f4f16f5ab5cdd23b6e631456db6ef1b76d33465325e6449359fdd2"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0136.parquet": {
+      "bytes": 598210,
+      "sha256": "922891335ce75914be6b46f0b9993c9a0eeb8d60e13dd1d2eac8b674d82153bd"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0137.parquet": {
+      "bytes": 549454,
+      "sha256": "fc166242e5a82c2d95df0ca3c3a5e0b6aaa5ba2d67d03ab4ae941ba51b0cb114"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0138.parquet": {
+      "bytes": 560178,
+      "sha256": "c2161e5af06a332f6952ceb0b01a2361365fc219ca3a2662cd9f4147d428c5e1"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0139.parquet": {
+      "bytes": 656581,
+      "sha256": "713628cae9f5f1c52bc496261af0945bc51b1868aa64c448cb4506c373c16f5d"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0140.parquet": {
+      "bytes": 668022,
+      "sha256": "d5d8d9c8c966d776190df708e30e2a5fad4e098e6204f7f8584e00d2a1798c41"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0141.parquet": {
+      "bytes": 677980,
+      "sha256": "95552ae12a8a1f9c4a6ba3f425b3de9e2a8887bdbbd50aec5c52828260959e3d"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0142.parquet": {
+      "bytes": 683257,
+      "sha256": "f204213b96d5d3ca653cf924a702eb6797f6164c227525fbe9ae076e77d27923"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0143.parquet": {
+      "bytes": 657796,
+      "sha256": "d4a29803ab67651baddc8894dac7371b555a9bc20c4ba93c745d8bbacbfcbf02"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0144.parquet": {
+      "bytes": 669333,
+      "sha256": "d3c654965420b7e9374be02ac1b973ba74739c76591534613ea0d48ab159605e"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0145.parquet": {
+      "bytes": 676265,
+      "sha256": "43e3ce78c08ce63ade76d0d851c623b27bc7da960913594c3815f682743c2fad"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0146.parquet": {
+      "bytes": 668736,
+      "sha256": "4670c24379b24a6a2d9bdd7fcae274a54a05b7170489c5aee46305f2e422a50a"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0147.parquet": {
+      "bytes": 574845,
+      "sha256": "2e50f224b039567c8f4f022c3b2ef23767f9c474147b11469232c3ef094cff8c"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0148.parquet": {
+      "bytes": 584436,
+      "sha256": "cd225b095a918f7d68968133119a0eff10033b4271e68a1f17c9289aa57b604c"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0149.parquet": {
+      "bytes": 578324,
+      "sha256": "07592a79ddcaa6ab33571aed2352eb7eb5dea0d3377ca4b1a6ac0df8d6f3770e"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0150.parquet": {
+      "bytes": 591398,
+      "sha256": "8d51e62266265ed1c1dae764cabb94e26186a78514344db4001de5e0b92a265f"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0151.parquet": {
+      "bytes": 635782,
+      "sha256": "b512c09b672260a69fcc1ef210d4b8c8907770ea961c9a729905eb58b59bc1c2"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0152.parquet": {
+      "bytes": 581366,
+      "sha256": "0ed049e887b8f3c246f97568dc281d69370cf795757b70686f8d7aca2b78cc2e"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0153.parquet": {
+      "bytes": 585274,
+      "sha256": "48d82162a19112be15d239f5dbf5f4dcaf7d8a37f65973ae34ce2da490904278"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0154.parquet": {
+      "bytes": 550698,
+      "sha256": "b8f40dbdcd8413f745c1b7e90abf3e19c4970a416eb8126ab8aefd32eca29b64"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0155.parquet": {
+      "bytes": 582488,
+      "sha256": "f4cf43e742ae6c403678cc9a3bad64221fa3e54f0a3c883de89a3c7a9279f974"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0156.parquet": {
+      "bytes": 562512,
+      "sha256": "0fbf49345e8023f258bb78d8c281e0afaca9d350e0c946854ce3fdab5e67a67a"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0157.parquet": {
+      "bytes": 531004,
+      "sha256": "0e4c018e2c1aebc924dd35e1e45ed21e0da69a09f9763f44c95001333021ae63"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0158.parquet": {
+      "bytes": 544445,
+      "sha256": "d723383e25e0bf8975b05ba5991a4a588424a2da73583e31bc1a8a4d30457298"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0159.parquet": {
+      "bytes": 562832,
+      "sha256": "52f953b5cd51501b8dc783aacd67f7cfa7935c898554a4eb8803dbb2a7f85c08"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0160.parquet": {
+      "bytes": 539949,
+      "sha256": "b189b1838cb4628c4f94c373b45991cbe5b4cd3262d627816bb75df24866b44f"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0161.parquet": {
+      "bytes": 537197,
+      "sha256": "a923452e3148b00cd6fd1ab4a9271eed7a3aa4fd4aa10bc751403e44bc046187"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0162.parquet": {
+      "bytes": 456260,
+      "sha256": "b4b7a8dff4cfbb54898b5b77616fa91e49af638edf4a73a967887d11e296f8a7"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0163.parquet": {
+      "bytes": 518792,
+      "sha256": "cceb34d18f613499c10b39bfd241ae66ee289bb0d387244be221222c46b69b78"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0164.parquet": {
+      "bytes": 521950,
+      "sha256": "7384bf510c9c0f2d81cb16ff30d76d659e356ac27fdf7b3bb105305bb2dfe44e"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0165.parquet": {
+      "bytes": 509803,
+      "sha256": "c12c49aa7f79a1205e9eb65c66ef846539e9c885612768450986244444e6eec1"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0166.parquet": {
+      "bytes": 492091,
+      "sha256": "06f2cb5521d4c36dcdd7936f224105576762bbf299859137a19a4caabeba1cd8"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0167.parquet": {
+      "bytes": 525002,
+      "sha256": "f667bd8f5477160de5a345a37c52e32a9fd1bf4d0860cb1f5772773892f2ebae"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0168.parquet": {
+      "bytes": 402421,
+      "sha256": "7ee87d07b75337b855f224500a8a718738773f762d5f2fe006e9b799d74cf115"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0169.parquet": {
+      "bytes": 310865,
+      "sha256": "286b1c57c10242ba1136c82d15a0650effcc690ec1924c477aa6cae6ff69abc2"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/metadata/0170.parquet": {
+      "bytes": 69268,
+      "sha256": "0b3bee8f96cfbffda439f9fb6b2efdd9f3b6504e602923fcdc6b51945a1b0700"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/plan.json": {
+      "bytes": 97613,
+      "sha256": "f4d30ab40759562e01b139daed5d1a0b128df63fb52fd57810f6a650a04e43ef"
+    },
+    "data/products/alpha158_rolling/alpha158_rolling_20260911/report.json": {
+      "bytes": 41595,
+      "sha256": "808af52890c63d8d5fa5a6510ced744937808135664dd1e7c7d8dbfcec4f89c4"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0000/0001/usable_features.parquet": {
+      "bytes": 35197410,
+      "sha256": "97689e83298c6e9d78235cbcc2f70f9deee0fee500fc303ed64a31d68f2b8a4b"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0001/0001/usable_features.parquet": {
+      "bytes": 36436220,
+      "sha256": "996c442879ea661912d8c26edb6c8665e57ad1565b5823c68651904bb979d8db"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0002/0001/usable_features.parquet": {
+      "bytes": 36728148,
+      "sha256": "9f36a773016d5d45db4f6fffa567483299364e6af0caa6d638d853531c855006"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0003/0001/usable_features.parquet": {
+      "bytes": 36497983,
+      "sha256": "43f7538cdb57b94b5a22c4085433c93a083f5cd5a3ce7f1c11942c133fc3bf05"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0004/0001/usable_features.parquet": {
+      "bytes": 36611713,
+      "sha256": "97750a393291202e488c134bcedec0ba5db1aa730fc9809ed4454ca7df2c6972"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0005/0001/usable_features.parquet": {
+      "bytes": 32710806,
+      "sha256": "f38ceaa78f04d96bbba16b47da9dbb1258f0cee16abc9c41256ae6882e2eebd6"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0006/0001/usable_features.parquet": {
+      "bytes": 34564539,
+      "sha256": "ae807bff4f64d503d343cb2c3dc5294ca411007bb8b8787478213f2d88341b2a"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0007/0001/usable_features.parquet": {
+      "bytes": 34855010,
+      "sha256": "0cdace63806244bbc5f92731b7f87cf4462bbf750f00ee405546fa91a01095ca"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0008/0001/usable_features.parquet": {
+      "bytes": 36805007,
+      "sha256": "e19d8b152993405e678fe1a933871f504f9b85b5976418c9c4a7cb6302774555"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0009/0001/usable_features.parquet": {
+      "bytes": 34841056,
+      "sha256": "6fbcdc0866ad90e9252360fd8cb042932808f6985fbda93939d2a829f842a3e8"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0010/0001/usable_features.parquet": {
+      "bytes": 36371319,
+      "sha256": "26fc909bcdf63910b4ad07db78c1ceecadf673f4389297d40bbb17d9aae8e293"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0011/0001/usable_features.parquet": {
+      "bytes": 36947128,
+      "sha256": "172c1dc0b2a22bd7cbbb28e8fe11ee486ef60d3dd860db26f46e161b867eda31"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0012/0001/usable_features.parquet": {
+      "bytes": 36264663,
+      "sha256": "a5dcc27f7ceeaace6fca7ebb1b5d6186047a7ba66c844a6bd8604aabf24eb518"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0013/0001/usable_features.parquet": {
+      "bytes": 35816987,
+      "sha256": "cfb733692786b7c4636217d3d9935bf527995cdff62d80abc13e40de5f066c7f"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0014/0001/usable_features.parquet": {
+      "bytes": 27345711,
+      "sha256": "bd7afeb5b2502ef8a688081545e2617ec86298832fb582cd372eb9bd63f45a13"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0015/0001/usable_features.parquet": {
+      "bytes": 16841624,
+      "sha256": "e6c5920c0bda625cb156f490391353988dc55d5505efc45b265d0dd9356b2238"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0016/0001/usable_features.parquet": {
+      "bytes": 20144871,
+      "sha256": "28f772dafcc4311a9be0151f4db8fe57a586df6c33ebed689f8b3254aa45ad87"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0017/0001/usable_features.parquet": {
+      "bytes": 16020234,
+      "sha256": "f6d53315899c1501af7f948b3fbd1018fdab28e87d98fe8d93d5d609ce491023"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0018/0001/usable_features.parquet": {
+      "bytes": 37300910,
+      "sha256": "69ab3fde79fc0606831316ca75777966b9344b6382de681c2a84f894a031a9b0"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0019/0001/usable_features.parquet": {
+      "bytes": 38389712,
+      "sha256": "fd7ddd2463ad69dedef50e294992c7ee6a54dddf230b96654236d775bec25d0c"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0020/0001/usable_features.parquet": {
+      "bytes": 35629360,
+      "sha256": "0b6298da0e6e13aedf110aa5b72196755736b7fce7604cf414e01192d2a520ad"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0021/0001/usable_features.parquet": {
+      "bytes": 36883795,
+      "sha256": "88288449cf92a7b0a8cd799ab7d2dff2b55a1236d6be607170228cdea7c03d30"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0022/0001/usable_features.parquet": {
+      "bytes": 37556228,
+      "sha256": "b8ff8dd44eb1bea27e269f200979821f11dafda03752119c0e6f7717aa3b5ae2"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0023/0001/usable_features.parquet": {
+      "bytes": 38004453,
+      "sha256": "6dd23ac2bed0ff863c2c622cba1fe5515b5b290fbd688c809a76d1a61ecc76c5"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0024/0001/usable_features.parquet": {
+      "bytes": 36785672,
+      "sha256": "cb6269d952b5a8ecbfca46a1d55fb41e5a8484a2f394223cb7e94c98a3f453b9"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0025/0001/usable_features.parquet": {
+      "bytes": 37050729,
+      "sha256": "ef4c4db45d2018f646930b2a1429bd512e7704db0786ce636200806190153033"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0026/0001/usable_features.parquet": {
+      "bytes": 37363376,
+      "sha256": "0e10758c7a40a5fd9668fb542252828a283b35e69e71c8af5bafbdac4e2eaebf"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0027/0001/usable_features.parquet": {
+      "bytes": 37266443,
+      "sha256": "f2ab9ff6f968d3c1a88c1cea1b2c33371a80e048709c1d3f8915b5ec844aee55"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0028/0001/usable_features.parquet": {
+      "bytes": 36916712,
+      "sha256": "bf174ffa34c2a79cdfa0751fbf7f00a1e6a46b4d3bca9c9d5bdf81cad0fe76dd"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0029/0001/usable_features.parquet": {
+      "bytes": 37246497,
+      "sha256": "4af1c10ff9c012363186e02d87b505cafc7c0cdd3cd3de61e295c3c87b84cf59"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0030/0001/usable_features.parquet": {
+      "bytes": 37567508,
+      "sha256": "ac1c01a8a3e413d40363bed65ecb530bc277066de702946a8dc4c1932d53a7cc"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0031/0001/usable_features.parquet": {
+      "bytes": 35186856,
+      "sha256": "dda1da3d0e3136ba3ed1d0ddf3a52c3c1d8170ba022dbfd3752084b6a8dec6db"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0032/0001/usable_features.parquet": {
+      "bytes": 36772586,
+      "sha256": "e24e56813ba38daca2b9bdfa6e4c259371b29bf7ddff6c4d6f73ed67213526c5"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0033/0001/usable_features.parquet": {
+      "bytes": 33285410,
+      "sha256": "28375e0eaadd1d3d186229a5f2caab161f9869687afcddd28bdb56bf8d17421b"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0034/0001/usable_features.parquet": {
+      "bytes": 37845005,
+      "sha256": "06981979c8f70167d74b7ee5693f54813bf7cc6c20423c71cdccdcc22bc05f6f"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0035/0001/usable_features.parquet": {
+      "bytes": 38173826,
+      "sha256": "b0946bb9a9d91c494b1d25ec768b0b13cb7329856a892d0bb07b9c23c4b03c81"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0036/0001/usable_features.parquet": {
+      "bytes": 36931642,
+      "sha256": "35e5b4e4a93ce2e0501086aa63d005e4ee8e09f8fa87f8a4aa81a62f50307a05"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0037/0001/usable_features.parquet": {
+      "bytes": 35947808,
+      "sha256": "df521521b685bfe81b8219688749894a422345f82ce2e04ff4983cc8113f5d2b"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0038/0001/usable_features.parquet": {
+      "bytes": 37527450,
+      "sha256": "b9cbbbd624c4ba448f1ac45453efe931412b05a520a3f07f2c74a4202c270610"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0039/0001/usable_features.parquet": {
+      "bytes": 35523876,
+      "sha256": "57a421c378fc63ae5c9c0ecc5e52957170cc859826c695fab6e4b63719286334"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0040/0001/usable_features.parquet": {
+      "bytes": 38165130,
+      "sha256": "b5b8b0d1dd4bfdcab7ecbde9f4f9aec9a33d92d61a11ea2adaa4dd4aa1d40fa8"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0041/0001/usable_features.parquet": {
+      "bytes": 36156263,
+      "sha256": "f796fe5d90f2802e9823eaaf231e3b4c7fb26105008361179b5a9508e2a412e1"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0042/0001/usable_features.parquet": {
+      "bytes": 39166023,
+      "sha256": "217150c7efaa683be66bb026bd8353a736b0180931f8bd231c3e7f5f5d45c1f5"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0043/0001/usable_features.parquet": {
+      "bytes": 39774101,
+      "sha256": "ac785d7676dcba5e506441e0179f362f89675e3aebd4a9b8ade99d199dc2b740"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0044/0001/usable_features.parquet": {
+      "bytes": 39787019,
+      "sha256": "790068e2a3edb1a040387e1e5e940432969dfebf6fccfe3de916abb4236d08ef"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0045/0001/usable_features.parquet": {
+      "bytes": 40085301,
+      "sha256": "628b2ec03e3a3984fce04ebe0439284f3f367a140ee702e747405a42fb4285c0"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0046/0001/usable_features.parquet": {
+      "bytes": 39731466,
+      "sha256": "0cefbae7f3106a9828a941a37cbe762b1e75b45343130fb0f1c2e434921ddc25"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0047/0001/usable_features.parquet": {
+      "bytes": 37126759,
+      "sha256": "b8ecf1c448a38d19f4cea32e1d252d66ea5edb386fabf2feaecd388e16359a85"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0048/0001/usable_features.parquet": {
+      "bytes": 32810275,
+      "sha256": "a36572d2ecb7814fbee3874e21669f7fe5a0072bcdf56a5dee0f3b18d9858df6"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0049/0001/usable_features.parquet": {
+      "bytes": 34376850,
+      "sha256": "bc2147285949d04b957c8055c48262e6c57dc026ef51fdc8686a87404cb45cd7"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0050/0001/usable_features.parquet": {
+      "bytes": 35999280,
+      "sha256": "31d0f7777d68f174024d9b819e70be2d17f077cce832763059aa131dea6cfff5"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0051/0001/usable_features.parquet": {
+      "bytes": 37468675,
+      "sha256": "f7c6158350bd2f8306005aef8e339cb64a874d857572b18135f8b1ae7b1e2785"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0052/0001/usable_features.parquet": {
+      "bytes": 35003164,
+      "sha256": "a6e5a558bffade84d7092fd08024aec5446cc33c919ad2143e0065f99ff34d9c"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0053/0001/usable_features.parquet": {
+      "bytes": 38051279,
+      "sha256": "438505ec709b91b44c308165716c46ea758d8c125fa5357739647a8932861b28"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0054/0001/usable_features.parquet": {
+      "bytes": 36722548,
+      "sha256": "dc310c5168b45b104ac2184f6df59b96cbc3a4d1940ca2fa6572c9aa769d4383"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0055/0001/usable_features.parquet": {
+      "bytes": 36521731,
+      "sha256": "7ae0cdac5ac4ac4fed78438521724ef8e0ff1c4b7fa2ba8b54787742fc7519bb"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0056/0001/usable_features.parquet": {
+      "bytes": 37622246,
+      "sha256": "d48dbd9b7ba629508223801062680602a76aa41188f4d6a523c9906d3c061dc6"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0057/0001/usable_features.parquet": {
+      "bytes": 38004987,
+      "sha256": "8f382d52b74189c6efe02a5b7043112c53c5f2fd96d37f531c2fbb896e1a9ca2"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0058/0001/usable_features.parquet": {
+      "bytes": 36504985,
+      "sha256": "6a29678ad36e45e57db1c484d95731e6e0bc8a342b05aa68e5e303fc2a74a4a0"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0059/0001/usable_features.parquet": {
+      "bytes": 35242896,
+      "sha256": "1dd5b5e6157265afacfc08df28bdadeca23473c4d0741cac905e4be14b9a6701"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0060/0001/usable_features.parquet": {
+      "bytes": 36482294,
+      "sha256": "50a5c1d6e590d09c55f5c3dd70133d8c3080f93c3c1445eec8b9f2e400bd39c4"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0061/0001/usable_features.parquet": {
+      "bytes": 38697365,
+      "sha256": "f1aba3d2a57cce9de4f49fd57e8cb3a514f9c6263859724871dde64c79343803"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0062/0001/usable_features.parquet": {
+      "bytes": 38190569,
+      "sha256": "22c1fd0335da4d3630c329015e987197ea9fb63fef118f74691b3c28cac7eb57"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0063/0001/usable_features.parquet": {
+      "bytes": 39616161,
+      "sha256": "4637b3acaaa70d69741a639667277acb30df1e580e7370068bdf64b509c36efb"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0064/0001/usable_features.parquet": {
+      "bytes": 39618867,
+      "sha256": "75803883dd7357ea9cb9777a5df17ca9273e5465ce354e60781d804c4c85eddb"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0065/0001/usable_features.parquet": {
+      "bytes": 39047734,
+      "sha256": "e4cc9d9c807c6164949ba038fd52f93f78b8ceff69fa39110df3f610fc20853d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0066/0001/usable_features.parquet": {
+      "bytes": 40001139,
+      "sha256": "da478e13afd1361ca26bcb90b22b28e12113f688e7ca6fa403b4e806c4300813"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0067/0001/usable_features.parquet": {
+      "bytes": 40232619,
+      "sha256": "ed6eddc780798aa93592fcb59ed2f068f59e794e5ec93b30f8504e31fd76ce62"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0068/0001/usable_features.parquet": {
+      "bytes": 40012712,
+      "sha256": "b8c7c2b3ccbedc5e715ff9fd7dc40f86e8e00ce91cd6cd4754047b74737eac1b"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0069/0001/usable_features.parquet": {
+      "bytes": 39856568,
+      "sha256": "2f6307283a5d1683fd493a1498e3042412aaf243d94c935cd93bfc366aed7a29"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0070/0001/usable_features.parquet": {
+      "bytes": 40186919,
+      "sha256": "8ae8c25176819adf6c228d48dcd307d7c605cd39b11c3a5640e921c91af151f5"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0071/0001/usable_features.parquet": {
+      "bytes": 40380558,
+      "sha256": "a9127c270974a6b3e3e9ae667a61eff86ee0ed27751976ce24a50616584be536"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0072/0001/usable_features.parquet": {
+      "bytes": 39960914,
+      "sha256": "be960b163914516d63d5cb14dc0dda5357d296d942934c93b35f39ccfcdfa889"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0073/0001/usable_features.parquet": {
+      "bytes": 38914577,
+      "sha256": "a12dd157f5207308abe8628b17493010c33aef3e0bdb0a790a3ab84b3ac8b102"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0074/0001/usable_features.parquet": {
+      "bytes": 35905537,
+      "sha256": "5277bc3eb9a4638a48b98d1629bbdafa6d78235027bae33e6111736797a393d1"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0075/0001/usable_features.parquet": {
+      "bytes": 34006749,
+      "sha256": "844ead3971b26b3a9b07229beddb3edaddef2ca1597b0becffb8179c7e52fbe4"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0076/0001/usable_features.parquet": {
+      "bytes": 33511733,
+      "sha256": "3f58d6e07878eda90e9f7781ac7f6215eef52c230606a595dfaa08642ae806de"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0077/0001/usable_features.parquet": {
+      "bytes": 31774000,
+      "sha256": "59101724d698137a51d1f55b44097b733cccc1cd82c64895adda064ef1fc37af"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0078/0001/usable_features.parquet": {
+      "bytes": 30701533,
+      "sha256": "66e020629eabd9f8ef9fe2bb4c04185035199b6c0fadd1232971aa0ebf1fb124"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0079/0001/usable_features.parquet": {
+      "bytes": 29790329,
+      "sha256": "6d9fbb5a9c3ecac6b281d14d864472b20a3f379d3df11a40aa99fbfbf0f08b52"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0080/0001/usable_features.parquet": {
+      "bytes": 29101742,
+      "sha256": "5010cbb480a611870cf21c70ea7a253dbb66e2f56e6c7ed6d6c7952f6c373b24"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0081/0001/usable_features.parquet": {
+      "bytes": 28042146,
+      "sha256": "5f75329e9b43b1f8f372c8111932a676dbabcb8520f6485d3df2d423642c6869"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0082/0001/usable_features.parquet": {
+      "bytes": 26973121,
+      "sha256": "3b8392797a07ea58447f4a752d06fd527bc0bcc764c90e4cbd54b425df5065a6"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0083/0001/usable_features.parquet": {
+      "bytes": 25115031,
+      "sha256": "edfbb0b31cf80607d76b7e24e7d013a5fc4146bee9baa4467e11684bb95d21ec"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0084/0001/usable_features.parquet": {
+      "bytes": 23354437,
+      "sha256": "6d474d14347a48c5ac5f3f13f6c8d3d43236dd846619fced0ef821a749bffb28"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0085/0001/usable_features.parquet": {
+      "bytes": 24482462,
+      "sha256": "137413d7fa23cd6fe5000a419862963e97d00269f351fd1d2242583f86e79fcf"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0086/0001/usable_features.parquet": {
+      "bytes": 23124475,
+      "sha256": "04ac26d66d5d306f4fb24dd4ee22dd4a49b3eaabb341f303d5c0fc6c1f9ee9fb"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0087/0001/usable_features.parquet": {
+      "bytes": 20717725,
+      "sha256": "220fc7ef12955704775b1d2d3507cb48ac2f0c9b137588b9ae0f1c70f498917e"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0088/0001/usable_features.parquet": {
+      "bytes": 20838173,
+      "sha256": "5e89113b27cd05a797d2cb52fe066342b9b4e30d7f175bd17cf97b07110f6b20"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0089/0001/usable_features.parquet": {
+      "bytes": 20075360,
+      "sha256": "563c01054278ee6acf84d90ff61af16974a69724c84ee4243bd25d98c339af54"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0090/0001/usable_features.parquet": {
+      "bytes": 17971224,
+      "sha256": "2837f9ecfbbced8bbecbc7c8a746a372e133c37a442a6ce6a7eaf3772fc3b381"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0091/0001/usable_features.parquet": {
+      "bytes": 14904236,
+      "sha256": "9ddca566de8155673884ef42f668924d2ed85929bc4639704386bbf33e56141c"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0092/0001/usable_features.parquet": {
+      "bytes": 11560624,
+      "sha256": "9885d328042655e8287c201257907f9aa80d6fd788e0b96b9383a638143c2190"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0093/0001/usable_features.parquet": {
+      "bytes": 9774879,
+      "sha256": "b2ac83a957078d8265ffbad0ef93a50b582fe32034fc18d858bcc37488e44ad9"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0094/0001/usable_features.parquet": {
+      "bytes": 10624293,
+      "sha256": "133751b32ed53e788aca54535904e385197e0d1c4464b627148520d177ab4630"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0095/0001/usable_features.parquet": {
+      "bytes": 36943100,
+      "sha256": "5b025920021d2d150c92f50a4b14c6e2f86cef0107e9677b9243ece4e62f804c"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0096/0001/usable_features.parquet": {
+      "bytes": 32780098,
+      "sha256": "1e5b7ec8d2ad54b049d31a97b9c3eb4f46f4de91b06e70cb2fed7191ed37f48c"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0097/0001/usable_features.parquet": {
+      "bytes": 34162236,
+      "sha256": "342329e8f98f202ef5be221108cfde88a6f81482fdcb868bba8ef94a89eceaf1"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0098/0001/usable_features.parquet": {
+      "bytes": 35735180,
+      "sha256": "7dea6860c94539129e5ee4947c67b2223bcf2b623cfecbf15f90ae0dc4462c79"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0099/0001/usable_features.parquet": {
+      "bytes": 35766110,
+      "sha256": "a18bd9b1532e8a02ae9cc0b1e93fc469e29ed9e41ca5cb026c3f132195d58107"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0100/0001/usable_features.parquet": {
+      "bytes": 35274389,
+      "sha256": "23f9b499c64f3a300368818d38b5e73af4858a20c413d38679f7f10a14b88593"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0101/0001/usable_features.parquet": {
+      "bytes": 33846008,
+      "sha256": "77473af74a03b1cbaf44ba5250c491563aa915a9ca4ecad5df1a04fc35ca0018"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0102/0001/usable_features.parquet": {
+      "bytes": 33836967,
+      "sha256": "b20907e60597e6bffbcbc23a22a0b8c18996978b7f0297f5ee46b55f36bd6d85"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0103/0001/usable_features.parquet": {
+      "bytes": 35830527,
+      "sha256": "de179554122fb793cf3cdd1535de9504b2c4446c06c7c19d0e73d8c6e41e2e4d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0104/0001/usable_features.parquet": {
+      "bytes": 36721047,
+      "sha256": "3b61c0265e5d8e486bc54c2c490269f8e95f11ba1b49d0b3f6af645e26cb4f15"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0105/0001/usable_features.parquet": {
+      "bytes": 36613307,
+      "sha256": "e1c86506b569cacecd16286542bf405ff8bb6fb6768e7d7dd1d4c9be8e3a2503"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0106/0001/usable_features.parquet": {
+      "bytes": 36399807,
+      "sha256": "9078ebb5ffdb6c009a2ba885c2e05b4a661a05d1b27dca25737dc567ce28ddf3"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0107/0001/usable_features.parquet": {
+      "bytes": 37794403,
+      "sha256": "5fd03e74ae9a01c8986159407992eded90deb47b2efbbf22ff85928e4db33f88"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0108/0001/usable_features.parquet": {
+      "bytes": 36489878,
+      "sha256": "e8a7b55b961c56a1e3e461d05630c0b6e74c650d702945a24bf1a7e0d1c9cfc6"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0109/0001/usable_features.parquet": {
+      "bytes": 37126382,
+      "sha256": "17d8e1b3f3ed55200a9923231f5e1471e86dee9ad361f6965f99cf84a414689d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0110/0001/usable_features.parquet": {
+      "bytes": 36494889,
+      "sha256": "62f429ea5aa995270648be2cf42e17bbb392e2c1424116c701abf2477c28cafe"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0111/0001/usable_features.parquet": {
+      "bytes": 35182933,
+      "sha256": "6c64a2c199c9f718ed43599bcc1bf7fd0a923cfe7811bfbe1cbdacc89b5987b9"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0112/0001/usable_features.parquet": {
+      "bytes": 34051018,
+      "sha256": "2a15d5c48d0eb959cc55d71e897d584d11191b7474e4638fad1e7868dcf3a643"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0113/0001/usable_features.parquet": {
+      "bytes": 35689983,
+      "sha256": "9fc3add2e4d6318f9c43c779d0093ca2adaec2840bf96b0d9d324a86bfc9bacc"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0114/0001/usable_features.parquet": {
+      "bytes": 37336712,
+      "sha256": "72b2c2fc26119969633d914fed412127c0d4d58d24ba1d6293aaf5b04d7c4142"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0115/0001/usable_features.parquet": {
+      "bytes": 36472160,
+      "sha256": "22c4fef29b04b7197055943f7088f1b75644719a4ba9db0f1eb5a62d5f7d742d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0116/0001/usable_features.parquet": {
+      "bytes": 35927814,
+      "sha256": "f5d723463aafcd9c65c446e34f49238567a38f24c9be73ec34a897e18b6af89c"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0117/0001/usable_features.parquet": {
+      "bytes": 36367635,
+      "sha256": "85eda01cd661dddacbba23e7ef1e025e75860ec66f0255808b2eb03dfa6a507b"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0118/0001/usable_features.parquet": {
+      "bytes": 33042598,
+      "sha256": "5e45c2d7e170b7284db86a524f2e110b91583c6ef0243cb206145f6a367d850d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0119/0001/usable_features.parquet": {
+      "bytes": 33747314,
+      "sha256": "48b059b0a973ba971ec3ef8d70c5999856c59ffdd21f5246068de5a790f5705f"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0120/0001/usable_features.parquet": {
+      "bytes": 37707327,
+      "sha256": "7d1825328bcf893cae3cbd28107ee5726fde3a49219abcd46446276d0667914e"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0121/0001/usable_features.parquet": {
+      "bytes": 30528830,
+      "sha256": "8459dca9bf31fd47421a201c8c6b82def20625499a98e91d9c38cd1befdae25a"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0122/0001/usable_features.parquet": {
+      "bytes": 34533125,
+      "sha256": "25c2cb8e730a387e292a68d45f968c73a5794181c88dedeefa48755564d176af"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0123/0001/usable_features.parquet": {
+      "bytes": 36218980,
+      "sha256": "4db40056be4445ac38e837f82b438c4c8b7350f63294bf3cbed687d60c2414dd"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0124/0001/usable_features.parquet": {
+      "bytes": 35834266,
+      "sha256": "e9529280b3ed4cf802ef771569f946dbb483d8b444bdd1515ce6be66c3538967"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0125/0001/usable_features.parquet": {
+      "bytes": 36539469,
+      "sha256": "1c2208dcfc3c9626a758764321ea379f2fe702cf8247fcbe1d4b2f6865408cc3"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0126/0001/usable_features.parquet": {
+      "bytes": 36616166,
+      "sha256": "fc0d1fe7da45255a1cf16abd90728bf535692c54bb0c057fb8b52635361eef5c"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0127/0001/usable_features.parquet": {
+      "bytes": 35638093,
+      "sha256": "981c3853f979ee2a453518955d76c15b7b90b038fddefb36f6678640ac48b148"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0128/0001/usable_features.parquet": {
+      "bytes": 38090128,
+      "sha256": "f11d18dca26879929a3c354274268e9674b9260a6da2d97167f38b9cd8cc37b8"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0129/0001/usable_features.parquet": {
+      "bytes": 30809504,
+      "sha256": "49cd84184b4edbe33dff175f30ef3e05d6f6f12ac426b0ef6fafd83f1c1158ab"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0130/0001/usable_features.parquet": {
+      "bytes": 34206706,
+      "sha256": "2135ee730b4902c48f605570ecd36551d5e666f5193fd41dbfd14a4f299ff736"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0131/0001/usable_features.parquet": {
+      "bytes": 29540885,
+      "sha256": "57b812dbe536ecdaeff647dbe66b32574500253f9bbbcfaf7418cf4c7831d3fb"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0132/0001/usable_features.parquet": {
+      "bytes": 31763845,
+      "sha256": "a3ba824a0f48a397c7696abaee6a0f4e9983dd99aa317d3e2267bcff9a0185ce"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0133/0001/usable_features.parquet": {
+      "bytes": 30632958,
+      "sha256": "464bfb3b1b7e0788e733bb0647d9e4274efec1b02c33512430f3ba90377acbeb"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0134/0001/usable_features.parquet": {
+      "bytes": 28279481,
+      "sha256": "d5672bd9063504a5882936f6a779feccbc41cc62bbb5f534fc30502202855504"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0135/0001/usable_features.parquet": {
+      "bytes": 32620274,
+      "sha256": "7196ed1393b6847b51776b2bdcf9928ba150441607ebaab0a027a20dff31e21f"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0136/0001/usable_features.parquet": {
+      "bytes": 33546580,
+      "sha256": "7130775937f7c1309edbeacbcac72ee5f5bccf5487693bae6da17cbb6e30c479"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0137/0001/usable_features.parquet": {
+      "bytes": 29291636,
+      "sha256": "d051b283c49fa878fbe4c617c7570d566bf023b49ca8411c3968efd3ab42448d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0138/0001/usable_features.parquet": {
+      "bytes": 29968602,
+      "sha256": "8a7424e9ea49ab1150533b08a4bb045eb0b64d6664b9cfa7f6e314af4308ce6c"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0139/0001/usable_features.parquet": {
+      "bytes": 38369353,
+      "sha256": "202689280a6ca2a7379b6a4063b204f67e4f74a32d1ced2fcc2c47b986926f70"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0140/0001/usable_features.parquet": {
+      "bytes": 39166002,
+      "sha256": "f9bbe60d17b4522036dbecc5f4cb6ff894ee94c808787bb87f8ede28235a3ffb"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0141/0001/usable_features.parquet": {
+      "bytes": 39803473,
+      "sha256": "d3d37a27f31101bdd5150f91b1be2021153c602f99816b484228a863001b50f8"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0142/0001/usable_features.parquet": {
+      "bytes": 39862192,
+      "sha256": "ba811229e310581f933e872aaccddfd0159fc0f21e74e9e2cb4380588b4032b6"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0143/0001/usable_features.parquet": {
+      "bytes": 38812554,
+      "sha256": "25a5c59966ba5c0fa54f92f73e6b40de9f886b7b268cd9664540d3a8bc53a9a2"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0144/0001/usable_features.parquet": {
+      "bytes": 39214083,
+      "sha256": "4e57bc78f62391b80cbbfa306710841776ae1cde564fb8265bd7bfca9031b3c4"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0145/0001/usable_features.parquet": {
+      "bytes": 39566429,
+      "sha256": "078b4ade7ddfbd2687d1b28fb7e34692ae5e390a6c24fc66c383fab578bb33a7"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0146/0001/usable_features.parquet": {
+      "bytes": 38936474,
+      "sha256": "523a2183233716d585ab90f46c591b92053a70f56198b6a5d5b9666cc4d6495f"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0147/0001/usable_features.parquet": {
+      "bytes": 31849087,
+      "sha256": "72e6f3ed66d33e204705d705b973e1f4b533d464e525fc0cf66c248f4e9fa2b9"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0148/0001/usable_features.parquet": {
+      "bytes": 31847696,
+      "sha256": "e87cd2392c4402ac3f46bf22b877892fc92bafc883726b89bac66ead38049010"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0149/0001/usable_features.parquet": {
+      "bytes": 31273735,
+      "sha256": "4485b11c96d52a5fb6e639e645243081f8d5366682fea3e9a7584c637b02ae8e"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0150/0001/usable_features.parquet": {
+      "bytes": 32180742,
+      "sha256": "ca8c279459cfce596c246dc267f99195ce2c5139fdff38656b81d3d87d1a89a0"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0151/0001/usable_features.parquet": {
+      "bytes": 35432738,
+      "sha256": "c9a0507756968f980c6643bc13eb04e6e22dc0d2d66cefa3bb12893fb04776bd"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0152/0001/usable_features.parquet": {
+      "bytes": 31109890,
+      "sha256": "16a666d50ac591d365117497e6cb3e3b8814f027c867d91f260fd670160bf46d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0153/0001/usable_features.parquet": {
+      "bytes": 31526267,
+      "sha256": "f8286dbc487d414abda522afdeac817e99686d3605e1147514ad793f3ddbc672"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0154/0001/usable_features.parquet": {
+      "bytes": 28904486,
+      "sha256": "1d46483173c80d79cd9b7b9bec121a9555c0c735752428cc3c971cf4bf217858"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0155/0001/usable_features.parquet": {
+      "bytes": 31274848,
+      "sha256": "7d751994d5d851544406076d5f2e832ff42d86962656f4c544e2730de7b6c40d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0156/0001/usable_features.parquet": {
+      "bytes": 29824651,
+      "sha256": "2d3a000bf9aad08737629233aabcbfaa3fce185ead0e7dbff8cb9be3f4f62cc2"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0157/0001/usable_features.parquet": {
+      "bytes": 27363271,
+      "sha256": "ac42b6ed3f2b1e06955c96d0ecc5364d90f77f503529c4d0d438446c2cdf7880"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0158/0001/usable_features.parquet": {
+      "bytes": 28379182,
+      "sha256": "2453f4f050416210d79ecc0991715eb32ba52bca2a825b73210015856ec6f1d1"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0159/0001/usable_features.parquet": {
+      "bytes": 29885036,
+      "sha256": "06e70db67297cd3c89b52eb498dce825c3a5c5ec7ca1503bf4a7d1db6ba1c1fb"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0160/0001/usable_features.parquet": {
+      "bytes": 28066795,
+      "sha256": "e26271bc2231e2f8f0d5b3dc396306683f4f19b4e89f22bb21607f55f52316f6"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0161/0001/usable_features.parquet": {
+      "bytes": 28034441,
+      "sha256": "ce1925f886316cf73ffd0c5293c407ebec493a550371b8fbc042bcbe08e35eab"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0162/0001/usable_features.parquet": {
+      "bytes": 21849930,
+      "sha256": "cdabff5a23e70b72105fac72ac0867a800fc9c7c452cbb7b7ec39bf819a49d5a"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0163/0001/usable_features.parquet": {
+      "bytes": 26694683,
+      "sha256": "cf2d0568293636e4fb2284effb4ca39273d0f7df5465c97e40a383d3c578147a"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0164/0001/usable_features.parquet": {
+      "bytes": 26867349,
+      "sha256": "9d9e086fe86c6e2c07c16a46d461a1e6702c46b47f7e244525f545ddab0b89d7"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0165/0001/usable_features.parquet": {
+      "bytes": 25879546,
+      "sha256": "a0e16233373ea0108655c7f24485435446f812ac6da6558a82e4ca14cb2662ec"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0166/0001/usable_features.parquet": {
+      "bytes": 24337316,
+      "sha256": "9609d94d68ef7886f32a2d22d8d7655e8d99037fe3327f4f3b861b685191f8ae"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0167/0001/usable_features.parquet": {
+      "bytes": 26962493,
+      "sha256": "adb6a0abeb27ed1ba4d8b12fc2146fffe1ea16dc327eaa388d7add5fdff7d751"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0168/0001/usable_features.parquet": {
+      "bytes": 17568581,
+      "sha256": "b4e309010bf429c9e96f4e5b18286b8a890f88b75f86ff6efe57f41b4086d138"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0169/0001/usable_features.parquet": {
+      "bytes": 10718648,
+      "sha256": "a84ff289c9039616530ee5a3080386ee0c53ea3cdff447219b4203b4ee73422f"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/attempts/features-0170/0001/usable_features.parquet": {
+      "bytes": 2082845,
+      "sha256": "c88d64ddc5d3484cfbd773e9b35e2f30872b570028877f846a4950aa337fc410"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/inventory.json": {
+      "bytes": 1440245,
+      "sha256": "47226e18c60dcc66d6cad9098b1c9a02b6cd8e8b328a2987cfb2aed55ad2387c"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/plan.json": {
+      "bytes": 137782,
+      "sha256": "877f524f27b143bf055c6d9aad2a004a23a6596a981ea5fa475035d11314dec2"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0000.json": {
+      "bytes": 75105,
+      "sha256": "cbc6c5f55fb1a3d38d2a51aecad63ee0faa63d2a76e8e4f55928e2bf706e0c1a"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0001.json": {
+      "bytes": 74867,
+      "sha256": "8e12bacacf119b94e224cac7f1b43a858441058bb061a5697666c45e998f6518"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0002.json": {
+      "bytes": 74857,
+      "sha256": "df987fe211578d64e809b1c16a082d58ae5fd480d88d43a633445b8be5a00921"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0003.json": {
+      "bytes": 74857,
+      "sha256": "c191816e806595231ffc39d7717d69638bfd256e1487c1098db1072c6fe494ee"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0004.json": {
+      "bytes": 74724,
+      "sha256": "a66b0fd03f20ce71ba6274a0a7da4cd7421dedee670c7ed4f56b5cf0432481c2"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0005.json": {
+      "bytes": 74884,
+      "sha256": "fc0418959e8c63287e75a6c4c09b7e72d84b846b2963975572345a7a6df3cc4b"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0006.json": {
+      "bytes": 74870,
+      "sha256": "f44d97accb84bd85d5c6ede3e258bad8d1cef79679dd3f66faf18f99b5db9a5e"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0007.json": {
+      "bytes": 74868,
+      "sha256": "06d70722e0b631590f54afe83d6fad1c2c14227c557d9f76fda179c954152e22"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0008.json": {
+      "bytes": 74724,
+      "sha256": "8fe8b0785631e02ddb50ca2f682c5f8fb6162d0e04b9af4f46803ac8412f7297"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0009.json": {
+      "bytes": 74868,
+      "sha256": "1c848961ae88794faf6c8dd54153c2e44bd0280f9023148bd06d59b2b7c2e0a7"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0010.json": {
+      "bytes": 74868,
+      "sha256": "4c5677dde83efcbcd5965f24a1a4f3ac1feed9dc2b42f706ee9b7c3d1a59102c"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0011.json": {
+      "bytes": 74726,
+      "sha256": "c7f4171e1814c4e66558d4137e6e1992772b0c5ae2cb6e716a43c94fa5914061"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0012.json": {
+      "bytes": 74868,
+      "sha256": "ca27424b8c0a220de5c59e34046117db194841f1c65e0288e18fb0f803c234a5"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0013.json": {
+      "bytes": 74875,
+      "sha256": "cef9476f738d2c1710a67d839599f3000fce1102d8a9469febeb19abdfc98341"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0014.json": {
+      "bytes": 75001,
+      "sha256": "d0bb849179771f8311c9e885c526b39266886b13463a0cfdee951c0b29b7351a"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0015.json": {
+      "bytes": 74981,
+      "sha256": "d756df4a1403cda57790884d0d13625b1dc47a76a6b4bc81bbc4c42a2911cb51"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0016.json": {
+      "bytes": 74980,
+      "sha256": "6e9ad3eab6c6b7499df5d85b5be0ed850e633a020c6ddc45161c8ff717e8d535"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0017.json": {
+      "bytes": 74995,
+      "sha256": "332980973679e6c8837e125971dfd3421141a328f7f0431f641b084e69fd4209"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0018.json": {
+      "bytes": 74856,
+      "sha256": "1a8ba75fa0b9c0db2013c2fa6ccbb43022b3a6bc6bae000cb4621246f39c593f"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0019.json": {
+      "bytes": 74557,
+      "sha256": "bb68dd83e561ec537480eab457b134dfc1a9a779b639f4624ccf167afe5bfc0e"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0020.json": {
+      "bytes": 74871,
+      "sha256": "c9737c780e7f3c156d5ac7f18eb799a427178042e57c8c6bd3dfadc338af3c7c"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0021.json": {
+      "bytes": 74868,
+      "sha256": "5171149a54ffbd360eb18ae674c14680c6d8b373adc6f14874aa97956c86e603"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0022.json": {
+      "bytes": 74841,
+      "sha256": "4c56d01e4ef6c8b1f5ba880853c3117c0dd79130c80e2004064077ea25e8814a"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0023.json": {
+      "bytes": 74612,
+      "sha256": "2548400217a37a1b88145a0bab6026437dbe0dfd836189962cf882db2857cfa2"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0024.json": {
+      "bytes": 74868,
+      "sha256": "aedeb71e5ddc948e88f3cec09eaddacb332903d63b8db57cf0d5e8c9f5e5b51f"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0025.json": {
+      "bytes": 74868,
+      "sha256": "e0373b48c0cd22f4d48dea16afdf97323600a3dcebd4c44d3333c7efc25cd02b"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0026.json": {
+      "bytes": 74857,
+      "sha256": "27d94173b3c75d32ca53d5be96f066347473781c94afc574b0456df9a6725d00"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0027.json": {
+      "bytes": 74732,
+      "sha256": "31102c4708cd78be90059293844e9acc21ad908336ade2d9c4c4ccf644efc71d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0028.json": {
+      "bytes": 74869,
+      "sha256": "c9c9e8c4c25d6186ae3f94c6f96abaf825e9c87c43408eff9b28bfc7768c0d78"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0029.json": {
+      "bytes": 74855,
+      "sha256": "c49b945fc9edb4815bd62bdd3cf1b9f2115257cfd7a0dbc5c4d9ad070821ccec"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0030.json": {
+      "bytes": 74840,
+      "sha256": "5dce06d5593d576a9a2cf3f7739b994f54a526819eb9fb5ea97b7ab73ead1c60"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0031.json": {
+      "bytes": 74868,
+      "sha256": "930aa2793aaf872f220b31f532b821fa81d515be9f601f7a5c2f297b4ad89693"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0032.json": {
+      "bytes": 74868,
+      "sha256": "bb5b6802c67b76feed2bd574237f2674aa033a8f2a87d9bf94bcd7e201f96b52"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0033.json": {
+      "bytes": 74869,
+      "sha256": "c9939825627c65e914507c78786743b157ff8d4772891f078aa517484690abe9"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0034.json": {
+      "bytes": 74531,
+      "sha256": "3659b4404f0f3628086638de12232c78e1259867fa5ff73ced0bad267d7ed88b"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0035.json": {
+      "bytes": 74629,
+      "sha256": "4f5cb0accdc317f545b9f2ad9de79c957ff24e4bc878dfb1127d60083c905c6d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0036.json": {
+      "bytes": 74840,
+      "sha256": "583c2e12c45b0a1a746531b2957cd6a3da4c114f908429502211121cd5d8ca42"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0037.json": {
+      "bytes": 74868,
+      "sha256": "e143682d555d3af5a2a7711a82eac2cf892a03dfe7a543733a3ba10b93eb12e4"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0038.json": {
+      "bytes": 74725,
+      "sha256": "569e0e7ba0e04ef3f4e105084100fde742c981b02a8bc8dfea72db710f7fcc06"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0039.json": {
+      "bytes": 74869,
+      "sha256": "4951d1dd709f98cbb671ad7fda82bcff528d4bb59d6b76ace25004653796c0b3"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0040.json": {
+      "bytes": 74730,
+      "sha256": "2a8f0544c065aa49162b541628459c3522aebcfcafcdf1d78e2f76ece6b69643"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0041.json": {
+      "bytes": 74868,
+      "sha256": "98407d93dcf0565604c0b7a6c9f04da7cbcf3cfd01bdeb3b1578c2e97f14a512"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0042.json": {
+      "bytes": 74667,
+      "sha256": "4808bfff4e2d8ba736470eecc6a7f306613f1ce01e600f42bd18bbc3d90cb495"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0043.json": {
+      "bytes": 74525,
+      "sha256": "c3d779cc9b03dbdbe880932a7d6a4412a9dff51e2ddb59c4ece5ebcafad694b3"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0044.json": {
+      "bytes": 74530,
+      "sha256": "cd0a3a9401c58c9156b15c9e4598456380c8f243dba309dd5f92adf89c4e3674"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0045.json": {
+      "bytes": 74635,
+      "sha256": "9c8ece567bd4d78f4e23d5ab3720e1e284ab7020f8816c063d17b27af29f1e3d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0046.json": {
+      "bytes": 74511,
+      "sha256": "6ceba42c0f0e49e57024fd25874f444b6a3cfc8d0be8285111ea05150fafa376"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0047.json": {
+      "bytes": 74840,
+      "sha256": "7a0e5e00d16d97e98b7f0c2a23be44ef1746bd356e29c813ea7dbedae0078123"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0048.json": {
+      "bytes": 74853,
+      "sha256": "b454996ee7bf39741fde597bbafdcb91f2c5ec0d9a107c0ec49e7ca225e67bf5"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0049.json": {
+      "bytes": 74851,
+      "sha256": "c01bbd22e90273d0027d9dea6b84b4413cf2ef54e16b675bc929827ed228e903"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0050.json": {
+      "bytes": 74868,
+      "sha256": "b1f13eb764e16bd9c1faced89e5f29e5d8c5d49c0be6ebda356f6188ec638840"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0051.json": {
+      "bytes": 74853,
+      "sha256": "e27f18770829bbf1d375feedc129891005c2cecad2785b0bddc87d5003747af0"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0052.json": {
+      "bytes": 74868,
+      "sha256": "4a82a60eecbd6f0a4c4ce6f8e886864252b3c0aea011b6662e89d5997087e392"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0053.json": {
+      "bytes": 75088,
+      "sha256": "3d669fd4b7d7c607b21c8d637c96cd77f91356369ca7d72a38f7977baddec087"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0054.json": {
+      "bytes": 74867,
+      "sha256": "7da94b8604a27d193f50c1df79d172c8b6bf71408ab0ba5e946061ca8bf0a81b"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0055.json": {
+      "bytes": 74864,
+      "sha256": "73240f1893a03b8801d1cad13cd3bdb24662eec6077c7c3c5cd7cc7ef69dc49d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0056.json": {
+      "bytes": 74851,
+      "sha256": "a479af2d6d0198832c9ae35b84e19b8bc87577ccbfce866e5be8425bcbe7ee48"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0057.json": {
+      "bytes": 74725,
+      "sha256": "fffe196e390edf3d6c61aa38b71553160f1e50e6009c58a4b785a9c48d330466"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0058.json": {
+      "bytes": 74868,
+      "sha256": "77ea17cb00503eedcb8934ad30ca33f0baf68bf7c90bb339d1976087e716f462"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0059.json": {
+      "bytes": 74869,
+      "sha256": "a01ea6993419f2ebf305e44bf7a2527ee24f6aa1517b61f37081e094c2deec79"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0060.json": {
+      "bytes": 74868,
+      "sha256": "e7b3c8a8ed1b3973809fdb07859c0156554650bb807eac73f04b678f1747e286"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0061.json": {
+      "bytes": 74832,
+      "sha256": "a3f606ed4b9c23aa999dbd2fd7993aab1a0bbfecffdfb9de2fa7541d65ae68ee"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0062.json": {
+      "bytes": 74864,
+      "sha256": "8d40c161633c7834b7b95d1475c51c3a1a57485d3d8cd8112e4e0be930dbb8c0"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0063.json": {
+      "bytes": 74553,
+      "sha256": "4d9268a47724e3006dc504f4f6902664aa5037a2e8809335234c690e5b03fdcf"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0064.json": {
+      "bytes": 74704,
+      "sha256": "a6b1ed14f8c00530173dd7f3a93dc2483cd52d0e32d6ff3e39044629d64023d4"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0065.json": {
+      "bytes": 74730,
+      "sha256": "201d9eadd1ead8c02e834f94205b87341d2a62fd029b58c85487de9a2138ef4f"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0066.json": {
+      "bytes": 74657,
+      "sha256": "0a62ab1f73340cd4340fb20acd5978ef1ae20e916e2bda37d72645aa48dcf2fb"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0067.json": {
+      "bytes": 74505,
+      "sha256": "53bbc6358d5242974a4dd08d769b2211705b5ee58a5c4021fe9d59b3050aec77"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0068.json": {
+      "bytes": 74693,
+      "sha256": "273395af8e96f954d060cfdc10e66ee92ccd8ae467a7be433479452cd0f7a785"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0069.json": {
+      "bytes": 74694,
+      "sha256": "16b0cd1e7f4f7dabe465f98090d5351005067683ffb7c83cbc16f818fa898b65"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0070.json": {
+      "bytes": 74593,
+      "sha256": "e9f2955270014ddd47e2a8b07091b07c7dd3598c49b01ab81f5248cacd8e6345"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0071.json": {
+      "bytes": 74507,
+      "sha256": "793123c1f8777881f46ccc718563ab87a7c827d8e4bc751d234c40c02b4b9f03"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0072.json": {
+      "bytes": 74696,
+      "sha256": "566652b9d8d38be7d3038bf6bc01c3aaefa8e2210c848681853a54c145dea60e"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0073.json": {
+      "bytes": 74838,
+      "sha256": "a090d6d996982eb1b090c276cbac3bdeae53695bfc5861b6f05f24377fe1a853"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0074.json": {
+      "bytes": 74841,
+      "sha256": "39d2ee9dce7211086998537765034913367533717e6de46b70fa1c6aa912e746"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0075.json": {
+      "bytes": 74845,
+      "sha256": "36ce5ade7e79c32ea3b71ad501437a0b9c5d5ea46294df1ed022f967fe477b29"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0076.json": {
+      "bytes": 74842,
+      "sha256": "67798b52d6bc3fd22eff80f8bc2f8ced2a55dc916d9e540c6346306c8a8c8dda"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0077.json": {
+      "bytes": 74990,
+      "sha256": "bbe3053decb7098d4400595ed11535fd9a31f341cf41099e705a5f287c60281b"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0078.json": {
+      "bytes": 74988,
+      "sha256": "983458917f564f59a6da8c702f35ee4fe387a8d7393b82595c11a6bde72101b3"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0079.json": {
+      "bytes": 74989,
+      "sha256": "5b1d39a75a83e824948c905d3706d230c0756028006e3ceafe5218d6af5ef78d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0080.json": {
+      "bytes": 74991,
+      "sha256": "98da4bbc7839178e2b058636bce9896417613989667a3a3b0ba05a07073dd593"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0081.json": {
+      "bytes": 74986,
+      "sha256": "b84120091946655f7cda7d62edf370b02c9693f51e449d991917f318daac89ce"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0082.json": {
+      "bytes": 74985,
+      "sha256": "872157cc25bb3489ee01d9733490cc426c633155229802ecf50e1840c5ff0798"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0083.json": {
+      "bytes": 74976,
+      "sha256": "944d85c1dd6f1e394426562aaae365ed20410b73464e2a0f8487fd989febcd85"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0084.json": {
+      "bytes": 74981,
+      "sha256": "ef4d46eb8514a6992293cd046e9c03df6fa463950f3b90a22520ac124422afa1"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0085.json": {
+      "bytes": 74977,
+      "sha256": "7d2f410699e5cb2650b18b153fb424c264e16d0a18032867b03f4e9e7886b474"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0086.json": {
+      "bytes": 74959,
+      "sha256": "d3b4cbbe0f10cdc95f4f3638b3ed4bc605c8d5d123ff1f69f97ea6ceb5ebd693"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0087.json": {
+      "bytes": 74977,
+      "sha256": "d643de5d94321a6652332474b3055932604b21377e0709b8731dab50c31d3246"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0088.json": {
+      "bytes": 74976,
+      "sha256": "9e5c35e08902180cfbc41f614dc41a60f73f13650f792f77b7c89d38e6b72d26"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0089.json": {
+      "bytes": 74969,
+      "sha256": "653dfd88f1bf739158fa205cdd560fd52937b0b04f71a61ec604d12168ac2e2c"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0090.json": {
+      "bytes": 74932,
+      "sha256": "329b183b43ce3f816b2b7c38fd747c3c2240f35952d2571cd3809cdc8f003fec"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0091.json": {
+      "bytes": 74960,
+      "sha256": "eb7eefa3ef68ff0ce67f269d6f6ff0041883115d13aff3eacbabc7117933fb3c"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0092.json": {
+      "bytes": 74903,
+      "sha256": "00d3216fc6fe3a9bd9ef5a9aea8992cde49c84c1d420dd9c43fa5b12a53cdc8b"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0093.json": {
+      "bytes": 74924,
+      "sha256": "8e095de866730bd3542a6bc2be1ddd358cb240355ea42b62c691aeb8138038ab"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0094.json": {
+      "bytes": 75185,
+      "sha256": "070c0f4868286f9c4449abcf66ea811ee3bffd792735c9ba193919b12656faee"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0095.json": {
+      "bytes": 74696,
+      "sha256": "1b963f5aa655f73b6e0623cc49e980c61659c5b911b1bb34bf6d1a0705d4ce2b"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0096.json": {
+      "bytes": 74873,
+      "sha256": "997b35a41e0fede88cc5e1cb4b99c06cd73bce425ba4feae3ae73b83641518a5"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0097.json": {
+      "bytes": 74868,
+      "sha256": "afcfa0d3bac816a019924eb9293d8a018ae9e07ed7b8f4a5b536577815118784"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0098.json": {
+      "bytes": 74868,
+      "sha256": "05b49974017092d2304192168087b59b78e7d71d3d49f2f2bfdc18521dfd3fa2"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0099.json": {
+      "bytes": 74871,
+      "sha256": "b8b8ce5e7ebc1b367371cbd19b50f9da68698ddaaec6ae47a456de80f16cc0f9"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0100.json": {
+      "bytes": 74872,
+      "sha256": "c3a1e1e13d96060b3e08b023b9f0f85d3489745a51b65d9cd2882c9b2ef547de"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0101.json": {
+      "bytes": 74871,
+      "sha256": "5f59ef16e837737162257d586a7305f47b56618e721c2db5baae297b96de72d1"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0102.json": {
+      "bytes": 74872,
+      "sha256": "9e278625b93d274d603ac40816df3eeeaadcec01e89ee8ecf1b7650500a9b0e7"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0103.json": {
+      "bytes": 74869,
+      "sha256": "ca00563f7a991ab4341602eadb40e03a2eba5046c7c51409a88bca4efb318d44"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0104.json": {
+      "bytes": 74871,
+      "sha256": "e526a1867a999a21da9bed9b776de6978a30d45d5921f0ecbe9164795ee7042d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0105.json": {
+      "bytes": 74859,
+      "sha256": "f7de4de152a292b6ec5c1ceaefafb76b800ea9525332ca1369a71572cf53a4b2"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0106.json": {
+      "bytes": 74869,
+      "sha256": "dbd723e967b39f47b30b7e81fcf203c52b170e1b19a55b7bbbdfca20d4bd69b1"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0107.json": {
+      "bytes": 74564,
+      "sha256": "e34b4b6f9e29eba12d626eb5422a5bbabb6cf910248639759911a16ce7245b9d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0108.json": {
+      "bytes": 74869,
+      "sha256": "09884b3a280a82dbc03fc22464bd61ae1b426b6a2e855d14dfee8170ae12c83d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0109.json": {
+      "bytes": 74725,
+      "sha256": "0e98b1202be05c2698ef637ecfaa8d6839d785a36a56d518dc28f7b007ac272a"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0110.json": {
+      "bytes": 74868,
+      "sha256": "586e343bbd9cc4f466123bb0e473ee920a6db9a62347e66325df7f949b7a4bfa"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0111.json": {
+      "bytes": 74870,
+      "sha256": "c45912f5bfdf29afab146fe9af6009930cf8639478f8f84592f508bb74ad7883"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0112.json": {
+      "bytes": 74869,
+      "sha256": "9fed3383ee149c3db1bd2f1bb3b7d11912d760894ea43958f2d0f2d145b72511"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0113.json": {
+      "bytes": 74872,
+      "sha256": "8c45351cd6310bd6628eebe36b26a2a8ad5a0df7eb5b8af14dfd0f8efe1ea934"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0114.json": {
+      "bytes": 74869,
+      "sha256": "544c1ef142f1b92c1c20214025901008d2c52fbe3bd3209e0f36b82de7d749a7"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0115.json": {
+      "bytes": 74859,
+      "sha256": "5a55d8faa657fc171f93e6fb48ce88f590b542b5a6dd838935e2ed18eabdeca4"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0116.json": {
+      "bytes": 74870,
+      "sha256": "f27ecb07c6da3485a0370c8c324e58ab96d4d2768e3db3dabbfed7052e9a0659"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0117.json": {
+      "bytes": 74869,
+      "sha256": "52e22663c09172148015cdf6e8bd5e109add99730f0f6b7dec2e168083179248"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0118.json": {
+      "bytes": 74872,
+      "sha256": "54febe09d805aefeca9eb272ae2dda3a2578ad8e4b1c6eade13dcf8d9dcbf6db"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0119.json": {
+      "bytes": 74865,
+      "sha256": "85837e3b26723359abea9267175b859650b9a12c56cc33716697b3745cea633a"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0120.json": {
+      "bytes": 74508,
+      "sha256": "851a99ef2b22ee68eb44b4aba79380ce155adbad69d3719e4f3396a8c30b980c"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0121.json": {
+      "bytes": 75000,
+      "sha256": "2c6e331413fd52ce83824610c9381efb5d3f48215577fd4dba616f295c5a18b0"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0122.json": {
+      "bytes": 74840,
+      "sha256": "63b956e48639b7b37a794c6a7b4a6a9672801b197a9823cdc1988047dcde3313"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0123.json": {
+      "bytes": 74839,
+      "sha256": "fc3aa8103b8c6b219e047936c73e115e91f25fda591300b2521d6bf70dd81358"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0124.json": {
+      "bytes": 74842,
+      "sha256": "913a71dbf38c6b2e882c6970e6c3584a82b7f65af19516c5666e2e6bd4398d31"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0125.json": {
+      "bytes": 74841,
+      "sha256": "e69296727cc36c38c69cd54e6040b64fe7a4451ab23022de80632b3904c3dcbd"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0126.json": {
+      "bytes": 74840,
+      "sha256": "bd58416741c913134ecd9943f30c020bfe9114c2f8a6a8065bca5a9a9c6f0c78"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0127.json": {
+      "bytes": 74870,
+      "sha256": "3e05ff7e6e04a2c0e45d4a8eec7fd188cb9a77e2e1f3b96d24973d51f133e59f"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0128.json": {
+      "bytes": 74869,
+      "sha256": "74e163b7fcd75d2e6960f6faa15931c4359f1c606b1c603fa7f56be451653eab"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0129.json": {
+      "bytes": 75007,
+      "sha256": "a7507099b76d57e01c3349b91f9e4defa04608a5b0beca724667a31c5dbec6ad"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0130.json": {
+      "bytes": 74840,
+      "sha256": "b99db4d7479ff751bc6ed2c3f0d65dc53ee09a0aa13938f8e8af8e37a5ab6b3e"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0131.json": {
+      "bytes": 75015,
+      "sha256": "0145ebba00175170685ba69e1f2b9a915d7e049ff007ab80b9803955784343df"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0132.json": {
+      "bytes": 74999,
+      "sha256": "56a814872e906b9b2fac1af08add9271cc8caccda70c9c3e096af002a4798eff"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0133.json": {
+      "bytes": 75001,
+      "sha256": "e41c7cba2c9885a3f5685237233bd3f78eb23f13557cc167de2621bede3b623c"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0134.json": {
+      "bytes": 75000,
+      "sha256": "4b225944f97f3e954ef0b240897e4a799b935c3b11416dbc00d409a2323961b0"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0135.json": {
+      "bytes": 74857,
+      "sha256": "f8d2d33ee83d8fac23a2b5cca25886e3e569ca546a2b04a04036c7882f72e257"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0136.json": {
+      "bytes": 74846,
+      "sha256": "fc6ad234edab5171e43ef08e3f508e9aaf270832ea49ae01a31f6d02399cca1f"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0137.json": {
+      "bytes": 75015,
+      "sha256": "809fd1bdc092ac6c17525574f1e1ad4d0ff6b668d50c121312ef33eece69d2cd"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0138.json": {
+      "bytes": 75000,
+      "sha256": "5fd7742cc2c00f4bd0e1a97cf08c27c3393fcee076bdf67c9ba1f42dfe29c2b7"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0139.json": {
+      "bytes": 74854,
+      "sha256": "915c3309a103e965259ab38168d41e7a19e74d64ccfeff3400a479a26f5d41a6"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0140.json": {
+      "bytes": 74713,
+      "sha256": "b06b384289b01dd593e3fb2a442a4afd69312811d8531d007cc0d322524911d6"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0141.json": {
+      "bytes": 74691,
+      "sha256": "1bf820f584eb775e0d1b3acfef272ce5fe05e0e20a95e8200d55372839f5a17b"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0142.json": {
+      "bytes": 74692,
+      "sha256": "3f771497c6bf6d285c7203d38112f83bacf4d7bec2df47e577bb565704cdc4fb"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0143.json": {
+      "bytes": 74724,
+      "sha256": "011ade9b75d7beab9891efc0193c6d6b2c78c88eae1cd8807a8a974db35d5ccc"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0144.json": {
+      "bytes": 74720,
+      "sha256": "ae371679834839dce35b7dc9314c646d88c531d18c471b637a2c54d676ce6d53"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0145.json": {
+      "bytes": 74694,
+      "sha256": "7335384dc1b270328be9f1ce1a70d9bd8ca2aef026bbe975dcb2e6948d0c0940"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0146.json": {
+      "bytes": 74815,
+      "sha256": "a5ee922b228a59941917abe64066b9d7684e8c1412d3a8dc1df310e635c1081d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0147.json": {
+      "bytes": 74999,
+      "sha256": "72cf8f60e85a157e62be42f11326048b32c7608ee0e88226b282ccf362e65ece"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0148.json": {
+      "bytes": 74997,
+      "sha256": "c04ff2373e51f73183237fbae2ea84107e543e869c2a5dcd5fb2ee447f29c8a7"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0149.json": {
+      "bytes": 74999,
+      "sha256": "d6aa691d905bc78f598f33c81858ae370aa14be6a986c9f6e8c4f583f87a0e3d"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0150.json": {
+      "bytes": 75201,
+      "sha256": "8054235fe2f019b967b12b9ca19f4a2d79c3b45d2dc692fc265e73726c145ac1"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0151.json": {
+      "bytes": 74840,
+      "sha256": "cba6d6c357771ab9d1b011640c3e08ab689fcbc8bfd1675e65705a3be9825b3f"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0152.json": {
+      "bytes": 74997,
+      "sha256": "4e49ae55a2bcb7c158c20aa296eea8352186e1bc0a3cd56bf9f28f12f06e7e78"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0153.json": {
+      "bytes": 74998,
+      "sha256": "c39181f743ef56fc230e15bde6acc0a53ee0119d824d2db10f6be4e4c84a33ed"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0154.json": {
+      "bytes": 74997,
+      "sha256": "6dc8cf172eb4d6ddcde287789b411ef939b1cbf993339d9cd858fd257c76a425"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0155.json": {
+      "bytes": 74998,
+      "sha256": "4cc8185f62b430a7b5d5857552ced1f6aacd71c50a2f2df431040f4d4fbfed97"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0156.json": {
+      "bytes": 74997,
+      "sha256": "4df03cf88f7fca19f749fb74795f03543710dd74216ccf8038595abff8caaae3"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0157.json": {
+      "bytes": 74995,
+      "sha256": "807baad6b49b107c706418fe5f7abdd6cc0bdf7d1d4cf9d0cc76ca46ddb72f1a"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0158.json": {
+      "bytes": 74999,
+      "sha256": "afc2c277d38b057e0ff11ca20d82a4bce4c29aa30e036fbcff6c30c21905af39"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0159.json": {
+      "bytes": 74988,
+      "sha256": "cb50900bd28b6664865cb9b2ff422ec67b486dc9baa88700f8fa8c217df7ce16"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0160.json": {
+      "bytes": 74996,
+      "sha256": "38984ec97d2c3a04fd9b1eb468f71abc1ca29570e4294afe0271a5c117019b9c"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0161.json": {
+      "bytes": 74965,
+      "sha256": "70951622fe93bdaad84813fd84f71a68b1996cad37fa2d7fc8fa4b7dbcfd85ed"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0162.json": {
+      "bytes": 74995,
+      "sha256": "627ce5a3c87f842f1a6e9c57908b57b8551d99a298c27eaecb8775eae32a1d1e"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0163.json": {
+      "bytes": 74996,
+      "sha256": "445219177645341e96890822b56ca93e2230b3dbe11a7096f865285bc42f7a4e"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0164.json": {
+      "bytes": 74995,
+      "sha256": "7d04b4c0d341055311eea68f3d3a102c2779026016f962920c279640c9cb1793"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0165.json": {
+      "bytes": 74997,
+      "sha256": "aca89d0bbd659915c0a9b34f888c6977bfc1e1989683542cea087de20f817485"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0166.json": {
+      "bytes": 74991,
+      "sha256": "640a26c46a6223fb7e4bd41a102598dadea1b68672b450d7842ddceb2d6850f3"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0167.json": {
+      "bytes": 74984,
+      "sha256": "0d34ac9e80f18352934cedb93de6dd4d999491da216c2d8e69b97f1115220c36"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0168.json": {
+      "bytes": 74986,
+      "sha256": "e1fcb8300d5e9e20374b96aed0fed869ad9f61f7f316098cee4956b5e24ca443"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0169.json": {
+      "bytes": 74896,
+      "sha256": "92d178bb2aac271c5cc8cc4c052dcb6bd0c37f5f6180487d7dc0949730adb163"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/receipts/features-0170.json": {
+      "bytes": 43659,
+      "sha256": "04a15e8df3251eb938bced795531ab96bb720388a0ee3272524a3862f15cfcbc"
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/report.json": {
+      "bytes": 40078,
+      "sha256": "f32be0c520f75d52cff4f89d120823c8aee1a6c271d353f25fcf256e3a19be98"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/daily_policies.parquet": {
+      "bytes": 14227,
+      "sha256": "222c8abc7962debafba16b40c66854c461aebc8dbc2fdabd4c8ed6946d49835b"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/invoked.json": {
+      "bytes": 231,
+      "sha256": "05d53c1258702bf330567fb858e2b6c6c607a71eef370a5c8197831b5109b48b"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/model.pkl": {
+      "bytes": 337987,
+      "sha256": "8f9f2d1fd0fbccc98ee4e808e66f63fb0fe0e690f01a72e24cc0d391e912164d"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/monitor.json": {
+      "bytes": 158,
+      "sha256": "5d24006aeee60f7ac1fc68cac17980e369098ace2ce51f7b691b9bd7a005aff9"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/predictions.parquet": {
+      "bytes": 1705758,
+      "sha256": "0db3ad6675b589b0778352e81f3c972dc66c03a00c7df3d8c50e0d6dab0a67d1"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/preprocessing.json": {
+      "bytes": 2015,
+      "sha256": "7595c417b8600a705a60995e2c00037ca031716a3bc0bef9019deca4cbd8c60b"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/0/meta.yaml": {
+      "bytes": 358,
+      "sha256": "d4d7f8ffb475e4cbffb1d35351c174dc5ef1f028ab4021fe97de6a0d07d5f08f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/artifacts/code_cached.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/artifacts/code_diff.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/artifacts/code_status.txt": {
+      "bytes": 146,
+      "sha256": "6df846b22ea47b74ea65a01254d22b0ed27e4683953f18ee50bfc9aba61fe078"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/artifacts/model.pkl": {
+      "bytes": 337987,
+      "sha256": "8f9f2d1fd0fbccc98ee4e808e66f63fb0fe0e690f01a72e24cc0d391e912164d"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/meta.yaml": {
+      "bytes": 503,
+      "sha256": "5ee7c7147b79e46077c745456618a8d434e6c139ffe74c8873276217c6d2e25c"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/metrics/l2.train": {
+      "bytes": 3796,
+      "sha256": "ceba1e0d070b2331062991494c68845d9218b968c3bf1a1d95edbc76f568d2f0"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/params/cmd-sys.argv": {
+      "bytes": 108,
+      "sha256": "101067e59e982c87909e2298a50ba1fc88952ecfef995e9eea90af771e6a6c9f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/params/fixed_model": {
+      "bytes": 408,
+      "sha256": "b5ebf431d7bf50e265832e4b090bb7a30b36f470c94d23031a0816baa6d1d60e"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/params/plan_fingerprint": {
+      "bytes": 64,
+      "sha256": "dddb255e234f589aa769ee6b6f370bd04f975b4804738abc69545499f763b8ee"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/params/slot": {
+      "bytes": 14,
+      "sha256": "c8b5889dbe59273a34bc3f12a224b488554b45f561d6c48edebe0b04c33a1e8f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/params/source_head": {
+      "bytes": 40,
+      "sha256": "6a08d0dc6353f6f57efa570a857e01ec47a855c165650c39fd3f8d67070db445"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/params/train_rows": {
+      "bytes": 7,
+      "sha256": "7d0ae185c3ccb6dcc87f9c5c29cad18d8b38cf82628fe708cb0ff197c736ff2f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/params/training_cutoff": {
+      "bytes": 10,
+      "sha256": "9315f54be7286ced2ec0f4368807761271b52f3026981425a37e759ba0480ba4"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/tags/mlflow.runName": {
+      "bytes": 14,
+      "sha256": "c8b5889dbe59273a34bc3f12a224b488554b45f561d6c48edebe0b04c33a1e8f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/tags/mlflow.source.git.branch": {
+      "bytes": 27,
+      "sha256": "0ea2ad91ef536b43663d107f5f91217c6cedf062ccbc663f16821e2a46ddc63f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/tags/mlflow.source.git.commit": {
+      "bytes": 40,
+      "sha256": "6a08d0dc6353f6f57efa570a857e01ec47a855c165650c39fd3f8d67070db445"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/tags/mlflow.source.git.repoURL": {
+      "bytes": 45,
+      "sha256": "f5c822d28bde36c525388347c1df7b4523ac21e41888fa8e217a16d9ccb45a9b"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/tags/mlflow.source.name": {
+      "bytes": 75,
+      "sha256": "10b61c67d4e3217f567b199ef0e21c50a3037b4223d321daf79e25eebcf053be"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/tags/mlflow.source.type": {
+      "bytes": 5,
+      "sha256": "646c19373ac9e27e972c8e3bdf6554c4c10d23006c1abec3407cbff80c4ab71f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/b6ebf4d9dce7494e98ade2f66dd8c1e4/tags/mlflow.user": {
+      "bytes": 13,
+      "sha256": "4194d1706ed1f408d5e02d672777019f4d5385c766a8c6ca8acba3167d36a7b9"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/qlib/mlruns/731581933013618689/meta.yaml": {
+      "bytes": 406,
+      "sha256": "92373edbe62c30147fc426cfe42979c3e22272e9321b2156e3353d76230d4904"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/result.json": {
+      "bytes": 6248,
+      "sha256": "e0e67ac77b559d2f14421132181e8db2cc95093fd12e372917d41f3c01d09203"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/started.json": {
+      "bytes": 260,
+      "sha256": "c4cd2480e7c1759fbdf4c617249a65022ceb69f600e5afa99d150c577e3cfd6c"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/worker.log": {
+      "bytes": 1652,
+      "sha256": "69c7bef7b7cef3bc34ca1a5701e8b8824ad2c2fed5f28b3e82e6450c5a4af228"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_lightgbm/worker_result.json": {
+      "bytes": 955,
+      "sha256": "4d26d57620f944346c12529d9c3a709ce43f3551959e9b0f37871325983d8344"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/invoked.json": {
+      "bytes": 228,
+      "sha256": "6853aeb0d7a1add2966f03ed8ac0fe7771edd5245ac67c29f3ce0209136942ad"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/model.pkl": {
+      "bytes": 1084,
+      "sha256": "7770bce4893f6e699d40f40c7303f375d362a5584a3a5b48832da32a397c4800"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/monitor.json": {
+      "bytes": 158,
+      "sha256": "07ec0fba54c216802beebf021fffe036ab76503f298771125133fba0517f73ee"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/predictions.parquet": {
+      "bytes": 1574062,
+      "sha256": "14c0c767ad07cad1c9f146a8d1541d5e85a8ddb07c852e5e72a05a13a4577954"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/preprocessing.json": {
+      "bytes": 8599,
+      "sha256": "d3e3e71137c5bc0477df8fe8becf538a91656a25fb35c0ceef7a173971d4bc28"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/0/meta.yaml": {
+      "bytes": 355,
+      "sha256": "d532c4ac46639213fc19c6444bbd5418c157b8ee8bcd800576f4e83ff883b9ab"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/artifacts/code_cached.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/artifacts/code_diff.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/artifacts/code_status.txt": {
+      "bytes": 146,
+      "sha256": "6df846b22ea47b74ea65a01254d22b0ed27e4683953f18ee50bfc9aba61fe078"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/artifacts/model.pkl": {
+      "bytes": 1084,
+      "sha256": "7770bce4893f6e699d40f40c7303f375d362a5584a3a5b48832da32a397c4800"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/meta.yaml": {
+      "bytes": 497,
+      "sha256": "c7992e815e60f56a91ee9ab7396502c9c3687f1322812c9f23a57f281b8a6a96"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/params/cmd-sys.argv": {
+      "bytes": 105,
+      "sha256": "f4aa99609317ff319691656abdc66540d22327915848af91dfe1003acb742b97"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/params/fixed_model": {
+      "bytes": 104,
+      "sha256": "a0850f30b2e5a945534eceb30341a9a39427cd57bf338498f9a92cee166e5753"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/params/plan_fingerprint": {
+      "bytes": 64,
+      "sha256": "dddb255e234f589aa769ee6b6f370bd04f975b4804738abc69545499f763b8ee"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/params/slot": {
+      "bytes": 11,
+      "sha256": "4752a0a5817d6c2b097a55fa288c98f23294aeac81ed7b66f5dbc1f8fe76dce0"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/params/source_head": {
+      "bytes": 40,
+      "sha256": "6a08d0dc6353f6f57efa570a857e01ec47a855c165650c39fd3f8d67070db445"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/params/train_rows": {
+      "bytes": 7,
+      "sha256": "7d0ae185c3ccb6dcc87f9c5c29cad18d8b38cf82628fe708cb0ff197c736ff2f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/params/training_cutoff": {
+      "bytes": 10,
+      "sha256": "9315f54be7286ced2ec0f4368807761271b52f3026981425a37e759ba0480ba4"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/tags/mlflow.runName": {
+      "bytes": 11,
+      "sha256": "4752a0a5817d6c2b097a55fa288c98f23294aeac81ed7b66f5dbc1f8fe76dce0"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/tags/mlflow.source.git.branch": {
+      "bytes": 27,
+      "sha256": "0ea2ad91ef536b43663d107f5f91217c6cedf062ccbc663f16821e2a46ddc63f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/tags/mlflow.source.git.commit": {
+      "bytes": 40,
+      "sha256": "6a08d0dc6353f6f57efa570a857e01ec47a855c165650c39fd3f8d67070db445"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/tags/mlflow.source.git.repoURL": {
+      "bytes": 45,
+      "sha256": "f5c822d28bde36c525388347c1df7b4523ac21e41888fa8e217a16d9ccb45a9b"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/tags/mlflow.source.name": {
+      "bytes": 75,
+      "sha256": "10b61c67d4e3217f567b199ef0e21c50a3037b4223d321daf79e25eebcf053be"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/tags/mlflow.source.type": {
+      "bytes": 5,
+      "sha256": "646c19373ac9e27e972c8e3bdf6554c4c10d23006c1abec3407cbff80c4ab71f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/44edc5bd69e0472791b194fe5739fd80/tags/mlflow.user": {
+      "bytes": 13,
+      "sha256": "4194d1706ed1f408d5e02d672777019f4d5385c766a8c6ca8acba3167d36a7b9"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/qlib/mlruns/506900300066144070/meta.yaml": {
+      "bytes": 403,
+      "sha256": "f2f40dee7aaf9fb9b8b030b63ebfd361dea1cdd56c217317180cdef51e566ca5"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/result.json": {
+      "bytes": 6059,
+      "sha256": "6a428ca80ac69d0a1189e3eb74d3366bd7b945f6f04d05430e5adbd4ecd40896"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/started.json": {
+      "bytes": 257,
+      "sha256": "142626e04eed63d6b663bd3c886e8b4eff4f17dd020b4a5135afeb5f85fc6011"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/worker.log": {
+      "bytes": 1417,
+      "sha256": "a1528f11111b53b7219d6e3644617b09340f880063cfed635b3ecac8a2751a43"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week1_ridge/worker_result.json": {
+      "bytes": 951,
+      "sha256": "a8c9503d84fe82df219dda3e0bee6cf27d842a9c6158ebaf61b84148e3abd745"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/invoked.json": {
+      "bytes": 231,
+      "sha256": "e94dfedb58a5506bd7005ae40ebd420bb2ded65d0e70b2de3d1a8559c6532a66"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/model.pkl": {
+      "bytes": 337698,
+      "sha256": "acd5f1d947ac1494ad3cc3a10cf6355d7b5338425dcefde1cf2c4a0127faa0b1"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/monitor.json": {
+      "bytes": 158,
+      "sha256": "fc6227f925cd41476da754bfce5145db22c4571a0e979c17a43815473f706f26"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/predictions.parquet": {
+      "bytes": 756273,
+      "sha256": "19a2dd4f599a4bc42e2dbd0033cf2f9ea20f5809ae4502f78d8eb26b5384d20c"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/preprocessing.json": {
+      "bytes": 2015,
+      "sha256": "a20c510e812c7d515b75d241b8f05cea4b1c0360232fdc3440c48e55217cdb7d"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/0/meta.yaml": {
+      "bytes": 358,
+      "sha256": "f1c96ce717bbd27916c6ec5df11222d175ea15bcf35649e7bd0bfc7f6070d472"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/artifacts/code_cached.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/artifacts/code_diff.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/artifacts/code_status.txt": {
+      "bytes": 146,
+      "sha256": "6df846b22ea47b74ea65a01254d22b0ed27e4683953f18ee50bfc9aba61fe078"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/artifacts/model.pkl": {
+      "bytes": 337698,
+      "sha256": "acd5f1d947ac1494ad3cc3a10cf6355d7b5338425dcefde1cf2c4a0127faa0b1"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/meta.yaml": {
+      "bytes": 503,
+      "sha256": "ef1947ef6fb73a57134ee1fbcec7276809359f1156a991e03df003099775ee3b"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/metrics/l2.train": {
+      "bytes": 3793,
+      "sha256": "28ded5788fdb364623c6e58cff7c4b4562d8c5c6fd96de42fad3e40d8b4516e7"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/params/cmd-sys.argv": {
+      "bytes": 108,
+      "sha256": "88447952fb9da0a2b1d7a3321eb3e604dd7f09c1b7db1423c9150f2c01be46d1"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/params/fixed_model": {
+      "bytes": 408,
+      "sha256": "b5ebf431d7bf50e265832e4b090bb7a30b36f470c94d23031a0816baa6d1d60e"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/params/plan_fingerprint": {
+      "bytes": 64,
+      "sha256": "dddb255e234f589aa769ee6b6f370bd04f975b4804738abc69545499f763b8ee"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/params/slot": {
+      "bytes": 14,
+      "sha256": "ea8fa6b5c66c4b4db33544a5b472a12cb0aeebad336ef21823e56ca79bf294df"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/params/source_head": {
+      "bytes": 40,
+      "sha256": "6a08d0dc6353f6f57efa570a857e01ec47a855c165650c39fd3f8d67070db445"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/params/train_rows": {
+      "bytes": 7,
+      "sha256": "1b7b850de7a242364f0bceb3af4ace9a6f009ecbdeccdeb7c0f73ac2c7bab225"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/params/training_cutoff": {
+      "bytes": 10,
+      "sha256": "66ee466d12f6f42f840e3ebd93312a9bfa9dc776d8d5cf2c03e772dcea31953b"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/tags/mlflow.runName": {
+      "bytes": 14,
+      "sha256": "ea8fa6b5c66c4b4db33544a5b472a12cb0aeebad336ef21823e56ca79bf294df"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/tags/mlflow.source.git.branch": {
+      "bytes": 27,
+      "sha256": "0ea2ad91ef536b43663d107f5f91217c6cedf062ccbc663f16821e2a46ddc63f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/tags/mlflow.source.git.commit": {
+      "bytes": 40,
+      "sha256": "6a08d0dc6353f6f57efa570a857e01ec47a855c165650c39fd3f8d67070db445"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/tags/mlflow.source.git.repoURL": {
+      "bytes": 45,
+      "sha256": "f5c822d28bde36c525388347c1df7b4523ac21e41888fa8e217a16d9ccb45a9b"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/tags/mlflow.source.name": {
+      "bytes": 75,
+      "sha256": "10b61c67d4e3217f567b199ef0e21c50a3037b4223d321daf79e25eebcf053be"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/tags/mlflow.source.type": {
+      "bytes": 5,
+      "sha256": "646c19373ac9e27e972c8e3bdf6554c4c10d23006c1abec3407cbff80c4ab71f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/55e399fed0d948b8b9fe7c57a5363722/tags/mlflow.user": {
+      "bytes": 13,
+      "sha256": "4194d1706ed1f408d5e02d672777019f4d5385c766a8c6ca8acba3167d36a7b9"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/qlib/mlruns/480106225342587159/meta.yaml": {
+      "bytes": 406,
+      "sha256": "0c933caf675cf15eefa0ed9351a676fa4a757e9bbbb82fc1132d666bac2e3c8f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/result.json": {
+      "bytes": 6250,
+      "sha256": "ddbecbb7506bbe6ff8810f00b9e61ce9026d705339181e5c1b761463e1d0a6fb"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/started.json": {
+      "bytes": 260,
+      "sha256": "24eb06484747c808dd05b2c06d0b72da28040e92062e4dd8183d5448680d225c"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/worker.log": {
+      "bytes": 1652,
+      "sha256": "a9ce1acd754b8d0cf91c375c7ad63a83690e7365dc09ca9693c36297cd91a2f7"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_lightgbm/worker_result.json": {
+      "bytes": 957,
+      "sha256": "28448bb342c945355d032ba6cf433dfa13d378044a103d81e81290996de7b871"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/invoked.json": {
+      "bytes": 228,
+      "sha256": "93098c21cda7a279f22eab74487be7c0f36e7850435028c9c5912a82d99ffacf"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/model.pkl": {
+      "bytes": 1084,
+      "sha256": "291b592912b7ca6a5ad555f603c01d9efe5c0c7fb34145acd8e1bb34a8fdcb0d"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/monitor.json": {
+      "bytes": 158,
+      "sha256": "0a171c0c2786bfcee1eb1b0ad31e0d948cb4b5ebfa7941376de35300b84c9a30"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/predictions.parquet": {
+      "bytes": 716422,
+      "sha256": "60ccc41a6b2fb3aa92d4ce75345dd6f9b9e729af46e19cc01e72a0e830bca899"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/preprocessing.json": {
+      "bytes": 8630,
+      "sha256": "7c1ea1099b65415fd2571ef18477a2e1ff52b0bfee79f381c32f1cbd7a1c4878"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/0/meta.yaml": {
+      "bytes": 355,
+      "sha256": "650510c199c0780507ea45a46d28de80f73c1684000cae05b87ef9ccc48da848"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/artifacts/code_cached.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/artifacts/code_diff.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/artifacts/code_status.txt": {
+      "bytes": 146,
+      "sha256": "6df846b22ea47b74ea65a01254d22b0ed27e4683953f18ee50bfc9aba61fe078"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/artifacts/model.pkl": {
+      "bytes": 1084,
+      "sha256": "291b592912b7ca6a5ad555f603c01d9efe5c0c7fb34145acd8e1bb34a8fdcb0d"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/meta.yaml": {
+      "bytes": 497,
+      "sha256": "ae05354d7f9275972e0aac475f433bf77854f408c2b53a58bea23533a18daf9b"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/params/cmd-sys.argv": {
+      "bytes": 105,
+      "sha256": "6c60be642726bf40737569996013922d670e430d0fa3fcfff7e9c8d325e3def6"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/params/fixed_model": {
+      "bytes": 104,
+      "sha256": "a0850f30b2e5a945534eceb30341a9a39427cd57bf338498f9a92cee166e5753"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/params/plan_fingerprint": {
+      "bytes": 64,
+      "sha256": "dddb255e234f589aa769ee6b6f370bd04f975b4804738abc69545499f763b8ee"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/params/slot": {
+      "bytes": 11,
+      "sha256": "2cc7b5f82ee4e56706060f3ac5ba3e37866611afd8f8b9961f9975f770215377"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/params/source_head": {
+      "bytes": 40,
+      "sha256": "6a08d0dc6353f6f57efa570a857e01ec47a855c165650c39fd3f8d67070db445"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/params/train_rows": {
+      "bytes": 7,
+      "sha256": "1b7b850de7a242364f0bceb3af4ace9a6f009ecbdeccdeb7c0f73ac2c7bab225"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/params/training_cutoff": {
+      "bytes": 10,
+      "sha256": "66ee466d12f6f42f840e3ebd93312a9bfa9dc776d8d5cf2c03e772dcea31953b"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/tags/mlflow.runName": {
+      "bytes": 11,
+      "sha256": "2cc7b5f82ee4e56706060f3ac5ba3e37866611afd8f8b9961f9975f770215377"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/tags/mlflow.source.git.branch": {
+      "bytes": 27,
+      "sha256": "0ea2ad91ef536b43663d107f5f91217c6cedf062ccbc663f16821e2a46ddc63f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/tags/mlflow.source.git.commit": {
+      "bytes": 40,
+      "sha256": "6a08d0dc6353f6f57efa570a857e01ec47a855c165650c39fd3f8d67070db445"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/tags/mlflow.source.git.repoURL": {
+      "bytes": 45,
+      "sha256": "f5c822d28bde36c525388347c1df7b4523ac21e41888fa8e217a16d9ccb45a9b"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/tags/mlflow.source.name": {
+      "bytes": 75,
+      "sha256": "10b61c67d4e3217f567b199ef0e21c50a3037b4223d321daf79e25eebcf053be"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/tags/mlflow.source.type": {
+      "bytes": 5,
+      "sha256": "646c19373ac9e27e972c8e3bdf6554c4c10d23006c1abec3407cbff80c4ab71f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/c0667f9fb95441c589794a65280b1e68/tags/mlflow.user": {
+      "bytes": 13,
+      "sha256": "4194d1706ed1f408d5e02d672777019f4d5385c766a8c6ca8acba3167d36a7b9"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/qlib/mlruns/602961482112469275/meta.yaml": {
+      "bytes": 403,
+      "sha256": "74ac0b2779ff29594c38c0b1f4b489a79595f2ad556227849cf0b1c241a0c589"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/result.json": {
+      "bytes": 6058,
+      "sha256": "48ce628a0fb3e9153799745e054a113b3668b386ea6d9ad69d9c61b59dbce6d9"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/started.json": {
+      "bytes": 257,
+      "sha256": "821e377a7f7664cee1ffaa80cfd3f7930538bd759946aef8e958a9bbde5118ef"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/worker.log": {
+      "bytes": 1417,
+      "sha256": "782a29f41a23646f623423fe239c0e7fc624d1e5f40ae38b354ea6fdfdf11313"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week2_ridge/worker_result.json": {
+      "bytes": 951,
+      "sha256": "ee1e1516fe37dd382069b4c2335abac667688d4fc58ee10b341492e85bdb3e7a"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/invoked.json": {
+      "bytes": 231,
+      "sha256": "292786f833cd7354dba8546b1e3212f5495c446322fe64f5f6aeaae122566626"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/model.pkl": {
+      "bytes": 337713,
+      "sha256": "b0f5b601199507b8725e9fd45549ad09ddeb8e68662299045d60c57b62f8acc6"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/monitor.json": {
+      "bytes": 158,
+      "sha256": "0d94dd582d699cfc0e56295a663c1807552c7cbded14efea0eb799ccf77a9b2d"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/predictions.parquet": {
+      "bytes": 757392,
+      "sha256": "a4860c1a9c675f094414624d9c6bd34df44d690ef846e5f4b8cf0bf7b9b5e348"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/preprocessing.json": {
+      "bytes": 2015,
+      "sha256": "055419383fca07685fc9811efbf4557ee8bdb579aefa7346fd5238bb24c4d90c"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/0/meta.yaml": {
+      "bytes": 358,
+      "sha256": "e09ae9d9b61462d9de2d6be4a4e58e2a84461db21cf35105d73e7626d76d8869"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/artifacts/code_cached.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/artifacts/code_diff.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/artifacts/code_status.txt": {
+      "bytes": 146,
+      "sha256": "6df846b22ea47b74ea65a01254d22b0ed27e4683953f18ee50bfc9aba61fe078"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/artifacts/model.pkl": {
+      "bytes": 337713,
+      "sha256": "b0f5b601199507b8725e9fd45549ad09ddeb8e68662299045d60c57b62f8acc6"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/meta.yaml": {
+      "bytes": 503,
+      "sha256": "1fb0fd338265b920ced228824d1a39a24b24083a9cf869cf76ec1a6f1075b3cc"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/metrics/l2.train": {
+      "bytes": 3807,
+      "sha256": "0a1b33211d5dcda12dfbbe4b6e00ee70f61942c5e25604164d301ee95f70bd14"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/params/cmd-sys.argv": {
+      "bytes": 108,
+      "sha256": "cd53e8b45eed7417a5b80c5e35653336d937a5349492b1b494b4f1d854055763"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/params/fixed_model": {
+      "bytes": 408,
+      "sha256": "b5ebf431d7bf50e265832e4b090bb7a30b36f470c94d23031a0816baa6d1d60e"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/params/plan_fingerprint": {
+      "bytes": 64,
+      "sha256": "dddb255e234f589aa769ee6b6f370bd04f975b4804738abc69545499f763b8ee"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/params/slot": {
+      "bytes": 14,
+      "sha256": "921669400bb9c968d5cd563f407652b781edbae888d926dd7c9015fc74619b3c"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/params/source_head": {
+      "bytes": 40,
+      "sha256": "6a08d0dc6353f6f57efa570a857e01ec47a855c165650c39fd3f8d67070db445"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/params/train_rows": {
+      "bytes": 7,
+      "sha256": "ff113d6237882da18e8bc259bec7a7e860cc60ff2205df9e5d68b14a16eac797"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/params/training_cutoff": {
+      "bytes": 10,
+      "sha256": "1e96549e39569b78bb330169727ab920ba672142936878975a545de9bdfb8995"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/tags/mlflow.runName": {
+      "bytes": 14,
+      "sha256": "921669400bb9c968d5cd563f407652b781edbae888d926dd7c9015fc74619b3c"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/tags/mlflow.source.git.branch": {
+      "bytes": 27,
+      "sha256": "0ea2ad91ef536b43663d107f5f91217c6cedf062ccbc663f16821e2a46ddc63f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/tags/mlflow.source.git.commit": {
+      "bytes": 40,
+      "sha256": "6a08d0dc6353f6f57efa570a857e01ec47a855c165650c39fd3f8d67070db445"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/tags/mlflow.source.git.repoURL": {
+      "bytes": 45,
+      "sha256": "f5c822d28bde36c525388347c1df7b4523ac21e41888fa8e217a16d9ccb45a9b"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/tags/mlflow.source.name": {
+      "bytes": 75,
+      "sha256": "10b61c67d4e3217f567b199ef0e21c50a3037b4223d321daf79e25eebcf053be"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/tags/mlflow.source.type": {
+      "bytes": 5,
+      "sha256": "646c19373ac9e27e972c8e3bdf6554c4c10d23006c1abec3407cbff80c4ab71f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/aa8ac1be0b7d4d68874a3926616447c9/tags/mlflow.user": {
+      "bytes": 13,
+      "sha256": "4194d1706ed1f408d5e02d672777019f4d5385c766a8c6ca8acba3167d36a7b9"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/qlib/mlruns/455974147843705686/meta.yaml": {
+      "bytes": 406,
+      "sha256": "4c12b14a91b28ee2ae046fb39e68d2cc793c9f1c98b45f6316a034af178bbca4"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/result.json": {
+      "bytes": 6249,
+      "sha256": "f4a766bb02aa2a7516f5cbd9de3b9b69f4b74f4cf611fc53789e8076dd482ed3"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/started.json": {
+      "bytes": 260,
+      "sha256": "acb33e577627fc5d8e67c103d8e9e8f67e1e403cd5719520bdd7154cc7000840"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/worker.log": {
+      "bytes": 1652,
+      "sha256": "946f88fccbd87f7b485093188143abcefd0b232495776b2eab3dee96f3313800"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_lightgbm/worker_result.json": {
+      "bytes": 956,
+      "sha256": "879d645968aa325d2a00afb8197771af8d054793bbb2beae1e37aefaf0b838cc"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/invoked.json": {
+      "bytes": 228,
+      "sha256": "d4d995ba146866c1372195c73ed56f44838c06821f4989dd7ffb30ee47ae64bf"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/model.pkl": {
+      "bytes": 1084,
+      "sha256": "7dc22e7cec3465bd8b0ee99ea7e97ca4654dbd123ba4d116a1815d8dc2a51b84"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/monitor.json": {
+      "bytes": 158,
+      "sha256": "67a8309323db747c25ff6b62501aeed121043bb17cf4faf571dfca8cda13dc80"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/predictions.parquet": {
+      "bytes": 718598,
+      "sha256": "3ddd37064a536563836b5e6c570c2db036b51332fa8cb5817d311be5924270b6"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/preprocessing.json": {
+      "bytes": 8622,
+      "sha256": "254ce72bcd71649ef8ef4777b2d8707cde504386dfe13b1c3d168a61662a440c"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/0/meta.yaml": {
+      "bytes": 355,
+      "sha256": "10ed9d679106fc7c598c9935a7be5568e0159d886c29284d7acd1880dad0fd68"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/artifacts/code_cached.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/artifacts/code_diff.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/artifacts/code_status.txt": {
+      "bytes": 146,
+      "sha256": "6df846b22ea47b74ea65a01254d22b0ed27e4683953f18ee50bfc9aba61fe078"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/artifacts/model.pkl": {
+      "bytes": 1084,
+      "sha256": "7dc22e7cec3465bd8b0ee99ea7e97ca4654dbd123ba4d116a1815d8dc2a51b84"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/meta.yaml": {
+      "bytes": 497,
+      "sha256": "3a481f9000462a0778c58157594f1c08193c74d8c253d071a35be2192e5855e0"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/params/cmd-sys.argv": {
+      "bytes": 105,
+      "sha256": "ac10b4505ec25a814f863651345f8f910c765e25007e530ec2d5475a3405135e"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/params/fixed_model": {
+      "bytes": 104,
+      "sha256": "a0850f30b2e5a945534eceb30341a9a39427cd57bf338498f9a92cee166e5753"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/params/plan_fingerprint": {
+      "bytes": 64,
+      "sha256": "dddb255e234f589aa769ee6b6f370bd04f975b4804738abc69545499f763b8ee"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/params/slot": {
+      "bytes": 11,
+      "sha256": "f3cca6116c1ded3781f5489cb50b431f62adae55de703e2299725c939e38c4b2"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/params/source_head": {
+      "bytes": 40,
+      "sha256": "6a08d0dc6353f6f57efa570a857e01ec47a855c165650c39fd3f8d67070db445"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/params/train_rows": {
+      "bytes": 7,
+      "sha256": "ff113d6237882da18e8bc259bec7a7e860cc60ff2205df9e5d68b14a16eac797"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/params/training_cutoff": {
+      "bytes": 10,
+      "sha256": "1e96549e39569b78bb330169727ab920ba672142936878975a545de9bdfb8995"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/tags/mlflow.runName": {
+      "bytes": 11,
+      "sha256": "f3cca6116c1ded3781f5489cb50b431f62adae55de703e2299725c939e38c4b2"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/tags/mlflow.source.git.branch": {
+      "bytes": 27,
+      "sha256": "0ea2ad91ef536b43663d107f5f91217c6cedf062ccbc663f16821e2a46ddc63f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/tags/mlflow.source.git.commit": {
+      "bytes": 40,
+      "sha256": "6a08d0dc6353f6f57efa570a857e01ec47a855c165650c39fd3f8d67070db445"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/tags/mlflow.source.git.repoURL": {
+      "bytes": 45,
+      "sha256": "f5c822d28bde36c525388347c1df7b4523ac21e41888fa8e217a16d9ccb45a9b"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/tags/mlflow.source.name": {
+      "bytes": 75,
+      "sha256": "10b61c67d4e3217f567b199ef0e21c50a3037b4223d321daf79e25eebcf053be"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/tags/mlflow.source.type": {
+      "bytes": 5,
+      "sha256": "646c19373ac9e27e972c8e3bdf6554c4c10d23006c1abec3407cbff80c4ab71f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/6a500f800f6a4cb2be2c19cb1e882f4b/tags/mlflow.user": {
+      "bytes": 13,
+      "sha256": "4194d1706ed1f408d5e02d672777019f4d5385c766a8c6ca8acba3167d36a7b9"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/qlib/mlruns/449586294305886802/meta.yaml": {
+      "bytes": 403,
+      "sha256": "8d99f9decd0184398d5d6c0a2af418ffc1755ff60640b1e2a5f1005780096141"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/result.json": {
+      "bytes": 6059,
+      "sha256": "d91ac630882fb1d931491c5171246fb5d7c44ad3a93fa5849a154ba25fd83272"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/started.json": {
+      "bytes": 257,
+      "sha256": "039c68adaf281dba002c2f929508a187b9f2e13bc0f7e14dc6d7b98b59b4346f"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/worker.log": {
+      "bytes": 1417,
+      "sha256": "fd831fb0192bb519328897f702373eb9f5bf2d021d84967193acebbfe392b20a"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/fits/week3_ridge/worker_result.json": {
+      "bytes": 951,
+      "sha256": "c06ca95bd93c9e8cf1837b1cd32cbf67da5ec3b5f3b7bdd208a47e2e0bbdbf82"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/independent_verification.json": {
+      "bytes": 2220,
+      "sha256": "4ab30d519b485e266c66c1f2c7c851de7a52b6be9b5bdecd57875b21514debdf"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/plan.json": {
+      "bytes": 162670,
+      "sha256": "b927074c9178b4160ec885ee42a014b9ae20ade9107270bda4fc29cce85c83d3"
+    },
+    "data/products/alpha158_weekly/alpha158_weekly_pilot_20260912/report.json": {
+      "bytes": 44197,
+      "sha256": "f828d63c6c6b21a067bf01d266d526ad1cc64dfae1dd99e87c264876bf913264"
+    },
+    "data/products/extended_frequency_plan/extended_plan_20260912/independent_verification.json": {
+      "bytes": 12473,
+      "sha256": "764abffd5b3374de5b6c2ae563f2a8fd93bea48bbbd81aaba639f85aac2b5f56"
+    },
+    "data/products/extended_frequency_plan/extended_plan_20260912/plan.json": {
+      "bytes": 220865,
+      "sha256": "b554fae400af5116df5cc13abdab9fa36b18a8458ecab192c3058aad11bdef1c"
+    },
+    "data/products/extended_frequency_plan/extended_plan_20260912/report.json": {
+      "bytes": 991,
+      "sha256": "d5d9a831281ee37dc53e5d4698fda50834e639edac579005794e8871ee085c2a"
+    },
+    "data/products/extended_frequency_plan/extended_plan_20260912/schedule.json": {
+      "bytes": 51327,
+      "sha256": "ab06322c488f18a0784091d5d362a1bb9c9ac828b9f47c6c9a83b8fd0c64f050"
+    },
+    "data/products/extended_frequency_plan/extended_plan_20260912/weeks.csv": {
+      "bytes": 7026,
+      "sha256": "287cc3d00019ee3086f8a1811bf7123e4e1343ec94bf71b3efbabf123220f462"
+    },
+    "data/products/weekly_candidate_plan/weekly_plan_20260912/independent_verification.json": {
+      "bytes": 1624,
+      "sha256": "403551f5eb38933245d5c14c2fed3947cf2970aababaa2d82791d72a1bb56bb1"
+    },
+    "data/products/weekly_candidate_plan/weekly_plan_20260912/monthly.json": {
+      "bytes": 42475,
+      "sha256": "5e8621413de1bffd6ba38e0805c8879e9ae8df2ea808bd4ae66ed43c8e49c6c9"
+    },
+    "data/products/weekly_candidate_plan/weekly_plan_20260912/plan.json": {
+      "bytes": 87015,
+      "sha256": "3e2fbf87ff0c2ef6bd9c222701a18efcc641a13e88e615155d10f64d5875eb0c"
+    },
+    "data/products/weekly_candidate_plan/weekly_plan_20260912/report.json": {
+      "bytes": 994,
+      "sha256": "271d4cdc0ae4d75a0a067c5a0ee22cde46177b0addf6552e06583f92d406bd50"
+    },
+    "data/products/weekly_candidate_plan/weekly_plan_20260912/weekly.json": {
+      "bytes": 2519,
+      "sha256": "160cdcf76fd70f5b812639a2e6acc24143df4754b4ec82e3403b497f6d6dcdaf"
+    }
+  },
+  "runtime": {
+    "python_and_native_source_trees": {
+      "lightgbm": {
+        "files": 10,
+        "sha256": "afc2d097f0a4ec8e25bfcea16dff970c71d22c29d08bb3ad47ed6d91952a8887"
+      },
+      "mlflow": {
+        "files": 1185,
+        "sha256": "9acbcce33e7ed93d9a6dbabed0de230ce424d8c8ae0ce43ff8c36fc8ac249dfc"
+      },
+      "numpy": {
+        "files": 426,
+        "sha256": "fe9d9c73c402333998cd6d02adec158aa81c55f6d6a5a8888c577c53a51dafaa"
+      },
+      "qlib": {
+        "files": 232,
+        "sha256": "584efcc4d823f59a8ae3241c0ae9ec411b2054823a06b741cf79bb35b5fc5bf5"
+      },
+      "scipy": {
+        "files": 1094,
+        "sha256": "9f91eeea0d5c5cd20c191b11b300d4dbbdc5cc9089ef9f5bae924bf991f27c41"
+      },
+      "sklearn": {
+        "files": 722,
+        "sha256": "497304e28c929e97f4917b4dffcef586dad50be5b3e81f1ae367eac2bfb98f2a"
+      }
+    },
+    "versions": {
+      "lightgbm": "4.7.0",
+      "mlflow": "3.16.0",
+      "numpy": "2.5.2",
+      "pandas": "3.0.5",
+      "pyarrow": "25.0.1",
+      "pyqlib": "0.9.7",
+      "scikit-learn": "1.9.0",
+      "scipy": "1.18.1"
+    }
+  },
+  "pre_fit_membership_receipt": "9ceb25938dee3ead66dd37f150d1ac43f2f108c60188f4db7ce8f9b579f3b68b",
+  "pre_fit_membership_generator_sha256": "0382497a8d8dcc4778c1b3e176cab8e39bb3c8b771329b431b4aeb11527881c0"
+}
