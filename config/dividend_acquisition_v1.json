@@ -1,0 +1,133 @@
+{
+  "version": "dividend-targets-v1",
+  "request_path": "data/products/cost_input_audit/cost_inputs_20260911/acquisition_request.json",
+  "request_fingerprint": "739fe6de443744b360381f1ade45be9a12e1cf34c0d127d20006e64797853693",
+  "instrument_count": 4516,
+  "endpoint": "https://api.tushare.pro",
+  "api_name": "dividend",
+  "fields": [
+    "ts_code",
+    "end_date",
+    "ann_date",
+    "div_proc",
+    "stk_div",
+    "stk_bo_rate",
+    "stk_co_rate",
+    "cash_div",
+    "cash_div_tax",
+    "record_date",
+    "ex_date",
+    "pay_date",
+    "div_listdate",
+    "imp_ann_date",
+    "base_date",
+    "base_share"
+  ],
+  "row_cap": 2000,
+  "requests_per_minute": 120,
+  "max_retries": 100,
+  "max_body_bytes": 536870912,
+  "per_response_bytes": 4194304,
+  "inputs": {
+    "config/cost_input_audit_v1.json": {
+      "sha256": "68319a7c42e24ce80fe8d6e14d07a5fc6218433560e99e97a57793e4412abcae",
+      "bytes": 2054
+    },
+    "config/cost_input_sources_v1.json": {
+      "sha256": "23e9d93cac08b2bf5dab7a2595b58d20ac4a0de0096a9a2da9ff0d7a74626158",
+      "bytes": 520728
+    },
+    "data/products/corporate_action_staging/dividend_targets_20260911/source_downloads.jsonl": {
+      "sha256": "2b39ee97c60eb234abc781872a904e1ddcd5b5a474e05b6c59e6e11bc4a6108c",
+      "bytes": 689
+    },
+    "data/products/corporate_action_staging/dividend_targets_20260911/sources/dividend.html": {
+      "sha256": "2d0eb65ee7d8bae576aa91f17748add56e5828376beb2b43c711adea3f909894",
+      "bytes": 35364
+    },
+    "data/products/corporate_action_staging/dividend_targets_20260911/sources/permissions.html": {
+      "sha256": "765453b00496cdf9749a7d733c189766e3a2411d3ada03f3d96bb98c3c3ecb27",
+      "bytes": 20320
+    },
+    "data/products/corporate_action_staging/dividend_targets_20260911/sources/protocol.html": {
+      "sha256": "3d7cddd537439086cf2f2ef70e652076144635848a2804eb568121f4fec49439",
+      "bytes": 17773
+    },
+    "data/products/cost_input_audit/cost_inputs_20260911/acquisition_request.json": {
+      "sha256": "8563412d182957d01cc0220fea61ea1b12c963f83604fcf5073b6cd5756c5a84",
+      "bytes": 118172
+    },
+    "data/products/cost_input_audit/cost_inputs_20260911/report.json": {
+      "sha256": "0b3591c1143df77ac7d950320abdc3761d46b6e62efd3d34661de3e19c64c932",
+      "bytes": 567312
+    },
+    "src/quantlab/data/dividend_acquisition.py": {
+      "sha256": "cbf54f5ebb6d5f85fbf1a8f1a5a68688217f3802b989a54ecb5fbd35f0a4f8dd",
+      "bytes": 17610
+    },
+    "src/quantlab/data/dividend_raw.py": {
+      "sha256": "b20c2b5a9bcddce19c3f471b0703072516a9f71fb1b770b2271debd69a6e89c5",
+      "bytes": 9473
+    },
+    "scripts/acquire_dividend_targets.py": {
+      "sha256": "adae4fcb8a788d132af47ff8497fa7e1e46b4ed3cbcf902a8bcfbf513ee7f91d",
+      "bytes": 1314
+    }
+  },
+  "resources": {
+    "max_generated_bytes": 1073741824,
+    "max_rss_bytes": 4294967296,
+    "reserve_host_D_bytes": 8589934592,
+    "max_wakeup_seconds": 2700,
+    "next_partition_time_reserve_seconds": 300
+  },
+  "official_sources": [
+    {
+      "status": "success",
+      "url": "https://tushare.pro/document/2?doc_id=103",
+      "retrieved_at": "2026-09-11T15:49:47.3004994+00:00",
+      "sha256": "2d0eb65ee7d8bae576aa91f17748add56e5828376beb2b43c711adea3f909894",
+      "bytes": 35364,
+      "id": "dividend"
+    },
+    {
+      "status": "success",
+      "url": "https://tushare.pro/document/1?doc_id=290",
+      "retrieved_at": "2026-09-11T15:49:47.7090212+00:00",
+      "sha256": "765453b00496cdf9749a7d733c189766e3a2411d3ada03f3d96bb98c3c3ecb27",
+      "bytes": 20320,
+      "id": "permissions"
+    },
+    {
+      "status": "success",
+      "url": "https://tushare.pro/document/1?doc_id=40",
+      "retrieved_at": "2026-09-11T15:49:47.7675242+00:00",
+      "sha256": "3d7cddd537439086cf2f2ef70e652076144635848a2804eb568121f4fec49439",
+      "bytes": 17773,
+      "id": "protocol"
+    }
+  ],
+  "source_interpretation": {
+    "minimum_points": 2000,
+    "published_row_cap": 2000,
+    "pagination_for_saturated_codes": "separate_task",
+    "query_scope": "All returned history for each exact requested ts_code; retain retrospective versions and dates outside required window.",
+    "required_window": [
+      "2023-01-04",
+      "2026-09-10"
+    ],
+    "units": {
+      "stk_div": "shares/share total bonus+conversion",
+      "stk_bo_rate": "bonus shares/share",
+      "stk_co_rate": "conversion shares/share",
+      "cash_div": "CNY/share provider after-tax field, not account-specific receipt",
+      "cash_div_tax": "CNY/share before tax",
+      "base_share": "ten thousand shares"
+    },
+    "http_documentation": "Official REST endpoint is documented using http; this batch requires verified TLS https at the same api.tushare.pro host, with no downgrade or redirects. Availability is untested until the first counted request.",
+    "sdk_difference": "Installed SDK uses api.waditu.com/dataapi; this raw-only adapter follows the explicitly documented api.tushare.pro REST envelope instead of deserializing SDK DataFrames."
+  },
+  "complete_event_history_certified": false,
+  "execution_authority": false,
+  "performance_evidence": false
+}
