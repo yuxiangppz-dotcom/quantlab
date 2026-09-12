@@ -43,6 +43,7 @@ from quantlab.personal.account import REQUIRED_COLUMNS
 from quantlab.personal.tracking import FILL_COLUMNS
 from quantlab.research.forward_shadow import latest_forward_shadow
 from quantlab.ui.extended_economic import render_economic
+from quantlab.ui.research_program import render_program
 from quantlab.ui.workbench import DATA_STATUS_LABELS, csv_template, preview_matches, public_error
 from quantlab.ui.workbench_pages import (
     render_cash_and_valuation,
@@ -100,13 +101,15 @@ st.caption("本地日频研究与辅助决策工具；研究目标不是券商�
 page = st.sidebar.radio(
     "页面",
     ("开始使用", "数据状态与日报", "股票排名与因子", "前瞻观察",
-     "账户与参考计划", "资金流水与估值", "回测与基准", "组合与成本研究"),
+     "账户与参考计划", "资金流水与估值", "回测与基准", "组合与成本研究", "策略研究进度"),
 )
 
 if page == "开始使用":
     render_start()
 elif page == "组合与成本研究":
     render_economic()
+elif page == "策略研究进度":
+    render_program()
 elif page == "前瞻观察":
     render_shadow()
 elif page == "资金流水与估值":
