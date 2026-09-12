@@ -76,6 +76,7 @@ def render_program():
     annual = summary[summary.period.isin([str(y) for y in range(2020, 2025)])]
     pivot = annual.pivot(index="feature", columns="period", values="mean_rank_ic").reindex(NAMES)
     pivot.index = pivot.index.map(NAMES)
+    pivot.index.name = "指标"
     st.markdown("**四项资金流指标的逐年关联**")
     st.dataframe(pivot.round(4), width="stretch")
     st.write(
@@ -90,6 +91,10 @@ def render_program():
         period = st.selectbox("成分对照区间", ["2020-2024", "2020-2022", "2023-2024"])
         selected = table[table.period == period].copy()
         selected["series"] = selected.series.map(COMPONENTS)
+        selected["mean"] = selected["mean"].map(lambda x: f"{x:.4f}" if pd.notna(x) else "未知")
+        selected["moving_block_95_interval"] = selected["moving_block_95_interval"].map(
+            lambda x: f"[{x[0]:.4f}, {x[1]:.4f}]" if isinstance(x, list) else "未知"
+        )
         selected = selected.rename(
             columns={
                 "series": "信息来源",
@@ -139,4 +144,7 @@ def render_program():
         "text/csv",
         on_click="ignore",
     )
-    st.caption(f"记录时间：{report['at']}。缺失数据保持未知；未模拟订单、成交或账户收益。")
+    recorded_at = pd.Timestamp(report["at"]).tz_convert("Asia/Shanghai").strftime("%Y-%m-%d %H:%M")
+    st.caption(
+        f"记录时间：{recorded_at}（北京时间）。缺失数据保持未知；未模拟订单、成交或账户收益。"
+    )

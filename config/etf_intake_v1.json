@@ -1,0 +1,51 @@
+{
+  "schema": "quantlab_etf_intake_v1",
+  "expected_start_head": "5eef98b2f5dd71021f78a44c25c1ccb1bf80dd7b",
+  "codes": [
+    "159915.SZ",
+    "510300.SH",
+    "510500.SH",
+    "511010.SH",
+    "518880.SH"
+  ],
+  "inputs": {
+    "data/products/research_program/launch_20260912/intake/attempts/fund_D/response.body": {
+      "sha256": "04beadc61fcb3df073a8049124a899e6f7e76fa3d256d4b6535fef6ca3fdf1ff",
+      "bytes": 173047
+    },
+    "data/products/research_program/launch_20260912/intake/attempts/fund_I/response.body": {
+      "sha256": "59a657fcf6001f76a0a918bb9abb9dcd270ab19695cf9f83fa13a9c37da49e19",
+      "bytes": 316
+    },
+    "data/products/research_program/launch_20260912/intake/attempts/fund_L/response.body": {
+      "sha256": "e6dcd25c9c4b1ec5c739c6534abdf7ee585ce3629a46c259076879384db3fbdf",
+      "bytes": 523890
+    },
+    "data/products/research_program/launch_20260912/intake_independent_proof.json": {
+      "sha256": "c2255d096dbebb7e75e2b45ad99baad6617f8de14cc4147056b5c4703ff64c05",
+      "bytes": 42859
+    }
+  },
+  "output": "data/products/research_program/launch_20260912/etf_intake",
+  "endpoint": "https://api.tushare.pro",
+  "start_date": "20191001",
+  "end_date": "20241231",
+  "max_requests": 20,
+  "max_retries": 0,
+  "requests_per_minute": 30,
+  "per_response_bytes": 4194304,
+  "max_body_bytes": 67108864,
+  "economic_paths_authorized": 0,
+  "model_fits_authorized": 0,
+  "funding_features_authorized": [],
+  "canonical_writes_authorized": false,
+  "historical_pit_certified": false,
+  "execution_authority": false,
+  "resources": {
+    "max_generated_bytes": 134217728,
+    "reserve_host_D_bytes": 8589934592,
+    "max_rss_bytes": 2147483648,
+    "max_wakeup_seconds": 600,
+    "next_partition_time_reserve_seconds": 60
+  }
+}

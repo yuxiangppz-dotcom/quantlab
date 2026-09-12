@@ -207,8 +207,9 @@ def load_contract(root):
 class Journal:
     """One durable intent per predeclared request, no automatic replay or budget reset."""
 
-    def __init__(self, out, config, requests, identity):
+    def __init__(self, out, config, requests, identity, *, inspector=inspect):
         self.out, self.config, self.requests, self.identity = out, config, requests, identity
+        self.inspector = inspector
         self.records = []
         wanted = {r["id"]: r for r in requests}
         folder = out / "attempts"
@@ -307,7 +308,7 @@ class Journal:
             f.flush()
             os.fsync(f.fileno())
         profile = (
-            inspect(raw, intent["request"])
+            self.inspector(raw, intent["request"])
             if transport["transport_status"] == "received"
             else {"status": transport["transport_status"], "rows": None}
         )
