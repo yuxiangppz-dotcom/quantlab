@@ -1,0 +1,41 @@
+{
+  "schema": "quantlab_program_intake_v1",
+  "program_id": "research_program_v3_20260912",
+  "task_id": "program_intake_20260912",
+  "expected_start_head": "f52f545cee31848216fd933f5d4e38754a70ceec",
+  "approved_plan_sha256": "213e697ea0719b4f6bb03f14064cf682bb54729a054f397117438bee6cedaa64",
+  "selection_path": "data/products/research_program/launch_20260912/selection.json",
+  "selection_fingerprint": "04a36754511be4136685a3ce378d60aa8c746ca218da7fa66d62df23b2e5840e",
+  "selection_count": 256,
+  "inputs": {
+    "data/products/research_program/launch_20260912/selection.json": {
+      "sha256": "e46e04b85208d3715b1dfaa1c7944f6f4b3ef37ef614ed7ed47cb9e4152c6dd9",
+      "bytes": 4117
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-31.parquet": {
+      "sha256": "62b6b7fc088c57d6d36c58abaabf6c61fbda7368c36bc7c32760dec80a34031e",
+      "bytes": 155199
+    }
+  },
+  "output": "data/products/research_program/launch_20260912/intake",
+  "endpoint": "https://api.tushare.pro",
+  "start_date": "20191001",
+  "end_date": "20241231",
+  "max_requests": 259,
+  "max_retries": 0,
+  "requests_per_minute": 60,
+  "per_response_bytes": 4194304,
+  "max_body_bytes": 268435456,
+  "resources": {
+    "max_generated_bytes": 536870912,
+    "reserve_host_D_bytes": 8589934592,
+    "max_rss_bytes": 2147483648,
+    "max_wakeup_seconds": 1200,
+    "next_partition_time_reserve_seconds": 120
+  },
+  "economic_paths_authorized": 0,
+  "model_fits_authorized": 0,
+  "canonical_writes_authorized": false,
+  "historical_pit_certified": false,
+  "execution_authority": false
+}
