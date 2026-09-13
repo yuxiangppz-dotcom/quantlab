@@ -8,7 +8,9 @@
 - 任务卡：[risk_ledger_integration_v1](development_tasks/risk_ledger_integration_v1.md)
   （其中"风险未知继续运行"的表述已被
   [risk_ledger_fix_v1](development_tasks/risk_ledger_fix_v1.md) 按原委托
-  纠正为"必要未知停止"）；修复卡同时记录 R1–R5 的审查修复。
+  纠正为"必要未知停止"）；[fix_v2](development_tasks/risk_ledger_fix_v2.md)
+  补齐事务隔离和配置绑定，复核补充见
+  [review_followup](development_tasks/risk_ledger_review_followup.md)。
 - 代码：`src/quantlab/research/risk_ledger_loop.py`（新）；
   `quantity_scheduler.py` 的单日推进函数 `advance_research_day` 要求账本
   恰好位于前一共同交易日（拒绝同日重入/逆序/跳日），且只在整日成功后
@@ -39,13 +41,19 @@ D 净值不可用）、目标股票缺原始标记、权益非正、公司行为
 
 `RiskLedgerCheckpoint` 绑定：完整账本、待执行意图（全部签署在账本当日，
 支持 2021-12-31 信号 → 2022-01-04 执行的首次建仓）、D 状态、attempted
-订单身份、**原始本金**与运行标识 `run_id`。`run_risk_ledger_loop` 从检查点
-启动并在结果上暴露最后提交的检查点；续跑不重播种空待执行列表、不把
-剩余现金当原始本金（`result.initial_cash_fen` 恒为原始值）、`run_id` 不匹配
-即拒绝。测试在含部分成交与被挡订单的世界里**逐切分日**恢复并逐日比对
+订单身份、**原始本金**与完整不可变的 `RiskLedgerConfig`（含 `run_id`、
+风险规则、NAV 流/来源、V/M 来源及数量网格的实际内容）。
+`run_risk_ledger_loop` 从检查点启动，并在结果上暴露最后提交的检查点；
+续跑不重播种空待执行列表、不把剩余现金当原始本金
+（`result.initial_cash_fen` 恒为原始值），配置不相等即拒绝。
+沿用同一个运行名称而改风险规则或数量网格，也会拒绝。
+测试在含部分成交与被挡订单的世界里**逐切分日**恢复并逐日比对
 订单、费用、现金、股数、风险状态与本金。
 
-## 可运行示例（人工价格，非历史表现）
+## 接口示意（调用者需提供证据，非完整可运行程序）
+
+下例省略了人工日历与证据构造；完整可运行情景见测试文件。
+先创建配置，再把同一个配置交给初始检查点和闭环。
 
 ```python
 from datetime import date
@@ -64,22 +72,22 @@ fees = ResearchFeeScenario(...)      # 显式费用；未确认项不得填零
 evidence = {t: LedgerSessionEvidence(t, contexts(t), marks(t), True) for t in ...}
 base_targets = {t: strategy_valid_target(t) for t in ...}   # 策略侧逐日给出
 
+config = RiskLedgerConfig(
+    rule_id="VMD", run_id="s4_scenario_2022_vmd",
+    nav_series_id="s4_scenario_2022", nav_source="loop_marked_equity",
+    generation_rules=rules,
+    return_source="parallel_unscaled_ledger",
+    index_source="csi_all_share_000985_pit",
+)
 start = RiskLedgerCheckpoint.start(
-    signal_date=calendar[0],          # 或 2021-12-31，携带首日建仓意图
+    signal_date=evaluation_start_previous_session,  # V/M 预热在此日期之前备齐
     initial_cash_fen=20_000_000,
-    run_id="s4_baseline_2022_c80",
-    drawdown_state=RiskState.initial(Decimal(20_000_000), "s4_baseline_2022"),
+    config=config,
+    drawdown_state=RiskState.initial(Decimal(20_000_000), config.nav_series_id),
 )
 result = run_risk_ledger_loop(
     checkpoint=start, calendar=calendar, requested_end=calendar[-2],
-    base_targets=base_targets, evidence=evidence,
-    config=RiskLedgerConfig(
-        rule_id="VMD", run_id="s4_baseline_2022_c80",
-        nav_series_id="s4_baseline_2022", nav_source="loop_marked_equity",
-        generation_rules=rules,
-        return_source="parallel_unscaled_ledger",
-        index_source="csi_all_share_000985_pit",
-    ),
+    base_targets=base_targets, evidence=evidence, config=config,
     unscaled_risk_returns=...,   # 仅 V 系规则；未缩放口径，先于窗口备齐
     index_closes=...,            # 仅 M 系规则；000985 PIT
 )
@@ -99,7 +107,7 @@ for record in result.records:
 ## 与 Codex 的接口分工
 
 - Codex 提供：逐日基础目标、逐日执行证据（上下文+原始标记+公司行为声明）、
-  V 未缩放收益系列、M 指数序列、D 状态持久化位置、`run_id` 命名约定。
+  V 未缩放收益系列、M 指数序列、D 状态持久化位置、固定配置和运行身份。
 - 本模块提供：闭环驱动、差分意图、原子检查点、停止语义。
 - 首条历史回放验入状态（按封存事实三档区分）：
   [s4_first_replay_admission_zh](s4_first_replay_admission_zh.md)——
