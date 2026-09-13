@@ -201,13 +201,22 @@ def advance_research_day(
     Shared single-day engine of :func:`simulate_research_schedule`. The book
     is carried forward chronologically instead of being recreated flat, so a
     daily driver can read completed state before deciding the next session's
-    orders. Semantics are identical to the whole-schedule entry.
+    orders. Semantics are identical to the whole-schedule entry. The book must
+    sit on the immediately previous calendar session: same-day re-entry,
+    reverse and skipped sessions reject before any capacity is pruned. The
+    caller's attempted-id set is updated only when the whole day succeeds.
     """
     if type(index) is not int or not 1 <= index < len(calendar) - 1:
         raise ValueError("day index requires previous and following calendar padding")
     if batch.session != calendar[index]:
         raise ValueError("batch session does not match the calendar index")
-    reason = _preflight(book, batch, calendar[index - 1], calendar[index + 1], attempted)
+    if book.asof_date != calendar[index - 1]:
+        raise ValueError(
+            f"book must sit on the previous session {calendar[index - 1]}, "
+            f"got {book.asof_date}"
+        )
+    local_attempted = set(attempted)
+    reason = _preflight(book, batch, calendar[index - 1], calendar[index + 1], local_attempted)
     if reason:
         return DayAdvance("stopped", None, reason)
     day = calendar[index]
@@ -223,10 +232,12 @@ def advance_research_day(
     for order in (*sells, *buys):
         transition = simulate_research_order(working, order, contexts[order.instrument_id])
         working = transition.book
-        attempted.add(order.order_id)
+        local_attempted.add(order.order_id)
         attempts.append(ScheduledAttempt(order, transition))
     marks = {x.instrument_id: x.price_fen for x in batch.marks}
     value = sum(lot.quantity * marks[lot.instrument_id] for lot in working.lots)
+    attempted.clear()
+    attempted.update(local_attempted)
     return DayAdvance(
         "advanced",
         ResearchDayRecord(

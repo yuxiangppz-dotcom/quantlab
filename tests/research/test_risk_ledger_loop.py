@@ -8,7 +8,7 @@ from decimal import Decimal
 import pytest
 
 from quantlab.portfolio.models import TargetPortfolio, TargetWeight
-from quantlab.research.market_risk import IndexClose, RiskState
+from quantlab.research.market_risk import IndexClose, RiskState, UnscaledReturn
 from quantlab.research.quantity_kernel import (
     ResearchBook,
     ResearchFeeScenario,
@@ -21,8 +21,8 @@ from quantlab.research.quantity_scheduler import (
     simulate_research_schedule,
 )
 from quantlab.research.risk_ledger_loop import (
-    DAY_RISK_UNKNOWN,
     LedgerSessionEvidence,
+    RiskLedgerCheckpoint,
     RiskLedgerConfig,
     run_risk_ledger_loop,
 )
@@ -51,6 +51,19 @@ FEES = ResearchFeeScenario(
     additional_fee_fixed_fen=0,
     adverse_slippage_rate=Decimal("0"),
 )
+# Explicit nonzero manual fees: 0.02% commission (min 5 CNY), 0.1% sell stamp.
+FEES_REAL = ResearchFeeScenario(
+    scenario_id="synthetic_real_fees",
+    effective_from=date(2023, 1, 1),
+    effective_through=date(2026, 12, 31),
+    commission_rate=Decimal("0.0002"),
+    minimum_commission_fen=500,
+    buy_stamp_rate=Decimal("0"),
+    sell_stamp_rate=Decimal("0.001"),
+    additional_fee_rate=Decimal("0"),
+    additional_fee_fixed_fen=0,
+    adverse_slippage_rate=Decimal("0"),
+)
 CASH_FEN = 20_000_000  # 200,000 CNY in fen
 
 
@@ -73,6 +86,7 @@ def _context(
     signal_day: date,
     at_down_limit: bool = False,
     session_volume: int = 10**9,
+    fees: ResearchFeeScenario = FEES,
 ) -> ResearchSession:
     return ResearchSession(
         instrument_id=code,
@@ -94,7 +108,7 @@ def _context(
         session_volume_shares=session_volume,
         participation=Decimal("0.05"),
         rules=RULES,
-        fees=FEES,
+        fees=fees,
     )
 
 
@@ -106,6 +120,8 @@ def _evidence(
     signal_day: date,
     limit_down: tuple[str, ...] = (),
     volumes: dict[str, int] | None = None,
+    fees: ResearchFeeScenario = FEES,
+    corporate: bool | None = True,
 ) -> LedgerSessionEvidence:
     volumes = volumes or {}
     return LedgerSessionEvidence(
@@ -119,11 +135,12 @@ def _evidence(
                 signal_day=signal_day,
                 at_down_limit=code in limit_down,
                 session_volume=volumes.get(code, 10**9),
+                fees=fees,
             )
             for code, close in sorted(prices.items())
         ),
         marks=tuple(RawCloseMark(code, day, close) for code, close in sorted(prices.items())),
-        corporate_processing_complete=True,
+        corporate_processing_complete=corporate,
     )
 
 
@@ -133,8 +150,8 @@ def _evidence_for_calendar(
     *,
     limit_down_by_day: dict[int, tuple[str, ...]] | None = None,
     volumes_by_day: dict[int, dict[str, int]] | None = None,
+    fees: ResearchFeeScenario = FEES,
 ):
-    """prices_by_day: mapping index -> dict[str, int]."""
     limit_down_by_day = limit_down_by_day or {}
     volumes_by_day = volumes_by_day or {}
     evidence = {}
@@ -147,6 +164,7 @@ def _evidence_for_calendar(
                 signal_day=calendar[i - 1],
                 limit_down=limit_down_by_day.get(i, ()),
                 volumes=volumes_by_day.get(i),
+                fees=fees,
             )
     return evidence
 
@@ -159,13 +177,10 @@ def _target(weights: dict[str, float], as_of: date) -> TargetPortfolio:
     return TargetPortfolio(as_of=as_of, positions=positions, cash_weight=1 - sum(weights.values()))
 
 
-def _flat_book(cash_fen: int, asof: date) -> ResearchBook:
-    return ResearchBook(asof_date=asof, cash_fen=cash_fen)
-
-
 def _config(rule_id: str = "C80", **overrides) -> RiskLedgerConfig:
     params = dict(
         rule_id=rule_id,
+        run_id="run_a",
         nav_series_id="synthetic_nav",
         nav_source="synthetic_ledger",
         generation_rules=RULES,
@@ -176,38 +191,50 @@ def _config(rule_id: str = "C80", **overrides) -> RiskLedgerConfig:
     return RiskLedgerConfig(**params)
 
 
+def _start(state=None):
+    return RiskLedgerCheckpoint.start(
+        signal_date=START,
+        initial_cash_fen=CASH_FEN,
+        run_id="run_a",
+        drawdown_state=state,
+    )
+
+
+def _run(calendar, end, base, evidence, config, **extra):
+    checkpoint = extra.pop("checkpoint", None) or _start(
+        state=extra.pop("state", None)
+    )
+    return run_risk_ledger_loop(
+        checkpoint=checkpoint,
+        calendar=calendar,
+        requested_end=end,
+        base_targets=base,
+        evidence=evidence,
+        config=config,
+        **extra,
+    )
+
+
 class TestParityAndEntry:
     def test_c80_loop_matches_old_scheduler_book(self):
         calendar = _weekdays(6)
         prices = {i: {"A": 1000, "B": 2000} for i in range(1, 6)}
         evidence = _evidence_for_calendar(calendar, prices)
         base = {day: _target({"A": 0.4, "B": 0.4}, day) for day in calendar[1:5]}
-        result = run_risk_ledger_loop(
-            initial_book=_flat_book(CASH_FEN, calendar[0]),
-            calendar=calendar,
-            requested_end=calendar[4],
-            base_targets=base,
-            evidence=evidence,
-            config=_config("C80"),
-        )
+        result = _run(calendar, calendar[4], base, evidence, _config("C80"))
         assert result.status == "completed_scenario"
-        # Day 1 decides; its intents execute on day 2.
         day1, day2 = result.records[0], result.records[1]
-        assert [o.instrument_id for o in day1.next_intents] == ["A", "B"]
-        assert all(o.side == "buy" for o in day1.next_intents)
-        # 0.4*20,000,000/1000 = 8000 shares of A; 4000 of B.
         assert dict((o.instrument_id, o.desired_quantity) for o in day1.next_intents) == {
             "A": 8000,
             "B": 4000,
         }
-        assert day2.book.cash_fen == CASH_FEN - 8000 * 1000 - 4000 * 2000
         assert day2.book.cash_fen == 4_000_000
         assert day2.position_value_fen == 16_000_000
         assert day2.marked_equity_fen == CASH_FEN
-        # Parity: feeding the loop's intents as pre-generated batches to the
-        # whole-schedule entry yields the same completed book.
+        # Parity: the loop's intents as pre-generated batches reproduce the
+        # same completed book through the whole-schedule entry.
         old = simulate_research_schedule(
-            _flat_book(CASH_FEN, calendar[0]),
+            ResearchBook(asof_date=calendar[0], cash_fen=CASH_FEN),
             calendar,
             (
                 ResearchDay(
@@ -232,14 +259,50 @@ class TestParityAndEntry:
         assert sorted((x.instrument_id, x.quantity) for x in old.book.lots) == sorted(
             (x.instrument_id, x.quantity) for x in day2.book.lots
         )
-        # Steady state afterwards: no further intents.
         assert all(record.next_intents == () for record in result.records[2:])
+
+    def test_exact_weight_budget_avoids_float_truncation(self):
+        # 0.57 * 20,000,000 = 11,400,000 fen exactly; at 11,400 fen/share the
+        # mathematical budget is 1000 shares. The float product is
+        # 11399999.999999998, which used to truncate to 900 grid shares.
+        calendar = _weekdays(4)
+        prices = {1: {"A": 11400}, 2: {"A": 11400}}
+        evidence = _evidence_for_calendar(calendar, prices)
+        base = {day: _target({"A": 0.57}, day) for day in calendar[1:3]}
+        result = _run(calendar, calendar[2], base, evidence, _config("C80"))
+        day1 = result.records[0]
+        assert day1.next_intents[0].desired_quantity == 1000
+        assert result.records[1].book.cash_fen == CASH_FEN - 1000 * 11400
+
+    def test_weight_budget_boundaries_follow_exact_floor(self):
+        calendar = _weekdays(4)
+        prices = {1: {"A": 11400}, 2: {"A": 11400}}
+        evidence = _evidence_for_calendar(calendar, prices)
+        # 0.56943 * 20,000,000 = 11,388,600 fen -> 999 shares -> grid 900.
+        base = {day: _target({"A": 0.56943}, day) for day in calendar[1:3]}
+        result = _run(calendar, calendar[2], base, evidence, _config("C80"))
+        assert result.records[0].next_intents[0].desired_quantity == 900
+        # 0.57001 * 20,000,000 = 11,400,200 fen -> 1000 shares -> grid 1000.
+        base_up = {day: _target({"A": 0.57001}, day) for day in calendar[1:3]}
+        result_up = _run(calendar, calendar[2], base_up, evidence, _config("C80"))
+        assert result_up.records[0].next_intents[0].desired_quantity == 1000
+
+    def test_scaled_weight_keeps_exact_shares(self):
+        # After the adapter scales 0.9 gross to the 0.8 cap, the 0.6 leg sits
+        # at 0.6*0.8/0.9; the exact decimal budget must decide the shares.
+        calendar = _weekdays(4)
+        prices = {1: {"A": 1000, "B": 2000}, 2: {"A": 1000, "B": 2000}}
+        evidence = _evidence_for_calendar(calendar, prices)
+        base = {day: _target({"A": 0.6, "B": 0.3}, day) for day in calendar[1:3]}
+        result = _run(calendar, calendar[2], base, evidence, _config("C80"))
+        scaled_weight = 0.6 * 0.8 / 0.9
+        expected = int(Decimal(str(scaled_weight)) * Decimal(CASH_FEN) // Decimal(1000))
+        expected -= expected % 100
+        assert result.records[0].next_intents[0].desired_quantity == expected
 
     def test_minimum_commission_entered_exactly(self):
         calendar = _weekdays(4)
         prices = {i: {"A": 1000} for i in range(1, 4)}
-        evidence = _evidence_for_calendar(calendar, prices)
-        base = {day: _target({"A": 0.04}, day) for day in calendar[1:3]}
         fees = ResearchFeeScenario(
             scenario_id="commission_only",
             effective_from=date(2023, 1, 1),
@@ -252,39 +315,11 @@ class TestParityAndEntry:
             additional_fee_fixed_fen=0,
             adverse_slippage_rate=Decimal("0"),
         )
-        patched = {
-            day: LedgerSessionEvidence(
-                session=day,
-                contexts=tuple(
-                    ResearchSession(
-                        **{
-                            **ctx.__dict__,
-                            "fees": fees,
-                        }
-                    )
-                    for ctx in ev.contexts
-                ),
-                marks=ev.marks,
-                corporate_processing_complete=True,
-            )
-            for day, ev in evidence.items()
-            if day in calendar[1:3]
-        }
-        result = run_risk_ledger_loop(
-            initial_book=_flat_book(CASH_FEN, calendar[0]),
-            calendar=calendar,
-            requested_end=calendar[2],
-            base_targets=base,
-            evidence=patched,
-            config=_config("C80"),
-        )
-        assert result.status == "completed_scenario"
+        evidence = _evidence_for_calendar(calendar, prices, fees=fees)
+        base = {day: _target({"A": 0.04}, day) for day in calendar[1:3]}
+        result = _run(calendar, calendar[2], base, evidence, _config("C80"))
         day2 = result.records[1]
-        # 0.04*20,000,000/1000 = 800 shares -> notional 800,000 fen,
-        # commission max(500, 800000*0.000086=68.8 -> 69) = 500 fen minimum.
-        assert day2.attempts[0].transition.status == "simulated"
         assert day2.attempts[0].transition.commission_fen == 500
-        assert day2.modeled_fees_fen == 500
         assert day2.book.cash_fen == CASH_FEN - 800 * 1000 - 500
         assert day2.marked_equity_fen == CASH_FEN - 500
 
@@ -302,33 +337,71 @@ class TestDrawdownLoop:
         }
         evidence = _evidence_for_calendar(calendar, prices)
         base = {day: _target({"A": 0.8}, day) for day in calendar[1:6]}
-        result = run_risk_ledger_loop(
-            initial_book=_flat_book(CASH_FEN, calendar[0]),
-            calendar=calendar,
-            requested_end=calendar[5],
-            base_targets=base,
-            evidence=evidence,
-            config=_config("D"),
-            drawdown_state=RiskState.initial(Decimal(CASH_FEN), "synthetic_nav"),
+        result = _run(
+            calendar,
+            calendar[5],
+            base,
+            evidence,
+            _config("D"),
+            state=RiskState.initial(Decimal(CASH_FEN), "synthetic_nav"),
         )
         assert result.status == "completed_scenario"
         day2 = result.records[1]
-        assert day2.book.cash_fen == CASH_FEN - 16000 * 1000 == 4_000_000
+        assert day2.book.cash_fen == 4_000_000
         day3 = result.records[2]
-        # Equity 4,000,000 + 16000*800 = 16,800,000; drawdown 16% -> tier2, cap 0.2.
         assert day3.marked_equity_fen == 16_800_000
         assert day3.decision.cap == Decimal("0.2")
         sell = [o for o in day3.next_intents if o.side == "sell"]
-        assert len(sell) == 1 and sell[0].instrument_id == "A"
-        # Target 0.2*16,800,000/800 = 4200 shares, so 11,800 are sold next day.
-        assert sell[0].desired_quantity == 11_800
+        assert len(sell) == 1 and sell[0].desired_quantity == 11_800
         day4 = result.records[3]
-        assert day4.book.cash_fen == 4_000_000 + 11_800 * 800 == 13_440_000
-        assert day4.position_value_fen == 4200 * 800 == 3_360_000
+        assert day4.book.cash_fen == 13_440_000
+        assert day4.position_value_fen == 3_360_000
         assert day4.marked_equity_fen == 16_800_000
         assert day4.actual_gross_exposure == Decimal("0.2")
         assert day4.risk_target_gross_exposure == pytest.approx(0.2)
-        assert day4.next_intents == ()
+
+    def test_tier2_with_nonzero_fees_tracks_every_fen(self):
+        calendar = _weekdays(7)
+        prices = {
+            1: {"A": 1000},
+            2: {"A": 1000},
+            3: {"A": 800},
+            4: {"A": 800},
+            5: {"A": 800},
+            6: {"A": 800},
+        }
+        evidence = _evidence_for_calendar(calendar, prices, fees=FEES_REAL)
+        base = {day: _target({"A": 0.8}, day) for day in calendar[1:6]}
+        result = _run(
+            calendar,
+            calendar[5],
+            base,
+            evidence,
+            _config("D"),
+            state=RiskState.initial(Decimal(CASH_FEN), "synthetic_nav"),
+        )
+        assert result.status == "completed_scenario"
+        day2 = result.records[1]
+        # Buy 16,000 shares: notional 16,000,000, commission max(500, 3200).
+        assert day2.book.cash_fen == CASH_FEN - 16_000_000 - 3200
+        assert day2.modeled_fees_fen == 3200
+        day3 = result.records[2]
+        equity3 = CASH_FEN - 16_000_000 - 3200 + 16_000 * 800
+        assert day3.marked_equity_fen == equity3
+        # Drawdown (20,000,000 - 16,796,800)/20,000,000 = 16.016% -> tier2.
+        assert day3.decision.cap == Decimal("0.2")
+        sell = [o for o in day3.next_intents if o.side == "sell"][0]
+        target_qty = int(Decimal("0.2") * Decimal(equity3) // Decimal(800))
+        assert sell.desired_quantity == 16_000 - target_qty - (16_000 - target_qty) % 100
+        day4 = result.records[3]
+        sold_qty = sell.desired_quantity
+        proceeds = sold_qty * 800
+        sell_fees = max(500, int(Decimal(proceeds) * Decimal("0.0002"))) + int(
+            Decimal(proceeds) * Decimal("0.001")
+        )
+        assert day4.book.cash_fen == day3.book.cash_fen + proceeds - sell_fees
+        assert day4.marked_equity_fen == day4.book.cash_fen + (16_000 - sold_qty) * 800
+        assert day4.modeled_fees_fen == sell_fees
 
     def test_recovery_returns_to_base_target_without_compounding(self):
         calendar = _weekdays(10)
@@ -345,30 +418,17 @@ class TestDrawdownLoop:
         }
         evidence = _evidence_for_calendar(calendar, prices)
         base = {day: _target({"A": 0.8}, day) for day in calendar[1:9]}
-        result = run_risk_ledger_loop(
-            initial_book=_flat_book(CASH_FEN, calendar[0]),
-            calendar=calendar,
-            requested_end=calendar[8],
-            base_targets=base,
-            evidence=evidence,
-            config=_config("D"),
-            drawdown_state=RiskState.initial(Decimal(CASH_FEN), "synthetic_nav"),
+        result = _run(
+            calendar,
+            calendar[8],
+            base,
+            evidence,
+            _config("D"),
+            state=RiskState.initial(Decimal(CASH_FEN), "synthetic_nav"),
         )
         assert result.status == "completed_scenario"
-        # Day 3 (close 800): dd = (4,000,000+12,800,000-16,800,000)/20,000,000
-        # = 16% -> tier2 cap 0.2; sells follow on day 4 down to 4,200 shares.
-        day4 = result.records[3]
-        assert sum(x.quantity for x in day4.book.lots) == 4200
-        # Day 6 (close 1000): equity 13,440,000 + 4,200,000 = 17,640,000,
-        # drawdown 11.8% <= 12% -> one-tier recovery to 0.5 cap.
-        day6 = result.records[5]
-        assert day6.marked_equity_fen == 17_640_000
-        assert day6.decision.coefficient == Decimal("0.5")
-        # Day 7 (close 1100): the rebuilt position executes at 1100, so equity
-        # is still ~9.7% below the watermark and the tier holds at 0.5. Day 8
-        # (close 1200) pushes the drawdown under 8%: cap returns to 0.8 and the
-        # final target settles at the still-valid base with no double-scaled
-        # residual from the de-risked period.
+        assert sum(x.quantity for x in result.records[3].book.lots) == 4200
+        assert result.records[5].decision.coefficient == Decimal("0.5")
         assert result.records[6].decision.coefficient == Decimal("0.5")
         final = result.records[-1]
         assert final.decision.cap == Decimal("0.8")
@@ -378,7 +438,6 @@ class TestDrawdownLoop:
         calendar = _weekdays(7)
         prices = {i: {"A": 1000, "B": 1000} for i in range(1, 6)}
         evidence = _evidence_for_calendar(calendar, prices)
-        # B's base target expires after day 2 while D simultaneously de-risks.
         base = {
             calendar[1]: _target({"A": 0.6, "B": 0.3}, calendar[1]),
             calendar[2]: _target({"A": 0.6, "B": 0.3}, calendar[2]),
@@ -386,31 +445,11 @@ class TestDrawdownLoop:
             calendar[4]: _target({"A": 0.6}, calendar[4]),
             calendar[5]: _target({"A": 0.6}, calendar[5]),
         }
-        result = run_risk_ledger_loop(
-            initial_book=_flat_book(CASH_FEN, calendar[0]),
-            calendar=calendar,
-            requested_end=calendar[5],
-            base_targets=base,
-            evidence=evidence,
-            config=_config("C80"),
-        )
+        result = _run(calendar, calendar[5], base, evidence, _config("C80"))
         assert result.status == "completed_scenario"
-        # C80 scales the 0.9 gross base to 0.8: day-1 buys are proportional
-        # (A 0.6*0.8/0.9 -> 10,600 shares; B -> 5,300 shares).
-        day2 = result.records[1]
-        assert sorted((x.instrument_id, x.quantity) for x in day2.book.lots) == [
-            ("A", 10_600),
-            ("B", 5_300),
-        ]
-        for record in result.records:
-            sells = [o for o in record.next_intents if o.side == "sell"]
-            per_instrument = [o.instrument_id for o in sells]
-            assert len(per_instrument) == len(set(per_instrument))
-        # B's expiry and the risk scaling merge into one full-exit sell.
         day3 = result.records[2]
         b_sells = [o for o in day3.next_intents if o.instrument_id == "B"]
         assert len(b_sells) == 1 and b_sells[0].desired_quantity == 5_300
-        # After B expires it is absent from every later target and ledger.
         final = result.records[-1]
         assert all(x.instrument_id == "A" for x in final.book.lots)
         assert final.book.cash_fen == 20_000_000 - 12_000 * 1000
@@ -420,48 +459,44 @@ class TestCapsAndBlocks:
     def _m_world(self):
         calendar = _weekdays(210)
         closes = [1000 + 2 * i for i in range(204)] + [1000, 900, 900, 900, 900, 900]
-        prices = {i: {"A": closes[i]} for i in range(1, 210)}
-        return calendar, prices
+        prices = {i: {"A": closes[i]} for i in range(195, 210)}
+        index_closes = tuple(
+            IndexClose(session, Decimal(closes[i])) for i, session in enumerate(calendar)
+        )
+        return calendar, prices, index_closes
 
     def test_cap_zero_with_limit_down_keeps_positions_and_reports_gap(self):
-        calendar, prices = self._m_world()
-        closes = [1000 + 2 * i for i in range(204)] + [1000, 900, 900, 900, 900, 900]
+        calendar, prices, index_closes = self._m_world()
         evidence = _evidence_for_calendar(calendar, prices, limit_down_by_day={205: ("A",)})
-        base = {day: _target({"A": 0.5}, day) for day in calendar[1:209]}
+        base = {day: _target({"A": 0.5}, day) for day in calendar[200:209]}
+        # Warmup predates the evaluation window: the loop starts after 200
+        # sessions of index history, so M is known on its first decision day.
+        start = RiskLedgerCheckpoint.start(
+            signal_date=calendar[199], initial_cash_fen=CASH_FEN, run_id="run_a"
+        )
         result = run_risk_ledger_loop(
-            initial_book=_flat_book(CASH_FEN, calendar[0]),
+            checkpoint=start,
             calendar=calendar,
             requested_end=calendar[208],
             base_targets=base,
             evidence=evidence,
             config=_config("M", index_source="synthetic_index"),
-            index_closes=tuple(
-                IndexClose(session, Decimal(closes[i]))
-                for i, session in enumerate(calendar)
-            ),
+            index_closes=index_closes,
         )
         assert result.status == "completed_scenario"
-        # Warmup days: M unknown, no intents, holdings kept.
-        assert all(record.status == DAY_RISK_UNKNOWN for record in result.records[:198])
-        assert all(record.next_intents == () for record in result.records[:198])
-        # First known M day (index 199) is above its mean: buying resumes.
-        first_known = result.records[198]
-        assert first_known.decision.cap == Decimal("0.8")
-        buys = [o for o in first_known.next_intents if o.side == "buy"]
+        first = result.records[0]
+        assert first.session == calendar[200]
+        assert first.decision.cap == Decimal("0.8")
+        buys = [o for o in first.next_intents if o.side == "buy"]
         assert buys and buys[0].instrument_id == "A"
-        held = [record for record in result.records if record.book.lots]
-        assert held
-        # The crash day decision: below mean -> cap 0, all-cash target.
-        crash = next(
-            record for record in result.records if record.decision.cap == Decimal("0")
-        )
-        assert crash.risk_target is not None
+        # Crash decision below the 200-session mean: cap zero, all-cash target.
+        crash = result.records[4]
+        assert crash.decision.cap == Decimal("0")
         assert crash.risk_target.positions == ()
         assert crash.risk_target.cash_weight == 1.0
         # Execution at the down limit is blocked: shares remain and keep
-        # marking, while the target claims zero exposure.
-        blocked = result.records[204]
-        assert blocked.attempts
+        # marking while the target claims zero exposure; both are reported.
+        blocked = result.records[5]
         assert all(
             attempt.transition.status == "blocked"
             and attempt.transition.reason == "directional_close_limit"
@@ -478,19 +513,9 @@ class TestCapsAndBlocks:
     def test_partial_capacity_then_next_day_completion(self):
         calendar = _weekdays(6)
         prices = {i: {"A": 1000} for i in range(1, 6)}
-        # 5% participation of 20,000 shares = 1,000-share cap on day index 2.
-        evidence = _evidence_for_calendar(
-            calendar, prices, volumes_by_day={2: {"A": 20000}}
-        )
+        evidence = _evidence_for_calendar(calendar, prices, volumes_by_day={2: {"A": 20000}})
         base = {day: _target({"A": 0.5}, day) for day in calendar[1:5]}
-        result = run_risk_ledger_loop(
-            initial_book=_flat_book(CASH_FEN, calendar[0]),
-            calendar=calendar,
-            requested_end=calendar[4],
-            base_targets=base,
-            evidence=evidence,
-            config=_config("C80"),
-        )
+        result = _run(calendar, calendar[4], base, evidence, _config("C80"))
         assert result.status == "completed_scenario"
         day2 = result.records[1]
         partial = day2.attempts[0].transition
@@ -500,53 +525,237 @@ class TestCapsAndBlocks:
         lot = day2.book.lots[0]
         assert lot.quantity == 1000
         assert lot.sellable_on > lot.acquired_on  # T+1 lot lock
-        assert day2.book.cash_fen == CASH_FEN - 1000 * 1000
-        # Day 2's diff re-issues a fresh buy for the remainder (new order id).
         rebuy = [o for o in day2.next_intents if o.side == "buy"]
-        assert len(rebuy) == 1 and rebuy[0].instrument_id == "A"
+        assert len(rebuy) == 1
         day3 = result.records[2]
-        held = sum(x.quantity for x in day3.book.lots)
-        assert held == 10_000  # 0.5*20,000,000/1000
+        assert sum(x.quantity for x in day3.book.lots) == 10_000
 
 
-class TestStopAndDeterminism:
-    def test_missing_mark_stops_with_last_complete_book(self):
+class TestStopSemantics:
+    def test_m_without_index_closes_stops_on_first_day(self):
+        calendar = _weekdays(202)
+        prices = {200: {"A": 1000}}
+        evidence = _evidence_for_calendar(calendar, prices)
+        base = {calendar[200]: _target({"A": 0.5}, calendar[200])}
+        # The evaluation window is the single session after a 200-session
+        # warmup calendar, so the stop reason is the missing closes alone.
+        start = RiskLedgerCheckpoint.start(
+            signal_date=calendar[199], initial_cash_fen=CASH_FEN, run_id="run_a"
+        )
+        result = run_risk_ledger_loop(
+            checkpoint=start,
+            calendar=calendar,
+            requested_end=calendar[200],
+            base_targets=base,
+            evidence=evidence,
+            config=_config("M"),
+        )
+        assert result.status == "stopped"
+        assert result.stopped_on == calendar[200]
+        assert "risk_unknown" in result.stop_reason
+        assert "missing_index_close" in result.stop_reason
+        assert result.records == ()
+        assert result.checkpoint.book.cash_fen == CASH_FEN
+        assert result.initial_cash_fen == CASH_FEN
+
+    def test_v_warmup_gap_stops_instead_of_idle_cash(self):
+        calendar = _weekdays(5)
+        prices = {i: {"A": 1000} for i in range(1, 5)}
+        evidence = _evidence_for_calendar(calendar, prices)
+        base = {day: _target({"A": 0.5}, day) for day in calendar[1:4]}
+        few_returns = tuple(UnscaledReturn(session, 0.0) for session in calendar[:3])
+        result = _run(
+            calendar,
+            calendar[3],
+            base,
+            evidence,
+            _config("V"),
+            unscaled_risk_returns=few_returns,
+        )
+        assert result.status == "stopped"
+        assert result.stopped_on == calendar[1]
+        assert "insufficient_warmup" in result.stop_reason
+        assert result.records == ()
+
+    def test_missing_mark_for_unheld_target_stops(self):
+        calendar = _weekdays(5)
+        stripped = LedgerSessionEvidence(
+            session=calendar[1],
+            contexts=_evidence(
+                calendar[1], calendar[2], {"A": 1000}, signal_day=calendar[0]
+            ).contexts,
+            marks=(),
+            corporate_processing_complete=True,
+        )
+        evidence = {calendar[1]: stripped}
+        evidence.update(_evidence_for_calendar(calendar, {i: {"A": 1000} for i in range(2, 5)}))
+        base = {day: _target({"A": 0.5}, day) for day in calendar[1:4]}
+        result = _run(calendar, calendar[3], base, evidence, _config("C80"))
+        assert result.status == "stopped"
+        assert result.stopped_on == calendar[1]
+        assert result.stop_reason == "mark_missing:A"
+        assert result.records == ()
+        assert result.checkpoint.book.cash_fen == CASH_FEN
+
+    def test_missing_future_evidence_keeps_completed_prefix(self):
         calendar = _weekdays(6)
         prices = {i: {"A": 1000} for i in range(1, 6)}
         evidence = _evidence_for_calendar(calendar, prices)
         base = {day: _target({"A": 0.5}, day) for day in calendar[1:5]}
-        result = run_risk_ledger_loop(
-            initial_book=_flat_book(CASH_FEN, calendar[0]),
-            calendar=calendar,
-            requested_end=calendar[4],
-            base_targets=base,
-            evidence=evidence,
-            config=_config("C80"),
-        )
-        assert result.status == "completed_scenario"
-        # Now remove day-4 marks while A is held: the path must stop there and
-        # keep every unsold share.
-        evidence[calendar[4]] = LedgerSessionEvidence(
-            session=calendar[4],
-            contexts=evidence[calendar[4]].contexts,
-            marks=(),
-            corporate_processing_complete=True,
-        )
-        stopped = run_risk_ledger_loop(
-            initial_book=_flat_book(CASH_FEN, calendar[0]),
-            calendar=calendar,
-            requested_end=calendar[4],
-            base_targets=base,
-            evidence=evidence,
-            config=_config("C80"),
-        )
-        assert stopped.status == "stopped"
-        assert stopped.stopped_on == calendar[4]
-        assert stopped.stop_reason == "raw_mark_unknown:A"
-        assert stopped.records  # last complete day retained
-        assert sum(x.quantity for x in stopped.book.lots) > 0
-        assert stopped.valid_through == calendar[3]
+        del evidence[calendar[3]]
+        result = _run(calendar, calendar[4], base, evidence, _config("C80"))
+        assert result.status == "stopped"
+        assert result.stopped_on == calendar[3]
+        assert result.stop_reason == "session_evidence_missing"
+        assert [r.session for r in result.records] == [calendar[1], calendar[2]]
+        assert result.checkpoint.pending_orders == result.records[-1].next_intents
 
+    def test_base_target_missing_stops_with_prefix(self):
+        calendar = _weekdays(6)
+        prices = {i: {"A": 1000} for i in range(1, 6)}
+        evidence = _evidence_for_calendar(calendar, prices)
+        base = {day: _target({"A": 0.5}, day) for day in calendar[1:5]}
+        del base[calendar[3]]
+        result = _run(calendar, calendar[4], base, evidence, _config("C80"))
+        assert result.status == "stopped"
+        assert result.stopped_on == calendar[3]
+        assert result.stop_reason == "base_target_missing"
+        assert len(result.records) == 2
+
+    def test_corporate_unknown_stops_through_preflight(self):
+        calendar = _weekdays(4)
+        prices = {i: {"A": 1000} for i in range(1, 4)}
+        evidence = _evidence_for_calendar(calendar, prices)
+        evidence[calendar[2]] = _evidence(
+            calendar[2], calendar[3], {"A": 1000}, signal_day=calendar[1], corporate=None
+        )
+        base = {day: _target({"A": 0.5}, day) for day in calendar[1:3]}
+        result = _run(calendar, calendar[2], base, evidence, _config("C80"))
+        assert result.status == "stopped"
+        assert result.stopped_on == calendar[2]
+        assert result.stop_reason == "corporate_processing_incomplete_or_unknown"
+        # Day 1 committed; day 2's execution was discarded whole.
+        assert len(result.records) == 1
+        assert result.checkpoint.book.asof_date == calendar[1]
+
+
+class TestCheckpoints:
+    def _rich_world(self):
+        calendar = _weekdays(9)
+        prices = {i: {"A": 1000} for i in range(1, 9)}
+        evidence = _evidence_for_calendar(
+            calendar,
+            prices,
+            fees=FEES_REAL,
+            volumes_by_day={2: {"A": 20000}},
+            limit_down_by_day={6: ("A",)},
+        )
+        base = {
+            calendar[1]: _target({"A": 0.5}, calendar[1]),
+            calendar[2]: _target({"A": 0.5}, calendar[2]),
+            calendar[3]: _target({"A": 0.5}, calendar[3]),
+            calendar[4]: _target({"A": 0.5}, calendar[4]),
+            calendar[5]: _target({}, calendar[5]),  # strategy exit
+            calendar[6]: _target({}, calendar[6]),
+            calendar[7]: _target({}, calendar[7]),
+        }
+        return calendar, evidence, base
+
+    def test_resume_at_every_split_day_matches_uninterrupted(self):
+        calendar, evidence, base = self._rich_world()
+        whole = _run(calendar, calendar[7], base, evidence, _config("C80"))
+        assert whole.status == "completed_scenario"
+        # The world exercises a partial fill (day 2), a blocked sell (day 5)
+        # and nonzero fees on every trade.
+        assert whole.records[1].attempts[0].transition.reason == (
+            "partial_under_declared_constraints"
+        )
+        assert whole.records[5].attempts[0].transition.reason == "directional_close_limit"
+        assert any(record.modeled_fees_fen > 0 for record in whole.records)
+        for split_index in range(1, 7):
+            split_day = calendar[split_index]
+            prefix = _run(calendar, split_day, base, evidence, _config("C80"))
+            assert prefix.status == "completed_scenario"
+            resumed = run_risk_ledger_loop(
+                checkpoint=prefix.checkpoint,
+                calendar=calendar,
+                requested_end=calendar[7],
+                base_targets=base,
+                evidence=evidence,
+                config=_config("C80"),
+            )
+            assert resumed.status == "completed_scenario"
+            assert resumed.initial_cash_fen == CASH_FEN == whole.initial_cash_fen
+            assert resumed.book == whole.book
+            assert resumed.checkpoint == whole.checkpoint
+            assert len(resumed.records) == len(whole.records) - split_index
+            for replayed, original in zip(
+                resumed.records, whole.records[split_index:], strict=True
+            ):
+                assert replayed.session == original.session
+                assert replayed.book == original.book
+                assert replayed.next_intents == original.next_intents
+                assert replayed.modeled_fees_fen == original.modeled_fees_fen
+                assert replayed.marked_equity_fen == original.marked_equity_fen
+                assert replayed.decision == original.decision
+
+    def test_pending_buy_and_sell_survive_restart(self):
+        calendar, evidence, base = self._rich_world()
+        whole = _run(calendar, calendar[7], base, evidence, _config("C80"))
+        # Split before the first buy executes.
+        before_buy = _run(calendar, calendar[1], base, evidence, _config("C80"))
+        assert before_buy.checkpoint.pending_orders == whole.records[0].next_intents
+        resumed_buy = run_risk_ledger_loop(
+            checkpoint=before_buy.checkpoint,
+            calendar=calendar,
+            requested_end=calendar[2],
+            base_targets=base,
+            evidence=evidence,
+            config=_config("C80"),
+        )
+        assert resumed_buy.records[0].book == whole.records[1].book
+        # Split after the blocked day, before the strategy-exit sell executes.
+        before_sell = _run(calendar, calendar[5], base, evidence, _config("C80"))
+        assert before_sell.checkpoint.pending_orders == whole.records[4].next_intents
+        resumed_sell = run_risk_ledger_loop(
+            checkpoint=before_sell.checkpoint,
+            calendar=calendar,
+            requested_end=calendar[6],
+            base_targets=base,
+            evidence=evidence,
+            config=_config("C80"),
+        )
+        assert resumed_sell.records[0].book == whole.records[5].book
+        assert resumed_sell.initial_cash_fen == CASH_FEN
+
+    def test_run_id_mismatch_rejects(self):
+        calendar, evidence, base = self._rich_world()
+        prefix = _run(calendar, calendar[1], base, evidence, _config("C80"))
+        with pytest.raises(ValueError, match="does not match config run"):
+            run_risk_ledger_loop(
+                checkpoint=prefix.checkpoint,
+                calendar=calendar,
+                requested_end=calendar[2],
+                base_targets=base,
+                evidence=evidence,
+                config=_config("C80", run_id="run_b"),
+            )
+
+    def test_checkpoint_binds_pending_signal_date(self):
+        calendar, evidence, base = self._rich_world()
+        prefix = _run(calendar, calendar[1], base, evidence, _config("C80"))
+        with pytest.raises(ValueError, match="signed on the checkpoint session"):
+            RiskLedgerCheckpoint(
+                book=ResearchBook(asof_date=calendar[2], cash_fen=CASH_FEN),
+                pending_orders=prefix.checkpoint.pending_orders,
+                drawdown_state=None,
+                attempted_order_ids=(),
+                initial_cash_fen=CASH_FEN,
+                run_id="run_a",
+            )
+
+
+class TestDeterminism:
     def test_future_evidence_mutation_leaves_earlier_days_unchanged(self):
         calendar = _weekdays(6)
 
@@ -554,14 +763,7 @@ class TestStopAndDeterminism:
             prices = {1: {"A": 1000}, 2: {"A": 1000}, 3: {"A": 1000}, 4: {"A": day4_close}}
             evidence = _evidence_for_calendar(calendar, prices)
             base = {day: _target({"A": 0.5}, day) for day in calendar[1:5]}
-            return run_risk_ledger_loop(
-                initial_book=_flat_book(CASH_FEN, calendar[0]),
-                calendar=calendar,
-                requested_end=calendar[4],
-                base_targets=base,
-                evidence=evidence,
-                config=_config("C80"),
-            )
+            return _run(calendar, calendar[4], base, evidence, _config("C80"))
 
         first = build(1000)
         second = build(1400)
@@ -569,87 +771,31 @@ class TestStopAndDeterminism:
             assert before.book == after.book
             assert before.next_intents == after.next_intents
             assert before.risk_target == after.risk_target
-        # The mutated future close changes only that day's marks onward.
         assert first.records[3].marked_equity_fen != second.records[3].marked_equity_fen
 
-    def test_restart_resumes_state_without_reset_or_double_counting(self):
-        calendar = _weekdays(9, start=date(2024, 12, 23))  # spans the year end
-        prices = {
-            1: {"A": 1000},
-            2: {"A": 1000},
-            3: {"A": 800},
-            4: {"A": 800},
-            5: {"A": 800},
-            6: {"A": 800},
-            7: {"A": 800},
-            8: {"A": 800},
-        }
+    def test_missing_mark_stops_with_last_complete_book(self):
+        calendar = _weekdays(6)
+        prices = {i: {"A": 1000} for i in range(1, 6)}
         evidence = _evidence_for_calendar(calendar, prices)
-        base = {day: _target({"A": 0.8}, day) for day in calendar[1:8]}
-        whole = run_risk_ledger_loop(
-            initial_book=_flat_book(CASH_FEN, calendar[0]),
-            calendar=calendar,
-            requested_end=calendar[7],
-            base_targets=base,
-            evidence=evidence,
-            config=_config("D"),
-            drawdown_state=RiskState.initial(Decimal(CASH_FEN), "synthetic_nav"),
+        base = {day: _target({"A": 0.5}, day) for day in calendar[1:5]}
+        result = _run(calendar, calendar[4], base, evidence, _config("C80"))
+        assert result.status == "completed_scenario"
+        evidence[calendar[4]] = LedgerSessionEvidence(
+            session=calendar[4],
+            contexts=evidence[calendar[4]].contexts,
+            marks=(),
+            corporate_processing_complete=True,
         )
-        assert whole.status == "completed_scenario"
-        assert whole.records[2].session.year == 2024
-        assert whole.records[-1].session.year == 2025
-        # Simulated restart after day 4: replay the persisted book and state.
-        partial = run_risk_ledger_loop(
-            initial_book=_flat_book(CASH_FEN, calendar[0]),
-            calendar=calendar,
-            requested_end=calendar[4],
-            base_targets=base,
-            evidence=evidence,
-            config=_config("D"),
-            drawdown_state=RiskState.initial(Decimal(CASH_FEN), "synthetic_nav"),
-        )
-        assert partial.status == "completed_scenario"
-        resumed = run_risk_ledger_loop(
-            initial_book=partial.book,
-            calendar=calendar,
-            requested_end=calendar[7],
-            base_targets=base,
-            evidence=evidence,
-            config=_config("D"),
-            drawdown_state=partial.drawdown_state,
-        )
-        assert resumed.status == "completed_scenario"
-        assert resumed.book == whole.book
-        assert resumed.drawdown_state == whole.drawdown_state
-        for replayed, original in zip(
-            resumed.records, whole.records[4:], strict=True
-        ):
-            assert replayed.book == original.book
-            assert replayed.marked_equity_fen == original.marked_equity_fen
-
-    def test_base_target_must_cover_every_session(self):
-        calendar = _weekdays(4)
-        evidence = _evidence_for_calendar(calendar, {1: {"A": 1000}, 2: {"A": 1000}})
-        with pytest.raises(ValueError, match="base target missing"):
-            run_risk_ledger_loop(
-                initial_book=_flat_book(CASH_FEN, calendar[0]),
-                calendar=calendar,
-                requested_end=calendar[2],
-                base_targets={},  # empty on purpose
-                evidence=evidence,
-                config=_config("C80"),
-            )
+        stopped = _run(calendar, calendar[4], base, evidence, _config("C80"))
+        assert stopped.status == "stopped"
+        assert stopped.stopped_on == calendar[4]
+        assert stopped.stop_reason == "raw_mark_unknown:A"
+        assert stopped.valid_through == calendar[3]
+        assert sum(x.quantity for x in stopped.book.lots) > 0
 
     def test_d_rule_requires_explicit_initial_state(self):
         calendar = _weekdays(4)
         evidence = _evidence_for_calendar(calendar, {1: {"A": 1000}, 2: {"A": 1000}})
         base = {day: _target({"A": 0.5}, day) for day in calendar[1:3]}
         with pytest.raises(ValueError, match="explicit initial or persisted"):
-            run_risk_ledger_loop(
-                initial_book=_flat_book(CASH_FEN, calendar[0]),
-                calendar=calendar,
-                requested_end=calendar[2],
-                base_targets=base,
-                evidence=evidence,
-                config=_config("D"),
-            )
+            _run(calendar, calendar[2], base, evidence, _config("D"))

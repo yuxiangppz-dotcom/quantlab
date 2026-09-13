@@ -16,6 +16,7 @@ from quantlab.research.quantity_kernel import (
 from quantlab.research.quantity_scheduler import (
     RawCloseMark,
     ResearchDay,
+    advance_research_day,
     s4_target_exit_session,
     simulate_research_schedule,
 )
@@ -406,3 +407,57 @@ def test_daily_duplicate_and_cross_date_evidence_rejected():
         batch(1, corporate=1)
     with pytest.raises(ValueError, match="immutable"):
         batch(1, orders=[])
+
+
+class TestAdvanceResearchDayGuards:
+    def _advance(self, book, i, orders=()):
+        return advance_research_day(
+            book, CAL, i, batch(i, orders, (context(i),), (marked(i),)), set()
+        )
+
+    def test_same_day_reentry_rejects_before_capacity_reset(self):
+        book = ResearchBook(asof_date=CAL[0], cash_fen=100_000_000)
+        first = self._advance(book, 1, (order(1, quantity=1000, identifier="first"),))
+        assert first.status == "advanced"
+        # Feeding the resulting book into the SAME session again — even with a
+        # fresh order id — must reject instead of resetting the day capacity.
+        with pytest.raises(ValueError, match="book must sit on the previous session"):
+            self._advance(
+                first.record.book, 1, (order(1, quantity=1000, identifier="second"),)
+            )
+
+    def test_reverse_and_skipped_sessions_reject(self):
+        book = ResearchBook(asof_date=CAL[0], cash_fen=100_000_000)
+        day1 = self._advance(book, 1)
+        assert day1.status == "advanced"
+        # Skipping a session: the book sits on CAL[1] but index 3 needs CAL[2].
+        with pytest.raises(ValueError, match="book must sit on the previous session"):
+            self._advance(day1.record.book, 3)
+        # Reversing back to an earlier session after it already completed.
+        day2 = self._advance(day1.record.book, 2)
+        assert day2.status == "advanced"
+        with pytest.raises(ValueError, match="book must sit on the previous session"):
+            self._advance(day2.record.book, 1)
+
+    def test_attempted_not_polluted_by_midbatch_exception(self):
+        book = ResearchBook(asof_date=CAL[0], cash_fen=100_000_000)
+        attempted = set()
+        # Different instrument so the batch itself is legal; the oversized
+        # second order raises inside the kernel after the first simulated.
+        oversized = order(1, code="B", quantity=200_000, identifier="second")
+        with pytest.raises(ValueError, match="exceeds single order maximum"):
+            advance_research_day(
+                book,
+                CAL,
+                1,
+                batch(
+                    1,
+                    (order(1, identifier="first"), oversized),
+                    (context(1), context(1, code="B")),
+                    (marked(1), marked(1, code="B")),
+                ),
+                attempted,
+            )
+        # The first order simulated before the exception, but the caller's
+        # attempted-identity set stays untouched for a clean retry.
+        assert attempted == set()
