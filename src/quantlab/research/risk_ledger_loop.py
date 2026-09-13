@@ -137,7 +137,7 @@ class RiskLedgerCheckpoint:
     drawdown_state: RiskState | None
     attempted_order_ids: tuple[str, ...]
     initial_cash_fen: int
-    run_id: str
+    config: RiskLedgerConfig
 
     def __post_init__(self) -> None:
         if type(self.book) is not ResearchBook:
@@ -159,7 +159,8 @@ class RiskLedgerCheckpoint:
             raise ValueError("duplicate attempted order id")
         if type(self.initial_cash_fen) is not int or self.initial_cash_fen < 0:
             raise ValueError("initial cash must be a nonnegative integer")
-        _identifier(self.run_id, "run_id")
+        if type(self.config) is not RiskLedgerConfig:
+            raise ValueError("checkpoint config must be a RiskLedgerConfig")
 
     @classmethod
     def start(
@@ -167,7 +168,7 @@ class RiskLedgerCheckpoint:
         *,
         signal_date: date,
         initial_cash_fen: int,
-        run_id: str,
+        config: RiskLedgerConfig,
         pending_orders: tuple[ResearchOrder, ...] = (),
         drawdown_state: RiskState | None = None,
     ) -> RiskLedgerCheckpoint:
@@ -178,7 +179,7 @@ class RiskLedgerCheckpoint:
             drawdown_state=drawdown_state,
             attempted_order_ids=(),
             initial_cash_fen=initial_cash_fen,
-            run_id=run_id,
+            config=config,
         )
 
 
@@ -367,11 +368,11 @@ def run_risk_ledger_loop(
     commits only when every necessary fact was known; otherwise the path stops
     with the previous checkpoint, the failure date and the specific reason.
     """
-    if config.run_id != checkpoint.run_id:
-        raise ValueError(
-            f"checkpoint run {checkpoint.run_id!r} does not match config run "
-            f"{config.run_id!r}"
-        )
+    if config != checkpoint.config:
+        # The checkpoint binds the full immutable configuration — rule id, NAV
+        # series/source, V/M sources and the actual generation-rules content —
+        # so two risk experiments can never share one run identity.
+        raise ValueError("checkpoint configuration does not match the supplied config")
     _typed_tuple(calendar, date, "calendar")
     if len(calendar) < 3 or tuple(sorted(set(calendar))) != calendar:
         raise ValueError("calendar must contain at least three unique ordered sessions")
@@ -398,7 +399,9 @@ def run_risk_ledger_loop(
 
     def stopped(session: date, reason: str) -> RiskLedgerLoopResult:
         # The failed session never committed: the book, state, pending intents
-        # and attempted identities are the previous complete checkpoint's.
+        # and attempted identities are the previous complete checkpoint's,
+        # field for field, so completing the missing input and resuming
+        # reproduces the clean-input run exactly.
         return RiskLedgerLoopResult(
             "stopped",
             config.rule_id,
@@ -412,7 +415,7 @@ def run_risk_ledger_loop(
                 drawdown_state=state,
                 attempted_order_ids=tuple(sorted(attempted)),
                 initial_cash_fen=checkpoint.initial_cash_fen,
-                run_id=checkpoint.run_id,
+                config=checkpoint.config,
             ),
             session,
             reason,
@@ -434,7 +437,11 @@ def run_risk_ledger_loop(
             marks=day_evidence.marks,
             corporate_processing_complete=day_evidence.corporate_processing_complete,
         )
-        advance = advance_research_day(book, calendar, i, batch, attempted)
+        # Transaction isolation: the scheduler commits its successful attempts
+        # into this local set; it joins the canonical set only when the whole
+        # session (trades + risk state + intents) commits below.
+        session_attempted = set(attempted)
+        advance = advance_research_day(book, calendar, i, batch, session_attempted)
         if advance.status != "advanced":
             return stopped(session, advance.reason)
         assert advance.record is not None
@@ -491,6 +498,7 @@ def run_risk_ledger_loop(
         pending = intents
         if decision.drawdown_state is not None:
             state = decision.drawdown_state
+        attempted = session_attempted
     return RiskLedgerLoopResult(
         "completed_scenario",
         config.rule_id,
@@ -504,7 +512,7 @@ def run_risk_ledger_loop(
             drawdown_state=state,
             attempted_order_ids=tuple(sorted(attempted)),
             initial_cash_fen=checkpoint.initial_cash_fen,
-            run_id=checkpoint.run_id,
+            config=checkpoint.config,
         ),
         None,
         None,

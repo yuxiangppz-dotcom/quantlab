@@ -191,18 +191,18 @@ def _config(rule_id: str = "C80", **overrides) -> RiskLedgerConfig:
     return RiskLedgerConfig(**params)
 
 
-def _start(state=None):
+def _start(state=None, config=None):
     return RiskLedgerCheckpoint.start(
         signal_date=START,
         initial_cash_fen=CASH_FEN,
-        run_id="run_a",
+        config=config or _config("C80"),
         drawdown_state=state,
     )
 
 
 def _run(calendar, end, base, evidence, config, **extra):
     checkpoint = extra.pop("checkpoint", None) or _start(
-        state=extra.pop("state", None)
+        state=extra.pop("state", None), config=config
     )
     return run_risk_ledger_loop(
         checkpoint=checkpoint,
@@ -472,7 +472,9 @@ class TestCapsAndBlocks:
         # Warmup predates the evaluation window: the loop starts after 200
         # sessions of index history, so M is known on its first decision day.
         start = RiskLedgerCheckpoint.start(
-            signal_date=calendar[199], initial_cash_fen=CASH_FEN, run_id="run_a"
+            signal_date=calendar[199],
+            initial_cash_fen=CASH_FEN,
+            config=_config("M", index_source="synthetic_index"),
         )
         result = run_risk_ledger_loop(
             checkpoint=start,
@@ -540,7 +542,9 @@ class TestStopSemantics:
         # The evaluation window is the single session after a 200-session
         # warmup calendar, so the stop reason is the missing closes alone.
         start = RiskLedgerCheckpoint.start(
-            signal_date=calendar[199], initial_cash_fen=CASH_FEN, run_id="run_a"
+            signal_date=calendar[199],
+            initial_cash_fen=CASH_FEN,
+            config=_config("M", index_source="synthetic_index"),
         )
         result = run_risk_ledger_loop(
             checkpoint=start,
@@ -728,17 +732,59 @@ class TestCheckpoints:
         assert resumed_sell.records[0].book == whole.records[5].book
         assert resumed_sell.initial_cash_fen == CASH_FEN
 
-    def test_run_id_mismatch_rejects(self):
+    def test_checkpoint_rejects_changed_rule_under_same_run_id(self):
         calendar, evidence, base = self._rich_world()
         prefix = _run(calendar, calendar[1], base, evidence, _config("C80"))
-        with pytest.raises(ValueError, match="does not match config run"):
+        with pytest.raises(ValueError, match="configuration does not match"):
             run_risk_ledger_loop(
                 checkpoint=prefix.checkpoint,
                 calendar=calendar,
                 requested_end=calendar[2],
                 base_targets=base,
                 evidence=evidence,
-                config=_config("C80", run_id="run_b"),
+                config=_config("C50"),  # same run_id, different risk rule
+            )
+
+    def test_checkpoint_rejects_changed_grid_under_same_scenario_id(self):
+        calendar, evidence, base = self._rich_world()
+        prefix = _run(calendar, calendar[1], base, evidence, _config("C80"))
+        retitled = ResearchQuantityRules(
+            scenario_id=RULES.scenario_id,  # same declared id ...
+            effective_from=RULES.effective_from,
+            effective_through=RULES.effective_through,
+            buy_minimum=RULES.buy_minimum,
+            buy_increment=200,  # ... but different actual content
+            sell_minimum=RULES.sell_minimum,
+            sell_increment=RULES.sell_increment,
+            max_order_quantity=RULES.max_order_quantity,
+            full_position_odd_exit=RULES.full_position_odd_exit,
+        )
+        with pytest.raises(ValueError, match="configuration does not match"):
+            run_risk_ledger_loop(
+                checkpoint=prefix.checkpoint,
+                calendar=calendar,
+                requested_end=calendar[2],
+                base_targets=base,
+                evidence=evidence,
+                config=_config("C80", generation_rules=retitled),
+            )
+
+    def test_c50_prefix_cannot_continue_as_c80(self):
+        # The probe shape: a C80 prefix's pending buy would overbuy a C50 run.
+        # Configuration binding must refuse instead of mixing experiments.
+        calendar = _weekdays(4)
+        prices = {1: {"A": 1000}, 2: {"A": 1000}}
+        evidence = _evidence_for_calendar(calendar, prices)
+        base = {day: _target({"A": 0.8}, day) for day in calendar[1:3]}
+        prefix = _run(calendar, calendar[1], base, evidence, _config("C80"))
+        with pytest.raises(ValueError, match="configuration does not match"):
+            run_risk_ledger_loop(
+                checkpoint=prefix.checkpoint,
+                calendar=calendar,
+                requested_end=calendar[2],
+                base_targets=base,
+                evidence=evidence,
+                config=_config("C50"),
             )
 
     def test_checkpoint_binds_pending_signal_date(self):
@@ -751,7 +797,7 @@ class TestCheckpoints:
                 drawdown_state=None,
                 attempted_order_ids=(),
                 initial_cash_fen=CASH_FEN,
-                run_id="run_a",
+                config=prefix.checkpoint.config,
             )
 
 
@@ -799,3 +845,147 @@ class TestDeterminism:
         base = {day: _target({"A": 0.5}, day) for day in calendar[1:3]}
         with pytest.raises(ValueError, match="explicit initial or persisted"):
             _run(calendar, calendar[2], base, evidence, _config("D"))
+
+
+class TestPostExecutionStopResume:
+    def _two_stock_world(self):
+        """Nonzero fees; B's mark missing on the second decision day."""
+        calendar = _weekdays(6)
+        complete_prices = {
+            1: {"A": 1000},
+            2: {"A": 1000, "B": 500},
+            3: {"A": 1000, "B": 500},
+            4: {"A": 1000, "B": 500},
+        }
+        evidence = _evidence_for_calendar(
+            calendar, complete_prices, fees=FEES_REAL
+        )
+        base = {
+            calendar[1]: _target({"A": 0.5}, calendar[1]),
+            calendar[2]: _target({"A": 0.5, "B": 0.25}, calendar[2]),
+            calendar[3]: _target({"A": 0.5, "B": 0.25}, calendar[3]),
+            calendar[4]: _target({"A": 0.5, "B": 0.25}, calendar[4]),
+        }
+        return calendar, evidence, base
+
+    def test_post_execution_stop_checkpoint_equals_clean_prefix_and_resumes(self):
+        calendar, evidence, base = self._two_stock_world()
+        clean = _run(calendar, calendar[4], base, evidence, _config("C80"))
+        assert clean.status == "completed_scenario"
+        assert clean.records[1].modeled_fees_fen > 0  # real attempt before stop
+        # Gap world: B's mark is missing on day 2 (the day A's buy executes).
+        gap_prices = {
+            1: {"A": 1000},
+            2: {"A": 1000},
+            3: {"A": 1000, "B": 500},
+            4: {"A": 1000, "B": 500},
+        }
+        gap_evidence = _evidence_for_calendar(
+            calendar, gap_prices, fees=FEES_REAL
+        )
+        stopped = _run(calendar, calendar[4], base, gap_evidence, _config("C80"))
+        assert stopped.status == "stopped"
+        assert stopped.stopped_on == calendar[2]
+        assert stopped.stop_reason == "mark_missing:B"
+        # Field-for-field equality with the last COMPLETE checkpoint: only
+        # day 1 committed, so the reference is the one-day prefix run — no
+        # stale attempted id, no leaked book, no leaked intents.
+        reference = _run(calendar, calendar[1], base, evidence, _config("C80"))
+        assert stopped.checkpoint == reference.checkpoint
+        assert stopped.checkpoint.pending_orders == (
+            reference.records[-1].next_intents
+        )
+        assert stopped.checkpoint.attempted_order_ids == (
+            reference.checkpoint.attempted_order_ids
+        )
+        # Completing the missing input and resuming reproduces the clean run
+        # day by day — including the previously attempted A buy.
+        resumed = run_risk_ledger_loop(
+            checkpoint=stopped.checkpoint,
+            calendar=calendar,
+            requested_end=calendar[4],
+            base_targets=base,
+            evidence=evidence,
+            config=_config("C80"),
+        )
+        assert resumed.status == "completed_scenario"
+        assert len(resumed.records) == len(clean.records) - 1
+        for replayed, original in zip(resumed.records, clean.records[1:], strict=True):
+            assert replayed.book == original.book
+            assert replayed.next_intents == original.next_intents
+            assert replayed.modeled_fees_fen == original.modeled_fees_fen
+            assert replayed.marked_equity_fen == original.marked_equity_fen
+
+    def test_risk_unknown_after_fill_rolls_back_attempted_ids(self):
+        calendar = _weekdays(6)
+        prices = {i: {"A": 1000} for i in range(1, 5)}
+        evidence = _evidence_for_calendar(calendar, prices, fees=FEES_REAL)
+        base = {day: _target({"A": 0.5}, day) for day in calendar[1:4]}
+        clean = _run(calendar, calendar[3], base, evidence, _config("C80"))
+        assert clean.status == "completed_scenario"
+        # Same world under V with no unscaled returns: day 2's execution of
+        # day-1's buy succeeds, then the risk decision is unknown.
+        gap = _run(
+            calendar,
+            calendar[3],
+            base,
+            evidence,
+            _config("V"),
+            unscaled_risk_returns=(),
+        )
+        assert gap.status == "stopped"
+        assert gap.stopped_on == calendar[1]
+        assert "risk_unknown" in gap.stop_reason
+        # No session committed, so the returned checkpoint must equal the
+        # start checkpoint (config included) in every field.
+        expected = RiskLedgerCheckpoint.start(
+            signal_date=START, initial_cash_fen=CASH_FEN, config=_config("V")
+        )
+        assert gap.checkpoint == expected
+
+    def test_partial_fill_then_stop_keeps_resume_exact(self):
+        calendar = _weekdays(9)
+        prices = {i: {"A": 1000} for i in range(1, 8)}
+        evidence = _evidence_for_calendar(
+            calendar,
+            prices,
+            fees=FEES_REAL,
+            volumes_by_day={2: {"A": 20000}},
+            limit_down_by_day={5: ("A",)},
+        )
+        base = {
+            calendar[1]: _target({"A": 0.5}, calendar[1]),
+            calendar[2]: _target({"A": 0.5}, calendar[2]),
+            calendar[3]: _target({"A": 0.5}, calendar[3]),
+            calendar[4]: _target({}, calendar[4]),  # strategy exit intent
+            calendar[5]: _target({}, calendar[5]),
+            calendar[6]: _target({}, calendar[6]),
+            calendar[7]: _target({}, calendar[7]),
+        }
+        clean = _run(calendar, calendar[7], base, evidence, _config("C80"))
+        assert clean.status == "completed_scenario"
+        assert clean.records[1].attempts[0].transition.reason == (
+            "partial_under_declared_constraints"
+        )
+        assert clean.records[4].attempts[0].transition.reason == "directional_close_limit"
+        for split in (2, 3, 4):
+            prefix = _run(calendar, calendar[split], base, evidence, _config("C80"))
+            # Stop the split's next day by removing its evidence.
+            gap_evidence = dict(evidence)
+            gap_evidence.pop(calendar[split + 1])
+            stopped = _run(
+                calendar, calendar[split + 1], base, gap_evidence, _config("C80")
+            )
+            assert stopped.status == "stopped"
+            assert stopped.checkpoint == prefix.checkpoint
+            resumed = run_risk_ledger_loop(
+                checkpoint=stopped.checkpoint,
+                calendar=calendar,
+                requested_end=calendar[7],
+                base_targets=base,
+                evidence=evidence,
+                config=_config("C80"),
+            )
+            reference = _run(calendar, calendar[7], base, evidence, _config("C80"))
+            assert resumed.book == reference.book
+            assert resumed.checkpoint == reference.checkpoint

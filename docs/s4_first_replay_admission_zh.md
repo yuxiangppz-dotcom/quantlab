@@ -8,14 +8,20 @@
 无法启动；闭环引擎本身已用人工情景验证。本报告不构成收益结论，
 经济路径消耗为 0。
 
-核对来源（Codex 目录只读）：
-`launch_20260912/s4_first_entry_plan/`（plan.json，指纹见文件内）、
-`s4_entry_raw_precision/`（reconciliation 指纹
-`a9e30b671ace89d59b272d5585295a1b1ee68f75e93c79309bd310d8951c3e10`、
-报告指纹 `535527f6…`、身份 `a568ce97…`）、
-`stock_replay_inputs/`（amount_precision_note 指纹 `8f6cd714…`）、
-`cohort_dividend_readiness/profiles.json`、
+核对来源（Codex 目录只读；以下指纹均由本分支程序化读取现存 JSON 核对，
+2026-09-13 修订 corrected 一处第一版抄错的字符串）：
+`launch_20260912/s4_first_entry_plan/plan.json` 指纹
+`6359d58599328340b43a84215ffa2f15725944171edea0b0f2786cf0cadfce92`、
+`s4_entry_raw_precision/reconciliation.json` 指纹
+`a9e30b671ace89d59b272d5558295a1b1ee68f75e93c79309bd310d8951c3e10`（报告
+指纹 `535527f6922f1dd6f2773ff171777edf35853b5bb64f6d378bbc528f9e6fa339`、
+身份 `a568ce9705becab6791cb9946489b062a26c753e8fc962198c171ba8ac125c56`）、
+`stock_replay_inputs/`（amount_precision_note 指纹
+`8f6cd714fe7a9f28c2688f8d07f01cf2a4bbb83addf0fcd11e4e327c67caf4e7`）、
+`cohort_dividend_readiness/profiles.json` 指纹
+`6e5fbc67e4d8169dfa5797eaca313d525c7106fafb42af282c188abe6845f0de`、
 `pr124_review_20260913/review_pr124_admission_check.json`。
+原始数据存在仍不证明金融资格；本报告未重新下载或重跑上述任何来源。
 
 ## 逐项验入（三档区分）
 

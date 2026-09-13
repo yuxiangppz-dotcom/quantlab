@@ -206,6 +206,7 @@ def advance_research_day(
     reverse and skipped sessions reject before any capacity is pruned. The
     caller's attempted-id set is updated only when the whole day succeeds.
     """
+    _calendar(calendar)
     if type(index) is not int or not 1 <= index < len(calendar) - 1:
         raise ValueError("day index requires previous and following calendar padding")
     if batch.session != calendar[index]:

@@ -461,3 +461,36 @@ class TestAdvanceResearchDayGuards:
         # The first order simulated before the exception, but the caller's
         # attempted-identity set stays untouched for a clean retry.
         assert attempted == set()
+
+
+class TestAdvanceCalendarValidation:
+    def test_reversed_calendar_rejects_before_any_state_change(self):
+        reversed_cal = (CAL[1], CAL[0], CAL[2])  # deliberately out of order
+        book = ResearchBook(asof_date=CAL[1], cash_fen=100_000_000)
+        attempted = set()
+        with pytest.raises(ValueError, match="unique ordered sessions"):
+            advance_research_day(
+                book,
+                reversed_cal,
+                1,
+                batch(0, (), (context(0),), (marked(0),)),
+                attempted,
+            )
+        # Inputs untouched.
+        assert book.asof_date == CAL[1] and book.cash_fen == 100_000_000
+        assert attempted == set()
+
+    def test_duplicate_calendar_rejects_even_with_empty_orders(self):
+        duplicated = (CAL[0], CAL[1], CAL[1], CAL[2])
+        book = ResearchBook(asof_date=CAL[0], cash_fen=100_000_000)
+        attempted = set()
+        with pytest.raises(ValueError, match="unique ordered sessions"):
+            advance_research_day(
+                book,
+                duplicated,
+                1,
+                batch(1, (), (context(1),), (marked(1),)),
+                attempted,
+            )
+        assert book.asof_date == CAL[0]
+        assert attempted == set()
