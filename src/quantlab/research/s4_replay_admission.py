@@ -275,22 +275,53 @@ def verify_attempt(attempt_dir: Path, instrument: str, trade_date: str) -> dict:
         evidence["detail"] = "intent request identity does not match this code/date"
         return evidence
     result = _read_json(result_path)
-    body_sha = sha256_file(body_path)
-    recorded = (result.get("artifacts") or {}).get("response.body", {}).get("sha256")
-    if recorded is not None and recorded != body_sha:
-        evidence["detail"] = "response body hash disagrees with result.json"
+    # Archival chain: the sealed result must reference exactly this intent.
+    if result.get("intent_fingerprint") != intent.get("fingerprint"):
+        evidence["detail"] = "result does not bind the sealed intent fingerprint"
+        return evidence
+    evidence["request_identity_verified"] = True
+    body_bytes = body_path.read_bytes()
+    body_sha = hashlib.sha256(body_bytes).hexdigest()
+    artifacts = (result.get("artifacts") or {}).get("response.body") or {}
+    recorded = artifacts.get("sha256")
+    wire = result.get("wire_sha256")
+    if not recorded or recorded != body_sha:
+        evidence["detail"] = "response.body artifact binding missing or disagrees"
+        return evidence
+    if wire is not None and wire != body_sha:
+        evidence["detail"] = "wire hash disagrees with the response body"
         return evidence
     evidence["response_sha256"] = body_sha
-    evidence["request_identity_verified"] = True
     if result.get("transport_status") != "received" or result.get("http_status") != 200:
         evidence["detail"] = (
             f"transport not a clean success: {result.get('transport_status')}"
             f"/{result.get('http_status')}"
         )
         return evidence
+    if result.get("server_code") not in (None, 0):
+        evidence["detail"] = f"server_code {result.get('server_code')!r} is not a success"
+        return evidence
+    # Parse the real body: a self-consistent hash never substitutes for the
+    # success-empty semantics of the payload itself.
+    try:
+        body = json.loads(body_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        evidence["detail"] = f"response body is not valid JSON: {error}"
+        return evidence
+    if body.get("code") != 0:
+        evidence["detail"] = f"body service code {body.get('code')!r} is not a success"
+        return evidence
+    items = ((body.get("data") or {}).get("items")) if isinstance(body.get("data"), dict) else None
+    if not isinstance(items, list) or items:
+        evidence["detail"] = (
+            "body data.items is not an empty list; the metadata claim of an "
+            "empty return is not confirmed by the payload"
+        )
+        return evidence
     if result.get("rows") != 0 or result.get("status") != "empty":
         evidence["detail"] = (
-            f"response not empty: rows={result.get('rows')} status={result.get('status')}"
+            f"result metadata contradicts the empty body: rows={result.get('rows')} "
+            f"status={result.get('status')}"
         )
         return evidence
     evidence["response_verified_empty"] = True
@@ -303,19 +334,27 @@ def check_prior20_gaps(
     source_dir: Path,
     canonical_dir: Path,
     binding: InputBinding,
+    canonical_binding: InputBinding,
+    bound_files: dict,
 ) -> tuple[Prior20Gap, ...]:
     """Classify the six empty prior20 code-dates against read raw evidence.
 
     A supplier-basis full-day suspension requires, for exactly this
-    code/date: a verified successful empty daily response, no local bar,
-    and an S record with empty suspend_timing. Intraday timing, conflicting
-    bars, missing or invalid responses get distinct classifications; notes
-    state only verified facts, and Tushare-derived records are never counted
-    as independent sources.
+    code/date: a verified successful empty daily response, confirmed daily
+    coverage with no bar, and an S record with empty suspend_timing.
+    Intraday timing, conflicting bars, coverage gaps and missing or invalid
+    responses get distinct classifications; notes state only verified
+    facts, and Tushare-derived records are never counted as independent
+    sources. Every consumed file lands in ``bound_files`` keyed by root.
     """
     import pandas as pd
 
-    canonical_binding = InputBinding(canonical_dir)
+    def bind(root_label: str, binding_: InputBinding, path: Path) -> None:
+        binding_.read(path)
+        relative = path.resolve().relative_to(binding_.root.resolve()).as_posix()
+        entry = dict(binding_.entries[relative])
+        bound_files[f"{root_label}:{relative}"] = {**entry, "root": root_label}
+
     gaps: list[Prior20Gap] = []
     for instrument, trade_date in empty_rows:
         year, month, _ = trade_date.split("-")
@@ -323,26 +362,32 @@ def check_prior20_gaps(
             source_dir
             / f"s4_entry_raw_precision/attempts/daily_{instrument}_{trade_date.replace('-', '')}"
         )
-        for name in ("intent.json", "result.json"):
+        for name in ("intent.json", "result.json", "response.body"):
             path = attempt_dir / name
             if path.is_file():
-                binding.read(path)
+                bind("sealed", binding, path)
         evidence = verify_attempt(attempt_dir, instrument, trade_date)
 
         bar_present: bool | None = None
+        coverage = "directory_missing"
         month_dir = canonical_dir / f"daily/year={year}/month={month}"
-        if month_dir.is_dir():
-            parts = sorted(month_dir.glob("*.parquet"))
+        parts = sorted(month_dir.glob("*.parquet")) if month_dir.is_dir() else []
+        if parts:
+            coverage = "partitions_present"
             for part in parts:
-                canonical_binding.read(part)
+                bind("canonical", canonical_binding, part)
             frame = pd.concat(pd.read_parquet(p) for p in parts)
             code_col = "ts_code" if "ts_code" in frame.columns else "instrument_id"
             date_col = "trade_date" if "trade_date" in frame.columns else "session"
-            matched = frame[
-                (frame[code_col] == instrument)
-                & (frame[date_col].astype(str).str[:10] == trade_date)
-            ]
-            bar_present = len(matched) > 0
+            if code_col in frame.columns and date_col in frame.columns:
+                coverage = "full"
+                matched = frame[
+                    (frame[code_col] == instrument)
+                    & (frame[date_col].astype(str).str[:10] == trade_date)
+                ]
+                bar_present = len(matched) > 0
+            else:
+                coverage = "missing_columns"
 
         timing_empty: bool | None = None
         on_date: bool | None = None
@@ -353,7 +398,7 @@ def check_prior20_gaps(
         if susp_dir.is_dir():
             parts = sorted(susp_dir.glob("*.parquet"))
             for part in parts:
-                canonical_binding.read(part)
+                bind("canonical", canonical_binding, part)
             frame = pd.concat(pd.read_parquet(p) for p in parts)
             code_col = "ts_code" if "ts_code" in frame.columns else "instrument_id"
             date_col = "trade_date" if "trade_date" in frame.columns else "session"
@@ -378,6 +423,13 @@ def check_prior20_gaps(
         if not evidence["request_identity_verified"] or not evidence["response_verified_empty"]:
             classification = "response_missing_or_invalid"
             note = f"raw daily attempt not a verified empty return: {evidence['detail']}"
+        elif coverage != "full":
+            classification = "local_coverage_incomplete"
+            note = (
+                f"local daily coverage for {year}-{month} is {coverage}; "
+                "“no local bar” cannot be claimed without confirmed "
+                "coverage, prior20 stays unknown"
+            )
         elif bar_present:
             classification = "conflicting_local_bar"
             note = (
@@ -387,11 +439,12 @@ def check_prior20_gaps(
         elif on_date and timing_empty:
             classification = "proven_full_day_suspension_supplier_basis"
             note = (
-                "verified empty daily response for exactly this code/date, no "
-                "local bar, and an S record with empty suspend_timing on the "
-                "date — under the supplier field convention this supports a "
-                "full-day suspension reading; the Tushare-derived records are "
-                "corroborating, not independent sources"
+                "verified empty daily response for exactly this code/date, "
+                "confirmed daily coverage with no local bar, and an S record "
+                "with empty suspend_timing on the date — under the supplier "
+                "field convention this supports a full-day suspension "
+                "reading; the Tushare-derived records are corroborating, not "
+                "independent sources"
             )
         elif on_date:
             classification = "suspension_timing_present"
@@ -421,6 +474,7 @@ def check_prior20_gaps(
             )
         )
     canonical_binding.check()
+    binding.check()
     return tuple(gaps)
 
 
@@ -471,15 +525,20 @@ def necessary_field_gaps(context: dict) -> list[str]:
     volume = context.get("session_volume_shares")
     if volume is None:
         gaps.append("session_volume_shares: missing (unknown)")
-    elif not _is_positive_int(volume):
-        gaps.append("session_volume_shares: must be a positive integer")
+    elif type(volume) is not int:
+        gaps.append("session_volume_shares: must be an integer")
+    elif volume < 0:
+        # Zero is a legal known no-trade observation, never a gap.
+        gaps.append("session_volume_shares: negative volumes are invalid")
     sessions = context.get("prior20_sessions")
     if sessions is None:
         gaps.append("prior20_sessions: missing (unknown)")
-    elif sessions != 20:
-        gaps.append("prior20_sessions: the frozen window is 20 sessions")
+    elif type(sessions) is not int or sessions != 20:
+        gaps.append("prior20_sessions: must be the integer 20")
     participation = context.get("participation")
-    if participation is not None:
+    if participation is None:
+        gaps.append("participation: missing (unknown)")
+    elif not isinstance(participation, (int, float, str)):
         try:
             level = Decimal(str(participation))
         except InvalidOperation:
@@ -491,6 +550,8 @@ def necessary_field_gaps(context: dict) -> list[str]:
     if not isinstance(rules, dict):
         gaps.append("rules: missing quantity-rule scenario")
     else:
+        if not rules.get("scenario_id"):
+            gaps.append("rules.scenario_id: missing (unknown)")
         for name in (
             "buy_minimum",
             "buy_increment",
@@ -512,6 +573,25 @@ def necessary_field_gaps(context: dict) -> list[str]:
             and not rules["effective_from"] <= EXECUTION_DATE <= rules["effective_through"]
         ):
             gaps.append("rules: interval does not cover the execution date")
+    asof = context.get("prior20_asof")
+    if isinstance(asof, str) and len(asof) == 10 and asof > DECISION_DATE:
+        gaps.append("prior20_asof: later than the decision date (future information)")
+    if context.get("evidence_date") not in (None, EXECUTION_DATE):
+        gaps.append("evidence_date: must be the execution date")
+    if context.get("next_session") is not None:
+        if context["next_session"] <= EXECUTION_DATE:
+            gaps.append("next_session: must follow the execution date")
+    bounds = [context.get(name) for name in ("down_limit_fen", "low_fen", "raw_close_fen", "high_fen", "up_limit_fen")]
+    if all(isinstance(b, int) for b in bounds) and not (
+        bounds[0] <= bounds[1] <= bounds[2] <= bounds[3] <= bounds[4]
+    ):
+        gaps.append("price bounds: down<=low<=close<=high<=up violated")
+    amount = context.get("session_amount_fen")
+    if type(amount) is int and amount < 0:
+        gaps.append("session_amount_fen: negative amounts are invalid (zero is legal no-trade)")
+    volume_value = context.get("session_volume_shares")
+    if type(volume_value) is int and volume_value < 0:
+        gaps.append("session_volume_shares: negative volumes are invalid (zero is legal no-trade)")
     fees = context.get("fees")
     if not isinstance(fees, dict):
         gaps.append("fees: missing fee scenario")
@@ -527,10 +607,11 @@ def necessary_field_gaps(context: dict) -> list[str]:
                 gaps.append(f"fees.{name}: missing (unknown)")
             elif not isinstance(value, str):
                 gaps.append(f"fees.{name}: must be a decimal string")
-        if fees.get("minimum_commission_fen") is not None and not _is_positive_int(
-            fees["minimum_commission_fen"]
-        ):
-            gaps.append("fees.minimum_commission_fen: must be a positive integer when declared")
+        minimum = fees.get("minimum_commission_fen")
+        if minimum is None:
+            gaps.append("fees.minimum_commission_fen: missing (unknown)")
+        elif type(minimum) is not int or minimum < 0:
+            gaps.append("fees.minimum_commission_fen: must be a nonnegative integer")
         for name in ("effective_from", "effective_through"):
             value = fees.get(name)
             if not isinstance(value, str) or len(value) != 10:
@@ -541,11 +622,26 @@ def necessary_field_gaps(context: dict) -> list[str]:
             and not fees["effective_from"] <= EXECUTION_DATE <= fees["effective_through"]
         ):
             gaps.append("fees: interval does not cover the execution date")
+        if fees.get("minimum_commission_fen") is None:
+            gaps.append("fees.minimum_commission_fen: missing (unknown)")
+        if fees.get("scenario_id") is None:
+            gaps.append("fees.scenario_id: missing (unknown)")
         for name in ("additional_fee_rate", "additional_fee_fixed_fen"):
             if fees.get(name) is None:
                 gaps.append(
                     f"fees.{name}: unconfirmed additional-fee component stays unknown"
                 )
+    if isinstance(fees, dict):
+        for name in ("commission_rate", "buy_stamp_rate", "sell_stamp_rate", "adverse_slippage_rate"):
+            value = fees.get(name)
+            if isinstance(value, str):
+                try:
+                    parsed = Decimal(value)
+                except InvalidOperation:
+                    gaps.append(f"fees.{name}: not a finite decimal string")
+                    continue
+                if not parsed.is_finite():
+                    gaps.append(f"fees.{name}: not a finite decimal string")
     return gaps
 
 
@@ -865,6 +961,8 @@ def run(source_dir: Path, canonical_dir: Path, output_dir: Path) -> dict:
         json.dumps({"status": "started"}, sort_keys=True), encoding="utf-8"
     )
     binding = InputBinding(source_dir)
+    canonical_binding = InputBinding(canonical_dir)
+    bound_files: dict = {}
     try:
         manifest = validate_sealed_sources(source_dir, binding)
         plan = sealed_read(source_dir / "s4_first_entry_plan/plan.json")
@@ -873,8 +971,22 @@ def run(source_dir: Path, canonical_dir: Path, output_dir: Path) -> dict:
         )
         selected = tuple(plan["selected_in_priority_order"])
         admitted = admit_exact_volumes(reconciliation["rows"], selected)
-        gaps = check_prior20_gaps(PRIOR20_EMPTY_DATES, source_dir, canonical_dir, binding)
+        gaps = check_prior20_gaps(
+            PRIOR20_EMPTY_DATES,
+            source_dir,
+            canonical_dir,
+            binding,
+            canonical_binding,
+            bound_files,
+        )
         package, instruments = build_input_package(plan, admitted, gaps)
+        manifest["files"] = dict(manifest.get("files", {}))
+        for name, entry in binding.entries.items():
+            manifest["files"][f"sealed:{name}"] = {**entry, "root": "sealed"}
+        for name, entry in canonical_binding.entries.items():
+            manifest["files"][f"canonical:{name}"] = {**entry, "root": "canonical"}
+        manifest["bound_files"] = dict(bound_files)
+        manifest["roots"] = {"sealed": str(source_dir), "canonical": str(canonical_dir)}
         report = build_preflight_report(package, instruments, gaps, manifest)
     except Exception as error:
         (output_dir / "failed.json").write_text(

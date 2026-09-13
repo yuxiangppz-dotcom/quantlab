@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import date
 
@@ -383,30 +384,36 @@ class TestAttemptVerificationAndGaps:
         attempt = source / f"s4_entry_raw_precision/attempts/daily_{instrument}_{stamp}"
         attempt.mkdir(parents=True, exist_ok=True)
         code = instrument if identity_ok else "999999.SZ"
+        body = b'{"code":0,"data":{"items":[]}}'
+        body_sha = hashlib_sha256(body)
+        intent_fp = f"intent-{code}-{stamp}"
         intent = {
+            "fingerprint": intent_fp,
             "request": {
                 "id": f"daily_{code}_{stamp}",
                 "parameters": {
                     "api_name": "daily",
                     "params": {"ts_code": code, "start_date": stamp, "end_date": stamp},
                 },
-            }
+            },
         }
         (attempt / "intent.json").write_text(json.dumps(intent))
-        body = b"[]"
         recorded = None
         if not omit_body:
             (attempt / "response.body").write_bytes(body)
             recorded = (
                 body_hash_override
                 if body_hash_override is not None
-                else hashlib_sha256(body)
+                else body_sha
             )
         result = {
             "transport_status": "received",
             "http_status": 200,
+            "server_code": 0,
             "rows": rows,
             "status": status,
+            "intent_fingerprint": intent_fp,
+            "wire_sha256": recorded,
         }
         if recorded is not None:
             result["artifacts"] = {"response.body": {"sha256": recorded}}
@@ -449,7 +456,12 @@ class TestAttemptVerificationAndGaps:
     def test_proven_full_day_suspension(self, tmp_path):
         source, canonical = self._write_world(tmp_path)
         gaps = check_prior20_gaps(
-            [("000301.SZ", "2021-12-22")], source, canonical, InputBinding(source)
+            [("000301.SZ", "2021-12-22")],
+            source,
+            canonical,
+            InputBinding(source),
+            InputBinding(canonical),
+            {},
         )
         gap = gaps[0]
         assert gap.classification == "proven_full_day_suspension_supplier_basis"
@@ -464,14 +476,24 @@ class TestAttemptVerificationAndGaps:
     def test_intraday_timing_is_not_full_day(self, tmp_path):
         source, canonical = self._write_world(tmp_path, suspension_timing="09:30-10:00")
         gaps = check_prior20_gaps(
-            [("000301.SZ", "2021-12-22")], source, canonical, InputBinding(source)
+            [("000301.SZ", "2021-12-22")],
+            source,
+            canonical,
+            InputBinding(source),
+            InputBinding(canonical),
+            {},
         )
         assert gaps[0].classification == "suspension_timing_present"
 
     def test_conflicting_local_bar_is_reported(self, tmp_path):
         source, canonical = self._write_world(tmp_path, with_bar=True)
         gaps = check_prior20_gaps(
-            [("000301.SZ", "2021-12-22")], source, canonical, InputBinding(source)
+            [("000301.SZ", "2021-12-22")],
+            source,
+            canonical,
+            InputBinding(source),
+            InputBinding(canonical),
+            {},
         )
         assert gaps[0].classification == "conflicting_local_bar"
         assert gaps[0].local_bar_present is True
@@ -479,7 +501,12 @@ class TestAttemptVerificationAndGaps:
     def test_missing_body_is_not_proven(self, tmp_path):
         source, canonical = self._write_world(tmp_path, omit_body=True)
         gaps = check_prior20_gaps(
-            [("000301.SZ", "2021-12-22")], source, canonical, InputBinding(source)
+            [("000301.SZ", "2021-12-22")],
+            source,
+            canonical,
+            InputBinding(source),
+            InputBinding(canonical),
+            {},
         )
         assert gaps[0].classification == "response_missing_or_invalid"
         assert gaps[0].response_verified_empty is False
@@ -487,7 +514,12 @@ class TestAttemptVerificationAndGaps:
     def test_identity_mismatch_is_not_proven(self, tmp_path):
         source, canonical = self._write_world(tmp_path, identity_ok=False)
         gaps = check_prior20_gaps(
-            [("000301.SZ", "2021-12-22")], source, canonical, InputBinding(source)
+            [("000301.SZ", "2021-12-22")],
+            source,
+            canonical,
+            InputBinding(source),
+            InputBinding(canonical),
+            {},
         )
         assert gaps[0].classification == "response_missing_or_invalid"
         assert gaps[0].request_identity_verified is False
@@ -497,14 +529,24 @@ class TestAttemptVerificationAndGaps:
             tmp_path, body_hash_override="deadbeef"
         )
         gaps = check_prior20_gaps(
-            [("000301.SZ", "2021-12-22")], source, canonical, InputBinding(source)
+            [("000301.SZ", "2021-12-22")],
+            source,
+            canonical,
+            InputBinding(source),
+            InputBinding(canonical),
+            {},
         )
         assert gaps[0].classification == "response_missing_or_invalid"
 
     def test_no_suspension_no_bar_undetermined(self, tmp_path):
         source, canonical = self._write_world(tmp_path, with_suspension=False)
         gaps = check_prior20_gaps(
-            [("000301.SZ", "2021-12-22")], source, canonical, InputBinding(source)
+            [("000301.SZ", "2021-12-22")],
+            source,
+            canonical,
+            InputBinding(source),
+            InputBinding(canonical),
+            {},
         )
         assert gaps[0].classification == "undetermined"
 
@@ -513,6 +555,201 @@ def hashlib_sha256(data: bytes) -> str:
     import hashlib
 
     return hashlib.sha256(data).hexdigest()
+
+
+class TestBodyParsingAndCoverage:
+    def _write_world(self, tmp_path, **kwargs):
+        return TestAttemptVerificationAndGaps._write_world(self, tmp_path, **kwargs)
+
+    def _write_attempt(self, source, instrument, trade_date, **kwargs):
+        return TestAttemptVerificationAndGaps._write_attempt(
+            self, source, instrument, trade_date, **kwargs
+        )
+
+    def _attempt_with_body(self, source, instrument, trade_date, body_text, **kwargs):
+        self._write_attempt(source, instrument, trade_date, **kwargs)
+        stamp = trade_date.replace("-", "")
+        body_path = (
+            source
+            / f"s4_entry_raw_precision/attempts/daily_{instrument}_{stamp}/response.body"
+        )
+        body_path.write_bytes(body_text.encode())
+        result_path = body_path.parent / "result.json"
+        result = json.loads(result_path.read_text())
+        recorded = hashlib_sha256(body_path.read_bytes())
+        result["artifacts"] = {"response.body": {"sha256": recorded}}
+        result["wire_sha256"] = recorded
+        result_path.write_text(json.dumps(result))
+
+    def test_nonempty_items_rejects_empty_claim(self, tmp_path):
+        source, canonical = self._write_world(tmp_path)
+        self._attempt_with_body(
+            source,
+            "000301.SZ",
+            "2021-12-22",
+            json.dumps({"code": 0, "data": {"items": [{"close": 9.9}]}}),
+        )
+        gaps = check_prior20_gaps(
+            [("000301.SZ", "2021-12-22")],
+            source,
+            canonical,
+            InputBinding(source),
+            InputBinding(canonical),
+            {},
+        )
+        assert gaps[0].classification == "response_missing_or_invalid"
+        assert "items" in gaps[0].note
+
+    def test_error_code_body_rejects_empty_claim(self, tmp_path):
+        source, canonical = self._write_world(tmp_path)
+        self._attempt_with_body(
+            source,
+            "000301.SZ",
+            "2021-12-22",
+            json.dumps({"code": 12003, "data": {"items": []}}),
+        )
+        gaps = check_prior20_gaps(
+            [("000301.SZ", "2021-12-22")],
+            source,
+            canonical,
+            InputBinding(source),
+            InputBinding(canonical),
+            {},
+        )
+        assert gaps[0].classification == "response_missing_or_invalid"
+        assert "service code" in gaps[0].note
+
+    def test_missing_artifact_binding_rejects(self, tmp_path):
+        source, canonical = self._write_world(tmp_path)
+        stamp = "20211222"
+        result_path = (
+            source
+            / f"s4_entry_raw_precision/attempts/daily_000301.SZ_{stamp}/result.json"
+        )
+        result = json.loads(result_path.read_text())
+        del result["artifacts"]
+        del result["wire_sha256"]
+        result_path.write_text(json.dumps(result))
+        gaps = check_prior20_gaps(
+            [("000301.SZ", "2021-12-22")],
+            source,
+            canonical,
+            InputBinding(source),
+            InputBinding(canonical),
+            {},
+        )
+        assert gaps[0].classification == "response_missing_or_invalid"
+        assert "binding" in gaps[0].note
+
+    def test_intent_result_binding_mismatch_rejects(self, tmp_path):
+        source, canonical = self._write_world(tmp_path)
+        stamp = "20211222"
+        result_path = (
+            source
+            / f"s4_entry_raw_precision/attempts/daily_000301.SZ_{stamp}/result.json"
+        )
+        result = json.loads(result_path.read_text())
+        result["intent_fingerprint"] = "foreign"
+        result_path.write_text(json.dumps(result))
+        gaps = check_prior20_gaps(
+            [("000301.SZ", "2021-12-22")],
+            source,
+            canonical,
+            InputBinding(source),
+            InputBinding(canonical),
+            {},
+        )
+        assert gaps[0].classification == "response_missing_or_invalid"
+        assert "intent fingerprint" in gaps[0].note
+
+    def test_missing_daily_directory_blocks_full_day_claim(self, tmp_path):
+        source, canonical = self._write_world(tmp_path, with_bar=False)
+        # Remove the whole daily tree: no confirmed coverage, no bar claim.
+        import shutil
+
+        shutil.rmtree(canonical / "daily")
+        gaps = check_prior20_gaps(
+            [("000301.SZ", "2021-12-22")],
+            source,
+            canonical,
+            InputBinding(source),
+            InputBinding(canonical),
+            {},
+        )
+        assert gaps[0].classification == "local_coverage_incomplete"
+        assert gaps[0].local_bar_present is None
+        assert "coverage" in gaps[0].note
+
+    def test_bound_files_exported_with_roots(self, tmp_path):
+        source, canonical = self._write_world(tmp_path)
+        bound: dict = {}
+        check_prior20_gaps(
+            [("000301.SZ", "2021-12-22")],
+            source,
+            canonical,
+            InputBinding(source),
+            InputBinding(canonical),
+            bound,
+        )
+        sealed_keys = [k for k in bound if k.startswith("sealed:")]
+        canonical_keys = [k for k in bound if k.startswith("canonical:")]
+        assert any("response.body" in k for k in sealed_keys)
+        assert any("daily/" in k for k in canonical_keys)
+        assert any("suspensions/" in k for k in canonical_keys)
+        assert all("sha256" in v and "root" in v for v in bound.values())
+
+
+class TestKernelSemanticGaps:
+    def test_review_probe_round2_gaps_all_listed(self):
+        context = _full_context("000301.SZ")
+        context["participation"] = None
+        context["fees"] = {
+            **context["fees"],
+            "minimum_commission_fen": None,
+            "commission_rate": "NaN",
+        }
+        context["prior20_asof"] = "2022-01-04"
+        context["evidence_date"] = "2022-01-05"
+        context["next_session"] = "2021-12-31"
+        context["low_fen"] = 1200  # above the 1000 close
+        context["session_amount_fen"] = -1
+        context["prior20_sessions"] = 20.0
+        context["rules"] = {
+            **context["rules"],
+            "scenario_id": None,
+        }
+        joined = "; ".join(necessary_field_gaps(context))
+        for needle in (
+            "participation: missing",
+            "fees.minimum_commission_fen: missing",
+            "prior20_asof: later than the decision date",
+            "evidence_date: must be the execution date",
+            "next_session: must follow",
+            "price bounds",
+            "session_amount_fen: negative",
+            "prior20_sessions: must be the integer 20",
+            "rules.scenario_id: missing",
+        ):
+            assert needle in joined, needle
+
+    def test_nan_commission_rate_flagged(self):
+        context = _full_context("000301.SZ")
+        context["fees"] = {**context["fees"], "commission_rate": "NaN"}
+        joined = "; ".join(necessary_field_gaps(context))
+        assert "fees.commission_rate: not a finite decimal" in joined
+
+    def test_legal_zeros_are_not_gaps(self):
+        context = _full_context(
+            "000301.SZ",
+            session_volume_shares=0,
+            session_amount_fen=0,
+        )
+        context["fees"] = {**context["fees"], "minimum_commission_fen": 0}
+        gaps = necessary_field_gaps(context)
+        joined = "; ".join(gaps)
+        assert "session_volume_shares" not in joined
+        assert "session_amount_fen" not in joined
+        assert "minimum_commission_fen" not in joined
 
 
 class TestPrior20ReasonFromFindings:

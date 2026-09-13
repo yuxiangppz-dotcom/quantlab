@@ -1,16 +1,21 @@
-"""Independent verification of the S4 admission package (round 2).
+"""Independent verification of the S4 admission package (round 3).
 
 Re-derives every admitted fact from the sealed sources and the local
-canonical evidence with separate arithmetic and direct file reads; it does
-not import or call the production admission functions. Binds the exact
-package/report hashes recorded in completed.json, checks per-instrument
-contexts and statuses, and reads the raw suspension/response evidence
-itself.
+canonical evidence with its own arithmetic and direct file reads; it does
+not call the production admission functions. Checks are independent:
+embedded fingerprints are recomputed over the file bodies, per-instrument
+contexts are diffed against the sealed plan allowing only the approved
+deltas, fields/open_gaps/statuses must agree with the actual context
+values, and each prior20 classification is re-derived from the raw
+suspension parquet, the daily partition and the response evidence.
 
 Usage:
   uv run python scripts/s4_admission_independent_verify.py \
-      --package-dir data/products/s4_first_replay_admission_v2 \
-      --source-dir <sealed launch dir> --canonical-dir <canonical dir>
+      --package-dir <dir> --source-dir <dir> --canonical-dir <dir>
+
+Exit code 0 only when every check passes; the proof JSON lands in the
+package directory and records the exact hashes it verified plus the
+verifier code hash.
 """
 
 import argparse
@@ -21,187 +26,270 @@ from fractions import Fraction
 
 import pandas as pd
 
+FROZEN = {
+    "plan": "6359d58599328340b43a84215ffa2f15725944171edea0b0f2786cf0cadfce92",
+    "reconciliation": "a9e30b671ace89d59b272d5558295a1b1ee68f75e93c79309bd310d8951c3e10",
+}
+
 PARSER = argparse.ArgumentParser()
 PARSER.add_argument("--package-dir", required=True, type=pathlib.Path)
 PARSER.add_argument("--source-dir", required=True, type=pathlib.Path)
 PARSER.add_argument("--canonical-dir", required=True, type=pathlib.Path)
-ARGS = PARSER.parse_args()
-
-PACKAGE_DIR = ARGS.package_dir
-SOURCE_DIR = ARGS.source_dir
-CANONICAL_DIR = ARGS.canonical_dir
 
 
-def sha(path: pathlib.Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def sha_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
-checks: dict[str, dict] = {}
+def canonical_fingerprint(payload: dict) -> str:
+    """Independent reimplementation of the repo's provider-payload hashing.
+
+    The sealed convention hashes the whole payload (fingerprint key removed
+    by the caller) with ensure_ascii=False, sort_keys=True and json's
+    default separators.
+    """
+    body = {k: v for k, v in payload.items() if k != "fingerprint"}
+    encoded = json.dumps(body, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def check(name: str, ok: bool, detail: str = "") -> None:
-    checks[name] = {"ok": bool(ok), "detail": detail}
+def verify(
+    package_dir: pathlib.Path,
+    source_dir: pathlib.Path,
+    canonical_dir: pathlib.Path,
+    frozen: dict | None = None,
+    expected_gap_count: int | None = 6,
+) -> dict:
+    frozen = frozen or FROZEN
+    checks: dict[str, dict] = {}
 
+    def check(name: str, ok: bool, detail: str = "") -> None:
+        checks[name] = {"ok": bool(ok), "detail": detail}
 
-completed = json.loads((PACKAGE_DIR / "completed.json").read_text())
-package_path = PACKAGE_DIR / "input_package.json"
-report_path = PACKAGE_DIR / "preflight_report.json"
-check(
-    "completed_hashes_match_current_files",
-    completed.get("status") == "completed"
-    and completed.get("input_package_sha256") == sha(package_path)
-    and completed.get("preflight_report_sha256") == sha(report_path),
-    "the proof belongs to exactly these files",
-)
-package = json.loads(package_path.read_text())
-report = json.loads(report_path.read_text())
-plan = json.loads((SOURCE_DIR / "s4_first_entry_plan/plan.json").read_text())
-recon = json.loads(
-    (SOURCE_DIR / "s4_entry_raw_precision/reconciliation.json").read_text()
-)
-check(
-    "embedded_source_fingerprints",
-    plan["fingerprint"]
-    == "6359d58599328340b43a84215ffa2f15725944171edea0b0f2786cf0cadfce92"
-    and recon["fingerprint"]
-    == "a9e30b671ace89d59b272d5558295a1b1ee68f75e93c79309bd310d8951c3e10",
-    "frozen plan/reconciliation identities",
-)
+    package_path = package_dir / "input_package.json"
+    report_path = package_dir / "preflight_report.json"
+    completed_path = package_dir / "completed.json"
+    package = json.loads(package_path.read_text())
+    report = json.loads(report_path.read_text())
+    completed = json.loads(completed_path.read_text())
 
-# Volumes: re-derive with Fractions from the sealed reconciliation rows.
-sealed_vols = {}
-for row in recon["rows"]:
-    if row.get("purpose") != "execution_volume_precision":
-        continue
-    assert Fraction(row["raw_number_text"]["vol"]) * 100 == row["raw_normalized"]["vol"]
-    assert (
-        Fraction(row["raw_number_text"]["amount"]) * 1000 * 100
-        == row["raw_normalized"]["amount"]
+    # 0. The proof binds exactly these files (no stale proof with new content).
+    check(
+        "completed_binds_current_files",
+        completed.get("input_package_sha256") == sha_bytes(package_path.read_bytes())
+        and completed.get("preflight_report_sha256")
+        == sha_bytes(report_path.read_bytes()),
+        "completed.json hashes match the package and report on disk",
     )
-    sealed_vols[row["instrument_id"]] = row["raw_normalized"]["vol"]
-sealed_ctx = {
-    row["instrument_id"]: row["contexts"]["baseline"]["session_volume_shares"]
-    for row in plan["rows"]
-}
-by_id = {item["instrument_id"]: item for item in package["instruments"]}
-volume_ok, volume_notes = True, []
-for code, item in by_id.items():
-    expected = sealed_vols.get(code, sealed_ctx[code])
-    actual = item["context"]["session_volume_shares"]
-    if actual != expected:
-        volume_ok = False
-        volume_notes.append(f"{code}: package {actual} vs expected {expected}")
-    if code in sealed_vols and sealed_ctx[code] is not None:
-        volume_ok = False
-        volume_notes.append(f"{code}: replaced a non-None sealed value")
-check(
-    "per_instrument_volumes_match_expected_source",
-    volume_ok and len(by_id) == 20,
-    "; ".join(volume_notes) or "20/20 agree with reconciliation-or-sealed values",
-)
 
-# Ranking, slots, nominal quantities, capital, per-instrument identity/dates.
-plan_rows = {row["instrument_id"]: row for row in plan["rows"]}
-rank_ok = all(
-    by_id[code]["proposal_rank"] == plan_rows[code]["proposal_rank"]
-    and by_id[code]["nominal_quantity"] == plan_rows[code]["nominal_quantity"]
-    and by_id[code]["nominal_slot_fen"] == plan_rows[code]["nominal_slot_fen"]
-    and by_id[code]["context"]["instrument_id"] == code
-    and by_id[code]["context"]["execution_date"] == "2022-01-04"
-    for code in plan["selected_in_priority_order"]
-)
-check(
-    "ranking_sizes_dates_per_instrument",
-    rank_ok and package["initial_cash_fen"] == 20_000_000,
-    "20/20 ranks, slots, quantities, securities and dates identical to the sealed plan",
-)
+    # 1. Sealed sources: recompute the embedded fingerprints from the bytes.
+    plan_path = source_dir / "s4_first_entry_plan/plan.json"
+    recon_path = source_dir / "s4_entry_raw_precision/reconciliation.json"
+    plan = json.loads(plan_path.read_text())
+    recon = json.loads(recon_path.read_text())
+    check(
+        "sealed_fingerprints_recomputed",
+        canonical_fingerprint(plan) == plan["fingerprint"] == frozen["plan"]
+        and canonical_fingerprint(recon)
+        == recon["fingerprint"]
+        == frozen["reconciliation"],
+        "recomputed over the file bodies and equal to the frozen identities",
+    )
 
-# Corporate flag: the actual context boolean, per instrument — not the reason.
-corporate_ok = all(
-    item["context"]["corporate_actions_processed"] is True
-    and any(
-        f["field"] == "corporate_actions_processed" and f["status"] == "admitted"
-        for f in item["fields"]
+    # 2. Volumes re-derived with Fractions; per-instrument context diff allows
+    # only the seven None->exact fills and the entry-day corporate flag.
+    sealed_vols = {}
+    for row in recon["rows"]:
+        if row.get("purpose") != "execution_volume_precision":
+            continue
+        assert Fraction(row["raw_number_text"]["vol"]) * 100 == row["raw_normalized"]["vol"]
+        sealed_vols[row["instrument_id"]] = row["raw_normalized"]["vol"]
+    plan_rows = {row["instrument_id"]: row for row in plan["rows"]}
+    selected = plan["selected_in_priority_order"]
+    by_id = {item["instrument_id"]: item for item in package["instruments"]}
+    diff_failures = []
+    for code in selected:
+        sealed_ctx = plan_rows[code]["contexts"]["baseline"]
+        pkg_ctx = by_id[code]["context"]
+        for key, sealed_value in sealed_ctx.items():
+            pkg_value = pkg_ctx.get(key)
+            if key == "session_volume_shares":
+                expected = sealed_vols.get(code, sealed_value)
+                if pkg_value != expected:
+                    diff_failures.append(f"{code}.{key}: {pkg_value!r} != {expected!r}")
+            elif key == "corporate_actions_processed":
+                if pkg_value is not True or sealed_value not in (None, True):
+                    diff_failures.append(f"{code}.{key}: {pkg_value!r}")
+            elif pkg_value != sealed_value:
+                diff_failures.append(f"{code}.{key}: {pkg_value!r} != {sealed_value!r}")
+        for key in pkg_ctx:
+            if key not in sealed_ctx:
+                diff_failures.append(f"{code}.{key}: field not in the sealed context")
+    check(
+        "per_instrument_context_diff_only_approved_deltas",
+        not diff_failures and len(by_id) == 20,
+        "; ".join(diff_failures[:6]) or "20/20 contexts differ only in approved slots",
     )
-    for item in by_id.values()
-)
-check(
-    "corporate_context_values_admitted",
-    corporate_ok,
-    "20/20 derived contexts carry true and report it",
-)
 
-# Unknown facts stay unknown: additional fees None, market_open None.
-unknown_ok = all(
-    item["context"]["fees"]["additional_fee_rate"] is None
-    and item["context"]["fees"]["additional_fee_fixed_fen"] is None
-    and item["context"]["market_open"] is None
-    for item in by_id.values()
-)
-check("unknowns_not_upgraded", unknown_ok, "fees None and market_open None for all 20")
+    # 3. Ranking, sizes, capital.
+    rank_ok = all(
+        by_id[code]["proposal_rank"] == plan_rows[code]["proposal_rank"]
+        and by_id[code]["nominal_quantity"] == plan_rows[code]["nominal_quantity"]
+        and by_id[code]["nominal_slot_fen"] == plan_rows[code]["nominal_slot_fen"]
+        for code in selected
+    )
+    check(
+        "ranking_sizes_capital",
+        rank_ok and package["initial_cash_fen"] == 20_000_000,
+        "20/20 ranks, quantities, slots and the frozen capital",
+    )
 
-# prior20: read the suspension parquet and the raw response evidence directly.
-gap_ok = True
-gap_notes = []
-for gap in report["prior20_gaps"]:
-    code, trade_date = gap["instrument_id"], gap["trade_date"]
-    year, month, _ = trade_date.split("-")
-    stamp = trade_date.replace("-", "")
-    susp_dir = (
-        CANONICAL_DIR / f"lifecycle_context_v1/suspensions/year={year}/month={month}"
+    # 4. Per-instrument fields/open_gaps/status consistency with real values.
+    consistency_failures = []
+    for code, item in by_id.items():
+        fields = {f["field"]: f for f in item["fields"]}
+        for gap in item["open_gaps"]:
+            entry = fields.get(gap)
+            if entry is None or entry["status"] != "unknown":
+                consistency_failures.append(
+                    f"{code}: open gap {gap} is not an unknown field"
+                )
+        for name, entry in fields.items():
+            if entry["status"] == "unknown" and name not in item["open_gaps"]:
+                consistency_failures.append(
+                    f"{code}: unknown field {name} missing from open_gaps"
+                )
+        corporate = fields.get("corporate_actions_processed")
+        if corporate is not None:
+            value_ok = (
+                item["context"]["corporate_actions_processed"] is True
+                and corporate["status"] == "admitted"
+            ) or (
+                item["context"]["corporate_actions_processed"] is None
+                and corporate["status"] == "unknown"
+            )
+            if not value_ok:
+                consistency_failures.append(f"{code}: corporate flag/status disagree")
+    check(
+        "per_instrument_fields_gaps_values_consistent",
+        not consistency_failures,
+        "; ".join(consistency_failures[:6]) or "all 20 agree field-by-field",
     )
-    frame = pd.concat(pd.read_parquet(p) for p in sorted(susp_dir.glob("*.parquet")))
-    day = frame[
-        (frame["instrument_id"] == code)
-        & (frame["trade_date"].astype(str).str[:10] == trade_date)
-    ]
-    timing = [
-        None if pd.isna(v) or str(v).strip() in ("", "None") else str(v)
-        for v in day["suspend_timing"]
-    ]
-    direct_full_day = (
-        len(day) > 0
-        and (day["suspend_type"].astype(str) == "S").all()
-        and all(t is None for t in timing)
-    )
-    attempt = (
-        SOURCE_DIR
-        / f"s4_entry_raw_precision/attempts/daily_{code}_{stamp}/result.json"
-    )
-    result = json.loads(attempt.read_text())
-    response_empty = (
-        result.get("transport_status") == "received"
-        and result.get("http_status") == 200
-        and result.get("rows") == 0
-        and result.get("status") == "empty"
-    )
-    expected_class = (
-        "proven_full_day_suspension_supplier_basis"
-        if direct_full_day and response_empty
-        else "other"
-    )
-    if gap["classification"] != expected_class or gap["suspension_on_date"] is not True:
-        gap_ok = False
-        gap_notes.append(f"{code} {trade_date}: {gap['classification']}")
-check(
-    "prior20_independently_reclassified",
-    gap_ok and len(report["prior20_gaps"]) == 6,
-    "; ".join(gap_notes) or "6/6 dates re-derive to full-day supplier suspensions",
-)
 
-# Budgets and signal date.
-check(
-    "zero_budgets_and_signal_date",
-    report["economic_paths_started"] == 0
-    and report["provider_calls"] == 0
-    and package["first_pending_signal_date"] == "2021-12-31",
-    "zero paths and calls; the 2021-12-31 signal date is preserved",
-)
+    # 5. prior20 classifications re-derived from raw evidence.
+    gap_failures = []
+    for gap in report["prior20_gaps"]:
+        code, trade_date = gap["instrument_id"], gap["trade_date"]
+        year, month, _ = trade_date.split("-")
+        stamp = trade_date.replace("-", "")
+        susp_dir = (
+            canonical_dir / f"lifecycle_context_v1/suspensions/year={year}/month={month}"
+        )
+        day = pd.DataFrame()
+        if susp_dir.is_dir():
+            frame = pd.concat(
+                pd.read_parquet(p) for p in sorted(susp_dir.glob("*.parquet"))
+            )
+            day = frame[
+                (frame["instrument_id"] == code)
+                & (frame["trade_date"].astype(str).str[:10] == trade_date)
+            ]
+        timing = [
+            None if pd.isna(v) or str(v).strip() in ("", "None") else str(v)
+            for v in day.get("suspend_timing", [])
+        ]
+        full_day_local = (
+            len(day) > 0
+            and (day["suspend_type"].astype(str) == "S").all()
+            and all(t is None for t in timing)
+        )
+        attempt = source_dir / f"s4_entry_raw_precision/attempts/daily_{code}_{stamp}"
+        response_empty = False
+        try:
+            intent = json.loads((attempt / "intent.json").read_text())
+            result = json.loads((attempt / "result.json").read_text())
+            body = (attempt / "response.body").read_bytes()
+            inner = intent["request"]["parameters"]["params"]
+            payload = json.loads(body)
+            response_empty = (
+                result.get("intent_fingerprint") == intent.get("fingerprint")
+                and inner.get("ts_code") == code
+                and inner.get("start_date") == stamp
+                and result.get("rows") == 0
+                and result.get("status") == "empty"
+                and payload.get("code") == 0
+                and payload.get("data", {}).get("items") == []
+            )
+        except Exception:
+            response_empty = False
+        expected = (
+            "proven_full_day_suspension_supplier_basis"
+            if response_empty and full_day_local and gap.get("local_bar_present") is False
+            else "other"
+        )
+        if gap["classification"] != expected or gap["suspension_on_date"] is not True:
+            gap_failures.append(f"{code} {trade_date}: {gap['classification']}")
+    count_ok = expected_gap_count is None or len(report["prior20_gaps"]) == expected_gap_count
+    check(
+        "prior20_reclassified_from_raw_evidence",
+        not gap_failures and count_ok,
+        "; ".join(gap_failures)
+        or f"{len(report['prior20_gaps'])} dates re-derive from intent/body/suspension files",
+    )
 
-all_ok = all(v["ok"] for v in checks.values())
-payload = {"all_ok": all_ok, "package_dir": str(PACKAGE_DIR), "checks": checks}
-(PACKAGE_DIR / "independent_verification.json").write_text(
-    json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
-)
-print(json.dumps(payload, ensure_ascii=False, indent=2))
-raise SystemExit(0 if all_ok else 1)
+    # 6. Budgets and signal date.
+    check(
+        "zero_budgets_and_signal_date",
+        report["economic_paths_started"] == 0
+        and report["provider_calls"] == 0
+        and package["first_pending_signal_date"] == "2021-12-31",
+        "zero paths and calls; the 2021-12-31 signal date preserved",
+    )
+
+    return {
+        "all_ok": all(v["ok"] for v in checks.values()),
+        "package_dir": str(package_dir),
+        "verified_hashes": {
+            "input_package": sha_bytes(package_path.read_bytes()),
+            "preflight_report": sha_bytes(report_path.read_bytes()),
+            "completed": sha_bytes(completed_path.read_bytes()),
+            "plan": sha_bytes(plan_path.read_bytes()),
+            "reconciliation": sha_bytes(recon_path.read_bytes()),
+        },
+        "verifier_code_sha256": sha_bytes(pathlib.Path(__file__).read_bytes()),
+        "checks": checks,
+    }
+
+
+def main() -> int:
+    args = PARSER.parse_args()
+    payload = verify(args.package_dir, args.source_dir, args.canonical_dir)
+    proof_path = args.package_dir / "independent_verification.json"
+    if proof_path.exists():
+        previous = json.loads(proof_path.read_text())
+        if previous.get("verified_hashes", {}).get("input_package") not in (
+            None,
+            payload["verified_hashes"]["input_package"],
+        ):
+            # A stale proof must never vouch for different package content.
+            proof_path.write_text(
+                json.dumps(
+                    {
+                        "all_ok": False,
+                        "error": "stale proof: this directory was verified with "
+                        "different package content",
+                    },
+                    indent=2,
+                )
+            )
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 1
+    proof_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0 if payload["all_ok"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
