@@ -20,7 +20,10 @@ Stop on any failed/partial/schema-invalid request, freeze the failure and keep t
 end date unknown; do not retry, infer one exchange from the other or use weekdays.
 
 Require each source to contain every51 calendar dates exactly once with the exact
-exchange and integer0/1 is_open. Require the two ordered open-session lists equal,
+exchange and is_open integer0/1 or the exact documented strings"0"/"1"; reject
+booleans, floats and all other encodings. This pre-acquisition clarification follows
+the official page's string field type and numeric example, without inspecting new
+response values. Require the two ordered open-session lists equal,
 andSep14 open in both. Derive only the21-session prefix startingSep14, hence the
 20th subsequent session. Treat this as the calendar plan observed now; future
 exceptional closures still require revalidation at label evaluation. It is not
