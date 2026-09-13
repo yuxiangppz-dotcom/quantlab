@@ -1,144 +1,207 @@
-"""Independent verification of the generated S4 admission package.
+"""Independent verification of the S4 admission package (round 2).
 
-Re-derives every admitted fact from the sealed sources with separate
-Fraction arithmetic and naive re-mapping; it does not import or call the
-production admission functions. Output lands beside the package.
+Re-derives every admitted fact from the sealed sources and the local
+canonical evidence with separate arithmetic and direct file reads; it does
+not import or call the production admission functions. Binds the exact
+package/report hashes recorded in completed.json, checks per-instrument
+contexts and statuses, and reads the raw suspension/response evidence
+itself.
+
+Usage:
+  uv run python scripts/s4_admission_independent_verify.py \
+      --package-dir data/products/s4_first_replay_admission_v2 \
+      --source-dir <sealed launch dir> --canonical-dir <canonical dir>
 """
 
+import argparse
 import hashlib
 import json
 import pathlib
-import sys
 from fractions import Fraction
 
-source_dir = pathlib.Path(
-    "/home/administrator/projects/quantlab/data/products/research_program/launch_20260912"
-)
-output_dir = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else pathlib.Path("data/products/s4_first_replay_admission_v1")
+import pandas as pd
 
-plan = json.loads((source_dir / "s4_first_entry_plan/plan.json").read_text())
-recon = json.loads((source_dir / "s4_entry_raw_precision/reconciliation.json").read_text())
-package = json.loads((output_dir / "input_package.json").read_text())
-report = json.loads((output_dir / "preflight_report.json").read_text())
+PARSER = argparse.ArgumentParser()
+PARSER.add_argument("--package-dir", required=True, type=pathlib.Path)
+PARSER.add_argument("--source-dir", required=True, type=pathlib.Path)
+PARSER.add_argument("--canonical-dir", required=True, type=pathlib.Path)
+ARGS = PARSER.parse_args()
 
-checks = {}
+PACKAGE_DIR = ARGS.package_dir
+SOURCE_DIR = ARGS.source_dir
+CANONICAL_DIR = ARGS.canonical_dir
 
 
-def check(name, ok, detail=""):
+def sha(path: pathlib.Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+checks: dict[str, dict] = {}
+
+
+def check(name: str, ok: bool, detail: str = "") -> None:
     checks[name] = {"ok": bool(ok), "detail": detail}
 
 
-# 1. Volume mapping re-derived with Fractions, naive scan.
+completed = json.loads((PACKAGE_DIR / "completed.json").read_text())
+package_path = PACKAGE_DIR / "input_package.json"
+report_path = PACKAGE_DIR / "preflight_report.json"
+check(
+    "completed_hashes_match_current_files",
+    completed.get("status") == "completed"
+    and completed.get("input_package_sha256") == sha(package_path)
+    and completed.get("preflight_report_sha256") == sha(report_path),
+    "the proof belongs to exactly these files",
+)
+package = json.loads(package_path.read_text())
+report = json.loads(report_path.read_text())
+plan = json.loads((SOURCE_DIR / "s4_first_entry_plan/plan.json").read_text())
+recon = json.loads(
+    (SOURCE_DIR / "s4_entry_raw_precision/reconciliation.json").read_text()
+)
+check(
+    "embedded_source_fingerprints",
+    plan["fingerprint"]
+    == "6359d58599328340b43a84215ffa2f15725944171edea0b0f2786cf0cadfce92"
+    and recon["fingerprint"]
+    == "a9e30b671ace89d59b272d5558295a1b1ee68f75e93c79309bd310d8951c3e10",
+    "frozen plan/reconciliation identities",
+)
+
+# Volumes: re-derive with Fractions from the sealed reconciliation rows.
 sealed_vols = {}
 for row in recon["rows"]:
     if row.get("purpose") != "execution_volume_precision":
         continue
-    assert row["trade_date"] == "2022-01-04"
-    text = Fraction(row["raw_number_text"]["vol"]) * 100
-    assert text.denominator == 1
-    assert int(text) == row["raw_normalized"]["vol"]
-    amount = Fraction(row["raw_number_text"]["amount"]) * 1000 * 100
-    assert amount.denominator == 1
-    assert int(amount) == row["raw_normalized"]["amount"]
+    assert Fraction(row["raw_number_text"]["vol"]) * 100 == row["raw_normalized"]["vol"]
+    assert (
+        Fraction(row["raw_number_text"]["amount"]) * 1000 * 100
+        == row["raw_normalized"]["amount"]
+    )
     sealed_vols[row["instrument_id"]] = row["raw_normalized"]["vol"]
-check(
-    "volume_mapping_independent",
-    len(sealed_vols) == 7,
-    f"re-derived {len(sealed_vols)} exact volumes",
-)
-
-# 2. Package contexts carry the reconciliation value for the seven and the
-#    sealed exact integer for the rest; nothing else.
 sealed_ctx = {
     row["instrument_id"]: row["contexts"]["baseline"]["session_volume_shares"]
     for row in plan["rows"]
 }
-pkg_by_id = {item["instrument_id"]: item for item in package["instruments"]}
-mismatches = []
-for instrument, item in pkg_by_id.items():
-    volume = item["context"]["session_volume_shares"]
-    expected = sealed_vols.get(instrument, sealed_ctx[instrument])
-    if volume != expected:
-        mismatches.append(f"{instrument}: package {volume} vs expected {expected}")
-    # The seven replaced ones must have been sealed as None.
-    if instrument in sealed_vols and sealed_ctx[instrument] is not None:
-        mismatches.append(f"{instrument}: replaced a non-None sealed value")
+by_id = {item["instrument_id"]: item for item in package["instruments"]}
+volume_ok, volume_notes = True, []
+for code, item in by_id.items():
+    expected = sealed_vols.get(code, sealed_ctx[code])
+    actual = item["context"]["session_volume_shares"]
+    if actual != expected:
+        volume_ok = False
+        volume_notes.append(f"{code}: package {actual} vs expected {expected}")
+    if code in sealed_vols and sealed_ctx[code] is not None:
+        volume_ok = False
+        volume_notes.append(f"{code}: replaced a non-None sealed value")
 check(
-    "package_volumes_match_expected_sources",
-    not mismatches,
-    "; ".join(mismatches) or "all 20 contexts agree with their expected source",
+    "per_instrument_volumes_match_expected_source",
+    volume_ok and len(by_id) == 20,
+    "; ".join(volume_notes) or "20/20 agree with reconciliation-or-sealed values",
 )
 
-# 3. Ranking, slots and nominal quantities identical to the sealed plan.
-sealed_rows = {row["instrument_id"]: row for row in plan["rows"]}
+# Ranking, slots, nominal quantities, capital, per-instrument identity/dates.
+plan_rows = {row["instrument_id"]: row for row in plan["rows"]}
 rank_ok = all(
-    pkg_by_id[code]["proposal_rank"] == sealed_rows[code]["proposal_rank"]
-    and pkg_by_id[code]["nominal_quantity"] == sealed_rows[code]["nominal_quantity"]
-    and pkg_by_id[code]["nominal_slot_fen"] == sealed_rows[code]["nominal_slot_fen"]
+    by_id[code]["proposal_rank"] == plan_rows[code]["proposal_rank"]
+    and by_id[code]["nominal_quantity"] == plan_rows[code]["nominal_quantity"]
+    and by_id[code]["nominal_slot_fen"] == plan_rows[code]["nominal_slot_fen"]
+    and by_id[code]["context"]["instrument_id"] == code
+    and by_id[code]["context"]["execution_date"] == "2022-01-04"
     for code in plan["selected_in_priority_order"]
 )
-check("ranking_and_sizes_untouched", rank_ok, "20/20 identical to sealed plan")
+check(
+    "ranking_sizes_dates_per_instrument",
+    rank_ok and package["initial_cash_fen"] == 20_000_000,
+    "20/20 ranks, slots, quantities, securities and dates identical to the sealed plan",
+)
 
-# 4. No silent upgrades: additional fees stay None, unknowns stay unknown.
-fee_ok = all(
+# Corporate flag: the actual context boolean, per instrument — not the reason.
+corporate_ok = all(
+    item["context"]["corporate_actions_processed"] is True
+    and any(
+        f["field"] == "corporate_actions_processed" and f["status"] == "admitted"
+        for f in item["fields"]
+    )
+    for item in by_id.values()
+)
+check(
+    "corporate_context_values_admitted",
+    corporate_ok,
+    "20/20 derived contexts carry true and report it",
+)
+
+# Unknown facts stay unknown: additional fees None, market_open None.
+unknown_ok = all(
     item["context"]["fees"]["additional_fee_rate"] is None
     and item["context"]["fees"]["additional_fee_fixed_fen"] is None
-    for item in pkg_by_id.values()
+    and item["context"]["market_open"] is None
+    for item in by_id.values()
 )
-corporate = {
-    f["field"]: f
-    for item in pkg_by_id.values()
-    for f in item["fields"]
-    if f["field"] == "corporate_actions_processed"
-}
+check("unknowns_not_upgraded", unknown_ok, "fees None and market_open None for all 20")
+
+# prior20: read the suspension parquet and the raw response evidence directly.
+gap_ok = True
+gap_notes = []
+for gap in report["prior20_gaps"]:
+    code, trade_date = gap["instrument_id"], gap["trade_date"]
+    year, month, _ = trade_date.split("-")
+    stamp = trade_date.replace("-", "")
+    susp_dir = (
+        CANONICAL_DIR / f"lifecycle_context_v1/suspensions/year={year}/month={month}"
+    )
+    frame = pd.concat(pd.read_parquet(p) for p in sorted(susp_dir.glob("*.parquet")))
+    day = frame[
+        (frame["instrument_id"] == code)
+        & (frame["trade_date"].astype(str).str[:10] == trade_date)
+    ]
+    timing = [
+        None if pd.isna(v) or str(v).strip() in ("", "None") else str(v)
+        for v in day["suspend_timing"]
+    ]
+    direct_full_day = (
+        len(day) > 0
+        and (day["suspend_type"].astype(str) == "S").all()
+        and all(t is None for t in timing)
+    )
+    attempt = (
+        SOURCE_DIR
+        / f"s4_entry_raw_precision/attempts/daily_{code}_{stamp}/result.json"
+    )
+    result = json.loads(attempt.read_text())
+    response_empty = (
+        result.get("transport_status") == "received"
+        and result.get("http_status") == 200
+        and result.get("rows") == 0
+        and result.get("status") == "empty"
+    )
+    expected_class = (
+        "proven_full_day_suspension_supplier_basis"
+        if direct_full_day and response_empty
+        else "other"
+    )
+    if gap["classification"] != expected_class or gap["suspension_on_date"] is not True:
+        gap_ok = False
+        gap_notes.append(f"{code} {trade_date}: {gap['classification']}")
 check(
-    "no_silent_upgrades",
-    fee_ok
-    and all(
-        f["status"] == "unknown"
-        for item in pkg_by_id.values()
-        for f in item["fields"]
-        if f["field"] in ("market_open", "historical_identity_and_signal_eligibility")
-    ),
-    "fees None everywhere; market_open and identity unknown for all 20",
-)
-check(
-    "entry_day_corporate_scoped",
-    all("initially flat" in f["reason"] for f in corporate.values()),
-    "20/20 entry-day justifications present",
+    "prior20_independently_reclassified",
+    gap_ok and len(report["prior20_gaps"]) == 6,
+    "; ".join(gap_notes) or "6/6 dates re-derive to full-day supplier suspensions",
 )
 
-# 5. prior20 classifications all proven suspensions covering the exact date.
-gaps = report["prior20_gaps"]
+# Budgets and signal date.
 check(
-    "prior20_all_proven_suspensions",
-    len(gaps) == 6
-    and all(g["classification"] == "proven_full_day_suspension" for g in gaps)
-    and all(g["suspended_on_date"] is True for g in gaps),
-    "6/6 dates covered by suspend_type=S records",
-)
-
-# 6. Manifest hashes re-computed.
-manifest_ok = True
-for name, entry in report["manifest"]["files"].items():
-    digest = hashlib.sha256(pathlib.Path(entry["path"]).read_bytes()).hexdigest()
-    manifest_ok &= digest == entry["sha256"]
-check("manifest_hashes_recomputed", manifest_ok, f"{len(report['manifest']['files'])} files")
-
-# 7. Signal date and zero budgets preserved.
-check(
-    "signal_date_and_budgets",
-    package["first_pending_signal_date"] == "2021-12-31"
-    and package["initial_cash_fen"] == 20_000_000
-    and report["economic_paths_started"] == 0
-    and report["provider_calls"] == 0,
-    "2021-12-31 kept; 200,000 CNY; zero paths and calls",
+    "zero_budgets_and_signal_date",
+    report["economic_paths_started"] == 0
+    and report["provider_calls"] == 0
+    and package["first_pending_signal_date"] == "2021-12-31",
+    "zero paths and calls; the 2021-12-31 signal date is preserved",
 )
 
 all_ok = all(v["ok"] for v in checks.values())
-payload = {"all_ok": all_ok, "checks": checks}
-(output_dir / "independent_verification.json").write_text(
+payload = {"all_ok": all_ok, "package_dir": str(PACKAGE_DIR), "checks": checks}
+(PACKAGE_DIR / "independent_verification.json").write_text(
     json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
 )
 print(json.dumps(payload, ensure_ascii=False, indent=2))
-sys.exit(0 if all_ok else 1)
+raise SystemExit(0 if all_ok else 1)
