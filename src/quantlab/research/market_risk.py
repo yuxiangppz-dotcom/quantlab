@@ -425,8 +425,15 @@ def _unknown(
     )
 
 
+CONSTANT_RULE_IDS = (CONSTANT_CAP_80_ID, CONSTANT_CAP_50_ID)
+
+
 def decide_constant_cap(inputs: RiskInputs, rule_id: str) -> RiskDecision:
-    """Constant upper bound; a reference rule, not a risk estimate."""
+    """Constant upper bound; only C80/C50, never a stand-in for another rule."""
+    if rule_id not in CONSTANT_RULE_IDS:
+        raise ValueError(
+            f"decide_constant_cap only accepts {CONSTANT_RULE_IDS}, got {rule_id!r}"
+        )
     following, reasons = _scheduling_reasons(inputs.sessions, inputs.decision_date)
     cap = Decimal("0.8") if rule_id == CONSTANT_CAP_80_ID else Decimal("0.5")
     return RiskDecision(

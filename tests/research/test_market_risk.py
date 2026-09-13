@@ -21,6 +21,7 @@ from quantlab.research.market_risk import (
     RiskState,
     StrategyNav,
     UnscaledReturn,
+    decide_constant_cap,
     evaluate_market_risk_rule,
 )
 
@@ -205,6 +206,41 @@ class TestConstantRules:
         assert decision.status == STATUS_OK
         assert decision.next_execution_date is None
         assert "no_future_session" in decision.reasons
+
+
+class TestConstantCapGuard:
+    @pytest.mark.parametrize(
+        "bad_rule_id",
+        ["V", "M", "D", "VM", "VMD", "X", "", None, 42, True, 0.5],
+    )
+    def test_helper_rejects_non_constant_rule_ids(self, bad_rule_id):
+        sessions = _weekdays(5)
+        inputs = RiskInputs(decision_date=sessions[2], sessions=sessions)
+        with pytest.raises(ValueError, match="only accepts"):
+            decide_constant_cap(inputs, bad_rule_id)
+
+    @pytest.mark.parametrize(
+        "rule_id, expected_cap",
+        [("C80", Decimal("0.8")), ("C50", Decimal("0.5"))],
+    )
+    def test_helper_returns_frozen_constant_caps(self, rule_id, expected_cap):
+        sessions = _weekdays(5)
+        inputs = RiskInputs(decision_date=sessions[2], sessions=sessions)
+        decision = decide_constant_cap(inputs, rule_id)
+        assert decision.rule_id == rule_id
+        assert decision.status == STATUS_OK
+        assert decision.cap == expected_cap
+        assert decision.config_fingerprint == RULE_CONFIG_FINGERPRINTS[rule_id]
+
+    def test_unified_entry_behavior_is_unchanged(self):
+        sessions = _weekdays(5)
+        inputs = RiskInputs(decision_date=sessions[2], sessions=sessions)
+        # V without returns is unknown through the unified entry, and the
+        # guard must not have altered that routing.
+        decision = evaluate_market_risk_rule("V", inputs)
+        assert decision.status == STATUS_UNKNOWN
+        assert decision.cap is None
+        assert evaluate_market_risk_rule("C50", inputs).cap == Decimal("0.5")
 
 
 class TestVolRule:
