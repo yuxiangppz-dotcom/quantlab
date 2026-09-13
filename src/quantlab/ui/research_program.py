@@ -10,6 +10,7 @@ from quantlab.research.alpha101_pilot import read_progress as read_alpha_progres
 from quantlab.research.etf_event_progress import read_etf_progress
 from quantlab.research.funding_attribution import read_progress
 from quantlab.research.replay_readiness import read_preparation
+from quantlab.research.s4_observation_progress import read_observation
 from quantlab.research.s4_pilot import read_progress as read_s4_progress
 from quantlab.ui.workbench import public_error
 
@@ -264,9 +265,65 @@ def render_replay_preparation():
     )
 
 
+def render_prospective_observation():
+    st.markdown("**新登记的前瞻观察：等待未来检验**")
+    try:
+        observation = read_observation(PROJECT_ROOT)
+    except Exception as exc:
+        st.error(f"前瞻观察记录无法校验：{public_error(exc)}")
+        return
+    if observation is None:
+        st.info("本次周末前瞻观察尚无完整复核记录，暂不显示有效分数数量。")
+        return
+    st.write(
+        f"北京时间 {observation['created_at_china']} 已登记一次条件反转观察，"
+        f"使用截至 {observation['price_as_of']} 的价格。{observation['state']}。"
+    )
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "项目": "固定股票样本",
+                    "数量": observation["cohort"],
+                    "含义": "全部保留，缺失股票没有剔除",
+                },
+                {
+                    "项目": "三日相对下跌信号",
+                    "数量": observation["known_S4_A"],
+                    "含义": "目前可计算分数的股票数",
+                },
+                {
+                    "项目": "20日反转参照",
+                    "数量": observation["known_reference20"],
+                    "含义": "目前可计算参照分数的股票数",
+                },
+            ]
+        ),
+        hide_index=True,
+        width="stretch",
+    )
+    st.write(
+        f"计划比较 {observation['reference_dates'][0]} 收盘至 "
+        f"{observation['reference_dates'][-1]} 收盘的后续价格变化，"
+        "全部六个交易日的数据到齐后再按原规则复核；日期过去也不代表已完成评价。"
+    )
+    st.caption(
+        "这条记录实际创建于周日，与周五的同日前瞻登记分开。股票数量不是推荐持仓；"
+        "目前没有实际收益、扣费收益或交易指令，单次观察不能证明策略稳定有效。"
+    )
+    st.download_button(
+        "下载本次前瞻观察摘要",
+        json.dumps(observation, ensure_ascii=False, indent=2),
+        "s4_weekend_observation_summary.json",
+        "application/json",
+        on_click="ignore",
+    )
+
+
 def render_program():
     st.subheader("策略研究进度")
     st.write("已启动你批准的五类策略计划。本页展示已复核记录，后续按有限批次继续推进。")
+    render_prospective_observation()
     try:
         reviewed = read_progress(PROJECT_ROOT)
     except Exception as exc:
@@ -312,7 +369,7 @@ def render_program():
     render_alpha_progress()
     render_s4_progress()
     render_replay_preparation()
-    st.warning("尚无策略通过晋升。本页数值是历史样本中的排序关联，不是收益率，也不是交易建议。")
+    st.warning("尚无策略通过晋升。下方的历史排序关联不是收益率，也不是交易建议。")
     st.write(
         "正的 RankIC 表示指标排名与随后5个交易日的价格涨跌排名倾向同向；"
         "它不能说明扣除手续费后能赚多少。样本固定为2019年底已有股票中的256只，未代表全市场。"
