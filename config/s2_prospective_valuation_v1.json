@@ -1,0 +1,65 @@
+{
+  "identity": "S2-A:prospective-value-20260913-v1",
+  "output": "data/products/research_program/launch_20260912/s2_prospective_20260913",
+  "raw_path": "data/products/research_program/launch_20260912/context_evidence_intake/attempts/basic_20260911/response.body",
+  "result_path": "data/products/research_program/launch_20260912/context_evidence_intake/attempts/basic_20260911/result.json",
+  "intent_path": "data/products/research_program/launch_20260912/context_evidence_intake/attempts/basic_20260911/intent.json",
+  "selection_path": "data/products/research_program/launch_20260912/selection.json",
+  "selection_fingerprint": "04a36754511be4136685a3ce378d60aa8c746ca218da7fa66d62df23b2e5840e",
+  "inputs": {
+    "data/products/research_program/launch_20260912/context_evidence_intake/attempts/basic_20260911/response.body": {
+      "sha256": "4f8d3a2d295dd0c72128bd3605efc2cea68488fb889bdeaecabe9fe8fe281b73",
+      "bytes": 847170
+    },
+    "data/products/research_program/launch_20260912/context_evidence_intake/attempts/basic_20260911/result.json": {
+      "sha256": "c048b20476031f4833f3044f9aaa0e264088aedd8efc20b6030f89971ae04a5e",
+      "bytes": 1656
+    },
+    "data/products/research_program/launch_20260912/context_evidence_intake/attempts/basic_20260911/intent.json": {
+      "sha256": "e9d0ab2edf05e8ed3307612c36de7528a0d4a7827eb14758e8339e07673a412d",
+      "bytes": 539
+    },
+    "data/products/research_program/launch_20260912/context_evidence_intake/report.json": {
+      "sha256": "0d85510e6052bd20bacbaccea46bc5199d012b776b8d73d1c55ade1d3db97ab5",
+      "bytes": 965
+    },
+    "data/products/research_program/launch_20260912/context_evidence_intake/independent_proof.json": {
+      "sha256": "3bf6bb3d3c4fb19ad2f6ba14c6038e575c1f9ec1be604023920b9695eecfa6ab",
+      "bytes": 632
+    },
+    "data/products/research_program/launch_20260912/selection.json": {
+      "sha256": "e46e04b85208d3715b1dfaa1c7944f6f4b3ef37ef614ed7ed47cb9e4152c6dd9",
+      "bytes": 4117
+    },
+    "data/canonical/calendar/calendar.parquet": {
+      "sha256": "43242968a31034be150b640f1d1558f7df070fba2354eaa28510fd9ffb7caedb",
+      "bytes": 59709
+    }
+  },
+  "price_as_of": "2026-09-11",
+  "registration_china_date": "2026-09-13",
+  "earliest_entry_session": "2026-09-14",
+  "exit_subsequent_sessions": 20,
+  "required_consecutive_price_sessions": 21,
+  "minimum_future_pairs": 30,
+  "future_exit_date": null,
+  "future_calendar_complete": false,
+  "source_received_at": "2026-09-12T17:36:08.992141+00:00",
+  "rule_candidates_before": 3,
+  "rule_candidates_after": 4,
+  "rule_candidate_cap": 15,
+  "economic_paths": 0,
+  "model_fits": 0,
+  "provider_requests": 0,
+  "historical_pit_certified": false,
+  "performance_evidence": false,
+  "execution_authority": false,
+  "formula": "5 size strata: min(4,floor((average ascending circ_mv rank-1)*5/N)); positive finite circ_mv, N>=20; within stratum positive finite PE_TTM and PB, n>=20; score=(average rank(-PE_TTM)+average rank(-PB))/(2*n); missing retained",
+  "resources": {
+    "max_generated_bytes": 16777216,
+    "reserve_host_D_bytes": 8589934592,
+    "max_rss_bytes": 2147483648,
+    "max_wakeup_seconds": 600,
+    "next_partition_time_reserve_seconds": 30
+  }
+}
