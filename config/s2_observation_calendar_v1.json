@@ -1,0 +1,60 @@
+{
+  "output": "data/products/research_program/launch_20260912/s2_observation_calendar",
+  "requests": [
+    {
+      "id": "SSE",
+      "parameters": {
+        "api_name": "trade_cal",
+        "params": {
+          "exchange": "SSE",
+          "start_date": "20260911",
+          "end_date": "20261031"
+        },
+        "fields": "exchange,cal_date,is_open"
+      },
+      "row_cap": 6000
+    },
+    {
+      "id": "SZSE",
+      "parameters": {
+        "api_name": "trade_cal",
+        "params": {
+          "exchange": "SZSE",
+          "start_date": "20260911",
+          "end_date": "20261031"
+        },
+        "fields": "exchange,cal_date,is_open"
+      },
+      "row_cap": 6000
+    }
+  ],
+  "inputs": {
+    "data/products/research_program/launch_20260912/s2_prospective_20260913/observation.json": {
+      "sha256": "f36d560dc655021a405ab3ad4c542e13bcb60a008e72024248c6f0e7cb17c21f",
+      "bytes": 48889
+    },
+    "data/products/research_program/launch_20260912/s2_prospective_20260913/proof.json": {
+      "sha256": "201bcebc06cddd9cab2a25189df37d4dbde90da8253c927866d73a516b0961ae",
+      "bytes": 438
+    },
+    "data/products/research_program/launch_20260912/s2_observation_calendar/documentation.json": {
+      "sha256": "e191794a4870f848124b1ccdba3f8f63ed4b8490d137ec98b7deb21084b6497d",
+      "bytes": 13910
+    }
+  },
+  "observation_path": "data/products/research_program/launch_20260912/s2_prospective_20260913/observation.json",
+  "proof_path": "data/products/research_program/launch_20260912/s2_prospective_20260913/proof.json",
+  "endpoint": "https://api.tushare.pro",
+  "max_requests": 2,
+  "max_retries": 0,
+  "per_response_bytes": 65536,
+  "max_body_bytes": 131072,
+  "execution_authority": false,
+  "resources": {
+    "max_generated_bytes": 8388608,
+    "reserve_host_D_bytes": 8589934592,
+    "max_rss_bytes": 2147483648,
+    "max_wakeup_seconds": 600,
+    "next_partition_time_reserve_seconds": 30
+  }
+}
