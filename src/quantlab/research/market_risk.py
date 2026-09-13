@@ -203,15 +203,55 @@ class StrategyNav:
 
 @dataclass(frozen=True)
 class RiskState:
-    """Persistent drawdown-governor state the caller must carry forward."""
+    """Persistent drawdown-governor state the caller must carry forward.
+
+    Carries the NAV-series identity, the last decision date it already
+    advanced, and a contract version. First use must go through
+    :meth:`initial`; a running decision that finds no state reports unknown
+    instead of silently restarting, and a state that already advanced on the
+    decision date rejects so same-day retries cannot stack recoveries.
+    """
 
     high_water_mark: Decimal
     coefficient: Decimal
+    series_id: str
+    last_decision_date: date | None = None
+    version: str = MARKET_RISK_LAYER_VERSION
 
     def __post_init__(self) -> None:
-        _decimal_positive(self.high_water_mark, "high_water_mark")
-        if self.coefficient not in VALID_COEFFICIENTS:
-            raise ValueError("coefficient must be one of 1, 0.5, 0.25")
+        if (
+            type(self.high_water_mark) is not Decimal
+            or not self.high_water_mark.is_finite()
+            or self.high_water_mark <= 0
+        ):
+            raise ValueError("high_water_mark must be a finite positive Decimal")
+        if type(self.coefficient) is not Decimal or self.coefficient not in (
+            COEFFICIENT_NORMAL,
+            COEFFICIENT_TIER1,
+            COEFFICIENT_TIER2,
+        ):
+            raise ValueError("coefficient must be a Decimal of 1, 0.5 or 0.25")
+        _identifier(self.series_id, "series_id")
+        if self.last_decision_date is not None:
+            _day(self.last_decision_date, "last_decision_date")
+        elif self.coefficient != COEFFICIENT_NORMAL:
+            raise ValueError(
+                "a state without a prior decision must sit at the normal coefficient"
+            )
+        if self.version != MARKET_RISK_LAYER_VERSION:
+            raise ValueError(
+                "risk state version mismatch; reinitialize the series explicitly"
+            )
+
+    @classmethod
+    def initial(cls, nav: Decimal, series_id: str) -> RiskState:
+        """Explicit first-use state: watermark pinned to the first audited NAV."""
+        _decimal_positive(nav, "initial nav")
+        return cls(
+            high_water_mark=nav,
+            coefficient=COEFFICIENT_NORMAL,
+            series_id=series_id,
+        )
 
 
 @dataclass(frozen=True)
@@ -233,6 +273,7 @@ class RiskInputs:
     return_source: str = ""
     index_source: str = ""
     nav_source: str = ""
+    nav_series_id: str = ""
 
     def __post_init__(self) -> None:
         _day(self.decision_date, "decision_date")
@@ -271,6 +312,12 @@ class RiskInputs:
             self.drawdown_state, RiskState
         ):
             raise ValueError("drawdown_state must be a RiskState")
+        if (
+            self.strategy_nav is not None or self.drawdown_state is not None
+        ) and not self.nav_series_id:
+            raise ValueError(
+                "nav_series_id is required with a strategy NAV or drawdown state"
+            )
 
     @staticmethod
     def _check_observations(values: tuple, name: str, decision_date: date) -> None:
@@ -317,10 +364,17 @@ class RiskDecision:
                 raise ValueError("next_execution_date must follow the decision_date")
         if self.status not in (STATUS_OK, STATUS_UNKNOWN):
             raise ValueError("status must be ok or unknown")
-        if self.status == STATUS_OK and self.cap is None:
-            raise ValueError("an ok decision must carry a cap")
-        if self.status == STATUS_UNKNOWN and self.cap is not None:
+        if self.status == STATUS_OK:
+            if self.cap is None:
+                raise ValueError("an ok decision must carry a cap")
+            if type(self.cap) is not Decimal or not self.cap.is_finite():
+                raise ValueError("cap must be a finite Decimal")
+            if not (Decimal(0) <= self.cap <= VOL_CAP):
+                raise ValueError("cap outside the approved 0-0.8 range")
+        elif self.cap is not None:
             raise ValueError("an unknown decision must not carry a cap")
+        if self.config_fingerprint != RULE_CONFIG_FINGERPRINTS[self.rule_id]:
+            raise ValueError("config_fingerprint does not match the frozen rule")
         if self.drawdown_state is not None and not isinstance(
             self.drawdown_state, RiskState
         ):
@@ -400,13 +454,25 @@ def decide_vol_target(inputs: RiskInputs) -> RiskDecision:
         values.append(value)
     if any(not math.isfinite(value) for value in values):
         return _unknown(VOL_TARGET_ID, inputs, ("invalid_return",))
-    mean = sum(values) / len(values)
-    variance = sum((value - mean) ** 2 for value in values) / (len(values) - 1)
+    try:
+        mean = math.fsum(values) / len(values)
+        sum_of_squares = math.fsum((value - mean) ** 2 for value in values)
+    except OverflowError:
+        # Individually finite inputs can still be jointly unrepresentable.
+        return _unknown(VOL_TARGET_ID, inputs, ("nonfinite_volatility",))
+    if not math.isfinite(mean) or not math.isfinite(sum_of_squares):
+        return _unknown(VOL_TARGET_ID, inputs, ("nonfinite_volatility",))
+    variance = sum_of_squares / (len(values) - 1)
     annualized = math.sqrt(variance) * math.sqrt(VOL_ANNUALIZATION_DAYS)
+    if not math.isfinite(variance) or variance < 0.0 or not math.isfinite(annualized):
+        return _unknown(VOL_TARGET_ID, inputs, ("nonfinite_volatility",))
     if annualized == 0.0:
         cap = VOL_CAP
     else:
         cap = min(VOL_CAP, VOL_TARGET_ANNUAL / Decimal(str(annualized)))
+    if not cap.is_finite() or cap < 0 or cap > VOL_CAP:
+        # Defensive: an unrepresentable estimate must never look like a cap.
+        return _unknown(VOL_TARGET_ID, inputs, ("nonfinite_volatility",))
     following, reasons = _scheduling_reasons(inputs.sessions, inputs.decision_date)
     return RiskDecision(
         rule_id=VOL_TARGET_ID,
@@ -482,15 +548,33 @@ def decide_drawdown_governor(inputs: RiskInputs) -> RiskDecision:
             ("nav_unavailable",),
             drawdown_state=inputs.drawdown_state,
         )
+    state = inputs.drawdown_state
+    if state is None:
+        # A restart that lost its state is not a fresh start: callers must
+        # restore the persisted state or explicitly reinitialize the series.
+        return _unknown(DRAWDOWN_GOVERNOR_ID, inputs, ("state_unavailable",))
+    if state.series_id != inputs.nav_series_id:
+        raise ValueError(
+            f"drawdown state belongs to NAV series {state.series_id!r}, "
+            f"inputs declare {inputs.nav_series_id!r}"
+        )
+    if state.last_decision_date is not None:
+        if state.last_decision_date > inputs.decision_date:
+            raise ValueError("drawdown state carries a future last decision date")
+        if state.last_decision_date == inputs.decision_date:
+            raise ValueError(
+                "drawdown state already advanced on this decision date; rewind "
+                "to the persisted pre-decision state to re-evaluate"
+            )
     nav = inputs.strategy_nav.nav
-    state = inputs.drawdown_state or RiskState(
-        high_water_mark=nav, coefficient=COEFFICIENT_NORMAL
-    )
     high_water_mark = max(state.high_water_mark, nav)
     drawdown = (high_water_mark - nav) / high_water_mark
     coefficient = _next_coefficient(state.coefficient, drawdown)
     new_state = RiskState(
-        high_water_mark=high_water_mark, coefficient=coefficient
+        high_water_mark=high_water_mark,
+        coefficient=coefficient,
+        series_id=state.series_id,
+        last_decision_date=inputs.decision_date,
     )
     following, reasons = _scheduling_reasons(inputs.sessions, inputs.decision_date)
     return RiskDecision(

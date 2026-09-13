@@ -10,6 +10,7 @@ import pytest
 
 from quantlab.research.market_risk import (
     APPROVED_EQUITY_PROXY_INDEX_ID,
+    MARKET_RISK_LAYER_VERSION,
     RULE_CONFIG_FINGERPRINTS,
     RULE_IDS,
     STATUS_OK,
@@ -22,6 +23,8 @@ from quantlab.research.market_risk import (
     UnscaledReturn,
     evaluate_market_risk_rule,
 )
+
+SERIES = "nav_series_a"
 
 
 def _weekdays(count: int, start: date = date(2024, 1, 1)) -> tuple[date, ...]:
@@ -40,6 +43,17 @@ def _flat_closes(sessions: tuple[date, ...], value: Decimal) -> tuple[IndexClose
 
 def _flat_returns(sessions: tuple[date, ...], value: float) -> tuple[UnscaledReturn, ...]:
     return tuple(UnscaledReturn(session=s, value=value) for s in sessions)
+
+
+def _state(
+    high_water_mark: str, coefficient: str, last: date | None = None
+) -> RiskState:
+    return RiskState(
+        high_water_mark=Decimal(high_water_mark),
+        coefficient=Decimal(coefficient),
+        series_id=SERIES,
+        last_decision_date=last,
+    )
 
 
 class TestRiskInputsContract:
@@ -87,9 +101,7 @@ class TestRiskInputsContract:
             as_of=sessions[-1], nav=Decimal("100"), unhandled_external_flow=True
         )
         with pytest.raises(ValueError, match="unhandled external flows"):
-            RiskInputs(
-                decision_date=sessions[-1], sessions=sessions, strategy_nav=nav
-            )
+            RiskInputs(decision_date=sessions[-1], sessions=sessions, strategy_nav=nav)
 
     def test_rejects_nav_as_of_mismatch(self):
         sessions = _weekdays(5)
@@ -100,6 +112,7 @@ class TestRiskInputsContract:
                 sessions=sessions,
                 strategy_nav=nav,
                 nav_source="test",
+                nav_series_id=SERIES,
             )
 
     def test_requires_sources_and_index_id_with_sections(self):
@@ -118,13 +131,61 @@ class TestRiskInputsContract:
                 index_source="test",
             )
 
+    def test_requires_nav_series_id_with_nav_or_state(self):
+        sessions = _weekdays(5)
+        with pytest.raises(ValueError, match="nav_series_id is required"):
+            RiskInputs(
+                decision_date=sessions[-1],
+                sessions=sessions,
+                strategy_nav=StrategyNav(as_of=sessions[-1], nav=Decimal("100")),
+                nav_source="test",
+            )
+        with pytest.raises(ValueError, match="nav_series_id is required"):
+            RiskInputs(
+                decision_date=sessions[-1],
+                sessions=sessions,
+                drawdown_state=_state("100", "1"),
+            )
+
     def test_rejects_nonpositive_nav(self):
         with pytest.raises(ValueError, match="positive Decimal"):
             StrategyNav(as_of=date(2024, 1, 2), nav=Decimal("0"))
 
-    def test_rejects_invalid_state_coefficient(self):
-        with pytest.raises(ValueError, match="coefficient"):
-            RiskState(high_water_mark=Decimal("100"), coefficient=Decimal("0.7"))
+
+class TestRiskStateContract:
+    def test_coefficient_rejects_bool_and_float(self):
+        with pytest.raises(ValueError, match="coefficient must be a Decimal"):
+            RiskState(
+                high_water_mark=Decimal("100"), coefficient=True, series_id=SERIES
+            )
+        with pytest.raises(ValueError, match="coefficient must be a Decimal"):
+            RiskState(
+                high_water_mark=Decimal("100"), coefficient=0.5, series_id=SERIES
+            )
+
+    def test_high_water_mark_rejects_non_decimal(self):
+        with pytest.raises(ValueError, match="finite positive Decimal"):
+            RiskState(high_water_mark=100.0, coefficient=Decimal("1"), series_id=SERIES)
+
+    def test_undated_state_must_be_normal_coefficient(self):
+        with pytest.raises(ValueError, match="normal coefficient"):
+            _state("100", "0.5")
+
+    def test_version_mismatch_rejects(self):
+        with pytest.raises(ValueError, match="version mismatch"):
+            RiskState(
+                high_water_mark=Decimal("100"),
+                coefficient=Decimal("1"),
+                series_id=SERIES,
+                version="v0",
+            )
+
+    def test_initial_pins_watermark_to_first_nav(self):
+        state = RiskState.initial(Decimal("96"), SERIES)
+        assert state.high_water_mark == Decimal("96")
+        assert state.coefficient == Decimal("1")
+        assert state.last_decision_date is None
+        assert state.version == MARKET_RISK_LAYER_VERSION
 
 
 class TestConstantRules:
@@ -179,6 +240,27 @@ class TestVolRule:
         assert decision.status == STATUS_UNKNOWN
         assert "invalid_return" in decision.reasons
 
+    def test_extreme_finite_returns_overflow_is_unknown(self):
+        sessions = _weekdays(60)
+        returns = _flat_returns(sessions, 1e308)
+        decision = evaluate_market_risk_rule("V", self._inputs(sessions, returns))
+        assert decision.status == STATUS_UNKNOWN
+        assert "nonfinite_volatility" in decision.reasons
+        assert decision.cap is None
+        assert decision.vol_estimate is None
+
+    def test_opposite_extreme_returns_overflow_is_unknown(self):
+        sessions = _weekdays(60)
+        values = (1e308, -1e308) * 30
+        returns = tuple(
+            UnscaledReturn(session=s, value=v)
+            for s, v in zip(sessions, values, strict=True)
+        )
+        decision = evaluate_market_risk_rule("V", self._inputs(sessions, returns))
+        assert decision.status == STATUS_UNKNOWN
+        assert "nonfinite_volatility" in decision.reasons
+        assert decision.cap is None
+
     def test_zero_volatility_caps_at_maximum(self):
         sessions = _weekdays(60)
         decision = evaluate_market_risk_rule(
@@ -192,7 +274,8 @@ class TestVolRule:
         sessions = _weekdays(60)
         values = (0.01, -0.01) * 30
         returns = tuple(
-            UnscaledReturn(session=s, value=v) for s, v in zip(sessions, values, strict=True)
+            UnscaledReturn(session=s, value=v)
+            for s, v in zip(sessions, values, strict=True)
         )
         decision = evaluate_market_risk_rule("V", self._inputs(sessions, returns))
         assert decision.status == STATUS_OK
@@ -202,11 +285,14 @@ class TestVolRule:
         sessions = _weekdays(60)
         values = (0.02, -0.02) * 30
         returns = tuple(
-            UnscaledReturn(session=s, value=v) for s, v in zip(sessions, values, strict=True)
+            UnscaledReturn(session=s, value=v)
+            for s, v in zip(sessions, values, strict=True)
         )
         decision = evaluate_market_risk_rule("V", self._inputs(sessions, returns))
-        mean = sum(values) / len(values)
-        variance = sum((v - mean) ** 2 for v in values) / (len(values) - 1)
+        mean = math.fsum(values) / len(values)
+        variance = (
+            math.fsum((v - mean) ** 2 for v in values) / (len(values) - 1)
+        )
         expected = min(0.8, 0.15 / (math.sqrt(variance) * math.sqrt(252)))
         assert decision.status == STATUS_OK
         assert float(decision.cap) == pytest.approx(expected, rel=1e-12)
@@ -300,34 +386,87 @@ class TestDrawdownGovernor:
             strategy_nav=StrategyNav(as_of=sessions[idx], nav=nav_value),
             drawdown_state=state,
             nav_source="synthetic_nav",
+            nav_series_id=SERIES,
         )
 
     def test_missing_nav_is_unknown_and_state_passes_through(self):
         sessions = _weekdays(5)
-        state = RiskState(high_water_mark=Decimal("100"), coefficient=Decimal("0.5"))
+        state = _state("100", "0.5", sessions[0])
         inputs = RiskInputs(
-            decision_date=sessions[-1], sessions=sessions, drawdown_state=state
+            decision_date=sessions[-1],
+            sessions=sessions,
+            drawdown_state=state,
+            nav_series_id=SERIES,
         )
         decision = evaluate_market_risk_rule("D", inputs)
         assert decision.status == STATUS_UNKNOWN
         assert "nav_unavailable" in decision.reasons
         assert decision.drawdown_state is state
 
-    def test_initial_decision_has_full_cap(self):
+    def test_missing_state_is_unknown_not_a_fresh_start(self):
         sessions = _weekdays(5)
         decision = evaluate_market_risk_rule(
-            "D", self._inputs(sessions, Decimal("100"))
+            "D", self._inputs(sessions, Decimal("80"))
         )
+        assert decision.status == STATUS_UNKNOWN
+        assert "state_unavailable" in decision.reasons
+        assert decision.cap is None
+        assert decision.drawdown_state is None
+
+    def test_initial_state_is_explicit(self):
+        sessions = _weekdays(5)
+        inputs = self._inputs(sessions, Decimal("100"), RiskState.initial(
+            Decimal("100"), SERIES
+        ))
+        decision = evaluate_market_risk_rule("D", inputs)
         assert decision.status == STATUS_OK
         assert decision.cap == Decimal("0.8")
         assert decision.coefficient == Decimal("1")
         assert decision.drawdown == Decimal("0")
+        assert decision.drawdown_state is not None
+        assert decision.drawdown_state.last_decision_date == sessions[-1]
+
+    def test_same_day_re_evaluation_rejects(self):
+        sessions = _weekdays(5)
+        first = evaluate_market_risk_rule(
+            "D",
+            self._inputs(sessions, Decimal("100"), _state("100", "0.25", sessions[0])),
+        )
+        assert first.cap == Decimal("0.4")
+        advanced = first.drawdown_state
+        assert advanced is not None
+        with pytest.raises(ValueError, match="already advanced on this decision date"):
+            evaluate_market_risk_rule("D", self._inputs(sessions, Decimal("100"), advanced))
+
+    def test_state_from_other_series_rejects(self):
+        sessions = _weekdays(5)
+        other = RiskState(
+            high_water_mark=Decimal("100"),
+            coefficient=Decimal("1"),
+            series_id="nav_series_b",
+            last_decision_date=sessions[0],
+        )
+        with pytest.raises(ValueError, match="belongs to NAV series"):
+            evaluate_market_risk_rule("D", self._inputs(sessions, Decimal("90"), other))
+
+    def test_future_last_decision_date_rejects(self):
+        sessions = _weekdays(5)
+        future_state = _state("100", "1", sessions[-1])
+        earlier = RiskInputs(
+            decision_date=sessions[2],
+            sessions=sessions,
+            strategy_nav=StrategyNav(as_of=sessions[2], nav=Decimal("90")),
+            drawdown_state=future_state,
+            nav_source="synthetic_nav",
+            nav_series_id=SERIES,
+        )
+        with pytest.raises(ValueError, match="future last decision date"):
+            evaluate_market_risk_rule("D", earlier)
 
     def test_drawdown_exactly_ten_percent_enters_tier1(self):
         sessions = _weekdays(5)
-        state = RiskState(high_water_mark=Decimal("100"), coefficient=Decimal("1"))
         decision = evaluate_market_risk_rule(
-            "D", self._inputs(sessions, Decimal("90"), state)
+            "D", self._inputs(sessions, Decimal("90"), _state("100", "1", sessions[0]))
         )
         assert decision.cap == Decimal("0.4")
         assert decision.coefficient == Decimal("0.5")
@@ -335,89 +474,79 @@ class TestDrawdownGovernor:
 
     def test_just_below_ten_percent_stays_normal(self):
         sessions = _weekdays(5)
-        state = RiskState(high_water_mark=Decimal("100"), coefficient=Decimal("1"))
         decision = evaluate_market_risk_rule(
-            "D", self._inputs(sessions, Decimal("90.01"), state)
+            "D", self._inputs(sessions, Decimal("90.01"), _state("100", "1", sessions[0]))
         )
         assert decision.coefficient == Decimal("1")
         assert decision.cap == Decimal("0.8")
 
     def test_drawdown_exactly_fifteen_percent_enters_tier2(self):
         sessions = _weekdays(5)
-        state = RiskState(high_water_mark=Decimal("100"), coefficient=Decimal("1"))
         decision = evaluate_market_risk_rule(
-            "D", self._inputs(sessions, Decimal("85"), state)
+            "D", self._inputs(sessions, Decimal("85"), _state("100", "1", sessions[0]))
         )
         assert decision.coefficient == Decimal("0.25")
         assert decision.cap == Decimal("0.2")
 
     def test_deterioration_jumps_directly_to_tier2(self):
         sessions = _weekdays(5)
-        state = RiskState(high_water_mark=Decimal("100"), coefficient=Decimal("1"))
         decision = evaluate_market_risk_rule(
-            "D", self._inputs(sessions, Decimal("80"), state)
+            "D", self._inputs(sessions, Decimal("80"), _state("100", "1", sessions[0]))
         )
         assert decision.coefficient == Decimal("0.25")
 
     def test_tier2_recovers_inside_ten_to_twelve_percent_band(self):
         sessions = _weekdays(5)
-        state = RiskState(high_water_mark=Decimal("100"), coefficient=Decimal("0.25"))
         decision = evaluate_market_risk_rule(
-            "D", self._inputs(sessions, Decimal("89"), state)
+            "D", self._inputs(sessions, Decimal("89"), _state("100", "0.25", sessions[0]))
         )
         assert decision.drawdown == Decimal("0.11")
         assert decision.coefficient == Decimal("0.5")
 
     def test_tier2_stays_severe_between_twelve_and_fifteen_percent(self):
         sessions = _weekdays(5)
-        state = RiskState(high_water_mark=Decimal("100"), coefficient=Decimal("0.25"))
         decision = evaluate_market_risk_rule(
-            "D", self._inputs(sessions, Decimal("87"), state)
+            "D", self._inputs(sessions, Decimal("87"), _state("100", "0.25", sessions[0]))
         )
         assert decision.drawdown == Decimal("0.13")
         assert decision.coefficient == Decimal("0.25")
 
     def test_severe_recovery_boundary_exactly_twelve_percent(self):
         sessions = _weekdays(5)
-        state = RiskState(high_water_mark=Decimal("100"), coefficient=Decimal("0.25"))
         decision = evaluate_market_risk_rule(
-            "D", self._inputs(sessions, Decimal("88"), state)
+            "D", self._inputs(sessions, Decimal("88"), _state("100", "0.25", sessions[0]))
         )
         assert decision.drawdown == Decimal("0.12")
         assert decision.coefficient == Decimal("0.5")
 
     def test_recovery_is_staged_at_most_one_tier(self):
         sessions = _weekdays(5)
-        state = RiskState(high_water_mark=Decimal("100"), coefficient=Decimal("0.25"))
         decision = evaluate_market_risk_rule(
-            "D", self._inputs(sessions, Decimal("93"), state)
+            "D", self._inputs(sessions, Decimal("93"), _state("100", "0.25", sessions[0]))
         )
         assert decision.drawdown == Decimal("0.07")
         assert decision.coefficient == Decimal("0.5")
 
     def test_tier1_recovery_boundary_exactly_eight_percent(self):
         sessions = _weekdays(5)
-        state = RiskState(high_water_mark=Decimal("100"), coefficient=Decimal("0.5"))
         decision = evaluate_market_risk_rule(
-            "D", self._inputs(sessions, Decimal("92"), state)
+            "D", self._inputs(sessions, Decimal("92"), _state("100", "0.5", sessions[0]))
         )
         assert decision.drawdown == Decimal("0.08")
         assert decision.coefficient == Decimal("1")
 
     def test_tier1_holds_between_recovery_and_deterioration(self):
         sessions = _weekdays(5)
-        state = RiskState(high_water_mark=Decimal("100"), coefficient=Decimal("0.5"))
         decision = evaluate_market_risk_rule(
-            "D", self._inputs(sessions, Decimal("91"), state)
+            "D", self._inputs(sessions, Decimal("91"), _state("100", "0.5", sessions[0]))
         )
         assert decision.drawdown == Decimal("0.09")
         assert decision.coefficient == Decimal("0.5")
 
     def test_new_high_updates_hwm_and_recovers(self):
         sessions = _weekdays(5)
-        state = RiskState(high_water_mark=Decimal("100"), coefficient=Decimal("0.5"))
         decision = evaluate_market_risk_rule(
-            "D", self._inputs(sessions, Decimal("120"), state)
+            "D", self._inputs(sessions, Decimal("120"), _state("100", "0.5", sessions[0]))
         )
         assert decision.high_water_mark == Decimal("120")
         assert decision.drawdown == Decimal("0")
@@ -426,7 +555,10 @@ class TestDrawdownGovernor:
     def test_hwm_survives_simulated_restart(self):
         sessions = _weekdays(6)
         first = evaluate_market_risk_rule(
-            "D", self._inputs(sessions, Decimal("100"), index=4)
+            "D",
+            self._inputs(
+                sessions, Decimal("100"), RiskState.initial(Decimal("100"), SERIES), 4
+            ),
         )
         persisted = first.drawdown_state
         assert persisted is not None
@@ -439,7 +571,10 @@ class TestDrawdownGovernor:
     def test_hwm_survives_year_boundary(self):
         sessions = _weekdays(10, start=date(2024, 12, 23))
         december = evaluate_market_risk_rule(
-            "D", self._inputs(sessions, Decimal("100"), index=6)
+            "D",
+            self._inputs(
+                sessions, Decimal("100"), RiskState.initial(Decimal("100"), SERIES), 6
+            ),
         )
         january = evaluate_market_risk_rule(
             "D",
@@ -466,7 +601,9 @@ class TestCompositeRules:
     def test_vm_takes_component_minimum(self):
         sessions = _weekdays(200)
         inputs = self._vm_inputs(
-            sessions, _flat_returns(sessions[-60:], 0.0), _flat_closes(sessions, Decimal("100"))
+            sessions,
+            _flat_returns(sessions[-60:], 0.0),
+            _flat_closes(sessions, Decimal("100")),
         )
         decision = evaluate_market_risk_rule("VM", inputs)
         assert decision.status == STATUS_OK
@@ -493,10 +630,9 @@ class TestCompositeRules:
             index_id=APPROVED_EQUITY_PROXY_INDEX_ID,
             index_source="synthetic_index",
             strategy_nav=StrategyNav(as_of=sessions[-1], nav=Decimal("85")),
-            drawdown_state=RiskState(
-                high_water_mark=Decimal("100"), coefficient=Decimal("1")
-            ),
+            drawdown_state=_state("100", "1", sessions[0]),
             nav_source="synthetic_nav",
+            nav_series_id=SERIES,
         )
         decision = evaluate_market_risk_rule("VMD", inputs)
         assert decision.status == STATUS_UNKNOWN
@@ -516,14 +652,27 @@ class TestCompositeRules:
             index_id=APPROVED_EQUITY_PROXY_INDEX_ID,
             index_source="synthetic_index",
             strategy_nav=StrategyNav(as_of=sessions[-1], nav=Decimal("90")),
-            drawdown_state=RiskState(
-                high_water_mark=Decimal("100"), coefficient=Decimal("1")
-            ),
+            drawdown_state=_state("100", "1", sessions[0]),
             nav_source="synthetic_nav",
+            nav_series_id=SERIES,
         )
         decision = evaluate_market_risk_rule("VMD", inputs)
         assert decision.status == STATUS_OK
         assert decision.cap == Decimal("0.4")
+
+    def test_vmd_rejects_already_advanced_state(self):
+        sessions = _weekdays(200)
+        advanced = _state("100", "0.5", sessions[-1])
+        inputs = RiskInputs(
+            decision_date=sessions[-1],
+            sessions=sessions,
+            strategy_nav=StrategyNav(as_of=sessions[-1], nav=Decimal("90")),
+            drawdown_state=advanced,
+            nav_source="synthetic_nav",
+            nav_series_id=SERIES,
+        )
+        with pytest.raises(ValueError, match="already advanced"):
+            evaluate_market_risk_rule("VMD", inputs)
 
 
 class TestDeterminismAndRegistry:
@@ -606,4 +755,45 @@ class TestDeterminismAndRegistry:
                 cap=Decimal("0.5"),
                 reasons=("missing_return",),
                 config_fingerprint=RULE_CONFIG_FINGERPRINTS["C80"],
+            )
+
+    def test_decision_rejects_cap_outside_approved_range(self):
+        sessions = _weekdays(5)
+        for bad in (Decimal("2"), Decimal("-0.1"), Decimal("0.81")):
+            with pytest.raises(ValueError, match="outside the approved 0-0.8 range"):
+                RiskDecision(
+                    rule_id="C80",
+                    decision_date=sessions[-1],
+                    next_execution_date=None,
+                    status=STATUS_OK,
+                    cap=bad,
+                    reasons=(),
+                    config_fingerprint=RULE_CONFIG_FINGERPRINTS["C80"],
+                )
+
+    def test_decision_rejects_non_decimal_cap(self):
+        sessions = _weekdays(5)
+        for bad in (0.5, True):
+            with pytest.raises(ValueError, match="cap must be a finite Decimal"):
+                RiskDecision(
+                    rule_id="C80",
+                    decision_date=sessions[-1],
+                    next_execution_date=None,
+                    status=STATUS_OK,
+                    cap=bad,
+                    reasons=(),
+                    config_fingerprint=RULE_CONFIG_FINGERPRINTS["C80"],
+                )
+
+    def test_decision_rejects_mismatched_fingerprint(self):
+        sessions = _weekdays(5)
+        with pytest.raises(ValueError, match="does not match the frozen rule"):
+            RiskDecision(
+                rule_id="C80",
+                decision_date=sessions[-1],
+                next_execution_date=None,
+                status=STATUS_OK,
+                cap=Decimal("0.8"),
+                reasons=(),
+                config_fingerprint=RULE_CONFIG_FINGERPRINTS["D"],
             )

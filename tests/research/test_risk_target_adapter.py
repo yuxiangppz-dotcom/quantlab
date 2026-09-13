@@ -9,6 +9,7 @@ import pytest
 
 from quantlab.portfolio.models import TargetPortfolio, TargetWeight
 from quantlab.research.market_risk import (
+    RULE_CONFIG_FINGERPRINTS,
     STATUS_OK,
     STATUS_UNKNOWN,
     RiskDecision,
@@ -23,6 +24,8 @@ from quantlab.research.risk_target_adapter import (
     RiskTargetResult,
     apply_risk_cap,
 )
+
+SERIES = "nav_series_a"
 
 
 def _weekdays(count: int, start: date = date(2024, 1, 1)) -> tuple[date, ...]:
@@ -52,7 +55,7 @@ def _cap_decision(cap: Decimal, decision_date: date) -> RiskDecision:
         status=STATUS_OK,
         cap=cap,
         reasons=(),
-        config_fingerprint="synthetic",
+        config_fingerprint=RULE_CONFIG_FINGERPRINTS["D"],
     )
 
 
@@ -64,7 +67,7 @@ def _unknown_decision(decision_date: date) -> RiskDecision:
         status=STATUS_UNKNOWN,
         cap=None,
         reasons=("insufficient_warmup",),
-        config_fingerprint="synthetic",
+        config_fingerprint=RULE_CONFIG_FINGERPRINTS["V"],
     )
 
 
@@ -95,9 +98,13 @@ class TestNotReadyContract:
                 None,
             )
 
-    def test_ready_result_requires_a_target(self):
+    def test_ready_result_requires_a_target_and_signal_date(self):
         with pytest.raises(ValueError, match="must carry a target"):
             RiskTargetResult(RESULT_READY, None, None, 0.5, 1.0)
+        with pytest.raises(ValueError, match="record signal_as_of"):
+            RiskTargetResult(
+                RESULT_READY, _portfolio({}, date(2024, 1, 2)), None, 0.5, 1.0, None
+            )
 
     def test_unknown_from_real_rule_propagates(self):
         sessions = _weekdays(30)
@@ -109,6 +116,83 @@ class TestNotReadyContract:
         assert result.status == RESULT_NOT_READY
         assert result.target is None
         assert result.reason
+
+
+class TestTemporalContract:
+    def test_newer_target_with_older_decision_rejects(self):
+        sessions = _weekdays(5)
+        decision = _cap_decision(Decimal("0.5"), sessions[2])
+        portfolio = _portfolio({"A": 0.6, "B": 0.3}, sessions[4])
+        with pytest.raises(ValueError, match="postdates the decision"):
+            apply_risk_cap(portfolio, decision)
+
+    def test_same_day_translation_keeps_date(self):
+        sessions = _weekdays(5)
+        decision = _cap_decision(Decimal("0.5"), sessions[2])
+        portfolio = _portfolio({"A": 0.6, "B": 0.3}, sessions[2])
+        result = apply_risk_cap(portfolio, decision)
+        assert result.status == RESULT_READY
+        assert result.target is not None
+        assert result.target.as_of == sessions[2]
+        assert result.signal_as_of == sessions[2]
+
+    def test_older_target_projects_onto_decision_date(self):
+        sessions = _weekdays(5)
+        decision = _cap_decision(Decimal("0.5"), sessions[4])
+        portfolio = _portfolio({"A": 0.3, "B": 0.3, "C": 0.3}, sessions[2])
+        result = apply_risk_cap(portfolio, decision)
+        assert result.status == RESULT_READY
+        assert result.target is not None
+        assert result.target.as_of == sessions[4]
+        assert result.signal_as_of == sessions[2]
+        assert result.target.gross_exposure == pytest.approx(0.5, abs=1e-9)
+        assert [p.instrument_id for p in result.target.positions] == ["A", "B", "C"]
+
+    def test_projection_with_cap_zero_is_all_cash_at_decision_date(self):
+        sessions = _weekdays(5)
+        decision = _cap_decision(Decimal("0"), sessions[4])
+        portfolio = _portfolio({"A": 0.5, "B": 0.4}, sessions[2])
+        result = apply_risk_cap(portfolio, decision)
+        assert result.status == RESULT_READY
+        assert result.target is not None
+        assert result.target.as_of == sessions[4]
+        assert result.target.positions == ()
+        assert result.target.cash_weight == 1.0
+        assert result.signal_as_of == sessions[2]
+
+    def test_projection_of_low_exposure_relabels_without_upsizing(self):
+        sessions = _weekdays(5)
+        decision = _cap_decision(Decimal("0.8"), sessions[4])
+        portfolio = _portfolio({"A": 0.4, "B": 0.2}, sessions[2])
+        result = apply_risk_cap(portfolio, decision)
+        assert result.status == RESULT_READY
+        assert result.scale_factor == 1.0
+        assert result.target is not None
+        assert result.target.as_of == sessions[4]
+        assert result.target.gross_exposure == pytest.approx(0.6)
+
+
+class TestTargetBoundaryValidation:
+    def test_negative_weight_rejects_even_with_cap_zero(self):
+        sessions = _weekdays(5)
+        portfolio = TargetPortfolio(
+            as_of=sessions[-1],
+            positions=(TargetWeight(instrument_id="A", target_weight=-0.5),),
+            cash_weight=1.5,
+        )
+        with pytest.raises(ValueError, match="long-only"):
+            apply_risk_cap(portfolio, _cap_decision(Decimal("0"), sessions[-1]))
+        with pytest.raises(ValueError, match="long-only"):
+            apply_risk_cap(portfolio, _cap_decision(Decimal("0.4"), sessions[-1]))
+
+    def test_overweight_and_negative_cash_reject(self):
+        sessions = _weekdays(5)
+        overweight = _portfolio({"A": 1.5}, sessions[-1])
+        with pytest.raises(ValueError):
+            apply_risk_cap(overweight, _cap_decision(Decimal("0.8"), sessions[-1]))
+        negative_cash = _portfolio({"A": 0.6, "B": 0.6}, sessions[-1])
+        with pytest.raises(ValueError, match="negative"):
+            apply_risk_cap(negative_cash, _cap_decision(Decimal("0.5"), sessions[-1]))
 
 
 class TestCapTranslation:
@@ -124,9 +208,7 @@ class TestCapTranslation:
 
     def test_proportional_scale_down_conserves_weights_and_cash(self):
         sessions = _weekdays(5)
-        portfolio = _portfolio(
-            {"A": 0.3, "B": 0.3, "C": 0.3}, sessions[-1]
-        )
+        portfolio = _portfolio({"A": 0.3, "B": 0.3, "C": 0.3}, sessions[-1])
         result = apply_risk_cap(portfolio, _cap_decision(Decimal("0.5"), sessions[-1]))
         assert result.status == RESULT_READY
         target = result.target
@@ -171,16 +253,6 @@ class TestCapTranslation:
         assert result.target.positions == ()
         assert result.target.cash_weight == 1.0
 
-    def test_negative_weight_rejects(self):
-        sessions = _weekdays(5)
-        portfolio = TargetPortfolio(
-            as_of=sessions[-1],
-            positions=(TargetWeight(instrument_id="A", target_weight=-0.5),),
-            cash_weight=1.5,
-        )
-        with pytest.raises(ValueError, match="long-only"):
-            apply_risk_cap(portfolio, _cap_decision(Decimal("0.4"), sessions[-1]))
-
     def test_input_portfolio_is_untouched(self):
         sessions = _weekdays(5)
         portfolio = _portfolio({"A": 0.3, "B": 0.3, "C": 0.3}, sessions[-1])
@@ -188,13 +260,6 @@ class TestCapTranslation:
         apply_risk_cap(portfolio, _cap_decision(Decimal("0.5"), sessions[-1]))
         assert portfolio.positions == before
         assert portfolio.cash_weight == pytest.approx(0.1)
-
-    def test_target_keeps_own_as_of_date(self):
-        sessions = _weekdays(5)
-        portfolio = _portfolio({"A": 0.9}, date(2024, 2, 1))
-        result = apply_risk_cap(portfolio, _cap_decision(Decimal("0.5"), sessions[-1]))
-        assert result.target is not None
-        assert result.target.as_of == date(2024, 2, 1)
 
 
 class TestIntentTargetExecutionDistinction:
@@ -206,13 +271,13 @@ class TestIntentTargetExecutionDistinction:
         # the risk-compliant target holds 0.2. The adapter only produces the
         # intention; actual holdings live in the execution ledger's authority.
         sessions = _weekdays(5)
-        state = RiskState(high_water_mark=Decimal("100"), coefficient=Decimal("1"))
         inputs = RiskInputs(
             decision_date=sessions[-1],
             sessions=sessions,
             strategy_nav=StrategyNav(as_of=sessions[-1], nav=Decimal("85")),
-            drawdown_state=state,
+            drawdown_state=RiskState.initial(Decimal("100"), SERIES),
             nav_source="synthetic_nav",
+            nav_series_id=SERIES,
         )
         decision = evaluate_market_risk_rule("D", inputs)
         assert decision.cap == Decimal("0.2")
@@ -234,4 +299,5 @@ class TestIntentTargetExecutionDistinction:
             "reason",
             "applied_cap",
             "scale_factor",
+            "signal_as_of",
         }
