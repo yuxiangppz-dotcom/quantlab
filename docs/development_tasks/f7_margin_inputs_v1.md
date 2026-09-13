@@ -63,3 +63,17 @@ exact-masterCI. Seal source findings, attempts/resources, start/finalHEAD and
 unresolved limitations. No old actual/proof rerun, no candidate or budget reset.
 If complete usable sources exist, next card implements the above fixed exploratory
 F7 diagnostic; its results may still fail minimum30 or add no useful information.
+
+
+## Documentation gate before source acquisition
+
+Official https://tushare.pro/document/2?doc_id=59 reviewed on2026-09-13:
+margin_detail documents ts_code/start_date/end_date,6000row cap,2000points and
+rzye in CNY. It describes prior-day updates around08:30 and SZSE/BSE Friday
+updates Monday morning, consistent with the fixed next-common-session exploratory
+alignment; no original historical availability/revision chain is certified.
+The balance series can include outstanding loans after removal from eligible
+margin targets; presence cannot certify eligibility. Proceed with exactly the
+256code-range requests, not daily requests. One search and one page open used;
+no further documentation request is needed. The sealed documentation receipt is
+bound in config/f7_margin_intake_v1.json before any source request.
