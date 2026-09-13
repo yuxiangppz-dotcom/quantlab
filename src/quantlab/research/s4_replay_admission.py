@@ -581,7 +581,10 @@ def necessary_field_gaps(context: dict) -> list[str]:
     if context.get("next_session") is not None:
         if context["next_session"] <= EXECUTION_DATE:
             gaps.append("next_session: must follow the execution date")
-    bounds = [context.get(name) for name in ("down_limit_fen", "low_fen", "raw_close_fen", "high_fen", "up_limit_fen")]
+    bounds = [
+        context.get(name)
+        for name in ("down_limit_fen", "low_fen", "raw_close_fen", "high_fen", "up_limit_fen")
+    ]
     if all(isinstance(b, int) for b in bounds) and not (
         bounds[0] <= bounds[1] <= bounds[2] <= bounds[3] <= bounds[4]
     ):
@@ -632,7 +635,12 @@ def necessary_field_gaps(context: dict) -> list[str]:
                     f"fees.{name}: unconfirmed additional-fee component stays unknown"
                 )
     if isinstance(fees, dict):
-        for name in ("commission_rate", "buy_stamp_rate", "sell_stamp_rate", "adverse_slippage_rate"):
+        for name in (
+            "commission_rate",
+            "buy_stamp_rate",
+            "sell_stamp_rate",
+            "adverse_slippage_rate",
+        ):
             value = fees.get(name)
             if isinstance(value, str):
                 try:
