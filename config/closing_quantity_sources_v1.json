@@ -1,0 +1,195 @@
+{
+  "contract_sha256": "168fcd3c5e3402f4572b56a2893505b2c6374c8bed88394e6c9ea23b7aae1ce7",
+  "files": {
+    "config/historical_rule_catalogue_v1.json": {
+      "sha256": "4c880455c60413fa3076812f2bb0197aae3ffa24289d5e59f9eac16a02bae3c1",
+      "bytes": 29767
+    },
+    "config/historical_rule_sources_v2.json": {
+      "sha256": "4e6bb507e8d985b5e26902c2730a6d0115b2981c86db877f993b6d8ba84f0562",
+      "bytes": 28242
+    },
+    "config/historical_rule_sources_v1.json": {
+      "sha256": "624e7f892dad2dc54c5a4a6997e49d8640a28562187eb8f4c6dd4a2d4cef1350",
+      "bytes": 20616
+    },
+    "config/historical_rule_catalogue_v2.json": {
+      "sha256": "089db23e3870c5c50f9d2db059d23c921c01ee38a25a388349bdfc0c2bb10b73",
+      "bytes": 51681
+    },
+    "config/historical_rule_catalogue_v3.json": {
+      "sha256": "c49ab9fb23eca9d07615b46755fabdee98c4d413d1a94cfaf084e5ebd7680dff",
+      "bytes": 3272
+    },
+    "config/historical_rule_sources_v3.json": {
+      "sha256": "8aff0bc18766ad651aea4688e182d609dee9f751945686a2a870f78cb91ba1a6",
+      "bytes": 2049
+    },
+    "config/closing_quantity_v1.json": {
+      "sha256": "168fcd3c5e3402f4572b56a2893505b2c6374c8bed88394e6c9ea23b7aae1ce7",
+      "bytes": 9419
+    },
+    "data/products/alpha158_staging/alpha158_history_20260911/inventory.json": {
+      "sha256": "47226e18c60dcc66d6cad9098b1c9a02b6cd8e8b328a2987cfb2aed55ad2387c",
+      "bytes": 1440245
+    },
+    "data/products/rule_evidence/rule_catalogue_v3_20260913/report.json": {
+      "sha256": "86d1e0511ef474591140102bb8f40d23848a17ab45590bb0643a525a7d4dca65",
+      "bytes": 3933936
+    },
+    "data/products/rule_evidence/rule_catalogue_v3_20260913/proof.json": {
+      "sha256": "1f35acae0d1c41317302b5c16679815d8558ddddffb8bd6973887660f5ee7621",
+      "bytes": 449
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2020_rules.docx": {
+      "sha256": "bc0abb073a0463e3b9e0a3d8d0fa190ffee44286fdae8bf431f1f64fb8eccb2f",
+      "bytes": 37763
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/extracted/sse_2020_rules.txt": {
+      "sha256": "eef954e821fa967ddef0a8fa0bf3e7c0e43fb4dc7b3417ad498c8a8cfe6b8f34",
+      "bytes": 41610
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2023_rules.docx": {
+      "sha256": "7aa2319f6dcf597be1e86b3b69d7c2ad0e6acb2a5d0cc6be48a01af602fded40",
+      "bytes": 51948
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/extracted/sse_2023_rules.txt": {
+      "sha256": "3b605df5070300b3a4f87e9303a5d3a66c558b82a7a1a72cc540cb168fcf3435",
+      "bytes": 56934
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2021_rules.pdf": {
+      "sha256": "3a7e3e378b169248bb9314accd749586a10af24028909e66ae0f1759d5151c3d",
+      "bytes": 287964
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/extracted/szse_2021_rules.txt": {
+      "sha256": "6c05737937382da67f8387c8b7291eeb6abe86cf945328af68fb8aa9d297d470",
+      "bytes": 60002
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2023_rules.pdf": {
+      "sha256": "7018114a6e11deb239c2a72e71e49defc6e8841b3e2c093b3bbf809282c67222",
+      "bytes": 620843
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/extracted/szse_2023_rules.txt": {
+      "sha256": "09e3ea5604071382557fa4c15775021be8a9e336af14834380f15c9623a4f4e2",
+      "bytes": 54617
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_star_2019_rules.pdf": {
+      "sha256": "e751bcc6470c49a4de98c5dce32d03e926927f0825d3f9c469274b802e748b6a",
+      "bytes": 268491
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/extracted/sse_star_2019_rules.txt": {
+      "sha256": "569f8c51f9ea39b57f7808839b54eb026cbcdba076e86fd39b67493b85ce6c34",
+      "bytes": 9694
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_chinext_2020_rules.pdf": {
+      "sha256": "c4ea293e2f1e86c5083fa7b606ceb5cf621885ff539e05bf089a7efd5fa7c20f",
+      "bytes": 279208
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/extracted/szse_chinext_2020_rules.txt": {
+      "sha256": "856b01cb8ff6515fb4e2bf8e3b915b4e6916b5c88af81ae3325edaa0a6304a13",
+      "bytes": 10155
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/sse_2014_sell_notice.html": {
+      "sha256": "9b5ce1d7af79539e2781ac4ad5767eebb1cdc0d0cc29876ae7627548326c40d9",
+      "bytes": 30622
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/extracted/sse_2014_sell_notice.txt": {
+      "sha256": "563cfc4dde9511eaaa2d86b1ea5815e26ecb73d4a2d73410184e1454b503150e",
+      "bytes": 13925
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/sources/szse_2014_sell_notice.html": {
+      "sha256": "9bf20e75707c6f69ed4778627bb6b5fd1ad67f460e05e3e86f1053c380733e34",
+      "bytes": 21673
+    },
+    "data/products/rule_evidence/rule_catalogue_20260911/extracted/szse_2014_sell_notice.txt": {
+      "sha256": "50b09344b7b331eb7a431d58a42c38cb8f284ecb585caf87c3b971e4ad1c3ba9",
+      "bytes": 10659
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/source_review.json": {
+      "sha256": "769cf6b6d79ea711d53ce3224c77739318170959a7ca9100afa0cbb5866fda33",
+      "bytes": 40754
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/web_receipts.json": {
+      "sha256": "2960b9b2682a606526492e2decdd3959654bdd101eae84c6879dae6a144c493e",
+      "bytes": 39892
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/review_notes.json": {
+      "sha256": "b8a24d4f57bae15b85112b5dd4912428f279efc07fc09b534b834b4fd60c7eb2",
+      "bytes": 648
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/szse_2023_rules_11.png": {
+      "sha256": "31b9c425fcf15b489a31a3758acd84e9cb968a725de7e069d05ffc7d31813ced",
+      "bytes": 86424
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/szse_2023_rules_20.png": {
+      "sha256": "2f4bfa92d22cc8c734d80b6771cf47ce6de724da7e787c070a691c2084831018",
+      "bytes": 97138
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/sse_star_2019_rules_5.png": {
+      "sha256": "8549f7ce0836c413a31e3c4bea8a49f751456bc18fa0d845d15de06acd7d0c83",
+      "bytes": 91587
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/szse_2021_rules_25.png": {
+      "sha256": "f214526aa5592739b61ce66268e601d258037461d823523396c5e2857e11c3b1",
+      "bytes": 92325
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/szse_2023_rules_23.png": {
+      "sha256": "f0cbf39e876b336649c0075619717af1c14c315c3cce40a83d00bf46d8229370",
+      "bytes": 88646
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/szse_chinext_2020_rules_1.png": {
+      "sha256": "9f7c75059e9e54e8f0d506b3936a71ecaa595ae9a37eb470e33b9ed1ce355855",
+      "bytes": 75831
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/szse_2021_rules_13.png": {
+      "sha256": "0a7b35dbecf49b9ae395d9893554afc6b5efa4e0b8e7b3827d2d40cead908134",
+      "bytes": 87911
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/szse_2023_rules_6.png": {
+      "sha256": "a0ae1e4a348ead1851cdb17bb68d10162c86ce01b13274fc19ec55110283c0b2",
+      "bytes": 85364
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/sse_star_2019_rules_6.png": {
+      "sha256": "abd70baeb3431f783b29ba68c836e9b9cbf5d4960f2212b98d92511bdb9e8746",
+      "bytes": 96109
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/szse_2023_rules_9.png": {
+      "sha256": "aa1f2824ac8b14982a647d650ecbd93aad1f6f11e6b7c7d4fe5ea18c73a9f909",
+      "bytes": 81376
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/szse_2023_rules_22.png": {
+      "sha256": "688afda8c4ae81a22bff320599d3e814a700986a4712f4b7431ca35dc3f19e79",
+      "bytes": 85342
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/sse_star_2019_rules_1.png": {
+      "sha256": "b58e6b3f1fcfae200f4e5f68b1e882f4ca69a9742906352f521748c9081af168",
+      "bytes": 87090
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/szse_2021_rules_11.png": {
+      "sha256": "4cac8c3d0bb9e20895c7f5b20a019094b194c46cee5db5077a46013aa769d8f0",
+      "bytes": 75948
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/szse_2021_rules_7.png": {
+      "sha256": "85fbbab4f2804fa75e377e72f822f50fed28310e5e9f0662e52697293ed83ab7",
+      "bytes": 72232
+    },
+    "data/products/rule_evidence/closing_quantity_20260913/szse_chinext_2020_rules_3.png": {
+      "sha256": "50310f676b751eaf04da16b05e86144aadba781ea5ab283744f33ea9ae308124",
+      "bytes": 88070
+    }
+  },
+  "original_source_ids": [
+    "sse_2020_rules",
+    "sse_2023_rules",
+    "szse_2021_rules",
+    "szse_2023_rules",
+    "sse_star_2019_rules",
+    "szse_chinext_2020_rules",
+    "sse_2014_sell_notice",
+    "szse_2014_sell_notice"
+  ],
+  "official_searches": 2,
+  "official_opens": 2,
+  "new_original_downloads": 0,
+  "failed_open_no_retry": "https://www.szse.cn/www/investor/knowledge/stock/deal/t20230607_601026.html"
+}

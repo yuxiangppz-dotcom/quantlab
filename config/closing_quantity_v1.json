@@ -1,0 +1,221 @@
+{
+  "version": "closing-quantity-evidence-v1",
+  "execution_authority": false,
+  "performance_evidence": false,
+  "audit_interval": [
+    "2022-01-01",
+    "2024-12-31"
+  ],
+  "fields": [
+    "price_tick",
+    "buy_min_quantity",
+    "buy_quantity_step",
+    "sell_min_quantity",
+    "sell_quantity_step",
+    "max_limit_quantity",
+    "allow_full_odd_lot_exit",
+    "sellability_lag_sessions"
+  ],
+  "limitations": [
+    "仅2022–2024普通A股收盘集合竞价LIMIT数量子集；继承原规则有效边界。",
+    "并非完整申报许可；不证明实际开市、竞价成交、价格范围、容量或现金流。",
+    "收盘价可能来自最后一笔前一分钟加权均价或前收盘价，不能反推竞价成交。",
+    "ADV20的1%/5%可作为已预注册日线模拟假设，不能证明收盘可成交容量。",
+    "无执行、收益证据或策略晋升权限；不涵盖盘后定价、市价或大宗交易。"
+  ],
+  "parent_contract_fingerprint": "895f4931a2844a2cb641eda15fcde153b462b6dfd343c08664b264896014c125",
+  "calendar": {
+    "path": "data/products/alpha158_staging/alpha158_history_20260911/inventory.json",
+    "fingerprint": "0869cd29048ef0649838ebd6f6c846e5ccd9174e90498a95941ae1b21cc6649c",
+    "expected_sessions": 726
+  },
+  "provisions": {
+    "sse-main-2023-evidence-v1": [
+      {
+        "source_id": "sse_2023_rules",
+        "clause": "2.4.2;3.3.3/8/9/11;3.4.1;4.1.3: same scope; prior operative dates preserved"
+      },
+      {
+        "source_id": "sse_2014_sell_notice",
+        "clause": "I(a)(b): competitive-trading whole-lot selling and unsplit odd remainder; conservative full-exit subset only"
+      }
+    ],
+    "sse-star-2023-evidence-v1": [
+      {
+        "source_id": "sse_2023_rules",
+        "clause": "2.4.2;3.3.3/8/9/11;3.4.1;4.1.3: same scope; prior operative dates preserved"
+      }
+    ],
+    "szse-main-2023-evidence-v1": [
+      {
+        "source_id": "szse_2023_rules",
+        "clause": "2.3.2;3.3.3/8/9/11;4.2.3: closing auction, LIMIT, general and ChiNext quantities, closing fallback"
+      },
+      {
+        "source_id": "szse_2014_sell_notice",
+        "clause": "I(a)(b): competitive-trading whole-lot selling and unsplit odd remainder; conservative full-exit subset only"
+      }
+    ],
+    "szse-chinext-2023-evidence-v1": [
+      {
+        "source_id": "szse_2023_rules",
+        "clause": "2.3.2;3.3.3/8/9/11;4.2.3: closing auction, LIMIT, general and ChiNext quantities, closing fallback"
+      },
+      {
+        "source_id": "szse_2014_sell_notice",
+        "clause": "I(a)(b): competitive-trading whole-lot selling and unsplit odd remainder; conservative full-exit subset only"
+      }
+    ],
+    "sse-main-pre2023-evidence-v2": [
+      {
+        "source_id": "sse_2020_rules",
+        "clause": "2.4.2;3.4.3;3.4.8/10/12;3.5.1;4.1.3: closing auction is competitive trading; quantity provisions cover it; closing fallback is not auction evidence"
+      },
+      {
+        "source_id": "sse_2014_sell_notice",
+        "clause": "I(a)(b): competitive-trading whole-lot selling and unsplit odd remainder; conservative full-exit subset only"
+      }
+    ],
+    "sse-star-pre2023-evidence-v2": [
+      {
+        "source_id": "sse_2020_rules",
+        "clause": "2.4.2;3.4.3;3.4.8/10/12;3.5.1;4.1.3: closing auction is competitive trading; quantity provisions cover it; closing fallback is not auction evidence"
+      },
+      {
+        "source_id": "sse_star_2019_rules",
+        "clause": "Articles 2,10,11,20 (PDF pages 1,3,5-6): general rules apply except specific 200 minimum, integer step,100000 LIMIT maximum; after-hours is separate"
+      },
+      {
+        "source_id": "sse_2014_sell_notice",
+        "clause": "I(a)(b): competitive-trading whole-lot selling and unsplit odd remainder; conservative full-exit subset only"
+      }
+    ],
+    "szse-main-pre2023-evidence-v2": [
+      {
+        "source_id": "szse_2021_rules",
+        "clause": "2.4.2;3.3.3/8/10/13;4.2.3: closing auction, LIMIT, general quantity and closing fallback"
+      },
+      {
+        "source_id": "szse_2014_sell_notice",
+        "clause": "I(a)(b): competitive-trading whole-lot selling and unsplit odd remainder; conservative full-exit subset only"
+      }
+    ],
+    "szse-chinext-pre2023-evidence-v2": [
+      {
+        "source_id": "szse_2021_rules",
+        "clause": "2.4.2;3.3.3/8/10/13;4.2.3: closing auction, LIMIT, general quantity and closing fallback"
+      },
+      {
+        "source_id": "szse_chinext_2020_rules",
+        "clause": "1.2;2.8 (PDF pages 1,3): inherit general competitive trading;300000 LIMIT maximum; chapter3 after-hours excluded"
+      },
+      {
+        "source_id": "szse_2014_sell_notice",
+        "clause": "I(a)(b): competitive-trading whole-lot selling and unsplit odd remainder; conservative full-exit subset only"
+      }
+    ],
+    "sse-main-base-pre2023-evidence-v3": [
+      {
+        "source_id": "sse_2020_rules",
+        "clause": "2.4.2;3.4.3;3.4.8/10/12;3.5.1;4.1.3: closing auction is competitive trading; quantity provisions cover it; closing fallback is not auction evidence"
+      },
+      {
+        "source_id": "sse_2014_sell_notice",
+        "clause": "I(a)(b): competitive-trading whole-lot selling and unsplit odd remainder; conservative full-exit subset only"
+      }
+    ],
+    "sse-main-amended-pre2023-evidence-v3": [
+      {
+        "source_id": "sse_2020_rules",
+        "clause": "2.4.2;3.4.3;3.4.8/10/12;3.5.1;4.1.3: closing auction is competitive trading; quantity provisions cover it; closing fallback is not auction evidence"
+      },
+      {
+        "source_id": "sse_2014_sell_notice",
+        "clause": "I(a)(b): competitive-trading whole-lot selling and unsplit odd remainder; conservative full-exit subset only"
+      }
+    ],
+    "sse-star-base-pre2023-evidence-v3": [
+      {
+        "source_id": "sse_2020_rules",
+        "clause": "2.4.2;3.4.3;3.4.8/10/12;3.5.1;4.1.3: closing auction is competitive trading; quantity provisions cover it; closing fallback is not auction evidence"
+      },
+      {
+        "source_id": "sse_star_2019_rules",
+        "clause": "Articles 2,10,11,20 (PDF pages 1,3,5-6): general rules apply except specific 200 minimum, integer step,100000 LIMIT maximum; after-hours is separate"
+      },
+      {
+        "source_id": "sse_2014_sell_notice",
+        "clause": "I(a)(b): competitive-trading whole-lot selling and unsplit odd remainder; conservative full-exit subset only"
+      }
+    ],
+    "sse-star-amended-pre2023-evidence-v3": [
+      {
+        "source_id": "sse_2020_rules",
+        "clause": "2.4.2;3.4.3;3.4.8/10/12;3.5.1;4.1.3: closing auction is competitive trading; quantity provisions cover it; closing fallback is not auction evidence"
+      },
+      {
+        "source_id": "sse_star_2019_rules",
+        "clause": "Articles 2,10,11,20 (PDF pages 1,3,5-6): general rules apply except specific 200 minimum, integer step,100000 LIMIT maximum; after-hours is separate"
+      },
+      {
+        "source_id": "sse_2014_sell_notice",
+        "clause": "I(a)(b): competitive-trading whole-lot selling and unsplit odd remainder; conservative full-exit subset only"
+      }
+    ],
+    "szse-main-base-pre2023-evidence-v3": [
+      {
+        "source_id": "szse_2021_rules",
+        "clause": "2.4.2;3.3.3/8/10/13;4.2.3: closing auction, LIMIT, general quantity and closing fallback"
+      },
+      {
+        "source_id": "szse_2014_sell_notice",
+        "clause": "I(a)(b): competitive-trading whole-lot selling and unsplit odd remainder; conservative full-exit subset only"
+      }
+    ],
+    "szse-main-amended-pre2023-evidence-v3": [
+      {
+        "source_id": "szse_2021_rules",
+        "clause": "2.4.2;3.3.3/8/10/13;4.2.3: closing auction, LIMIT, general quantity and closing fallback"
+      },
+      {
+        "source_id": "szse_2014_sell_notice",
+        "clause": "I(a)(b): competitive-trading whole-lot selling and unsplit odd remainder; conservative full-exit subset only"
+      }
+    ],
+    "szse-chinext-base-pre2023-evidence-v3": [
+      {
+        "source_id": "szse_2021_rules",
+        "clause": "2.4.2;3.3.3/8/10/13;4.2.3: closing auction, LIMIT, general quantity and closing fallback"
+      },
+      {
+        "source_id": "szse_chinext_2020_rules",
+        "clause": "1.2;2.8 (PDF pages 1,3): inherit general competitive trading;300000 LIMIT maximum; chapter3 after-hours excluded"
+      },
+      {
+        "source_id": "szse_2014_sell_notice",
+        "clause": "I(a)(b): competitive-trading whole-lot selling and unsplit odd remainder; conservative full-exit subset only"
+      }
+    ],
+    "szse-chinext-amended-pre2023-evidence-v3": [
+      {
+        "source_id": "szse_2021_rules",
+        "clause": "2.4.2;3.3.3/8/10/13;4.2.3: closing auction, LIMIT, general quantity and closing fallback"
+      },
+      {
+        "source_id": "szse_chinext_2020_rules",
+        "clause": "1.2;2.8 (PDF pages 1,3): inherit general competitive trading;300000 LIMIT maximum; chapter3 after-hours excluded"
+      },
+      {
+        "source_id": "szse_2014_sell_notice",
+        "clause": "I(a)(b): competitive-trading whole-lot selling and unsplit odd remainder; conservative full-exit subset only"
+      }
+    ]
+  },
+  "resources": {
+    "max_generated_bytes": 16777216,
+    "reserve_host_D_bytes": 8589934592,
+    "max_rss_bytes": 2147483648,
+    "max_wakeup_seconds": 600,
+    "next_partition_time_reserve_seconds": 30
+  }
+}
