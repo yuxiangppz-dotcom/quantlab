@@ -169,5 +169,5 @@ def test_app_page_without_artifacts_is_read_only(tmp_path, monkeypatch):
         "from quantlab.ui.research_program import render_program\nrender_program()"
     ).run()
     assert not app.exception
-    assert "尚未完成独立复核" in app.info[0].value
+    assert any("首批研究尚未完成独立复核" in message.value for message in app.info)
     assert not app.button
