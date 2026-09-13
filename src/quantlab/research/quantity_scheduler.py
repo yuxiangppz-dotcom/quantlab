@@ -169,6 +169,78 @@ def _preflight(book, batch, previous, following, attempted):
     return None
 
 
+@dataclass(frozen=True)
+class DayAdvance:
+    """One session's outcome: either a complete record or an explicit stop."""
+
+    status: str
+    record: ResearchDayRecord | None
+    reason: str | None
+
+    def __post_init__(self) -> None:
+        if self.status not in ("advanced", "stopped"):
+            raise ValueError("day advance status must be advanced or stopped")
+        if self.status == "advanced":
+            if not isinstance(self.record, ResearchDayRecord):
+                raise ValueError("an advanced day must carry a record")
+            if self.reason is not None:
+                raise ValueError("an advanced day carries no stop reason")
+        elif self.record is not None:
+            raise ValueError("a stopped day must not carry a record")
+
+
+def advance_research_day(
+    book: ResearchBook,
+    calendar: tuple[date, ...],
+    index: int,
+    batch: ResearchDay,
+    attempted: set[str],
+) -> DayAdvance:
+    """Advance one calendar session: preflight, sells-then-buys, marks, record.
+
+    Shared single-day engine of :func:`simulate_research_schedule`. The book
+    is carried forward chronologically instead of being recreated flat, so a
+    daily driver can read completed state before deciding the next session's
+    orders. Semantics are identical to the whole-schedule entry.
+    """
+    if type(index) is not int or not 1 <= index < len(calendar) - 1:
+        raise ValueError("day index requires previous and following calendar padding")
+    if batch.session != calendar[index]:
+        raise ValueError("batch session does not match the calendar index")
+    reason = _preflight(book, batch, calendar[index - 1], calendar[index + 1], attempted)
+    if reason:
+        return DayAdvance("stopped", None, reason)
+    day = calendar[index]
+    # No same-day capacity reset between attempts. Only older days are pruned.
+    working = replace(book, asof_date=day, capacity_used=())
+    sells = sorted(
+        (x for x in batch.orders if x.side == "sell"),
+        key=lambda x: (x.instrument_id, x.order_id),
+    )
+    buys = [x for x in batch.orders if x.side == "buy"]
+    contexts = {x.instrument_id: x for x in batch.contexts}
+    attempts = []
+    for order in (*sells, *buys):
+        transition = simulate_research_order(working, order, contexts[order.instrument_id])
+        working = transition.book
+        attempted.add(order.order_id)
+        attempts.append(ScheduledAttempt(order, transition))
+    marks = {x.instrument_id: x.price_fen for x in batch.marks}
+    value = sum(lot.quantity * marks[lot.instrument_id] for lot in working.lots)
+    return DayAdvance(
+        "advanced",
+        ResearchDayRecord(
+            day,
+            working,
+            value,
+            working.cash_fen + value,
+            sum(x.transition.modeled_fee_fen for x in attempts),
+            tuple(attempts),
+        ),
+        None,
+    )
+
+
 def simulate_research_schedule(
     initial_book: ResearchBook,
     calendar: tuple[date, ...],
@@ -205,42 +277,24 @@ def simulate_research_schedule(
     for i in range(first, last + 1):
         day = calendar[i]
         batch = batches.get(day)
-        reason = (
-            "session_batch_missing"
+        advance = (
+            DayAdvance("stopped", None, "session_batch_missing")
             if batch is None
-            else _preflight(book, batch, calendar[i - 1], calendar[i + 1], attempted)
+            else advance_research_day(book, calendar, i, batch, attempted)
         )
-        if reason:
+        if advance.status != "advanced":
             return ResearchScheduleResult(
-                "stopped", initial_book.cash_fen, requested_end, book, tuple(records), day, reason
-            )
-        # No same-day capacity reset between attempts. Only older days are pruned.
-        working = replace(book, asof_date=day, capacity_used=())
-        sells = sorted(
-            (x for x in batch.orders if x.side == "sell"),
-            key=lambda x: (x.instrument_id, x.order_id),
-        )
-        buys = [x for x in batch.orders if x.side == "buy"]
-        contexts = {x.instrument_id: x for x in batch.contexts}
-        attempts = []
-        for order in (*sells, *buys):
-            transition = simulate_research_order(working, order, contexts[order.instrument_id])
-            working = transition.book
-            attempted.add(order.order_id)
-            attempts.append(ScheduledAttempt(order, transition))
-        marks = {x.instrument_id: x.price_fen for x in batch.marks}
-        value = sum(lot.quantity * marks[lot.instrument_id] for lot in working.lots)
-        records.append(
-            ResearchDayRecord(
+                "stopped",
+                initial_book.cash_fen,
+                requested_end,
+                book,
+                tuple(records),
                 day,
-                working,
-                value,
-                working.cash_fen + value,
-                sum(x.transition.modeled_fee_fen for x in attempts),
-                tuple(attempts),
+                advance.reason,
             )
-        )
-        book = working
+        assert advance.record is not None
+        records.append(advance.record)
+        book = advance.record.book
     return ResearchScheduleResult(
         "completed_scenario", initial_book.cash_fen, requested_end, book, tuple(records), None, None
     )
