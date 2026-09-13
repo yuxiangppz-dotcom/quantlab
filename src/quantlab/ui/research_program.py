@@ -12,6 +12,10 @@ from quantlab.research.funding_attribution import read_progress
 from quantlab.research.replay_readiness import read_preparation
 from quantlab.research.s4_observation_progress import read_observation
 from quantlab.research.s4_pilot import read_progress as read_s4_progress
+from quantlab.research.value_observation_progress import (
+    read_closing_progress,
+    read_value_observation,
+)
 from quantlab.ui.workbench import public_error
 
 NAMES = {
@@ -253,9 +257,20 @@ def render_replay_preparation():
         "这仍不等于可以直接入账。"
     )
     st.caption(
-        "字段齐全不等于完整现金流；股票供应商原始空值仍保留。历史规则只覆盖连续竞价限价单的基础数量条款，"
-        "不能证明收盘集合竞价可成交。这些准备工作尚未产生本轮策略的扣费净收益。"
+        "字段齐全不等于完整现金流；股票供应商原始空值仍保留。上表保留此前连续竞价规则的审计范围。"
+        "这些准备工作尚未产生本轮策略的扣费净收益。"
     )
+    try:
+        closing = read_closing_progress(PROJECT_ROOT)
+    except Exception as exc:
+        st.error(f"收盘数量复核记录无法校验：{public_error(exc)}")
+    else:
+        if closing:
+            st.caption(
+                f"另已复核2022—2024收盘集合竞价限价单的基础数量子集：{closing['sessions']}个交易日、"
+                f"四板块共{closing['board_dates']}条记录；原连续竞价规则保持一致。"
+                "这不证明实际收盘成交、容量、逐股状态或完整现金流。"
+            )
     st.download_button(
         "下载回放准备度摘要",
         json.dumps(preparation, ensure_ascii=False, indent=2),
@@ -266,7 +281,7 @@ def render_replay_preparation():
 
 
 def render_prospective_observation():
-    st.markdown("**新登记的前瞻观察：等待未来检验**")
+    st.markdown("**条件反转前瞻观察：等待未来检验**")
     try:
         observation = read_observation(PROJECT_ROOT)
     except Exception as exc:
@@ -320,10 +335,67 @@ def render_prospective_observation():
     )
 
 
+def render_value_observation():
+    st.markdown("**估值前瞻观察：相近市值下，便宜是否有用**")
+    try:
+        value = read_value_observation(PROJECT_ROOT)
+    except Exception as exc:
+        st.error(f"估值观察记录无法校验：{public_error(exc)}")
+        return None
+    if value is None:
+        st.info("暂未发现完整的估值观察与复核记录。")
+        return None
+    st.write(
+        f"{value['state']}。实际登记：{value['created_at_china']}（北京时间）；"
+        f"使用{value['price_as_of']}的已保存估值快照。"
+    )
+    reasons = value["reasons"]
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {"项目": "固定股票样本", "数量": value["cohort"]},
+                {"项目": "可计算估值分数", "数量": value["known"]},
+                {
+                    "项目": "估值缺失或非正数",
+                    "数量": reasons["valuation_unknown_or_nonpositive"],
+                },
+                {
+                    "项目": "市值层内有效样本不足20只",
+                    "数量": reasons["fewer_than20_valid_values_in_size_group"],
+                },
+                {"项目": "市值未知或非正数", "数量": reasons["size_unknown_or_nonpositive"]},
+            ]
+        ),
+        hide_index=True,
+        width="stretch",
+    )
+    if value["planned_end"]:
+        st.write(
+            f"计划观察{value['planned_entry']}收盘至{value['planned_end']}收盘，"
+            "相隔20个共同交易日。未来实际日历与连续21个交易日价格仍待复核。"
+        )
+    else:
+        st.info("终点日历尚未齐全，入场后20交易日的观察规则不变。")
+    st.caption(
+        "按流通市值分层，PE_TTM与PB的便宜程度各占一半；未知股票全部保留。"
+        "股票数量不是推荐持仓；目前没有预测准确率或扣费收益结论，历史财务版本仍未核实。"
+        "本观察占1个规则候选，累计4/15；没有增加模型拟合或经济回测。"
+    )
+    st.download_button(
+        "下载估值前瞻观察摘要",
+        json.dumps(value, ensure_ascii=False, indent=2),
+        "s2_value_observation_summary.json",
+        "application/json",
+        on_click="ignore",
+    )
+    return value
+
+
 def render_program():
     st.subheader("策略研究进度")
     st.write("已启动你批准的五类策略计划。本页展示已复核记录，后续按有限批次继续推进。")
     render_prospective_observation()
+    value_observation = render_value_observation()
     try:
         reviewed = read_progress(PROJECT_ROOT)
     except Exception as exc:
@@ -352,7 +424,9 @@ def render_program():
                 },
                 {
                     "方向": "估值／盈利改善",
-                    "当前进展": "先审计历史估值与披露版本；质量腿保留前瞻路线",
+                    "当前进展": "已登记估值前瞻观察；历史财务版本仍未核实"
+                    if value_observation
+                    else "先审计历史估值与披露版本；质量腿保留前瞻路线",
                 },
                 {"方向": "行业趋势选股", "当前进展": "先审计历史行业成员，资料不足按计划降级"},
                 {
