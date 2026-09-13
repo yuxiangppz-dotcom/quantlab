@@ -1,0 +1,276 @@
+{
+  "calendar_path": "data/canonical/calendar/calendar.parquet",
+  "canonical_paths": [
+    "data/canonical/daily/year=2026/month=08/2026-08-14.parquet",
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-14.parquet",
+    "data/canonical/daily/year=2026/month=08/2026-08-17.parquet",
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-17.parquet",
+    "data/canonical/daily/year=2026/month=08/2026-08-18.parquet",
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-18.parquet",
+    "data/canonical/daily/year=2026/month=08/2026-08-19.parquet",
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-19.parquet",
+    "data/canonical/daily/year=2026/month=08/2026-08-20.parquet",
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-20.parquet",
+    "data/canonical/daily/year=2026/month=08/2026-08-21.parquet",
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-21.parquet",
+    "data/canonical/daily/year=2026/month=08/2026-08-24.parquet",
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-24.parquet",
+    "data/canonical/daily/year=2026/month=08/2026-08-25.parquet",
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-25.parquet",
+    "data/canonical/daily/year=2026/month=08/2026-08-26.parquet",
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-26.parquet",
+    "data/canonical/daily/year=2026/month=08/2026-08-27.parquet",
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-27.parquet",
+    "data/canonical/daily/year=2026/month=08/2026-08-28.parquet",
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-28.parquet",
+    "data/canonical/daily/year=2026/month=08/2026-08-31.parquet",
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-31.parquet",
+    "data/canonical/daily/year=2026/month=09/2026-09-01.parquet",
+    "data/canonical/adj_factor/year=2026/month=09/2026-09-01.parquet",
+    "data/canonical/daily/year=2026/month=09/2026-09-02.parquet",
+    "data/canonical/adj_factor/year=2026/month=09/2026-09-02.parquet",
+    "data/canonical/daily/year=2026/month=09/2026-09-03.parquet",
+    "data/canonical/adj_factor/year=2026/month=09/2026-09-03.parquet",
+    "data/canonical/daily/year=2026/month=09/2026-09-04.parquet",
+    "data/canonical/adj_factor/year=2026/month=09/2026-09-04.parquet",
+    "data/canonical/daily/year=2026/month=09/2026-09-07.parquet",
+    "data/canonical/adj_factor/year=2026/month=09/2026-09-07.parquet",
+    "data/canonical/daily/year=2026/month=09/2026-09-08.parquet",
+    "data/canonical/adj_factor/year=2026/month=09/2026-09-08.parquet",
+    "data/canonical/daily/year=2026/month=09/2026-09-09.parquet",
+    "data/canonical/adj_factor/year=2026/month=09/2026-09-09.parquet",
+    "data/canonical/daily/year=2026/month=09/2026-09-10.parquet",
+    "data/canonical/adj_factor/year=2026/month=09/2026-09-10.parquet"
+  ],
+  "economic_paths": 0,
+  "endpoint": "https://api.tushare.pro",
+  "inputs": {
+    "config/s4_conditional_reversal_diagnostics_v1.json": {
+      "bytes": 34674,
+      "sha256": "92e45ff6303890c46b46e16fa811dfc8c3ee027d5c87fce41d0cf2a9b5892501"
+    },
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-14.parquet": {
+      "bytes": 72534,
+      "sha256": "767e36498ae21724a9935bd0e52467bdebdafd85a880c28c7556867c8e5dbc99"
+    },
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-17.parquet": {
+      "bytes": 72538,
+      "sha256": "0662d197ef48db09e608f173a626b02eebf37d1dc0512bf63fbbcb82ea6a02d4"
+    },
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-18.parquet": {
+      "bytes": 72543,
+      "sha256": "0e6d2ac2068c461065dc21744b77578d0019132649a854449cb4b4b4d489f228"
+    },
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-19.parquet": {
+      "bytes": 72592,
+      "sha256": "eceaba126096fc9d69781a4c368cbf1d6faf741993b3844ad252cc306895b67a"
+    },
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-20.parquet": {
+      "bytes": 72604,
+      "sha256": "e1d06fba281fb5be185a34282a8e6c9ca09f6bf7a10e1c164e776180389da6db"
+    },
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-21.parquet": {
+      "bytes": 72606,
+      "sha256": "3614894996d131adbde81e652d796970675c471a845d46713a413e7369474425"
+    },
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-24.parquet": {
+      "bytes": 72614,
+      "sha256": "ab930b0eb98137e8fc68f7c5bf6dba345991c554bddac0905978dc35328278cf"
+    },
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-25.parquet": {
+      "bytes": 72610,
+      "sha256": "580f6dcb68704bc50ced0999eebba637ccaca9dedf966f689e6050d2bc4cb4a4"
+    },
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-26.parquet": {
+      "bytes": 72620,
+      "sha256": "5377544ba5644bf5b055ce464dc3c04a537ba8f047aa8ee6ee0a25f5441f05bf"
+    },
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-27.parquet": {
+      "bytes": 72620,
+      "sha256": "66be86392a49c89122adab5caf03e3453ef102e0c0b19ace93b88b57918a638d"
+    },
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-28.parquet": {
+      "bytes": 72623,
+      "sha256": "abd57a62b05f3439f0584db6f651554575a0de24532bccc8aa6836b092c724be"
+    },
+    "data/canonical/adj_factor/year=2026/month=08/2026-08-31.parquet": {
+      "bytes": 72674,
+      "sha256": "40174272de1205c83bd3dc21aaf707df7e8823f0549df748b1836fe0e36aca28"
+    },
+    "data/canonical/adj_factor/year=2026/month=09/2026-09-01.parquet": {
+      "bytes": 72697,
+      "sha256": "da7ab5f8371091b2273eb8463c277802eeef2f7df214cc7f8405ae7a56ac2208"
+    },
+    "data/canonical/adj_factor/year=2026/month=09/2026-09-02.parquet": {
+      "bytes": 72703,
+      "sha256": "45db4c13613c64174807ec3ec2fa2d631736ac4c8c15bce7fac90cb7f743e460"
+    },
+    "data/canonical/adj_factor/year=2026/month=09/2026-09-03.parquet": {
+      "bytes": 72722,
+      "sha256": "9a55cb8785f830e593349d94500dcf456f0c095ec48c00612204e9f51e2231be"
+    },
+    "data/canonical/adj_factor/year=2026/month=09/2026-09-04.parquet": {
+      "bytes": 72534,
+      "sha256": "b7d924a439a298dda20f666fd49a752723d7c773c4afecfd34efdab61f781b1c"
+    },
+    "data/canonical/adj_factor/year=2026/month=09/2026-09-07.parquet": {
+      "bytes": 72548,
+      "sha256": "8daf22ff9de2e87fb4eded28f81058a2eb8d7298257d25f42bec842788c935d9"
+    },
+    "data/canonical/adj_factor/year=2026/month=09/2026-09-08.parquet": {
+      "bytes": 72554,
+      "sha256": "244e46c2030db8f063be69c43aaf91aa14ef30d6e16999399a3af3ed7b4003e3"
+    },
+    "data/canonical/adj_factor/year=2026/month=09/2026-09-09.parquet": {
+      "bytes": 72549,
+      "sha256": "0fbd6cc15fdf5702bcbf8fab448ac244afa9d5a3f1b5e2710bc4981cd4167139"
+    },
+    "data/canonical/adj_factor/year=2026/month=09/2026-09-10.parquet": {
+      "bytes": 72587,
+      "sha256": "b1c8b80aa8c477e94b0e6253213790ede2003e0899cd1dff9bac1e63c922cb60"
+    },
+    "data/canonical/calendar/calendar.parquet": {
+      "bytes": 59709,
+      "sha256": "43242968a31034be150b640f1d1558f7df070fba2354eaa28510fd9ffb7caedb"
+    },
+    "data/canonical/daily/year=2026/month=08/2026-08-14.parquet": {
+      "bytes": 241919,
+      "sha256": "e964bd82a49685d018b4ab29fc2cf6735837ff23138249a9956fee4d6928a91d"
+    },
+    "data/canonical/daily/year=2026/month=08/2026-08-17.parquet": {
+      "bytes": 242280,
+      "sha256": "4a981ef6b546b2c79ba83848cb3aad1624e2bd19c0466d52ca9fa7b56951a282"
+    },
+    "data/canonical/daily/year=2026/month=08/2026-08-18.parquet": {
+      "bytes": 242883,
+      "sha256": "d07d73e47653c409ca389b03f3a2a74d2266b50a0ef6c6d9cafee76f0246fbea"
+    },
+    "data/canonical/daily/year=2026/month=08/2026-08-19.parquet": {
+      "bytes": 241463,
+      "sha256": "49e98db3e384489001f5110cf1b5f75acb47ee3f841a2b88f7905ed6897bba8c"
+    },
+    "data/canonical/daily/year=2026/month=08/2026-08-20.parquet": {
+      "bytes": 241085,
+      "sha256": "cc802439ef2e551c88b35318616cf4178e67415d9cdfa873372f26b7e08b6cb3"
+    },
+    "data/canonical/daily/year=2026/month=08/2026-08-21.parquet": {
+      "bytes": 241637,
+      "sha256": "144327fee273d6731e5debb71b62f28559cc100050f46cb2c6db9998ad6cc00d"
+    },
+    "data/canonical/daily/year=2026/month=08/2026-08-24.parquet": {
+      "bytes": 241196,
+      "sha256": "76cef160468b611c144116636a3c3b9b159b124fc83ed3ad480edd4a2e522416"
+    },
+    "data/canonical/daily/year=2026/month=08/2026-08-25.parquet": {
+      "bytes": 240991,
+      "sha256": "a6ef9708a47969302df2b5dce18b5331b0637b1c52b2e501b9fc15ae1791e906"
+    },
+    "data/canonical/daily/year=2026/month=08/2026-08-26.parquet": {
+      "bytes": 241727,
+      "sha256": "6f1507d8cad6cbc5456c5b4c02c9ecd4117745a977b11d1b21271ed4bfae2830"
+    },
+    "data/canonical/daily/year=2026/month=08/2026-08-27.parquet": {
+      "bytes": 241953,
+      "sha256": "cdfc3ff233bf273a050323e2dd7905da984cf5ddbc824d712fc0a03daef77e34"
+    },
+    "data/canonical/daily/year=2026/month=08/2026-08-28.parquet": {
+      "bytes": 242009,
+      "sha256": "33dd08d4e03e599249730332e839cffc33f6dd1828ad2fcfe49a4c3d18d89633"
+    },
+    "data/canonical/daily/year=2026/month=08/2026-08-31.parquet": {
+      "bytes": 241696,
+      "sha256": "923fd25d1a58d3772fcb5adeb767ab5a800695dd2f840bf0957a9008a23775a6"
+    },
+    "data/canonical/daily/year=2026/month=09/2026-09-01.parquet": {
+      "bytes": 242688,
+      "sha256": "4809cc5d873edd53290c727b42640b2cb623b2f2d61883102fdbae78a82d9203"
+    },
+    "data/canonical/daily/year=2026/month=09/2026-09-02.parquet": {
+      "bytes": 241692,
+      "sha256": "4e93e5772b31320179094b22572c78bd81e51bdc39c0ccc28197087e37a3ce08"
+    },
+    "data/canonical/daily/year=2026/month=09/2026-09-03.parquet": {
+      "bytes": 242003,
+      "sha256": "593e63ddc6b4b1b2ff556cb27b8adbcc3c6cf70365382caf3a3fab86c2b4cef0"
+    },
+    "data/canonical/daily/year=2026/month=09/2026-09-04.parquet": {
+      "bytes": 242656,
+      "sha256": "6da650279942a4e3a87ba193b629f159e60b6c2f1d58b10e9cbaef36dc913b66"
+    },
+    "data/canonical/daily/year=2026/month=09/2026-09-07.parquet": {
+      "bytes": 242579,
+      "sha256": "85f501d96626cca0c2454e6c47cc9c89608c103d255f881482fb05f6b5931966"
+    },
+    "data/canonical/daily/year=2026/month=09/2026-09-08.parquet": {
+      "bytes": 242699,
+      "sha256": "9e74544c38a3dc6308bedbf25153e9506a56c2a41965829f21cd5ab1ae1f8dfe"
+    },
+    "data/canonical/daily/year=2026/month=09/2026-09-09.parquet": {
+      "bytes": 242136,
+      "sha256": "62e1715bb3d8c5db2e30a29f0f7dc307038a0c5a406d3dfe6e5b0365c8e8a3a7"
+    },
+    "data/canonical/daily/year=2026/month=09/2026-09-10.parquet": {
+      "bytes": 241126,
+      "sha256": "522401eb9f4144ca827f5bc5cf472c913305c0a2d5a70bbac00c566dd7372ad0"
+    },
+    "data/products/research_program/launch_20260912/s4_prospective_sources_20260913/public_read.txt": {
+      "bytes": 41110,
+      "sha256": "4534e449ce637ef8e10a82cec97e782d50bcdca542260afd1d2ff6bf4ac2f4e3"
+    },
+    "data/products/research_program/launch_20260912/selection.json": {
+      "bytes": 4117,
+      "sha256": "e46e04b85208d3715b1dfaa1c7944f6f4b3ef37ef614ed7ed47cb9e4152c6dd9"
+    }
+  },
+  "label_dates": [
+    "2026-09-14",
+    "2026-09-15",
+    "2026-09-16",
+    "2026-09-17",
+    "2026-09-18",
+    "2026-09-21"
+  ],
+  "max_actual_attempts": 1,
+  "max_body_bytes": 16777216,
+  "max_requests": 2,
+  "model_fits": 0,
+  "output": "data/products/research_program/launch_20260912/s4_prospective_20260913",
+  "per_response_bytes": 8388608,
+  "price_as_of": "2026-09-11",
+  "public_sources_path": "data/products/research_program/launch_20260912/s4_prospective_sources_20260913/public_read.txt",
+  "publication_day": "2026-09-13",
+  "resources": {
+    "max_generated_bytes": 67108864,
+    "max_rss_bytes": 2147483648,
+    "max_wakeup_seconds": 900,
+    "next_partition_time_reserve_seconds": 60,
+    "reserve_host_D_bytes": 8589934592
+  },
+  "row_cap": 6000,
+  "schema": "s4_prospective_observation_v1",
+  "selection_fingerprint": "04a36754511be4136685a3ce378d60aa8c746ca218da7fa66d62df23b2e5840e",
+  "selection_path": "data/products/research_program/launch_20260912/selection.json",
+  "window_dates": [
+    "2026-08-14",
+    "2026-08-17",
+    "2026-08-18",
+    "2026-08-19",
+    "2026-08-20",
+    "2026-08-21",
+    "2026-08-24",
+    "2026-08-25",
+    "2026-08-26",
+    "2026-08-27",
+    "2026-08-28",
+    "2026-08-31",
+    "2026-09-01",
+    "2026-09-02",
+    "2026-09-03",
+    "2026-09-04",
+    "2026-09-07",
+    "2026-09-08",
+    "2026-09-09",
+    "2026-09-10",
+    "2026-09-11"
+  ]
+}
