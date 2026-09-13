@@ -917,75 +917,87 @@ class TestPostExecutionStopResume:
             assert replayed.marked_equity_fen == original.marked_equity_fen
 
     def test_risk_unknown_after_fill_rolls_back_attempted_ids(self):
-        calendar = _weekdays(6)
-        prices = {i: {"A": 1000} for i in range(1, 5)}
-        evidence = _evidence_for_calendar(calendar, prices, fees=FEES_REAL)
-        base = {day: _target({"A": 0.5}, day) for day in calendar[1:4]}
-        clean = _run(calendar, calendar[3], base, evidence, _config("C80"))
-        assert clean.status == "completed_scenario"
-        # Same world under V with no unscaled returns: day 2's execution of
-        # day-1's buy succeeds, then the risk decision is unknown.
-        gap = _run(
-            calendar,
-            calendar[3],
-            base,
-            evidence,
-            _config("V"),
-            unscaled_risk_returns=(),
+        calendar = _weekdays(64)
+        config = _config("V")
+        start = RiskLedgerCheckpoint.start(
+            signal_date=calendar[59], initial_cash_fen=CASH_FEN, config=config
         )
-        assert gap.status == "stopped"
-        assert gap.stopped_on == calendar[1]
-        assert "risk_unknown" in gap.stop_reason
-        # No session committed, so the returned checkpoint must equal the
-        # start checkpoint (config included) in every field.
-        expected = RiskLedgerCheckpoint.start(
-            signal_date=START, initial_cash_fen=CASH_FEN, config=_config("V")
+        evidence = _evidence_for_calendar(
+            calendar, {i: {"A": 1000} for i in range(60, 63)}, fees=FEES_REAL
         )
-        assert gap.checkpoint == expected
+        base = {day: _target({"A": 0.5}, day) for day in calendar[60:63]}
+        returns = tuple(UnscaledReturn(day, 0.0) for day in calendar[:63])
 
-    def test_partial_fill_then_stop_keeps_resume_exact(self):
-        calendar = _weekdays(9)
-        prices = {i: {"A": 1000} for i in range(1, 8)}
+        def run(checkpoint=start, end=62, observations=returns):
+            return _run(
+                calendar, calendar[end], base, evidence, config,
+                checkpoint=checkpoint, unscaled_risk_returns=observations,
+            )
+
+        clean = run()
+        assert clean.status == "completed_scenario"
+        # Adequate V warmup permits day 60's buy decision. On day 61 the buy
+        # executes and incurs fees BEFORE its missing risk observation stops.
+        assert clean.records[1].attempts[0].transition.simulated_quantity == 10_000
+        assert clean.records[1].modeled_fees_fen > 0
+        gap = tuple(item for item in returns if item.session != calendar[61])
+        stopped = run(observations=gap)
+        prefix = run(end=60)
+        assert stopped.status == "stopped"
+        assert stopped.stopped_on == calendar[61]
+        assert "risk_unknown" in stopped.stop_reason
+        assert stopped.checkpoint == prefix.checkpoint
+        assert stopped.records == prefix.records
+        resumed = run(checkpoint=stopped.checkpoint)
+        assert resumed.status == "completed_scenario"
+        assert resumed.records == clean.records[1:]
+        assert resumed.checkpoint == clean.checkpoint
+
+    def test_partial_and_blocked_attempts_before_risk_gap_resume_exactly(self):
+        calendar = _weekdays(65)
+        config = _config("V")
+        start = RiskLedgerCheckpoint.start(
+            signal_date=calendar[59], initial_cash_fen=CASH_FEN, config=config
+        )
         evidence = _evidence_for_calendar(
             calendar,
-            prices,
+            {i: {"A": 1000} for i in range(60, 64)},
             fees=FEES_REAL,
-            volumes_by_day={2: {"A": 20000}},
-            limit_down_by_day={5: ("A",)},
+            volumes_by_day={61: {"A": 20000}},
+            limit_down_by_day={62: ("A",)},
         )
         base = {
-            calendar[1]: _target({"A": 0.5}, calendar[1]),
-            calendar[2]: _target({"A": 0.5}, calendar[2]),
-            calendar[3]: _target({"A": 0.5}, calendar[3]),
-            calendar[4]: _target({}, calendar[4]),  # strategy exit intent
-            calendar[5]: _target({}, calendar[5]),
-            calendar[6]: _target({}, calendar[6]),
-            calendar[7]: _target({}, calendar[7]),
+            day: _target({"A": 0.5} if i == 60 else {}, day)
+            for i, day in enumerate(calendar) if 60 <= i <= 63
         }
-        clean = _run(calendar, calendar[7], base, evidence, _config("C80"))
+        returns = tuple(UnscaledReturn(day, 0.0) for day in calendar[:64])
+
+        def run(checkpoint=start, end=63, observations=returns):
+            return _run(
+                calendar, calendar[end], base, evidence, config,
+                checkpoint=checkpoint, unscaled_risk_returns=observations,
+            )
+
+        clean = run()
         assert clean.status == "completed_scenario"
-        assert clean.records[1].attempts[0].transition.reason == (
-            "partial_under_declared_constraints"
-        )
-        assert clean.records[4].attempts[0].transition.reason == "directional_close_limit"
-        for split in (2, 3, 4):
-            prefix = _run(calendar, calendar[split], base, evidence, _config("C80"))
-            # Stop the split's next day by removing its evidence.
-            gap_evidence = dict(evidence)
-            gap_evidence.pop(calendar[split + 1])
-            stopped = _run(
-                calendar, calendar[split + 1], base, gap_evidence, _config("C80")
-            )
+        partial = clean.records[1].attempts[0].transition
+        assert partial.reason == "partial_under_declared_constraints"
+        assert partial.simulated_quantity == 1000
+        assert clean.records[1].modeled_fees_fen > 0
+        assert clean.records[2].attempts[0].transition.reason == "directional_close_limit"
+        assert clean.records[3].attempts[0].transition.simulated_quantity == 1000
+        for failed_day in (61, 62):
+            # Keep the execution evidence intact. Risk becomes unknown only
+            # AFTER that day's partial buy or blocked sell has been attempted.
+            gap = tuple(item for item in returns if item.session != calendar[failed_day])
+            stopped = run(observations=gap)
+            prefix = run(end=failed_day - 1)
             assert stopped.status == "stopped"
+            assert stopped.stopped_on == calendar[failed_day]
+            assert "risk_unknown" in stopped.stop_reason
+            assert stopped.records == prefix.records
             assert stopped.checkpoint == prefix.checkpoint
-            resumed = run_risk_ledger_loop(
-                checkpoint=stopped.checkpoint,
-                calendar=calendar,
-                requested_end=calendar[7],
-                base_targets=base,
-                evidence=evidence,
-                config=_config("C80"),
-            )
-            reference = _run(calendar, calendar[7], base, evidence, _config("C80"))
-            assert resumed.book == reference.book
-            assert resumed.checkpoint == reference.checkpoint
+            resumed = run(checkpoint=stopped.checkpoint)
+            assert resumed.status == "completed_scenario"
+            assert resumed.records == clean.records[failed_day - 60:]
+            assert resumed.checkpoint == clean.checkpoint
