@@ -1,0 +1,3163 @@
+{
+  "calendar_path": "data/products/research_program/launch_20260912/funding_inputs.json",
+  "inputs": {
+    "config/f7_margin_intake_v1.json": {
+      "bytes": 27988,
+      "sha256": "55ae5de07f11ab7704b0c788bc57ba56249d6fc3900908e92cdd3e11912dca90"
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-25.parquet": {
+      "bytes": 154805,
+      "sha256": "5efb53716ac3c21fa24669fc7d9df01170d3b8a356ea9b5cb9b7f400f7f454bf"
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-26.parquet": {
+      "bytes": 155001,
+      "sha256": "67bb31708f6c61d34cbe3e6c43522df097788c9f75b3bf5e86ec99a159d0d83a"
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-27.parquet": {
+      "bytes": 155156,
+      "sha256": "f947395157bf6d7872acfbc0f0492278d1f15c081f62fed6aa9a6ad00aeeb8f6"
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-30.parquet": {
+      "bytes": 155572,
+      "sha256": "4d01dc57dd11a4bd566ac0a8dc1148592e9a45cf2ac039d95235774583a9243a"
+    },
+    "data/canonical/daily/year=2019/month=12/2019-12-31.parquet": {
+      "bytes": 155199,
+      "sha256": "62b6b7fc088c57d6d36c58abaabf6c61fbda7368c36bc7c32760dec80a34031e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000004.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "b6b6b495c37237a6d29fc1777fe176564a89efacae9ed850531ecd189b131d1b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000004.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "8d192d1cba9f36540d8f0d97f90fa660dec58c2185a441c187bc589af18bc768"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000004.SZ/result.json": {
+      "bytes": 1058,
+      "sha256": "ac3cf0e74cdcb5d9afb1a3802054198c33da44d5a7c2f7f3ff4bb10f5cb3935f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000042.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "af168219545c30f69bf3742929e93032d29a13d50c4750af7c8ed0b9f6763cc3"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000042.SZ/response.body": {
+      "bytes": 19448,
+      "sha256": "b060d541588bbb3c2bc4ad6157aa98bf5b0bbc225a5e6f9df76bf8bff5b2c8d9"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000042.SZ/result.json": {
+      "bytes": 1090,
+      "sha256": "6e10ba2cd2187f63c696f823956c38066becdf9386f7b4e9f9d0808cd4b73b52"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000061.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "054abc91e54297f33470b19df8d72f6bbacf03712a9ae3be24580899c7006691"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000061.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "f9e1ce587376eff96c402bf50d145c1c9401fee58e33043b85359a35d43bf8fe"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000061.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "319e54b5142d3d519c2e65f0715fd987834166ea08b76ada64f8e8a46a7ad658"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000301.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "72e0187dbf2a78f3bbbbdde75b2660f1a2b0518ab79e18a65e6f6c04d3bbb4ad"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000301.SZ/response.body": {
+      "bytes": 45753,
+      "sha256": "1d6d6fbfec651b2e671cdb6f6460ee833ced8314115d4a0eadd13cdac47bc961"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000301.SZ/result.json": {
+      "bytes": 1090,
+      "sha256": "05977a9a17fe05c2cd8e3fc5b4c7dec50c346cf60a56bd37c00b0eff3278289f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000333.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "965afd8ea939a2130a7fb26592fbfd272bc1ba0d38867382d7534a6737b98bae"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000333.SZ/response.body": {
+      "bytes": 46419,
+      "sha256": "cd2a3f9113f24fe258a4f053acc7da04d04c95d9b7eb12fef08b766cbd84aeec"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000333.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "f06a082835cc44594dbf9e617b914422f924f9cae935dd28117f5d1ee5ff6c9a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000415.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "7251abbb96e0da8e16c2e941e605e2882ffcffaf313b4ae64cf2383cbbaaeb62"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000415.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "850bb33ca3622b9f518671396a68c813c468f210a61a1fb94608d6491de310e7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000415.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "0f2ec036eefeb9d283e914fa6bf00f3b36df3800319cecdf72c3e668d7e5a458"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000503.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "da150e2face345b1195ebf3649c126ff410efc40de13b13591ef3347166c8de6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000503.SZ/response.body": {
+      "bytes": 45442,
+      "sha256": "a6fa367f5f2f6628b5fe5576e7318fac7dd311efbff94bf2839208790723902a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000503.SZ/result.json": {
+      "bytes": 1092,
+      "sha256": "83c4f1261e98c5db3ccb8674173423ba7ab12347a034861410e463019b97512f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000509.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "8089c948095636a78b629014e0deefff20e548b165de642cb9457cdf2b31ec1d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000509.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "97669a447cc5f1ff1a7fce7b6a2bc519c61aebb67ba8c55bd35033d584dd3f0c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000509.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "83500ee102d9774b9c5f25f3fc684509a6800c032673d3f43530e3d8f8acc696"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000548.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "0ed4de6e0103fe2c6a873a64d398a25e25fa965ef81c433245e4248c111b9641"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000548.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "f3ff622fe4d8606902d0d9f2f64daf9494add499e4ebadbf81e8ddca1baeec94"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000548.SZ/result.json": {
+      "bytes": 1060,
+      "sha256": "4d3c77da7166d45fc4807bc1ff517c6398e98a1b8c749f15a932d95d702d9456"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000554.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "3ecaf8dec045d8d19c6ba00f892d6e2fe4d46faf6de2992b8541fa33b785a6d7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000554.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "5c86aa3df2156e733fb5233943afc0050982b999b2d028646eba1707093ff671"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000554.SZ/result.json": {
+      "bytes": 1092,
+      "sha256": "a395c1de168bb8412715550421259fc4a6c86b49de4217e8c47518ed6dff63c2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000615.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "bde1bf7e023e28de524d6bfd1f550d2856592635e6612f7db2bd1a6e566f8d92"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000615.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "9f52ec6611cb49a835f8f0f69754ff88713cb9e6a37bd8e8b3224e0225ba4d44"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000615.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "c61b654311fcb471236cb4c32c616a85f04b49ce32b774cc2a60a226f2c062a3"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000631.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "d7e882a64c270847868a692ba166734fb013c94850508a054fd835a78e650356"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000631.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "904d8d55f01d32ea4a4031fc1aa87338941679c11cd0f0281d7cc8ec85362247"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000631.SZ/result.json": {
+      "bytes": 1090,
+      "sha256": "f0c2e618f24b63c714b1cdc03d17170373e92a425f48d93ff7f7bf0e2b94e6fe"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000753.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "4cba59eed073cab2f5de4a471fdd1bb7e372495f40008e316ba4d6e6a52471dd"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000753.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "8dc7d9e67fb033f5235035678ae840fd72a7a74cb5620fc329770fe0b8f70627"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000753.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "2c010a4bbaf9cbc3e71e02147104ae88703b30c0691a00791b43b71eb47187a6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000760.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "d831a5d934781340cc097e404a469a8f335af813c65e9f32ed9db5f90077aa4c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000760.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "0dfdcd35cd03df07ddcfd8c9cf9f45181af112915785cdea63a962fa0ff77cb8"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000760.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "09f2592961ebf63e977c3e85f0ec7c5f0dec0284cd716337e339e4ad7d619876"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000777.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "f961ae84855f3a4c50f0fe7d701bb52d3f023930d821801b8cc69001c1663d3b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000777.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "6c5cd9b2448a75ad76c6606b58f42b0ba90151eec41664d70fb5f071647ea0b7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000777.SZ/result.json": {
+      "bytes": 1092,
+      "sha256": "14a290fa4c630509afaf92accce880389cf7a6b574d8601b17284e4e6a7b6016"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000786.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "d63e05aa676ab897dc2a6adb83aa658ab1e35c7b65deb341f4cc1309305a041f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000786.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "30874c13380a3e10eff2e50e5638ae9d6194dbfe13d38e809e08bdc6b9b033a0"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000786.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "03b5493af35759ab5ba8130cc563d8fe9960bfb2eec5bf9e046058a7a41ed56e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000793.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "97b82a004e09e6e5363eacbea81591c096fe561419e8da57dda23853b7eecfe1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000793.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "77c4788f2bd7124d8da781fd2d8a2f17bc23f07ded9359c07efe46deceb08a29"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000793.SZ/result.json": {
+      "bytes": 1092,
+      "sha256": "24d19e77f333dc6397732f0958e3900b2133f20409bbe9e8593c12dd118805b5"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000807.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "50a524c237576ece997dee4b5538b7ae30bb2dbf8ee42898251f926802091969"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000807.SZ/response.body": {
+      "bytes": 45745,
+      "sha256": "a329a54d1fedb4d14c491d615a3d3eae1aba2500261f0d9c41bc7437354d227a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000807.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "0c610a5d6d4235b064338d9532aff1c3c1fc025bf3e5ece05ff9dc47ec9c92d9"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000810.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "7fbde7e6032221995feb4305c9128d8a9a769897a3082d236398941984ff46e1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000810.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "3b5701556df335b0cb66acc3ab6c926a6bb4acac8575dae7447bd4577f68a4e4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000810.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "da0532dbc6bff6096be26564c2d2e65a59cb292e206c10f02a45c7e0c72cb917"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000815.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "7bf519688052727ca9d1bb14ea565106709a173a3d1600fe4250d07abfad023e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000815.SZ/response.body": {
+      "bytes": 19889,
+      "sha256": "c44abf7f7e2a70c6d3a5661763ecbd5ca65e7b672b39873685dafeb375845595"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000815.SZ/result.json": {
+      "bytes": 1090,
+      "sha256": "11a5faa944734185c14c8a92770674b52f7045d82cac40a8472482cd4da6679d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000895.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "6f93ec424b3327c78913d4a8536fa72e51e39cab4c8627c1c7662eaa2ce76c51"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000895.SZ/response.body": {
+      "bytes": 45287,
+      "sha256": "ec63f2e0adac2f802a67c3213defd7f8180014a0f4be2f9b2160a144fdc7eda0"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000895.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "f9ad415ffba96b1ab79be54c905f0154cfd4be9d2a4209d87f34840b85f83c41"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000900.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "56199da2eb6703e6148a0262f70dfdffae63b35a3e2d767e14a3735ef5fa51b5"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000900.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "9f0e649e27ca80298029f0843cbc426b60d066f5ff87b486b227210bdce45e58"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000900.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "258bb0908adeaa88e28f43cc2776c607009de9bda64a9948133531342848e09f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000908.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "40795e0a811fe12f8b1f8038d4a6e7f7fcf0186e3ff348339f014c943a469fed"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000908.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "b1ded72d2b8d5199ce79ff34e5c8549b72b2f5fd2f46044d2d82cf5535e09b9a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000908.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "6399624544187dd34e8b2c8598df1acf56366f9c3b7440da43afd6bf20feaf01"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000921.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "a13fb2185a541881f1039e2cad70756a8ae38af2919f1e5043ea4183d1a3b723"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000921.SZ/response.body": {
+      "bytes": 44833,
+      "sha256": "2a3fab38350cc83e275f5fbfc7c0eb043b9aebf6b357912f076d119b2cb12962"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000921.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "7a4179e3449e74f0cb9891c6ff1cf862ba340d55e34e82e351b0fdc86a5b32f9"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000923.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "036026b1820a955e2fa6190c2bcea8b9ece75739a372a0a6c32ecf34a71e30e7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000923.SZ/response.body": {
+      "bytes": 4530,
+      "sha256": "73676fc1253db26120c77d705644973b40b1af979c41603f1e145f6dcff275c2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000923.SZ/result.json": {
+      "bytes": 1087,
+      "sha256": "6cdc5cb183b0a75503d80dcf4c3ca1671446dbffc3ba18e941ac45015ec92eee"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000925.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "242fc4ef839c28463f9c3eb3cb1dabbc4a5a0a6fdddcd8bb7995da65f0af8e13"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000925.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "e3a5e4814e004ed6251aac6ab5535509a188992e54cf3af0463184b5ead63b6a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000925.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "1beb181943bfb443aee1c51450eb338f5ed143a1ba6147d2f1cc510cf78021f4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000955.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "8057c14796dce93adca3f28bf2ed14d61f92458cfb5f242b8b7e818322ec2fc4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000955.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "fe9052984747ab8b34bab08ad6573a7ef9c560f7cfe7352ae21e327d399038f9"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000955.SZ/result.json": {
+      "bytes": 1060,
+      "sha256": "0823f649b2b2fc7f6644fbeee4d2526cd8c975905821b78429aa9cd82a1bffe7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000959.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "a3bcb8a01f4de9d77e190e13b525a3bfc598ed9b46c059ded9384f83b2430b29"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000959.SZ/response.body": {
+      "bytes": 45092,
+      "sha256": "14c7b87bfd915c417a825dfe2729a13aedcb00de7b836fa8dd04ba8cc820acf0"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000959.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "5cc657a6971585b73389d2a173898ca6cb1f12d414bb699073f7b4e6c594b6e7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000976.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "999e7fe90ebf362af258d1e02aa6ec6b0f2594b4ddcc6a327b5120359b5eee3c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000976.SZ/response.body": {
+      "bytes": 30254,
+      "sha256": "08247ce88ef79eae1a5ee16d72d015fea5e5b97e7dad4efdb96473dedd0495e0"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000976.SZ/result.json": {
+      "bytes": 1090,
+      "sha256": "4eed199a430cacfd031e4335d993a51343288b437a50e41df746df6e2d9e1147"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000981.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "f2c000306f958a842e5f01443544e8e198f53e65ec663d8bb401d73106570c09"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000981.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "0d68bb06e8e74b0f683f5cfdd66797e5e19a0da46329d895db6fc75f7a94ad79"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_000981.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "7bd082c75cee350add598d7a13f0f29bcc6b421c095f5a683733a8eeb48ab971"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002002.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "b6f0f6a80a94b7cdd68aba370ff8a4d6675b05409565d7f6c7867e5afd18755f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002002.SZ/response.body": {
+      "bytes": 34384,
+      "sha256": "b6ca76b2fe00c404715cec909d8dfcf3c114b40bee4cab9f6cd498f27229553e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002002.SZ/result.json": {
+      "bytes": 1090,
+      "sha256": "60f754c110ba37667e9063990ffd567081aed7347b61c2611badd9283651fe04"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002006.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "e2d10f6ebbde8575542511066170405fb726d64fe73e02538229047ca8ef1326"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002006.SZ/response.body": {
+      "bytes": 19877,
+      "sha256": "f2f404bfec7ba94b11431e332cb64c88121daffdbcdbe0748881a7c97c1d013f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002006.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "be943d654ca640cfb0a6896efded6d13d1ebe31cd9087d5c21d0074ca8903cd0"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002024.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "2041cd6fce164ebd3cc79294d1050478e1833738efdb9b8b5842e31145f52696"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002024.SZ/response.body": {
+      "bytes": 21803,
+      "sha256": "0f48a8da55f7a95dea219a3629acc46fdf19b10bd36043772f42d0d1ca4daf29"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002024.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "a9aad120760e9d491f6b62c3cdab266e662b4b8fd15ad418bd28bb766a047787"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002027.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "a5ea408bd693eb4a7127fe65042fc66dbf236c7756007dbb3b7455d75d30a181"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002027.SZ/response.body": {
+      "bytes": 46413,
+      "sha256": "0ab1f0c7a1435b1c8fed4576502b65a5db934114a80172efa12b15dd80223b7d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002027.SZ/result.json": {
+      "bytes": 1090,
+      "sha256": "c89d145459910de326a82cb403e48c26fddb3173250bef452079b53cd50a6b84"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002029.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "df57ae3218861de72db6e1cd6ca8dcf8f7e272e343e609661b1325ed05685478"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002029.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "db3f0dd3730f49653412a9903eb47febbcdcf84e593396b31c23d1c4571bfdfe"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002029.SZ/result.json": {
+      "bytes": 1092,
+      "sha256": "dba4bd5745e6885f6d9dce20c4e1bcc5b77022a9e49297333c6e563bc30e12e1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002037.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "9eb1023bfc43ebbe1c02082ee766f89b97bbef90f0f19a8c62476a300985b9d1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002037.SZ/response.body": {
+      "bytes": 19762,
+      "sha256": "325a9703a8be17ed64cbab416368e4aec283733d50ea8beebe92ca7bb5a803d4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002037.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "3913a1418a49a1a9920cf29cd92a0244e6e449bc02211e3a5f49b6efc3f52288"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002054.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "da8f04d739375fa010fbb0bb18d70d8fc0030b2a09d255aa054d4234371ba842"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002054.SZ/response.body": {
+      "bytes": 45086,
+      "sha256": "4493c7c173509b41d1c77f6d3385a2840b589c8f86d39c1052faa728e341c0b7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002054.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "e066ff0c53dc2d0198406d69728e76912a246d02b86d2bcb8b0c2b058356b5de"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002056.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "153dde2dbacae41f41b9d077edec4005785a61a70e3e0c7e40721a117c656448"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002056.SZ/response.body": {
+      "bytes": 45493,
+      "sha256": "20274109023b374402376a26b80792cfa68ab00db39e66615fc73e2f0f95549b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002056.SZ/result.json": {
+      "bytes": 1092,
+      "sha256": "08d1db2564a4060c3484f6d02f14b9dcd7fe86fbc0a256f490a7502d72a3f95d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002085.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "de28de843adc48911960ea8e14dfb2b96bd43619083aacadbba6bc3e5442e6e5"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002085.SZ/response.body": {
+      "bytes": 45397,
+      "sha256": "756b60aa7c53ea14ee830a8430e52670768017555dd285192bf744ce88b8dcbc"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002085.SZ/result.json": {
+      "bytes": 1092,
+      "sha256": "2e6138b6f6d4db1c6c53454cd3858b1ea735f35b8c090aafbbf7df09a6fc9b87"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002089.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "8dec6c080faca672090c07528f9e7407282f1883dcd025a4ffb3ac0c4a0c0230"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002089.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "512e56f91e8d8619879c991ba9ddaf419d175471b5ab3984b30e301be5820fc2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002089.SZ/result.json": {
+      "bytes": 1058,
+      "sha256": "6fca9635d7488004ebbf0dd3939b1ba6012b98d6f0c8d3d0f964992ace194d4a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002129.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "17a89dc6fa91f3cf435dfc7af10f220fcbe2886ee11974da16812f8433247599"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002129.SZ/response.body": {
+      "bytes": 46419,
+      "sha256": "ec781d477351312db1801b51129287a4e48032bac1bcde3b8deb90f1b88e2524"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002129.SZ/result.json": {
+      "bytes": 1092,
+      "sha256": "d842f71a751d424bffc73519ede9a5bf91612f4394ccf7d13b2239fffb59bc57"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002136.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "34d834a735d87ba4cad5fed46f8a43e213a53a381768c20b6bbe6d76ff01c576"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002136.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "53781fbed0d368f41f6395da8130322243238b5794b39f6617226334dabb6c98"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002136.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "156dab4e1447c4d9d95ffa59e5d1acf51a77f4f3fe9c5f1f366f52092c088f9d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002141.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "940c5d82368b89691de4496a5be44d1b6ef321b874198a82a18ed7b7a2366b1b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002141.SZ/response.body": {
+      "bytes": 13417,
+      "sha256": "16ff227f79d2b062325c03508469fdb22183a767c3b75f137f6e1f9460ca3fb0"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002141.SZ/result.json": {
+      "bytes": 1090,
+      "sha256": "1b5128bd97a6f0cfab12bb6edc6f1bc184080dbf49c657ad3f79ff0bba7cee4c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002154.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "eeb7a9a0b83328e5cd6f53f5d3154f73aa214d2672578eb445b20f3b91173e7d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002154.SZ/response.body": {
+      "bytes": 45106,
+      "sha256": "c90313604ef2516b97de15de77030b99a57f1467d36f4b8151a566f0e3007f10"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002154.SZ/result.json": {
+      "bytes": 1092,
+      "sha256": "cff73057e778cc252e5f01923d6a534daf913f6dc0b7981d04b1758c357c0d54"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002162.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "2956ebce43206d85583fd149c1c892e10577318ffe49467cfe25b257339e8383"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002162.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "0f08dc8d8c66bd7bbe197cc171cd5909c72efb4c5a7f96390a549a393c7de852"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002162.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "14a2235d994cfe57128e00f2b3ea367ac2f1b23594ed034e78879a71d47d5414"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002192.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "7dfb72f7801e9b45c1451db9f9ca1954905c1205827f0a5bbf1beee75a91069f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002192.SZ/response.body": {
+      "bytes": 31979,
+      "sha256": "1b13e0083d1a94a8e2d7ebf3e5b343bfc7af898575bccbe9fa2c02eb263027b5"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002192.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "2185f74d7fe65b6b1b0459e64d9f612e81e0b19afaf2aa8a856f61c51f93f0c9"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002195.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "9bd4122fd87c964ee6ec4990e7128524cf4282775ed54848e02cb2512d679090"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002195.SZ/response.body": {
+      "bytes": 45686,
+      "sha256": "d61b106fcd41dfddf529e2805c3ab4e8e018e4ab872a19dec5c4e8d45966e870"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002195.SZ/result.json": {
+      "bytes": 1092,
+      "sha256": "073be9c268dcf262d5fc375738507b7209b9df5c1d22069a64c43532b1ea027c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002215.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "9f33eb094597b8e5988a387f5864e0778033a44eb0cc6172af58bb15637f9eda"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002215.SZ/response.body": {
+      "bytes": 45189,
+      "sha256": "df6da63dbc5d934d48aa72ce966e6f8e51cf7dc58fed5be7f52e688a219d3b11"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002215.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "5a1e7c4a48412b686ae1f0cd878457d957c657c7f060f7c8c1f245347bccb4ec"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002217.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "050deddae725f626a5e98c2b41a0225fb739ba00d27c239dd25bdbf237c1d7ec"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002217.SZ/response.body": {
+      "bytes": 39388,
+      "sha256": "10b14fe982d3a7be7131968d278936dfa9457b4360f8046013ecefb2c4a578ab"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002217.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "1a661d46b7cc448eda6ffd5137b0e4e65d49f1fa74e7cf29c5e2949124ab4268"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002247.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "d834d29a31ff720ba272c8f89a500fbe9fe9087796c0fdb224e26d49803aac1a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002247.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "8ea638cd9d3d592fe63ab8b8333a149f62f295fcfbb4943d171b80b5e042a38c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002247.SZ/result.json": {
+      "bytes": 1058,
+      "sha256": "60cbb1b91b0a9e6d755133c12f377e640fc690d8ff9e63e2e50c418a231713a6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002254.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "f0b4db5122114b48c9602bc8d05d16b2b64e819fbb67d73ec6e65d04894b0634"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002254.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "8bcfb3f2b22a709363ba05220b7a0a200122587e9b3a1c6644cefafab50ba580"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002254.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "9e712e8789fe19aac7a9cf0d65028de38d2cd25f605d2139c5e58c29f1bebee8"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002302.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "07179c0d3dc3c0de51d50e327afc85da4435d11381e21589732d556efdbe2ac7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002302.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "b5326fdfdaab5576a1bffc77bf1bff87e37ce25feb4994d117816007ede0f63e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002302.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "2a68f1cd05d03ef202b4c9fbb2ff7966d75bcddb9c83e06cfc0ebb3b6d7abeb9"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002313.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "09e1f8ebd4a3f9cbaca8da2f4b4ced5fd1fefec9eddd1c071323a63f21036693"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002313.SZ/response.body": {
+      "bytes": 21263,
+      "sha256": "59e2641f130c1860841966480fa14eebd3d7c719e2da5a709f591ff5a3ca39e2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002313.SZ/result.json": {
+      "bytes": 1090,
+      "sha256": "99839d76f7293b17e65cbc315c27a059e412290b862d4184ab358ab39e77e444"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002324.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "9d1e66ea6750d367bb52ef6e76f27f1df8b851c17eaa4eae0cb49b274e359023"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002324.SZ/response.body": {
+      "bytes": 19866,
+      "sha256": "a0e3c09c2216115adf0ac1252a21b06da99a4e3e693be314cee3358854a2cf92"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002324.SZ/result.json": {
+      "bytes": 1090,
+      "sha256": "301e61a96271a1563619e070856f72253e4c3c975ecf0861fda47280e5d33428"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002340.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "06056dd0d24c35f5237dbd21b8318f29112cbc8918db7f5a1d49315ba3002cff"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002340.SZ/response.body": {
+      "bytes": 46419,
+      "sha256": "6385e0200b1324155409d282e0cf936ed1566b8c7a967328f50f622603a38272"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002340.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "ed677a95358a53a2aeefbbf8e9a10845949a9f4cfee30382a304bf900791c2e7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002356.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "c269167e6ed11752af239cfa119a4cb2c28fed776ce2544fde305543aa2c627f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002356.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "e68bcca1a8246d3cff3a4e7c7fe58501408e9d6295f6084d1b0b1685f6f31ea4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002356.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "5507f5989ca455c29e6e1b55ebfbe1826bf4189c7a2b65a5b32f043e6834433d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002366.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "2d2c02a454e3f2aeabcbefcf911280ba960f3f8f3e7e7acae195c78000109197"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002366.SZ/response.body": {
+      "bytes": 20760,
+      "sha256": "6e95bbbb0e297a6c20d9b69d3d95b01bb6f41fd9c0b201d94d574840bb5cf235"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002366.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "8ab53e6c22d2372f5599baa1e642b5e06bdf4bbfd21c352b3697508f084fa35a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002372.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "b3bb3f279dffbcd89650fe73d01586066aa1769a91f530ffbaa62467953a7917"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002372.SZ/response.body": {
+      "bytes": 45169,
+      "sha256": "9fb6983122ad0cf7011bf8bb54b438e71187ff2cf6e44b22b12f82395cfa456f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002372.SZ/result.json": {
+      "bytes": 1092,
+      "sha256": "c2c345bef58dd6bd79f79f1ccb767250c9d4eac08e7d70b0356a4ea1d1782beb"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002395.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "2e7e3bd6b0c68de22a5aed974c23121d798c0383d01619e593af00c045ba5fb1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002395.SZ/response.body": {
+      "bytes": 4469,
+      "sha256": "c9c75ff33318ea867ec79722997ea4c722c597ab322d98b530b287eca80a634c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002395.SZ/result.json": {
+      "bytes": 1087,
+      "sha256": "42196ae03ea330551a9a5526960d052051470b23ffd60e96a5a5c41d9cef6020"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002448.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "e99daf2123a303694e1e71de450ff5ae02a4aea8dca9f4c4f0f307109c63cdfa"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002448.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "1ab187a82edb40cbdc26bfecbcb48a20bd1595ee5f66976352f03b935be88d45"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002448.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "8f9dd1fbd2f8653a58f3a7adcc2f613a71c07c1138688b70c9a1af3433d86dfe"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002459.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "009da63ef031940d9fb0b47271b117274b7e1881a98f7f8dd57bd3009aeb1e5e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002459.SZ/response.body": {
+      "bytes": 22657,
+      "sha256": "71c40fbbc8a75078c842e9205eef7cde022413b70aad062eeb28a6b4768533dd"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002459.SZ/result.json": {
+      "bytes": 1090,
+      "sha256": "503b69a4f5f3f2cb65aacc9107670c555a08669e3fb887cbe40601f560c0c836"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002462.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "c7caa84b0cffe64612fb2382e5e62590af63d82301c2f500d7416fd4b54eed12"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002462.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "8095baeaa0074ed59687add34a39b39f0dff0097db0b457c53e54fb3bff60b9d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002462.SZ/result.json": {
+      "bytes": 1060,
+      "sha256": "0d3228130834192131f1bf114dfa2ef7f0ad8a38748a8044a78882a99bb96650"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002474.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "db302fdf9d26306aba068cb50adbb6c6295af863ba520c70e59ae8d9edb7bf9c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002474.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "2918d76d98acc0676bf5a8baaa4e45a3c21d1c4d55768f45c40276e5733fa0bb"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002474.SZ/result.json": {
+      "bytes": 1092,
+      "sha256": "c16fddefff7c335b779c9f039316a5aea848da09e66817ddf1880aca9b641615"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002505.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "ec29675a4324a050d8952c4125da5ae893dca093efeb7e2cf98ad4f25a275988"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002505.SZ/response.body": {
+      "bytes": 40640,
+      "sha256": "7d1769f1c1a5cfdf90acd2986b93a758e0792156bf328fc2502c74ed41184818"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002505.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "c594f524079db20a2d1451e53f6adfb33e2481feb8cd31bda50f63802b53fc3d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002517.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "ddfdecef46fd30f7be15f7f818f9f9efcb7b2f1aa132a3cc8671995acff88106"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002517.SZ/response.body": {
+      "bytes": 45189,
+      "sha256": "29adadcf4a188474c7de7da2e96214f4cae3aec8bc19c4df948e2a1389491614"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002517.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "bb5514e72ea7ab622e53ac5ece219f4125d1afd81816df86dc772c907e236369"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002536.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "fde7d883aa1f00ea5bde404feabedd96376c573697a3139bf88d690f86a99708"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002536.SZ/response.body": {
+      "bytes": 19746,
+      "sha256": "981102cf77748bc6d2a1d2634b0faee8f54071c3df168dafd06be17bfe685114"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002536.SZ/result.json": {
+      "bytes": 1090,
+      "sha256": "2f306b1ac5caac94a3e232133596ffce24652e6e5eb2251234fdcd29d8f712d8"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002539.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "681dabaf7381fcff98aa4fba1caf88b9747ac6db59ad5d03e6b7f9de88a03adc"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002539.SZ/response.body": {
+      "bytes": 19860,
+      "sha256": "a3c0de03913917b293ab8786b27df5f7addd0a59eacf418859e67dcbdda851a1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002539.SZ/result.json": {
+      "bytes": 1090,
+      "sha256": "f774e565c9583d12610dc19fcd1d78b26be706b9771cc4983fad9e27e739fae4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002572.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "6b27c49d71c41799560bff6f675c526c8a4fdc17769dea72d129ee6744efbbaf"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002572.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "635c766f0041257e4395de4b9d2fdca64b215e6e93832f76d849cc376abfadb5"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002572.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "9ccc6a31e0a1a0539b70a285bdb8b6b987f86415ac3dbe823700c60adb1e4fa2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002575.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "0732bccbbef2b22af1429429459e6443e4fe54b65ac2e08f98b460cb9544f18d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002575.SZ/response.body": {
+      "bytes": 19440,
+      "sha256": "b3053cf5451ee9becd4ac112097edc274378a9bd0e65ddd323159ddcd53083ec"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002575.SZ/result.json": {
+      "bytes": 1089,
+      "sha256": "2d69acf278446cf47c6d754c046d2774ca0feb691e7eade6a029e2f1f9de1936"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002577.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "d071b5b1f38ca10339ef43993df368c8bc3f7b18a87746ccc350537666cc57c4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002577.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "dfefc36a8811b75c9300c7b28a50d1ea1887a57db9fda7c0808c2af0904f85b6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002577.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "edd006a7667dba36b02491a5daf7313fd7f8800a7a553d357712e5db4163bfb4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002602.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "47e8e557e384021014b3d4ffa48aa59251362c9f9809aa5a7488c13056ca1dfd"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002602.SZ/response.body": {
+      "bytes": 44955,
+      "sha256": "1983b512b3904517a40ddd16d88b54e263e751af5e5cb3d1256c69cbb0dfc217"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002602.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "be6ec2ae1768da73e10374f0bee8714cb463b329775461f9c0f47fa9f3e46a74"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002633.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "484bdc86b914e7c9b35180018c0de5a4192eb2069bbee06fc1380fb025ed630d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002633.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "385976225f418c4b732a908d9920cb9860a49a1614a84a538abd2dfdd7e6ad35"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002633.SZ/result.json": {
+      "bytes": 1060,
+      "sha256": "b158bc721866bd5905d1b728091b692d4391da0218cb7a20a7eb93a74c2e9c9d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002635.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "9e08ac3c30583d334712a8fa8a3c90f449429cc260fd11b477c2f1e0024a626d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002635.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "7205f7aefe9e2251894ea4e9afe6f27bb2f0a58317e2758ded94a0d66cf99564"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002635.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "f6fc1327163a6d4f50078224707dc3986cc180758f5d33d832031d351d48427e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002637.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "dace0f741d6cf039e8a741e1f58854ed2ba150490b0868e576edbd71b6e30a1e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002637.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "a6a77d17b8598cb654300a2b419e885813d3c080e4d74c08583947480ec96ebd"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002637.SZ/result.json": {
+      "bytes": 1060,
+      "sha256": "88e1fe9601b3fc262780736567071289a2c084ab0864a893573853d8e3726590"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002638.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "0de5e92400cb1d810a1c3d418ea529b418b33dad0f8a8182d98051d72790b61c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002638.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "fb6f0bc0c36430ea103d28fe0587dd7fd21a34102c4430f1ede4432d91ef4bd6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002638.SZ/result.json": {
+      "bytes": 1060,
+      "sha256": "8302cfcd1928f17add8aea17d3cae8fa209fce494079d20dc0d7c38a537764bd"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002645.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "ccb5dd3d6d2803d7f1ce2937686b984e22d31bab0c4b40fe485b63ed44679693"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002645.SZ/response.body": {
+      "bytes": 19858,
+      "sha256": "c7a0c426516e6ce4bc6022f29eb7e967563701f302f5e3d4881a5553688fad3d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002645.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "86ff37d1494f85fd959f56a84a120c426485694540ff40587f5ffab76d6bae23"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002676.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "f783564e6245a227298bf3066c6f051608c380787f99b4352347b3d17c790380"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002676.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "7fd3ec61e530fe4be3c6ad177a313520b674989f93be36b35ca8bf597f91e060"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002676.SZ/result.json": {
+      "bytes": 1060,
+      "sha256": "0b1f5e761edd8380ad4ba672315f99ff8598d2eed8c2e8cf2ffba7a452975f16"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002677.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "45ad981ef4a1fa8fe41b6c867a0e7f1f042f7c31e747364f6b93e4e0a71e4458"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002677.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "92657a7db323686f82fe3c3a8fe1985b7a15a1a68537729b10a7c42ea95c85e0"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002677.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "5707beee82fb4c45398e2950c850b7864d45d898650e32341e245477f86c88b4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002702.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "c87b4aaf7956458962a230b26861ba2e30a7b21610fef9909cf74e8dab85cdff"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002702.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "052ff5940144dd1529f5005f888703d2c8f9c9f4cb09168617569c077cf34c74"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002702.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "6448cb7c2d0f66220bad0f7d1223ad90d8d9cc510869c42fb8457427ea85b406"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002719.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "20504bee6a79f2d5f891c2f3e49ffd7453d7b3c9a4a4d265e529823f450a6597"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002719.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "4028d3a1e2aca476b6d004fa90f107d683837d2eef118bce6da7ff6dc9d5f0cb"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002719.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "12806721dc0920277959db7f843af8e126c8ec8d9bba8fc95ef1693e76d7989c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002735.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "481a168a6aed6f593489b0dcdae4fc12bb507d60ae7d7004d28d1672a12d130d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002735.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "f9f39b2bdc4d895510824be86af4a58447f76807834cc3e21bc1bc4548edbb71"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002735.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "95f8212023d365a770da1e0f541aa1441a0d5244c995405af6c2b80f0457f503"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002738.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "3776ef6256000bc44978b682444497bfe1eaa42a36dbaf3528ef4b1d1770f1c1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002738.SZ/response.body": {
+      "bytes": 23006,
+      "sha256": "9bcaef495bb19cd9e47bdeeb5c59fcc0f33bbde944c0b7b882bed801a53227c3"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002738.SZ/result.json": {
+      "bytes": 1089,
+      "sha256": "b2ef63f87b208df5a8b4b1663e9ec29bba5d9d1224b9c755de7a1779ab9e53c9"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002759.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "6561075b070a74af8f702f0c0b0be464d457b0f89cca5504c09c81ded120570f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002759.SZ/response.body": {
+      "bytes": 19614,
+      "sha256": "bf26407e4bd17249bdb156afa3733ab287a0704a92b3308af7add021e75c7f39"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002759.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "27acaba1df229bda66a5a9c49dc809e3e5d59ce0455e6dca3ba72c8e6e111853"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002770.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "f62fc49ab26d05526dd489868f9a3c74ed3b28ca4320e3309ecd4a7870670229"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002770.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "7aaeeae955316e6d070449b4632cbf3bdce58e398e1f701ff4d1b82fbc584852"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002770.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "e8f6b13d831673de6ba1359d404d9c4a378aa879fa8684d6bf94a45c3300e39e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002787.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "265337d6b71bc4873cc8e03abcfa8c8098f18563b69f05f34e49ecd6fa1015d6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002787.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "55c3a5393c407d3e0e6879b20453131748470bdef0cadadc2def7ee0166fbe57"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002787.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "0aacc4d420b790ed6a70208882ab69a25d8ad954f60c11495afbcf2f5f0ef3d3"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002805.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "d5994ad00b86007d1eb03184171ed82d9a82a9954e53596c5e24faae7fbe012d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002805.SZ/response.body": {
+      "bytes": 19887,
+      "sha256": "17a71004312091f1aa8b699522e7c8b14589fcb2f0c43d2ce1fe95ddf3c8e1c6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002805.SZ/result.json": {
+      "bytes": 1090,
+      "sha256": "b27d853506d111203674b7cb1d02abcb18fe533647c590c37a9b76764ba826d5"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002828.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "fd71374b75a49052dcf90f9a898f20c40a2f4ce24ee73e8289d88a9bf89bbef8"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002828.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "bf63961dba571183f9814e57b09dc01a85d0336dcd511a369f84927ede727fca"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002828.SZ/result.json": {
+      "bytes": 1060,
+      "sha256": "7bfd0d66e3f30375d378b7dae077a54d6d3f65cff6acc45d3c2460c59f857c74"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002830.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "5f450a2ce7b683d847b46ba9794440fb0ea4d5cdc414bde21f40fb3d2e80446e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002830.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "e03a1d6f8d4b6b12c84ecd7c5e98274ad51706ad0bb0cbbe3d18f44cb89e4f34"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002830.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "ba149d4d2d2b107a682e549c3a32fb555a190266b7fa9cca8a8e75babb7076b1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002835.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "8e690e8b393e3791365ad0f09341ffaa2f162def42f2257e4bcc1327450869d8"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002835.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "a13e2bcc2bcc40f11cfa6e20276e456063531c38fd69305c405bb23525786a4e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002835.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "7868f62cce8f9f3123705a7a255304819d7896ef5dcdc575554dfb9b38e1d843"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002912.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "dafa150fb94d1d504fc70569c0240f309aa886074ac0be728e641b34d1dca60c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002912.SZ/response.body": {
+      "bytes": 45194,
+      "sha256": "b5454b63671e390f0917f71e4b9b546be41f0861e952283a8f1656f93fa6c27a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002912.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "43ba42be8a20f27a49c17cab851ca986fcf0799b96f186c45f19601b46793be2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002926.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "0309c053747706f93aa430c7553c91ab77925a5392f869f78b2bfb45dc8a9ec3"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002926.SZ/response.body": {
+      "bytes": 45657,
+      "sha256": "5b8e03b19e7aa87425ea85c0ab279d166ca125dce612b702dc3a3d73a0018d63"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002926.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "c763298cd4274c380a08e7d8113ecf8b92d78b37d0ef56a7c9595e6f2a840b38"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002947.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "fdbabed16ed9cea04b8043c6a5ee210fa64508cfd4640ffe535658b9ada958a5"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002947.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "65183bdc3092a46f5bfe8a1b7e0f02c1cf1955b128bc1e6f687b369d3a8f7b96"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002947.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "01829746adda39847a08ae9ffafe294189f7133c6366debabe473b1b5dcb96ed"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002962.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "d862869b38ae708d82938a41dbbad596df5b53bfde46c5b1fdfa490f23949df8"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002962.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "eabb4bf2ce3e37d364218ae263400d61f0dfb524869ccaefd7093644d50cbc9f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_002962.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "f42d475c5576d7133c1c00a16cc1cce5b52ff9b573264e22273f6b5469a2ad11"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300005.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "d65b15165b2b152431ecbdd00aeb58aaab1aa9f7077353d8df9d8aae24bba4b2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300005.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "98271b5a4d10e9135bf9dfa24edc4619b4d1fd2740ed31a5c4853d2523da9a26"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300005.SZ/result.json": {
+      "bytes": 1060,
+      "sha256": "6ef63aa5fc0cda06d9b7f42efd48aff82196962cd0de130e80dee9014c921195"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300016.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "c449e41b6e6dcbcf472d6105f4e9ff3b50bbef683c582f7a573643740d7dbc18"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300016.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "b37b57ad5fb23c5edf60f9f353819a00271342f42e6c07d58334231c11965a29"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300016.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "e5934517198ff649819aec337a4af838e7b03e8f7e68361c1d6bf98e504a22be"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300020.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "237c401cc7e696b7470bbd0eb0a2b3dbbc38b88cc197412c88369af9f15122af"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300020.SZ/response.body": {
+      "bytes": 39171,
+      "sha256": "24e51525a17352b7afc74dafa8864b38e52459bd163f2988a196ea74d649c715"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300020.SZ/result.json": {
+      "bytes": 1092,
+      "sha256": "76d38abf6aac76af0d815fcba001d2885d62ece7bdaa279ee65c02b4fe2e2e35"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300022.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "967b4a5c9eed21a099a0315ee2afda939a42b4fc02e2f2451c028281c4cf5bb0"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300022.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "e960576be377fdbe6e93ae5173415a5d62197116d80b44d8dfddd12b6a1a696f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300022.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "f22f485e5ea1076977734a4adb25b1bef0b85f4919c2be8b8f856573ca0a4913"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300027.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "6d99d790b81ff269a0e870a2d3f139aa43e8adfd267a56fe047e14dda120c886"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300027.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "a17117211b9ce7d8762f1056e2a1e86f0daf4a95de833024477c249fd2ac788b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300027.SZ/result.json": {
+      "bytes": 1092,
+      "sha256": "ae7dac914d7a198d7dad792bd6c7d21390df4947559782f02f135333ef85d05d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300058.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "7b998caef281831d76fcc24cfbb67e62d192f2696a202ed60e3ee7c901c1ef24"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300058.SZ/response.body": {
+      "bytes": 46398,
+      "sha256": "6987fb0104b4112561a52aca7ed4e7cc4497e2d0cacb7c08975d147fa80c309f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300058.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "f83aa55ec2efdcb3bac1255ebe51ac6218a5daf19b9ffeb37c7ac0ee26cff9ed"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300081.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "4fa839b069e7031fc0ca4549237fa3732288c4ec918d4fd2906cb10a5d417715"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300081.SZ/response.body": {
+      "bytes": 19827,
+      "sha256": "af6bfb601364ac8e508f90771d2634867423086b9ae64bffde79bac5178baf76"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300081.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "326179092f5a10e532389630b7a29f68be5d9e0fda289354a18b3f0a8591860f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300105.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "e687bdc754870c592686e617757b3c9282b80ce233f28ec638ecb00b1e06a030"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300105.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "7ca1508c52de7e414da5fd05a6ee4cb17a6f49ecc93f92a9768a9aa0d6e93576"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300105.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "fb5509416806b0038cde4c4205c85fd7b119786e7de81b8fa461c7b55c679736"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300135.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "93b6fdb5aa2fa65411b655692713c4d1d0f9f64ab530e9e15e9db58100e24629"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300135.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "0ca2a0e70889c9dcce9c1568e1193ee01edd08e9d2ab894b664cd5f4b5acae66"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300135.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "ff28414fe30d4a65c2f912263ec0f63c57d93a557532eecfb1e8675d0392559e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300137.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "79f15b60d60c091bbbbb28b5e1804a55b9a6851aeaa98de62e6e16ad9fe85564"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300137.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "fdaa881d47f8e7bcf2b2face502d4a4726056fbd4bf79108d13a7bb89d676fc1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300137.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "941f841baec57a74b93170a3f364eaa6038e875635d3e18397a76ecd20c383de"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300142.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "b9a56a6f62bddbf12988c0572d8ccf0292cf7a16d8bcaa873830f0ea5db2c597"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300142.SZ/response.body": {
+      "bytes": 46439,
+      "sha256": "fe0f3fd76e9a154c560863eb5a3b66e74805d423480c4f7c60162f07159d3636"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300142.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "d322d35cc9a68e25e1444b57c39318a39d449d987685ff89d3ec725a30d280ca"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300143.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "ff2dc5a0ca88cec0ee43b22dcd3389a69dd9841b903450f79debc1187463ebd9"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300143.SZ/response.body": {
+      "bytes": 19551,
+      "sha256": "0ddb7b9b7976748d2bdf70c262d557caeeca69b129cf841f0abd72c77810a8c7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300143.SZ/result.json": {
+      "bytes": 1090,
+      "sha256": "6871a55b31ea8c28b15e233803672a2f59596c8862ac5f5c8c1b7d648b032efa"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300149.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "97434126e441f8dc67988bfcdf5450e7d74db6f2e10d6c73dd04a3f1234e8488"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300149.SZ/response.body": {
+      "bytes": 19373,
+      "sha256": "b28d55a880c931361ea440b86f1dd71ddf412c095c6c635fc83f9d3038a526ef"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300149.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "a2459b0049afb56a30234ea226d5e9993e80808bb1b7041cb685119a375105b9"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300172.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "06b482f9c747738ac26c43f2bfd8bd37b00645bfa08cadb17ca47de0b9195047"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300172.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "21b32adf99491836277d59d09dd829c87197831c1b45fa6960009de2dd946507"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300172.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "822ac1eed60114a96075ecc930556810234df45a762c98bd79e4ead92f27648a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300175.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "49b5e5439b4f36d615bc192a3df9bc29a125453caebbb2b56a1f0fc7f4e4d970"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300175.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "7c4ed8ce65e16233afaf9cf0830f6553a2c82c64e4e06eebd66d8a17fa18fb8c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300175.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "7b65c5cf6794e3e9e7b7842cef7261f871a23fe82fd7296819494e74b77938c3"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300196.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "2500516d358c999b77379c20dd3036ea9cc87ce64414e5a05b41bd87dafac22a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300196.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "6c4278de5293cd199bbf7195da4b85c647af33ba91a5896f9ffb6fa995ae1f4a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300196.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "4da4ac421edc0e5bcbea21da6cd3495a994b3f2cab7d34eb4fddb7d3f6782b57"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300204.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "63fc61a2bdcadab44a34915d0d3d168efe5d24f6eacf55f398118b315c396266"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300204.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "0a94a0f8d00c25c19a4fcd373d414b980d30c71b27a1606f966aeeed636ede21"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300204.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "c2cdbdc6d926197d9c3165169a589e144144dae63e73d23ff02ed1849d560e46"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300221.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "440740f19ce67909119f36f5652b99e5455fcb3ae313029fc81c8cc33f5db999"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300221.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "800b3f7790a4910b31e817629c9b89d8a61b62eca7816d9abcea4b546d151d2e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300221.SZ/result.json": {
+      "bytes": 1060,
+      "sha256": "7fdfd0dff2405e37f14dd0f60743bc49594ed7978efe2bda7d805102eb4e1397"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300226.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "926405156b2150fa195a4179c483ec1ae776257169f66c332f508f9f4f29a109"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300226.SZ/response.body": {
+      "bytes": 45235,
+      "sha256": "91d94e8ec53419527bba38d142d6ef9eb79c24db7d4ec06919cf997a61ff0f99"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300226.SZ/result.json": {
+      "bytes": 1092,
+      "sha256": "f01d9b4ce6ec3458335dcd123b2fa70b2dcf63f8f9f814a2530d669dbfb7021c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300229.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "440e722d18440b26798a2ffe6a9aee7e6a0f69a63472d5b26dc70085e94706cc"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300229.SZ/response.body": {
+      "bytes": 20005,
+      "sha256": "4eff6c940ce8224f2bb77fe9eb295f67fdf92082c4ba21200dd3d8238cf0fb0f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300229.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "f40cdefd8f699b40dd7a5e152a589f05a55133ce8a4347c259c60d9f28091406"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300234.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "a0e82cac43c56863bacc309bc68ee51109dc3d4e20a8bc0bc70f9b7ad29090d8"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300234.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "44a77c0e087f1a5fff8d78389ca9527417976f3fe54f544bfaf353ba86e24219"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300234.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "f4569f30d1aa9fabbfa7872999b4d2e5e9e64eaa2d1f7f7b857cc22902984025"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300261.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "a39f33d56de0960209b2d291c12bfd798503133068c97c7058b4f8ca482b98bc"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300261.SZ/response.body": {
+      "bytes": 22444,
+      "sha256": "afacbecf7d0c8c0ab9a5652c71e8ef2b534aef1fdd40574c45316d1c7f93dab6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300261.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "d39a0c733f9d02cbd38f0e6aa48c819929ee6b49a8f48ec13177c47877ada93b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300278.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "e12cae4a2dbb43c3865448b8e988c02984841449190abba8627cb7acf4b79e16"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300278.SZ/response.body": {
+      "bytes": 19821,
+      "sha256": "4c62d3f1fea8b5e96a7e8337b14fd71bd4d7f055bc49ee19e19730f16163cd12"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300278.SZ/result.json": {
+      "bytes": 1090,
+      "sha256": "da86f5d8b1ed572d1db77b8ae41e9928a66d706048fb4e3c0b7e6a14636c5e44"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300310.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "a36310574722a6b336e38db36383fb46c81755913af0969ba5565d38b23027e8"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300310.SZ/response.body": {
+      "bytes": 45186,
+      "sha256": "1aec1e2a7e09b88fb7d3f0e4e77b5081194633d2b3b364b6e19aea7a1ee74e57"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300310.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "9069344825025c38490204485928f78308cfa0b2974b09a2d74495feea830fab"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300322.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "3187f0802ba44683d88e745b0590890e171eab97297cd94e07c5af586f476d4f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300322.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "023d030b39a6569b06db826685e66863de9ff8019837a0b05d7d65f3296293f8"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300322.SZ/result.json": {
+      "bytes": 1092,
+      "sha256": "c2ffacc22a77aeef842da57d31fb9f0404181201a5cf709d6162fd29766cf151"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300327.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "115f21fc0dd779e02857be2a63bdc4f70fac4396844c9f116199a9001fe54e1f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300327.SZ/response.body": {
+      "bytes": 45202,
+      "sha256": "bd62144153791b63e610d2844998741799ebda2536ca6f9afb15d7582a8f842f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300327.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "a4ac759e431c8bb04145091742df11c8a66e18a4b9060eac1e93685b963be190"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300355.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "f9abd1b7e95c9e4e63b67ab998f43e2e7f28343a130b90a5e59dc9da6d1ce8c0"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300355.SZ/response.body": {
+      "bytes": 45203,
+      "sha256": "5438ca35aacf4d0ec56fd1f79a691572f17356c883c744b576162840ec2485b1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300355.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "6331ab33a12032af0a963c43205da6c98358c4fae46fbcc0a752be373e2fce93"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300405.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "dff8927eaaeeec469077904dac372c2be70377202e10508e922567247decb55c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300405.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "9f44ea2bb38a92197b549b815c6752254a64bbdbc63dcfcc7edec2e559ed6d2d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300405.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "7302e115741369d66f28c85c144286106a0c5bac8591e70e6b66f381e8102a82"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300409.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "56cfed9c3797c82cb79c1b9dd1f81c2dd4a369e84f26f92643dcc7888c951ac6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300409.SZ/response.body": {
+      "bytes": 19884,
+      "sha256": "d5f13397d0918407bacf8a9360766ff120bd086ddbcce275e380b17a2f2b7bc2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300409.SZ/result.json": {
+      "bytes": 1089,
+      "sha256": "0f1c0e9f116832b07b026bf7df138e30899595c3323b788e8583a3fc3e00d5e7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300441.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "69e878ee435b48553beea909b8bbce841fbe2689e0a9863f2962b238fb337c8f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300441.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "a43a9e173bea60e184ebb36eebfd44e4c8c98b56bd8efcf095a3800ae20b1bd6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300441.SZ/result.json": {
+      "bytes": 1058,
+      "sha256": "8c334462b569b695058a1da22edd8bd33fdd540dd1aac14b9e827f4c58f8b343"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300471.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "f62e589114b6e1f50168c96dd5852d2353b4e863de89b5a34a203cd4a2e77a22"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300471.SZ/response.body": {
+      "bytes": 45182,
+      "sha256": "d4a91c1dd0b23cd688bd6a8892c5adba16b4e965543e285dadcae6fda61cac20"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300471.SZ/result.json": {
+      "bytes": 1092,
+      "sha256": "17eb68e8af778550daccbced2e3094b18b377da127c1bc5c41c90f19e7498709"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300480.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "104d8b0a68c4f652b1f6010001a803fa87a8f8d4c83bc3096c73c684e85eec39"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300480.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "50f381ce995e341c064fdaa979fe5bcc093bc326e6d6700ea8f87770830e9d78"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300480.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "4cb5ced3f655bdda7cf22b9149041081e294025b8557ea6dbcab2106cad33bfd"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300490.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "c5220d97161928692df93c65c09f4f534826582a31f3d8855a07741cdec66483"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300490.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "8159f71a753c06e20bfb6ee03415e369fa52f476f7d8476c0c0d05231b337766"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300490.SZ/result.json": {
+      "bytes": 1060,
+      "sha256": "8d1f91333bfb63b5789c50191538b6e0018c4bec39ed2625ba785c4990da72f4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300539.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "03c0b43a84ccf8924835a1bb688462d79b197a86c59af03164502de1d1cff067"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300539.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "c999505a6f1e2681f9afad3278b263279000f99cb4709d6040e96b9e7ea5e89f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300539.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "a0d7d0a23068447079e3504baed2b7d927be56a47e231e363f97b31994222d24"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300550.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "ba7cb676a3a9fb58a24ba94ec9cc749d6a3c5f34884578ae93724fc1ce729d0f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300550.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "93a5c0cda63427a80042b4740047e642ee4d667a81c415a5a273313dfa61e570"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300550.SZ/result.json": {
+      "bytes": 1060,
+      "sha256": "46b79665791ee777c7c68d7d4cb83ab069dff7419526172213076f4e24d6b06a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300558.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "7d562fd25707c9c42bea78e1fd54c11c1106b55da246e317c72cf7b5c9aa67e7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300558.SZ/response.body": {
+      "bytes": 45367,
+      "sha256": "9bc3fae564091ae58f6a057043b41b41fbe3ce16e64541cba66204b1ed91f0f2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300558.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "72a3f8edac00eb8f3e8589ec86d67192407f408b67937847b5992a960fc1699a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300568.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "25ac42b9668cc594db5ed770eda03bdb22809a3c797a36b1eca00603e468e113"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300568.SZ/response.body": {
+      "bytes": 19888,
+      "sha256": "46cd6ab633fe723eaf6d5b09d014ea58f3b4b92b568f9f6a843828b40abd5492"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300568.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "930b8b1a7908df7177caf639a07e914e88c1d42aea9ae71699b39f3ebf4e80d4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300585.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "9bd6a8d649e127307e12e7a55a0fee7c0310215bd096883cd32a2c729800c033"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300585.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "71453aec2f2fd378a377e5623b7cd7831ff6f0416174b0df5cec22e672f615ec"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300585.SZ/result.json": {
+      "bytes": 1060,
+      "sha256": "ea8cdbddcfa896643d638990c7736b6db73c6c49cd7c19151627ca485003cb64"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300616.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "32976b5b71abd28b8dbc56a01ca4f08dde1fea48466a5b8f90aab1bc7033034c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300616.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "44403d039aed25ddb2070fcc9e77fe8410b7635317e7657c785487dd87e169e2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300616.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "9d05535cb68b9a0ec0f82e3ca4f689d899c519dca2efdde46bc3745318a55b46"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300619.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "0b929e82dafaf7d3281258401d55cd55480f38239b0b640c604f96d872aff438"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300619.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "8fb9ebcc40d930a4e04a5114cd2d6272e667c2a60cba1708d2b426fbce44685a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300619.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "7cdbe4ca9e00b31145a9741c9ac51290206ee31e216da471462cfd2f5bd1982c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300630.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "eb6ab9870275f75b4b0d64d5630ed67a4f60e547c82efaf9a2b4329f3f037720"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300630.SZ/response.body": {
+      "bytes": 45183,
+      "sha256": "c20b65a95ea46a0f3cc089aeea8855004e7022acf1b06ea851205a878ff2ef0a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300630.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "57372ff69b6b66051bab17454f1eb2dd42a011af459bf933efea2caeff95f585"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300659.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "61d30ba765fa4b81ed47a5292dd7fcffac0301a338db7a190717650d85ab58ee"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300659.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "e1ed259067881e640cca0be6dc628e09db951519658f1092e7b939a652829e22"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300659.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "d0753b10512b2c949792e67065c540eb64e6a4755df93d1eb191cf336e10953a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300677.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "2a912adec53e6b7aaa08860108e6d766574fbdb683d3217c5dcaa1d377b7007d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300677.SZ/response.body": {
+      "bytes": 33748,
+      "sha256": "61a7e363f00b77669def3c854735c3689e83f3e4acab72713f14ce185ae3d721"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300677.SZ/result.json": {
+      "bytes": 1090,
+      "sha256": "9e7f2de744de9f8988ef51da721e91c8496273888c30d32bc27aea69ab852eec"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300757.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "60c5f804db8904dcc8e8deda6f91d752840c3ea059f4b73a3a533df6d54394f1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300757.SZ/response.body": {
+      "bytes": 4630,
+      "sha256": "3ea6734d85c936f81f85baac15d86e5d08287a7e84c01e5e07a4bf715c7fc55b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300757.SZ/result.json": {
+      "bytes": 1086,
+      "sha256": "7fff0b456f34d397b9105c1a6a158db09ec21fe0a63f8fce78d1ff53bd4aab9f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300763.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "5eee4cf512105a4b801604e3b20e1001899ab0f68ac0c537085e58fdf5296824"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300763.SZ/response.body": {
+      "bytes": 22531,
+      "sha256": "832ecee9ce2235a311f84d418fa0347cb83d5f720ae9a05ec47af11f67d3979e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300763.SZ/result.json": {
+      "bytes": 1091,
+      "sha256": "6b8b8f20d75bb6d73a32221507917fb4330b9f3d0ab602d263246e81422fc249"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300785.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "45c3a2d0674012f1c5f2e83926d8c37dae34e58fecb66e2f688bd907044352be"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300785.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "6b4e3f076194532c58a5481b4a4bc7af82ed4a5e69f273086ecc1280fb99ddbb"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300785.SZ/result.json": {
+      "bytes": 1060,
+      "sha256": "71ff149248d07672514285ea6dac2f2ae44195e1e4e4a327ac853e676c9833ed"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300795.SZ/intent.json": {
+      "bytes": 456,
+      "sha256": "654c9e1c239edb6042bc5e29dd47d8b4b5e61d91ebe19ba846bc062c7c01bd4b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300795.SZ/response.body": {
+      "bytes": 174,
+      "sha256": "cfc21801a782bd777882c1b9221d78459cc90f508acca0575291815af20c519e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_300795.SZ/result.json": {
+      "bytes": 1059,
+      "sha256": "b34565b7a3493ff67bf2f71546a9df540b8fa2d307a828b2fd1e618c7cddeec0"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600016.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "1e64e6ef4da2508734f660beec67a3c1f185b3c0bc9052c81d3bdda24c7a8a81"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600016.SH/response.body": {
+      "bytes": 46419,
+      "sha256": "acff12cb42f2eac1727f38b9d88553284fe51a32766b2a289044e4035e887871"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600016.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "50dadfd7665d7595df804f2b9c618cb3cb9176e6b1b0db93ae9aa2f517720fcb"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600026.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "2c316d0f9730977dc185f42e9ac965a7675960009ea32d3b43be29fa5cfc48d2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600026.SH/response.body": {
+      "bytes": 45202,
+      "sha256": "9c087c76bbf5816757ffeb80cbd74af4cc445349ee42e3a7b63abf74ef4f993f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600026.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "70be5b5684ead7505d2778c93a4445d67b7f4f781c7388d770a70028742c3e03"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600075.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "7d210a18cd5252d6a7727ef376cc135acba9a1e2d1ad28e553fbe3b72a7ba8b8"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600075.SH/response.body": {
+      "bytes": 45170,
+      "sha256": "2c51376a35e1d0f984d30ab8f1f1cab7c6fe6afe543ce175be31ef5e8e70450f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600075.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "335bcf01835cfa7be3e8f50f2b8fe3c9610c30e7380f28d9ce21b3f3275b1416"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600108.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "c0ac44880d776e78459b5346ae96ed5ea6a82681375ba31929dea13508061446"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600108.SH/response.body": {
+      "bytes": 45202,
+      "sha256": "0534235532b412e5bc9e7f4d56a42ee3a9be0bd7269f722656fa4d06943be44e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600108.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "31af8e48cc3292565a75b44924271f8d0331fbbf5db6fc4b68c569e1f509bbb9"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600112.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "e7a017499c73665617d38e9c7a90d44008d99f3857c0e9640ef9a10420c57824"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600112.SH/response.body": {
+      "bytes": 174,
+      "sha256": "48afb2874badd0218f2f56ae38849db3a4244e5005c97fe77644ee0201f3d62b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600112.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "b6f7065df25bf89fbfe987c49d00436775e3ac2d2663debe0dedbdd3a9ef9400"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600121.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "e31bbc8ba92fde13cf7e2fa3496b1f6805699148870684a06262343151dd9a88"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600121.SH/response.body": {
+      "bytes": 30933,
+      "sha256": "a00e8efc0053ac8f553b4eb4a384f63596fa93007b0707b3dcb5c342df80a865"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600121.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "e03bb763c7053729c0d4a32311c2be0f313d573df1de9f10551a5957f439e1e1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600125.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "325f37c1e032e9c85ea0e66f1e11bfa6c9dee9839e909f1b030ee5646b4a80bd"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600125.SH/response.body": {
+      "bytes": 45202,
+      "sha256": "6176be3e75bb7c39e3fbe8dfcf6ea1dd0b383ed3181e0dc69432b55dd80dc104"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600125.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "1e6467c2206d079e2300729c8925751dd609b71523f3a2a4616dd4d2c1fc7fdf"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600157.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "c31606c177618c9ba4dba6f9888dee66fd33f7bbcc723a27e47c32fc07120500"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600157.SH/response.body": {
+      "bytes": 38483,
+      "sha256": "9accd69eeb144feb452617020648f706725f13141b77999e5a614226f6f94f4f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600157.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "53b4dd411580ee4130a9732e137f2055ef7d1dc1fca1dbca41bc5ca19af1009f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600173.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "e9aabc6a7aae3e2809644c096c02d17c228ac1195d0045d3b7c8aae7186bc496"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600173.SH/response.body": {
+      "bytes": 174,
+      "sha256": "dd01d2dd6d24af0c569cfe71b47b0af4342824f00964e555c752eae5e737fde7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600173.SH/result.json": {
+      "bytes": 1060,
+      "sha256": "05aa51eef5ec399115b45d664a782d77abd59112a9628210aa182d227b3e2f0b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600208.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "b9df00d22b2774e3df8aa2460a573bedf746a87d3cd47874a98cb58e96a2613b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600208.SH/response.body": {
+      "bytes": 45347,
+      "sha256": "6f782f9f710f4e2e8c97ab8a1671c613525272160b9bf6512d42cb7f19835832"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600208.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "5a22d02459f8740d8a0e61a43c168d4c6542ab310bcf8265eb21e11689d7da0d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600215.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "06d535cfa7d4583f750cf6e9dfc61895b8075be7fcd922c64129a27cd3f1c4ec"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600215.SH/response.body": {
+      "bytes": 174,
+      "sha256": "8475873ca6bd7d3962a9e49b12f5ce831cc4f6c028a3dcdf6da31dd0b711d360"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600215.SH/result.json": {
+      "bytes": 1058,
+      "sha256": "f29db3691663e626a085cb8879c5f79cd37408c344a09a25761a486d39f78f97"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600216.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "cb6003fb0c0557508cd6d01145d34b4b9dd4ff83bcf2f151f9d14f76f49c019e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600216.SH/response.body": {
+      "bytes": 45242,
+      "sha256": "c1a5c3ac35d317b258e972f4adb4214dff074617881dae0b339738124c30c183"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600216.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "84de3f35deb1256fa2be89727533a5511ae463c138b510a64a6db2f04212e3c9"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600226.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "7bf62d0ecb668dd00f8536f4025fde14b02f2951bf6376cfc62a695028ff26e9"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600226.SH/response.body": {
+      "bytes": 4724,
+      "sha256": "767f8f810db020e99775244c892c165bc6621c030059348adf904a2fe5290dd2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600226.SH/result.json": {
+      "bytes": 1087,
+      "sha256": "26ce88d8bd7b7f4eebab106a374a4c58457814f76e8131d9951817f9ee418307"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600231.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "ce80a4570cd68a2a8f6d8c673bc85fe2fea7228b6b34506e53ab1b6f71a881e4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600231.SH/response.body": {
+      "bytes": 44680,
+      "sha256": "30e45ddd94bc8b3cf3abebfdd0cbc0beee8fab23eda276001e946fd932f5f08a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600231.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "87f9dd1604d610e345e93d4d497004c51746be821fe332d1e9445ac89a3ea7d2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600240.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "e8f03d7de08534945b9fcaec35fffab99abc14f2c1b5b5d29695ef7503302167"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600240.SH/response.body": {
+      "bytes": 174,
+      "sha256": "4b726a88ad1b8354937ca17c7256146b5143cc9e8be2e180b1fe5b34716f512e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600240.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "c02c805eb5c2ccb65a3627170455c7035d4d00eada3310e87ba10098454de7ce"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600246.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "06faa132d4aa6105af61d909dafc483ed0d0c249df6fc82b0d782b4cad1e6c70"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600246.SH/response.body": {
+      "bytes": 40375,
+      "sha256": "d38d86e7594977399942fc27eadb15e572a7a7c8f17e3819bbac0842f8093137"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600246.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "6b9e7206c388bd75c1e29eb9600d691de7750f3b81440632df17ada5f730b170"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600248.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "19d5e07da35d3178dc45364089dc7c2e9511ddbd758505ce02d7b1d8ec4c022c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600248.SH/response.body": {
+      "bytes": 19813,
+      "sha256": "dab373e658c657ea52311fe3bb0a53fae1ae0cb45ea5998ee13f64c79969432f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600248.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "42ee0210dae08f53d31312508ad69368ea0977fa221dc4673559ee4eaaea687c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600262.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "2dfbaa088e805f1a21af6f44a523d10522c105d2f8759b9c63b8900dab8d977a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600262.SH/response.body": {
+      "bytes": 174,
+      "sha256": "c0c49196de4f4f848c07ab4faa2e6b75b8f9278873ec6d6387d6ab3b04ea93f2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600262.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "4f1eac4ab3c5da5679b9b08718a50ab63fdea8f21adaa0ba64bef9c6f59cc84e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600280.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "312be0d54eff7eaa89583b8d905232e93145e37d75f38fcdab94440efdd579e0"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600280.SH/response.body": {
+      "bytes": 174,
+      "sha256": "043068a0d249ccfe3806a1602e19aa922f1d7ee3f11549754cc25f5d4f6bd73f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600280.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "6750c4c970a61427eb9f474a00f2f74e82dcdf5a0704c2b3b7d48749a951a426"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600298.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "2279dfd68daf970ca7ca29605cefeee90466cbf8a021a124f2712519d943031f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600298.SH/response.body": {
+      "bytes": 45237,
+      "sha256": "d40703574cb188006a66b4d89aeb4199b69538f3042f3cd0453fe672bdef0827"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600298.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "17339bee13da0bacf9026ffd3f2a3da6c87120f57249e8d64be8193d38fbaac1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600303.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "ed1ffe48c1e0d137c56c88475edfde71eb43b79bd69825d9b6abd5dadfe4f8e6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600303.SH/response.body": {
+      "bytes": 20871,
+      "sha256": "5c1b3c4354816f8ae8e61c19276b6c94b1a7099c3e5eb74193b7b10a1e48615c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600303.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "1809861d425d0eaa01b1d8d4c70b65839e604951fbce1c3d1437616ba636a8f6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600305.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "5da7faa64c2b1aa8bf7b053004ca2a5416c54abdfb04f1d86cea3f9608805842"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600305.SH/response.body": {
+      "bytes": 40351,
+      "sha256": "5eec8b51feac03b293ef991ab8a46d4ce284f5a1fc9b65b053a425888c51b0ac"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600305.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "a6b975505c2d1fcdaa7381ef49e3534f2400b362ac3e1bb9b0d6c25ecbfc4a0e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600308.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "fb91b91cc7367f1a2fec582ea22b39f25db9e987a3afd1e00eecef1915a71202"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600308.SH/response.body": {
+      "bytes": 45187,
+      "sha256": "605b35e00dbb17e76054456efdb895a70f35ad7f981a598fe7cb702d5002677f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600308.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "1bf5e9668a45752c2bf22b1fd5c543043bd375510c4759e2479827fdf589cb5b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600332.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "cea91529c34ad97cf9beabc5ec14cbc16808012cd135206c36ce31ef55f3b24a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600332.SH/response.body": {
+      "bytes": 45859,
+      "sha256": "f8d826378254bd624ea06b572a6c3dba89c738c2243273bba81806b750caea20"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600332.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "f6c16eb96ca6b63897dadc697fbd8a838f3c41c1fca2cade5f6533c83a7ccfe4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600338.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "dac6e56430fb15e1179bc8eb0ebea3fc369f1e427318345892370d48362c2cc6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600338.SH/response.body": {
+      "bytes": 22547,
+      "sha256": "2b3a4c6121ad67f930fb5435049607c3500f7fca0d594172f7d2b3ea67a2e7d1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600338.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "deac4db3b78bc596463f8e5c5a1ac6a1b2df29d985aadb3f768a451686d5dc6c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600339.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "201f3af39f2c6158a56cf8cc14da13d4bb34780928141a41da6812d580bdc94a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600339.SH/response.body": {
+      "bytes": 45202,
+      "sha256": "48f463ba3d61eca7c00bf6d3eb1e2cd548d36a6f502856196b5daa214bbe7348"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600339.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "26f492a451b671fd2318ac12ddd949c5185766b62f491282bdd95efd239194fc"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600351.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "78646527bf5a07acb80256eda81dc461edbdbf5eff7617798381fe0b861c3c57"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600351.SH/response.body": {
+      "bytes": 45063,
+      "sha256": "fb4ab15a3043a4ba28375514588f3c1ec88d2b671f3e011a32e3071f5405249c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600351.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "5195905afebf3fd4cb6ad2a212ec064598f3eb346399a27071c1b501a9a832ee"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600355.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "8c2a8111d9a9c2481cc60926dd7feff1be04c391093cbb8f3b3e807436bc1032"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600355.SH/response.body": {
+      "bytes": 174,
+      "sha256": "6578409a04e82acd5c94308ac7b768ad495789192bdb82fde6f8c0e910f1b23a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600355.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "60b810efc72e3c2361c2aac32e8138b8be66ad04f866a0ed3e654b52f151f5d8"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600371.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "1d8f5f068e98f580ef8e8b5dc3399f77ddc292d1ce9548de27d5f1ae7298cb0c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600371.SH/response.body": {
+      "bytes": 174,
+      "sha256": "06ab16beaa426e8f977021876fe6628ce7695fadcb4f4fd43c083e450bb2293b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600371.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "4dc7748d06ae4966ed1cf35f6333c5e643ce778739462e73e60f518af1698b1b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600410.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "ce237ac931ca2c8b88570116fe6dda1777e0334f9c0c534103fea95f0f82aa94"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600410.SH/response.body": {
+      "bytes": 45394,
+      "sha256": "165001b7e5b92a3536f92e7e89d7f44fa72d443fc37253fd639be91998d326f0"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600410.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "42b1fdbc6b352d5515fa1702e6ade9013874a6b3c9751a44dcd3e81d77477f54"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600448.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "296ec15cedfd6c0f050af611881d3027b4e1877aff56f1ca439ad0c99bd0593f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600448.SH/response.body": {
+      "bytes": 44829,
+      "sha256": "1f1c859a4c27a477876154910c35c9e22bbcd7435b3bf2f8086673f841d0abf2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600448.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "0bfb06e67d47fc14c840fb4801a2b7a1dbab93ddcd1c2a22550117e7998cc014"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600475.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "a753cb23101ac22eb1e68cdb4c984f6e7b9826dcc8678ac69132f0c2d86909f7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600475.SH/response.body": {
+      "bytes": 19634,
+      "sha256": "470827e3c56c486ca5d9fa3f18c673a8f954f16dc7a9fc905898e79ddc2cf5a4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600475.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "36b06285fc8f8ce8a5617c2ba077c31636407bb8af1fd433c493cafe69fa212a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600479.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "83d8ebee7372e2805629b8ac764689d97e6b0563a3dddfde614cd0c077677d97"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600479.SH/response.body": {
+      "bytes": 174,
+      "sha256": "6f4339aa0a9c20b3d5e0e86dbcf9d849d825d5b905fc86a61e27743a2629bc35"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600479.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "9208a3fab1fea41d07095cb1dd8fed29d2661171bb7a406657af22926a9f85f6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600487.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "8118be2e335c669177369c1f7d7eb4804b4923654c78633f7cd3f441b6b54a13"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600487.SH/response.body": {
+      "bytes": 46290,
+      "sha256": "46534474511cebe32d4c75ac5724753632d56539a99080b5d0685e7e84c76952"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600487.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "17250cbc5083323d0e2bb4764a07c30fa35331474d39ea14c195ac13c05f2598"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600491.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "3571736f6ff4275b51e4f2fb3e6d58f5ca31084a2a7fb70fad97748bca4c345f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600491.SH/response.body": {
+      "bytes": 45202,
+      "sha256": "27a64e4e76228c6f258f0f9fa0d58c3ef0a820df3496055e609b163532fe71d3"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600491.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "411ccac47f828ace5d2acea871102021d9b99eb13ce0709d8e1f8c10acac8738"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600497.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "b7817193a6df1d208478ae2b9ae74e59011fc4ea50938e005984042fe4e6661d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600497.SH/response.body": {
+      "bytes": 45713,
+      "sha256": "7c15307ce926f4105fd197c359394290cee43764be38d20598571bfffa656d4d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600497.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "5ebbfde63c9ca3cd7b87a677a99a7e4ef879e5cfd720721f7b43218012ec7420"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600522.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "332582b00e5fb734100e64aa819d3f4fb930f240de180d4a86d6c2f0dda7d54c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600522.SH/response.body": {
+      "bytes": 46419,
+      "sha256": "39b52eaee2baa802f7d789008b6962f8fe40d67eceaae36d51ba55324e385695"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600522.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "d450ab5ecdd299a1e43ac5eb151248db10ced26b9832130364dcf72906ffc3e1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600545.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "0c3cb3a499ef8430388a5e0a2aa72713824d0a587643734ac30cfa9e90cc5aaa"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600545.SH/response.body": {
+      "bytes": 45202,
+      "sha256": "bd5a4cff274adb22a508d860e74338ca91d46b4ba2588e5c6ba5f9afadd361f4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600545.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "e70452365f4bc5ea4be76a4a60a4bbee808f9a5bc4b9f2c745eb35f3121fb3f0"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600588.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "190b2cc0b970d0c353e2026e0f1411f93ee004d1d9f3e12703402d5c71c34ae0"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600588.SH/response.body": {
+      "bytes": 46419,
+      "sha256": "44188213fd08607451c21ee3ec6f2e578d2a71111004a8ff345534efd87738b2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600588.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "c01e53243ba774086c539f5323e48a463a98fa79652f90e7a2f2fbdd652b857e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600617.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "d300b3401cd7ff74db260823f3a2ccb713a8f2078cb2552cfc0fe5203db3d67a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600617.SH/response.body": {
+      "bytes": 44787,
+      "sha256": "447774ac304c1708974bcf2b348189447c4971dc13d85297dc5a4896d1cde100"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600617.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "3927a86ee96860daab3a04d86adf7d32cba488fa038d8d95d274390c6e2be98b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600626.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "0dba0149858dd509319f4d6ba3d35fc5ddc1dc75fd40c0b4c2d04ec3fd83c040"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600626.SH/response.body": {
+      "bytes": 45202,
+      "sha256": "508f3c8ad5a2c57e49358e590c3dbe70e1013b1df5f026db20a67c5fde16060b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600626.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "541f2f2f087bbe8fa3cecc56ba21af21df77707bcf63632c44232ad4573a57ed"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600630.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "f6c11e943dbe0f9c3d10829b54614a1e5a0162515a513a22c7c0dd4ba19a79e3"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600630.SH/response.body": {
+      "bytes": 19620,
+      "sha256": "0487db542343cd150f70098eb295001bf7e4d3da818c0c904a263bf70956cdfc"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600630.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "1e30effdee1ba75b790771d9f5f978e6b6ee6a0a6ebe08ebf372456519e4dec1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600633.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "0d9c51068351be8b5093b4e7bb09c275d84e64d820d4a540f9b839f6f228e37b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600633.SH/response.body": {
+      "bytes": 45202,
+      "sha256": "fa7aa6a9af4d21fafd38bbacfe5ae55a23b3db65a7e622b768c3c3285a8d2183"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600633.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "b94ed1ccabf3ae3073c9d8289f428e1c81c6331ae55ae7048b6484aea717824d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600651.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "fa6dc398bbf66abfc59daa33476b1b3c1d82871705c243dad4863b7f20481a8e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600651.SH/response.body": {
+      "bytes": 3318,
+      "sha256": "1e3cf77c1d24a5e55b06c4eac2e3812048c9aabf4ce00aebd0369abd4d0039bf"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600651.SH/result.json": {
+      "bytes": 1087,
+      "sha256": "653e92ad294d1069aecc3d481698ba4a27e945c0eb9d43340bd51aafb7d54256"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600653.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "fabceff6c82ca7452ff9b89d7268ac8ef16857917e78fb3e8dfe088b0404e282"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600653.SH/response.body": {
+      "bytes": 45100,
+      "sha256": "bc5c1b645d9f181e575fe5e54275aaaaca56dd3a7560b2afad06ea09f32ddb7f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600653.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "105be1a2153022a114ec1c1954b6cef275780c22a7f34ef5e32f6c89f346e5c2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600682.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "f804acc26a6b062070308568a8cd0f8d7f399cfc27a0ccab17dfe19ef1af9396"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600682.SH/response.body": {
+      "bytes": 19819,
+      "sha256": "620491d577ca35c29893437c9562a2a19cad60a1a6a99c2d4a8ec33d10a55b0e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600682.SH/result.json": {
+      "bytes": 1089,
+      "sha256": "393ff016622838bd850c0215fbed082e640ce22410d91d998181a29f2d63ff8e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600726.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "7e1921510f5a737bb270c3fb177bb01b5b4cf9691d068487e478980dcad0bcde"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600726.SH/response.body": {
+      "bytes": 174,
+      "sha256": "dfc6efbb92f905aa2b2d71c42e67260eff79dfa2fa75f7a1106706ab5dc7ce79"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600726.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "38a4031abebd1720f48b82a259e0dd6aed0b2a8d7657e9da134e0cdcf7f41775"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600732.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "d0dbe123646819be3f14dde7f0d613a7b942b206b7f133cd79fce5f2024b05a7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600732.SH/response.body": {
+      "bytes": 20331,
+      "sha256": "e3a44dd4a68aea48ed20a1803bec91b9401c1949fe7ebd73c5d0e8a125b24a44"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600732.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "19b37986f81ca4cfdb6114fd13e77afc9e113e128ba38c4074a6aab17b65f534"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600735.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "86fb12ce1455446468796bf794203c21c1eaaecf55811bd431ddda32d2eea3d3"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600735.SH/response.body": {
+      "bytes": 174,
+      "sha256": "014f26956528fddbfa10853b82cd5191c8cfaa4fe23b962a261a291e7b2302e9"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600735.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "6791bf6cba939fd83f37920dec6d6fbb2a8226e230869d2fb75bdb7b9e758fcb"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600753.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "b00858a90a46bf13859588b45cc4a23329c2743ae0b0368e1f2ccd207b6d2f0d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600753.SH/response.body": {
+      "bytes": 174,
+      "sha256": "1fb78540dd35c29301ccc167850d3211470394c330f0742e22ae3f6eb8e9c6cb"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600753.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "1a3114dbef923cb2d064cc4e2907f358ce98aa266b25ac37120396adc779c04f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600763.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "71f04c78e7424c3744d9d224ed418d2e05689ea193ddcbd55b0b07e9dcc277ca"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600763.SH/response.body": {
+      "bytes": 46057,
+      "sha256": "6859faaaedc2b7b0f52d2cb86ca04763de7fcc3e39fcd455f0cb3b280ce333ed"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600763.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "f76c7d205c48b80c8edf7cae60c4c3f3273007dc33e99e59d45c5ce4e4412e9c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600802.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "0bd57f96ebc97fcc8166d215785d66d9700305033baa2b7c1d908291e7c9571b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600802.SH/response.body": {
+      "bytes": 44938,
+      "sha256": "3f70c8a08f9857542afb5a00558af0a093ed31c394b5b554a4bb288030656e3b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600802.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "0ae02819d69c6129f459e23e192339b6278db8558bf2b643d0d158d7401f3e36"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600845.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "ed0da1562941105c643e24ab2f5d067efc80d9d5597847d2932b447895ffcb47"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600845.SH/response.body": {
+      "bytes": 45196,
+      "sha256": "f468cf5385033614a2a67d19feb324819d17179ccf5e4a2482c99b435e9d6105"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600845.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "71126736eb08c076f0c60c4135f4d5fca1245f7fd46cadefdf5326c1ea6dc681"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600857.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "25a8107559b4a66828fd2de39d74165503cb545e05c73468915394d644111589"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600857.SH/response.body": {
+      "bytes": 174,
+      "sha256": "673360b3988f2abfd6a05761d01a07d8c377ece5fad039810e8e81c87d2f2b79"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600857.SH/result.json": {
+      "bytes": 1060,
+      "sha256": "628dfd87e6d673ac31f744cf67a1933358bae994b99f43ea46fb7443620dd319"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600883.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "1aa54f47a67ff63cef1f7b6928a168bc3eb4821a8b1536f0fa5816d4ec8b7423"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600883.SH/response.body": {
+      "bytes": 174,
+      "sha256": "ed6072a355cba8522ee5fd9b39d15a13490aa35cb0d0392b612e3e016df4f57c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600883.SH/result.json": {
+      "bytes": 1060,
+      "sha256": "cb809a0e42b2369db83665c1ac0aafb348b417525576e6b77368ec18694e5c86"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600894.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "dccd2045eda570be4f29337f8caf7799f52ab2ff436ff60774db0ff620c595ae"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600894.SH/response.body": {
+      "bytes": 45125,
+      "sha256": "4be6ed29f3323a86e3a7291a32e2d8b3c5990b93651f060d61981e33b9d2dbc7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600894.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "f25cf8706274895efe64dadea4a8f0631ab49de5a3bf0c9652a1c3bfc6d8eaea"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600961.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "681b0ec3f6188e6693a2d791d3421ed6386ccf028f955f4289364cd88a01eee5"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600961.SH/response.body": {
+      "bytes": 4516,
+      "sha256": "78a3d65dc2a1c4ba4613046cab760ed64aa238606b05345b0947b05a7524b580"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600961.SH/result.json": {
+      "bytes": 1088,
+      "sha256": "0b469414cae352a2110af2005a0072a510c97adc75b98b66c3d336d74467f056"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600965.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "b05ae4b0c723d0479d2e9c80dcdcf559b91349a7a6c6d8792ca3ccff98062f58"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600965.SH/response.body": {
+      "bytes": 44470,
+      "sha256": "37d3fe65a1c24266f0c99908580d89c2b468571f495c9e31dac3782c0bcd3c6a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_600965.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "6483ffe365d4beab88426df43d6a96eb7c9593d678d6b86e2f008ab1ea002420"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601009.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "de6f3ca53d47794bbcad6454e6010c7388c0d90f28dd8def005f45294447e983"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601009.SH/response.body": {
+      "bytes": 46116,
+      "sha256": "9d6ca52dd069a33e7835283312ce0335e6f72b0adfdfea3a1fc4a6c279e16486"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601009.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "2d427fe582bea86ef242cf717b1c5a2c88b6e2d619a910c77a832715597e7e7a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601069.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "30464fbb7e4803416b9d72acd8519c1b66fe0725dcd9e2397e4dd043b509ce24"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601069.SH/response.body": {
+      "bytes": 45202,
+      "sha256": "fb5218380108a97dd57d19b02213ac5b048b0cc97506ab2533a3d0597acbd895"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601069.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "3d64db97c79c0ccd49bab800c76e211d24c6c565ada2a70463b2f57ce13550f9"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601126.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "e8eee3315c683604237ddbcd80c00b2df817dcac1e2fa7d0405bac6ec7ffc788"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601126.SH/response.body": {
+      "bytes": 45202,
+      "sha256": "0fa33d689930db81bae80b280d6789c380f5e757683932d4f267c18d9eec8ddc"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601126.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "b5d385b6bc63ec115464321994146a664505f09014e98169ade383a1c807f300"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601139.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "fef4841e0bbd8602acaec863633f67d6284d1465bced806cac0f412f5636df1d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601139.SH/response.body": {
+      "bytes": 45198,
+      "sha256": "3393ca070571bdea6e31f6c8164653abd770d6389bd2e8b1934e5702b688918c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601139.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "eb7400653da389a04f7d9c62eee0112024ae43acb72802a8f02e28f55bf9b99b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601318.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "a533af934ab0d26d867a79ed1027c81736daa57d74259123541c3a56b34a49d0"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601318.SH/response.body": {
+      "bytes": 47636,
+      "sha256": "02087abdcaffea9bf28bc47b22c0fbab04bcb6ad7c3c5f56828a770a4c6d87ae"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601318.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "10b6fee20b316a157b0bc274ecca1bd88fc515d340b14596b725871fc159ad5d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601360.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "c5cfe33f39084a1306b3bd676b01191f24be4b5d3f3f029f1f142d13c809fdc8"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601360.SH/response.body": {
+      "bytes": 46297,
+      "sha256": "c19eb14e4478990d76afeb2c5154bc8effd415e4070808653ec7cb94b226074d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601360.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "5cb8f9060ce9a77f9ec5808cc7da3be52720429e6c37538aeb3f990abd531066"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601390.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "99de476dce0ae477f33db34d89a9ac8017a023f71c0b90a349c36a2a429fc50d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601390.SH/response.body": {
+      "bytes": 46419,
+      "sha256": "7841787b86fd91688b4be729559faa62bb0c5fcff6f9ebfe08b87c18d67dd2e8"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601390.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "fcfaa9db4d5a57575c93c4c69d3017c82c034825ae234fac2858c87fa0dfa7dc"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601567.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "0d762ab5071a6c1c686de79ef8297194952693af323719c0739d3caa09db5db7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601567.SH/response.body": {
+      "bytes": 44983,
+      "sha256": "f4c5de870e1ce5eeed8ca946dda51ebe77711b5af81b116eaa9919b66b0dece5"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601567.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "4008a4818d199622712ab44caac40edb0745737afc5b329131a9303f1143d240"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601579.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "fb99d454dc11c61d7dbcabd8525781303013f76812cbb25103794daf37972c97"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601579.SH/response.body": {
+      "bytes": 19752,
+      "sha256": "f21f62a826763dc7e0ee50cfd3fef739c2c8fabc7f2a0d3164e5a59e12b3ee39"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601579.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "08a1d7a3d23c06b8eb4fa2aadd98a81155883958a07d31e2e4f97e0d4443f4f4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601588.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "645e5d0ffe97cf8fe003d05c3846a3eeeb1f0f8aa6a56ff501c369d87d5772f2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601588.SH/response.body": {
+      "bytes": 45202,
+      "sha256": "5068b25d23c8bd215b8e66698c09eb0dd5b2ce9e171b71878b121412a9046def"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601588.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "0a9d578758672c380c72c9310d9a10617092119cbd4ecd385adee2575f048761"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601608.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "c6025f3a167d7e34993448ced57acaaf30fed3cbb71154e3fcd57f02ab21479d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601608.SH/response.body": {
+      "bytes": 45202,
+      "sha256": "1c4b51849b4703ca60b37019eb3018afe22cc59e7323c3708aca320c0894f044"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601608.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "b007b523e03c3d0c08fac6a863d6b6aaef21a9ede0f41526e69f59e0578ffc5e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601658.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "500bf102ad896b8ac2d9721addbf31aad41c850b5a3dc1e678ca0f84dc54c05d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601658.SH/response.body": {
+      "bytes": 40839,
+      "sha256": "6f7ac835029b0782454bc69fe36593e2041ee99664a2d15218422bfbf8f7304f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601658.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "b7a307c41d92fd56df98613d07d155180d8bebee2171d6e2a0da91cf03c760e7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601668.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "22018878875d0bdc7e9f3dc070500e9bfc1b249deffb0cf11e11f325759a1402"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601668.SH/response.body": {
+      "bytes": 46419,
+      "sha256": "c33386027a8dbdda788bcedc108e827fe8df05e37fbe31a3fcb773b6f4e41d12"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601668.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "1e0d955a7bca34d95b9ab1f474274b6867ba8090d8b381d48679bfad7dd0029f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601865.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "bf96b7a6df31aa06da55bfe4959c4150adb2e34c4f4fa95b644156a25f8e9dbc"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601865.SH/response.body": {
+      "bytes": 45082,
+      "sha256": "c4356ee5fe0e055c7922a44ebbd3f51b01ed46f1faded4e064cd9811825719bc"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601865.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "2ee9d15c0b3924667dd18f8b44424e43351806085507c672255dca39cea53cc5"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601908.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "0da93cef34d4cdfdad68e42f7397970aee6aa95d70103a3f3ff649dc8f1f2291"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601908.SH/response.body": {
+      "bytes": 45432,
+      "sha256": "76ebc94df04b62f83d96ff35971db839c2a04eb1460d8b8c377f1a7bac711ef5"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601908.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "acd8881ebccbd0e5960b889a53f486a61ee579e302a61b041c904ba8d004a25e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601949.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "ff8fa745ce3f21aee778b7005226144294a9011927fc7e4de2206e974ed6a43e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601949.SH/response.body": {
+      "bytes": 45132,
+      "sha256": "fe142cd3a66102ea373dbd78dc0a0c6e47791d519cd19e3200f47fa71558028c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601949.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "a2b4ea7c037d50a50614ce23a7428c6acf2ce7dde58d1e500eedd82e0cca283f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601968.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "ab2f8eadb9d3416772371a127be99d1082d43716e8f89ea7bbbba43d5d646c1e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601968.SH/response.body": {
+      "bytes": 174,
+      "sha256": "8d05f303467362c7513c901dea23084cde91a0b0c1b46002f13645c97aafe2b0"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601968.SH/result.json": {
+      "bytes": 1060,
+      "sha256": "de0afc44981ae6a3a41b4fe3bbf4ea329ac4d1ca45e232d5f9398b1aa221b3fa"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601999.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "1793eb67b5c6cf7d44ca4a739474023b765302c4200c3538f8d637123b011d7c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601999.SH/response.body": {
+      "bytes": 44989,
+      "sha256": "5c2d3e805dec4551c2bb8663054319aa4a42e341d1a781b39ccc493c5964e61b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_601999.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "6f68bd0c830e47df5582a6508c8cd7759a39fda1e9ae10910e22aad567d60f27"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603001.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "e30db00d7f1761ffd08cbb5074578867d8df98354d7c5c794036a5b820e5c322"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603001.SH/response.body": {
+      "bytes": 30112,
+      "sha256": "7e0ebd1474554b54cb330fff3a52a1f313817ca433a2725dec1dddadb89ce4a8"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603001.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "6606eb89d1eacc1cad6cc775f1647bd33664ae75c3e263734e3414e02d720df6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603010.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "de6d2a48f043be21e6e75682a2182c14c866fd023d833782739224875f3bd34b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603010.SH/response.body": {
+      "bytes": 19357,
+      "sha256": "8028f569c83f665164f6f5ca972a1bcfe4372cf87bb4706008542e78c20d51e4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603010.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "35037f54c9d1f0b5903c7d5ed542c436b10049b582ca120875ada1a27b7573a9"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603021.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "a276ee460c54252758ef2cf592ce6166d860dd125217721d7e524d84805cc175"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603021.SH/response.body": {
+      "bytes": 174,
+      "sha256": "4a27c91214197d3c09704c1cb390dec24645d2299d43f66440dada9d415fcaab"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603021.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "5e10ff4b7bb9475b5a90a7e2cf7b7bfe6f5244d05a09e9043eec57206ace71f4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603026.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "9a06c48c5fce44c1262d3e3ffe7638179e29d53fcee2b6f102cf6734202a510c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603026.SH/response.body": {
+      "bytes": 45735,
+      "sha256": "853be56e9ceeb7b868cc0db9a646d24ba6aad6fde9bf8bafd86a9b5e5d122065"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603026.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "1a3ab98e0ff7ba4d74dc1b023a2dd21a8cfd590ad6f496eabfd1ed1f03db1425"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603036.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "3015b9f61b268ae44973728b4b3ee2014ed1e3a0c15ab4eec7bc5522a96b4211"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603036.SH/response.body": {
+      "bytes": 174,
+      "sha256": "061212b3f869a3eadb710c8ced947ded5e9dec280d209786cec9344b3822876d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603036.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "2b90b31c926afee15ef8de7605bdf9731e1327ba9e6d53015b060046f38df5a2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603083.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "3f11e7ae99917e482b747a4a81e9b36fa1c536e56e3082452e40e901be5a59a2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603083.SH/response.body": {
+      "bytes": 45309,
+      "sha256": "afcb5ccbe2b3cfa885d349d3d0d503a7431a0f2096be86bb9c4dd662284409ee"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603083.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "c587be5618dcebf9124efa0977eeb91f4d95e519227520450c61b719791051e8"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603098.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "9ec611b31822613737452c95ea731884de9022311f3410314b948ad23c00e8aa"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603098.SH/response.body": {
+      "bytes": 19416,
+      "sha256": "f3d5141567353f954dc6c6046136fc8e16020ee0494ce4c9e266e450c0d66893"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603098.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "ad4924832b61c3331fd7c36122457bcfbc0352177f3d252a5bf25608efb0c0ef"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603121.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "ddf48acbf9dc168f5e27b1bb503bff26500019c2252928adce885d7fcca51ad1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603121.SH/response.body": {
+      "bytes": 174,
+      "sha256": "176829591783b7f50e1debb86e6e2a84e07ca67cccff5f282060c631c95081d5"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603121.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "2826be5d5cd7f5e4637cff0769bf4e35060e75d5fdf6fa9c704b47f9c76c9c1f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603127.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "70477e4c789aafe189e525778379fd2f58c4cd4ad6983509739b6bba3fdc2019"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603127.SH/response.body": {
+      "bytes": 45202,
+      "sha256": "0e07e2c34357fdd48fb5a5b051ae971262dba37484b4bf7b8095c6a1083dad32"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603127.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "9352bfb1825a1f1626b55ff65d3faeae5d1db9c08531bfed9880de8e69380c24"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603128.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "b71337ed892a42a0f50064091ead0924ceeb0453504017eed74fefc14953da3d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603128.SH/response.body": {
+      "bytes": 45202,
+      "sha256": "76c6ca519cf29b160b19348cc5aebc979ea42700d9b37d25c050b753358cde6a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603128.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "359540ac2c2fbd962fc01aa7fd3a1effc70e4f0de7396134883f69b00af52b4c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603161.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "38a84d1feb98af6292c456b42bd1a83ef947aa4a92e29f6efa6b25dbad246a0d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603161.SH/response.body": {
+      "bytes": 174,
+      "sha256": "24c4afdf66631670c0be7196a025d10e71f3844843945e32df1c2213579bbace"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603161.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "ccad07910c83a9301761125859224f0538c91124b4e9024ef4ca54ed06eedc4c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603181.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "9179e2684e38f046fef64fc4346c7d0edac98849817df0b2465170e3a358b779"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603181.SH/response.body": {
+      "bytes": 19285,
+      "sha256": "fc878bd432c457cbae71a168c667157ed27ca6dd7dfba66bf0f84e8c7a988fac"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603181.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "b0265a8ef5cf26889a986334e432e58d57587dc9da3d0edc05b883616fafc8fe"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603226.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "e19d20fb84f4330a3882b39d5ae3bb17a3cc5aa4e45e7e8ea2a2728dc30db0b2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603226.SH/response.body": {
+      "bytes": 174,
+      "sha256": "9c5c4b535cb3d61babf3b658a6f1254fba21221ceb099307a9fda2d754d7d534"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603226.SH/result.json": {
+      "bytes": 1058,
+      "sha256": "cf43aef4ce457082aeb584bdffe290c0cd3fd4890d37668d376ccebc42173947"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603322.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "6112b0f3a88dd3838c21a04e03d9f467cfc4894bfbe4d0d22462f189c5474864"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603322.SH/response.body": {
+      "bytes": 174,
+      "sha256": "02c03811e58084550307ae224bbf97a85776ea4003763db4dee9a3d6e5c28e0f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603322.SH/result.json": {
+      "bytes": 1058,
+      "sha256": "7183edaac84004aa30d554e6876431bc03e26495ef13ab8daa217cd61d843639"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603337.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "4d0b4daea8b312dc270a0a4e7cecbca0780ab8bcb5df40c08a12a26a8db9bb41"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603337.SH/response.body": {
+      "bytes": 174,
+      "sha256": "e11d348e6287f00c71341e5cda34b50472b3abaf9aa33d24ffd220ee3611ca99"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603337.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "4b13087647f124ed5b354eee65beb6a4b35fb84596a9586d2d3465b76ff15cb9"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603356.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "ed252ceda5343bcd3b78b3effa53e6fd78432736a9deead962d3a36bc3c9e3a8"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603356.SH/response.body": {
+      "bytes": 174,
+      "sha256": "e23609742ab124d78fd8921b6bb7579040fe10636435b8b7f1e01bb80935cc37"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603356.SH/result.json": {
+      "bytes": 1060,
+      "sha256": "e799bbce9a376a4fed176c87af5faad9062be9036932b793efb2dfbf8ddac7fd"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603368.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "19cfefe3fd7123303e22ff3666920e455c06c14b919f6e9f197317f235065e50"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603368.SH/response.body": {
+      "bytes": 45188,
+      "sha256": "c10f01d0c9fa797c97080e5ab30c262f0e1bbca4b88a1671a5bd8342a152208f"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603368.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "769f093d5cd2ebec0e9d2f4fdb39343ea1146ea9dbf6e46f14a7d9a50fbb96b4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603385.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "9d852285414a58774fe5ca64fad99f4274c9605f5a27f5835ff88b495bcdb391"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603385.SH/response.body": {
+      "bytes": 174,
+      "sha256": "f422ac6ffce6b71aad53bfc35d72ecf10f791427f582ff10dbaa6f5c5278b85a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603385.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "8e6d7f8dd3da4b474664db052c422bbd62f9b74609ed45a32b7617ba42221d15"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603486.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "5dcdf6163b0a96b86338fcf430cb6948573771dcc3738d34afc17b97dfeaa72b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603486.SH/response.body": {
+      "bytes": 22430,
+      "sha256": "f306a1cd481810fda2d197c3ee4005cd38d2127f0148ed0185a357117d5950f6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603486.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "39388a455125d60c6e82c17ec18a8b148a60805d4f7e663a4ec8b600965a7010"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603505.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "42146e6260e8a6c502631db34a953605b5ccd78192a7d955648476942f3fc0d5"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603505.SH/response.body": {
+      "bytes": 45202,
+      "sha256": "5d83a00b778eb76df97ecc7e0119f3a6a47de38ef2c88040d067e206605f99c7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603505.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "7e5c4f328f74d2542c555eb5a66161939dcb3979e38d1a585b0b25d1e90b3868"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603508.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "4f3afd23fc481adc3a6792cba966d86ac05cada8d5af5c4d1b6ee5eef04ccfda"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603508.SH/response.body": {
+      "bytes": 45202,
+      "sha256": "4ca18338aebe589e6b03cc29fe76d36b2c16e44a6ff4e8e90e973ae84fe1fa87"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603508.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "7628a658b9633cffa1e4aa0b99df937cf1435ce6290539cfbef03ac6138f436a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603557.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "a4168bf0fdc7521ffdcf9dfc56f6a14fa8bd9322918b854b828ccf802ea08d87"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603557.SH/response.body": {
+      "bytes": 174,
+      "sha256": "a726226076321c9424d7616344616aeb2316c26abb162d868e81270745eaf452"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603557.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "20d6b1643dbbb94d6727ba6c8d7bbd88ea54cbc62960fd4c1bc59399c5279d18"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603579.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "93c357e249b21526486facff97119430d07d8a019b7759487c27759a44599f32"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603579.SH/response.body": {
+      "bytes": 174,
+      "sha256": "a8f6fb55bdf6e141c6c4bd0d79a791c99c6b3bbaecca15084f5c7999340357ac"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603579.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "eb34cd07813ff2092969de72cccca388e035579265bac35cffd10cd94bceac87"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603583.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "7191342dc38b1c3ab101ccf31348e5ca71291e50621818c8307feaa3a3fcba6b"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603583.SH/response.body": {
+      "bytes": 19702,
+      "sha256": "5443ba1b6ab8f7045c36419e41d7e55cbf01423cb497c8d59a64ad41678b1b2e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603583.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "a9f19c5edeb3c350313935af3c47c02dc145105142f4c2219109162a8e9aebd1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603612.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "c02869f864e0b5ce5767fe61b00a5d1270242006b8913668ddb85dd1dc5923ad"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603612.SH/response.body": {
+      "bytes": 19872,
+      "sha256": "c3d34e2892a9bbe75045988330a17a728eef9622f039a24c1d3d9f289731bf33"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603612.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "53e80e4fcdf06dde3100e433b895e3056fda249e5c111f4ccd015798991119e6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603687.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "218223ee96c8754d81a489900f1d7338ca3fb9099e21391407574baa54bd4332"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603687.SH/response.body": {
+      "bytes": 174,
+      "sha256": "d01eb4f5de4c5b6a26c39f336b7e1da68bdd719343529e6cf675ad722f9c3e10"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603687.SH/result.json": {
+      "bytes": 1060,
+      "sha256": "2e3c43eab543b7ce4f7afbc10457961cf29be9dec1ad6ba12b0831e5ed827000"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603688.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "da6243e17fe732106048344ce597b4f974984f3ace6f487efa828829f7722570"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603688.SH/response.body": {
+      "bytes": 45502,
+      "sha256": "a299d7819e8c0c008bcfdf8682c24a70166f9708998ae8f1eb50b41a076398df"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603688.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "60a5a104d99b2897e83fbc4835919a5c51c7b2d0ba20283bcdda9c21351e5298"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603711.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "301cf610ad5a499087b358a5545d7b024b5482032f8d995233c7bc8b87c03ba6"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603711.SH/response.body": {
+      "bytes": 174,
+      "sha256": "b0b4faa2d5bc30b87e3e7af7ef591564b2e4322481c2883cb0d83e6f255b5b76"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603711.SH/result.json": {
+      "bytes": 1060,
+      "sha256": "04574475d9bb250bf3e8c9eaf8398dec26b0f20618ba64de85a0e5ee336feaa2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603712.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "317e743a430b6a944193dd7de2de555d5363efa26cdfe54e0f617afe587d6883"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603712.SH/response.body": {
+      "bytes": 45202,
+      "sha256": "d804f334d9fdf5bedf74c8d47ee807f8619d3f4de5f17a953b0e999917dd52a2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603712.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "863c7ceac90342f1d41853a63ce6160f140882d6225cc2c1dc320de828ae12d7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603788.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "08a01db953c1269dba934e32f28e488855d98ac96616dca612916a3b51e8a27e"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603788.SH/response.body": {
+      "bytes": 174,
+      "sha256": "de9ee28d44b7915dbe89f2d8b7baf4d752c12dbb3ad0bd7f97b64b7624d8090d"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603788.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "4f07a4dac98b379fb22925c65a4a77354d928ba8d69dbce89b69e9fd2525a0e1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603815.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "f0982b27a97159c62d65d1a1eb807225069859ba268fb1e3daad85239e3b34fd"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603815.SH/response.body": {
+      "bytes": 174,
+      "sha256": "62638dbfa25572a43238c9f54887585de5804f6fe7df7f1b52857b28d6f010b1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603815.SH/result.json": {
+      "bytes": 1058,
+      "sha256": "c6fcfae8681327dfab72d44270e0fbc445c82736995c96d89219317d2c34cc0c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603859.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "3d32e2134da499c1edefd8b7445f1e438a15c497b4899a2e4deb328b89729038"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603859.SH/response.body": {
+      "bytes": 174,
+      "sha256": "30f51ab32a2cc40000c9a8f81fa1845b484b0fd4f2237b5f39380109cc20a088"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603859.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "612663637293d5b1d9564894a1eaa5a7208f867f34965e1da49ddf61d2469e54"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603889.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "c23bfe68af4b4da641c14296616b6b0c195540f11373ea9ad6bf043066c932ac"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603889.SH/response.body": {
+      "bytes": 174,
+      "sha256": "a02fd1cffaac4eab56a58c02b28deb1a875972147caca26dc75411a95ac886cd"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603889.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "c5b63f71c44a9a27c98d015c378be9bcb26e6e4bd4bb3019c538920da3cf30c5"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603992.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "68807124b4c41ee37974f668881f54f3002db8051d91dfedea9bdafb61848407"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603992.SH/response.body": {
+      "bytes": 174,
+      "sha256": "c156d517c3ca13129779f1b49132c61cb99dd91dd4f90b313abc8be10cfa1483"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_603992.SH/result.json": {
+      "bytes": 1059,
+      "sha256": "3d8364d7ac8b6c81f914eada517f13286d4b2eb8d9d8ca46b3aa844e77afdadb"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688022.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "4c61e83452a5c44249e7517a254767ba5ea09d01dee6cd1e97410d9eeba64228"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688022.SH/response.body": {
+      "bytes": 44830,
+      "sha256": "41e379e9433ed871067bad5525fa2328f90d923a4cca1b1906637e3ed88d0337"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688022.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "7bead46f96e37c99aa4dbba8a49059f0fdbfb15c7c41b315c762f44ed34a0dfb"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688029.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "4c2a50f4519f9130a556e97fece28484741d34a23981833ccce27561b6933813"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688029.SH/response.body": {
+      "bytes": 44946,
+      "sha256": "77a120620b7ae7f0a7dc816435489c9fc0508d628b8e513aa3d444f91568185c"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688029.SH/result.json": {
+      "bytes": 1092,
+      "sha256": "f32a9e34e10e29508234cdd11927ad418d56b260503977e0c2751cbdbb8d9709"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688030.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "6fe4113a1a251eef76efe9507ef5915975a8e163f62b9ea138f639a89b116277"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688030.SH/response.body": {
+      "bytes": 44040,
+      "sha256": "fb653d160067ce88074c86fcc0399bcef53153ac4bd768532fbbaa017f50e1e2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688030.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "9a58c0a7dc404674c10fc98ac50faf171784cc2b4ac901eb80f3c5e6e13f63a4"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688068.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "a9a9c1ec653271dcf03e838246447007b62df6d443443ae674005b8f292dc2bb"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688068.SH/response.body": {
+      "bytes": 44889,
+      "sha256": "9c9d8063841e8509c010345b77cc3f13ec5080a5483ea6f40f96fb69d95e7a91"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688068.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "40f529efa05b4b424894f9f52c8aab6198b15f0163b186197c6903eb1ce5c5dc"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688098.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "ea289df13b5a7927896d89ac2e61d025b62f096d94b6c90a6a42d4e133d01ebf"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688098.SH/response.body": {
+      "bytes": 44215,
+      "sha256": "fbe643e09adf7a392647afc8f25b4650c7dfb8a08b0e76e37f167ddb6c48b9e7"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688098.SH/result.json": {
+      "bytes": 1090,
+      "sha256": "d178aabb0ef11633b977a8fab56e4c3784c43b424dd588b2e61b8cdd2ba043f2"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688358.SH/intent.json": {
+      "bytes": 456,
+      "sha256": "e5beda2d8d055ec353a5645904423f82c47487b319add22e2d6a8c382fd4bf43"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688358.SH/response.body": {
+      "bytes": 44035,
+      "sha256": "ae6b3173ebf645898d3fb3510e259c6ad925eb32695e666654ec055ff7cc2e43"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/attempts/margin_688358.SH/result.json": {
+      "bytes": 1091,
+      "sha256": "5227bd66afcdd331f6202a2e48d1f64370d61d1b40f23361ca4c8787622b59b1"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/proof.json": {
+      "bytes": 34625,
+      "sha256": "873e2e4d6658548e20f1a770f2f2a0aa1f19df83bc02a6d99e96a2af10d1b29a"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/report.json": {
+      "bytes": 966,
+      "sha256": "1ab601373c5f12aeab6aaf6d295671c51714110d07c258d671a197815b2f9f12"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_intake/started.json": {
+      "bytes": 84156,
+      "sha256": "fff4ffc5e071efa94d12a5914e084ca18d2b8ec7e47327df801186958b628edb"
+    },
+    "data/products/research_program/launch_20260912/f7_margin_sources_20260913/documentation.json": {
+      "bytes": 1112,
+      "sha256": "a46591c0618a8fff77078c4107fde045b8028275a572d2e9bc8ad39b98b8329e"
+    },
+    "data/products/research_program/launch_20260912/funding_diagnostics/features_and_labels.parquet": {
+      "bytes": 31805405,
+      "sha256": "52d83a4afe0f34f0a9d1ba211fa6da2250273cb5dd7a2f9decab483cffe3721f"
+    },
+    "data/products/research_program/launch_20260912/funding_diagnostics/report.json": {
+      "bytes": 78215,
+      "sha256": "d78425b79717bdd96921c0ec2c04d6203a3ceb3193ab3368e579d8e2a91d7d29"
+    },
+    "data/products/research_program/launch_20260912/funding_independent_proof.json": {
+      "bytes": 674,
+      "sha256": "c4138bb14329d693e01836a33bb8b8e0b6e11a4a5ee8ef919f76ad43e8dc57df"
+    },
+    "data/products/research_program/launch_20260912/funding_inputs.json": {
+      "bytes": 784166,
+      "sha256": "d872b6c0400d948af7388a17a9e497e729cf631b04d8f8ee2d84def6d7f50484"
+    },
+    "data/products/research_program/launch_20260912/selection.json": {
+      "bytes": 4117,
+      "sha256": "e46e04b85208d3715b1dfaa1c7944f6f4b3ef37ef614ed7ed47cb9e4152c6dd9"
+    }
+  },
+  "intake_path": "data/products/research_program/launch_20260912/f7_margin_intake",
+  "output": "data/products/research_program/launch_20260912/f7_financing_diagnostic",
+  "parent_path": "data/products/research_program/launch_20260912/funding_diagnostics/features_and_labels.parquet",
+  "parent_proof_path": "data/products/research_program/launch_20260912/funding_independent_proof.json",
+  "parent_report_path": "data/products/research_program/launch_20260912/funding_diagnostics/report.json",
+  "pins": {
+    "intake_proof": "614f8f9018a50a106193002d24c0a4144c6637bfe539cb00b6123275484f205f",
+    "intake_report": "444b023779173cc65563f223698f210d36097ff40e9d50f75588d77ea5ff52d0",
+    "parent_report": "e9060d47734f52bb4dd11fc90876342f925a54ec51bf1fc92a3e9f3b989becf9",
+    "selection": "04a36754511be4136685a3ce378d60aa8c746ca218da7fa66d62df23b2e5840e"
+  },
+  "resources": {
+    "max_generated_bytes": 268435456,
+    "max_rss_bytes": 2147483648,
+    "max_wakeup_seconds": 600,
+    "reserve_host_D_bytes": 8589934592
+  },
+  "schema": "f7_financing_diagnostic_v1",
+  "selection_path": "data/products/research_program/launch_20260912/selection.json",
+  "warmup_paths": [
+    "data/canonical/daily/year=2019/month=12/2019-12-25.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-26.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-27.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-30.parquet",
+    "data/canonical/daily/year=2019/month=12/2019-12-31.parquet"
+  ]
+}
