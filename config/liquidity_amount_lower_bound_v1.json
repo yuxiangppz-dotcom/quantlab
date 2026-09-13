@@ -1,0 +1,170 @@
+{
+  "dates": [
+    "2021-12-06",
+    "2021-12-07",
+    "2021-12-08",
+    "2021-12-09",
+    "2021-12-10",
+    "2021-12-13",
+    "2021-12-14",
+    "2021-12-15",
+    "2021-12-16",
+    "2021-12-17",
+    "2021-12-20",
+    "2021-12-21",
+    "2021-12-22",
+    "2021-12-23",
+    "2021-12-24",
+    "2021-12-27",
+    "2021-12-28",
+    "2021-12-29",
+    "2021-12-30",
+    "2021-12-31"
+  ],
+  "decision_date": "2021-12-31",
+  "economic_paths": 0,
+  "fingerprints": {
+    "amount_precision_note.json": "8f6cd714fe7a9f28c2688f8d07f01cf2a4bbb83addf0fcd11e4e327c67caf4e7",
+    "independent_proof.json": "fb90eab29dddd9b5f37d4ed604ff22357b4ed07bf8fb67e0b20f1f31342cde8e",
+    "observations.json": "991df174209f383d2dd8c8d8fc857aec8902bb2121392ac72e22117751ff7447",
+    "report.json": "e8ea83c4503107b6a14de3e6b7ad30d7ad80fc4578c541d7bdfdf794b8df176d"
+  },
+  "inputs": {
+    "config/stock_replay_inputs_v1.json": {
+      "bytes": 8755,
+      "sha256": "101260e4b27f94dabe1716146b7ff7f44bb95573bedc40f6d2212464df760bec"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-06.parquet": {
+      "bytes": 202644,
+      "sha256": "1f7af44f8b7d707170e183d34302f54dd79ebd86f79d4c6cdb9e5246c8bf8249"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-07.parquet": {
+      "bytes": 202485,
+      "sha256": "bf25865b02598628328e396e1d87e075b671fee180875ad206ac73837ec742d9"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-08.parquet": {
+      "bytes": 202911,
+      "sha256": "3dd0448a176a46bef6ba3dc4e726bc50f43b109fa6815213ff8bc0adf5c8d264"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-09.parquet": {
+      "bytes": 203351,
+      "sha256": "80a54abe06062d5a0b582ba841ac682539718fcb0a9d676d003ce4c4074a26dd"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-10.parquet": {
+      "bytes": 203258,
+      "sha256": "2b13740ed9a52023b956a53aa5448e70e1619c122d0b57755855d88fc6524b1a"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-13.parquet": {
+      "bytes": 203479,
+      "sha256": "577689a42068d8bf836e5ddc5f7485e87b6548e54e00015614db3de872d4c259"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-14.parquet": {
+      "bytes": 203879,
+      "sha256": "fb1022d71c35b2ca4f41b3c95f24ecefe9053ae44cf5183f3bc10baf4f7dbcbb"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-15.parquet": {
+      "bytes": 203520,
+      "sha256": "248c29d39f62dc09481023c142073f8c4780295d3be51a612573801a00306a73"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-16.parquet": {
+      "bytes": 203732,
+      "sha256": "5cd2e22f9f3a9b3c5d71244192fc0c1ecc5661e7b8a3a6b03056017259207751"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-17.parquet": {
+      "bytes": 203747,
+      "sha256": "eae9324e08b1e5fbc35f0b88cfb0be9a4af540a821745b2fe42769ce618f47fd"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-20.parquet": {
+      "bytes": 203389,
+      "sha256": "ca2df9c6a04e62bbf07a0d6353bd81c8c2dee5fa7b700f79a12567ab90f06e42"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-21.parquet": {
+      "bytes": 203242,
+      "sha256": "76c4a789726ed34376599fc5e45406fe3402100825050134663ed2e3cdff4210"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-22.parquet": {
+      "bytes": 203739,
+      "sha256": "d138676a4de80245fb0eac79465714b4e5ca9f257f4aa5f546f3044cb8fd7138"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-23.parquet": {
+      "bytes": 204065,
+      "sha256": "77cab4da4c7068724c8327234e231c8383336b0e57b0f2af92ce53bf86db3c55"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-24.parquet": {
+      "bytes": 204155,
+      "sha256": "460f74da6768a17f8fc4f2948b2bb2aa37cf41ea6d1f1e3ec114643cb4e5d6e6"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-27.parquet": {
+      "bytes": 203646,
+      "sha256": "c9d5a98785d665df2d86c5742cb345429930b14008c04644f7664263ac27449c"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-28.parquet": {
+      "bytes": 204430,
+      "sha256": "bd0cc603fc0508214e57ae6a3d3101cf04708eb736878da19f24c63bbb9d4177"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-29.parquet": {
+      "bytes": 204395,
+      "sha256": "9ba22907706686e4ac1c4d38e0ca579142a468d8d9d02bb3b0b159d853f6dc69"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-30.parquet": {
+      "bytes": 204911,
+      "sha256": "4f25b906c269e61bc50feeb435bf1eb90f84efbd0284908eca39ff2d69dc46ec"
+    },
+    "data/canonical/daily/year=2021/month=12/2021-12-31.parquet": {
+      "bytes": 205012,
+      "sha256": "e995b02b21154026cfb10d94f799b1fce83c983419106f690fa463e5bfa2f40d"
+    },
+    "data/products/research_program/launch_20260912/stock_replay_inputs/amount_precision_note.json": {
+      "bytes": 792,
+      "sha256": "615f2a78b96925f56f67d47eec0c25cdb24a7a8cd0e09acd81722ca02de59d5f"
+    },
+    "data/products/research_program/launch_20260912/stock_replay_inputs/independent_proof.json": {
+      "bytes": 457,
+      "sha256": "9b83947718cb64d5acbd2335c7d0b38709390f11a69339217ff1011985728707"
+    },
+    "data/products/research_program/launch_20260912/stock_replay_inputs/observations.json": {
+      "bytes": 268318,
+      "sha256": "e03397d0b1e217429c35119564b602c0e9f40d46ac3c4308718705b9bda23a68"
+    },
+    "data/products/research_program/launch_20260912/stock_replay_inputs/report.json": {
+      "bytes": 815,
+      "sha256": "14e717572692067719c85fae6bdf7a78b96847e295a5e61d39e5bbd598ffc7d4"
+    }
+  },
+  "max_actual_attempts": 1,
+  "model_fits": 0,
+  "old_config": "config/stock_replay_inputs_v1.json",
+  "old_output": "data/products/research_program/launch_20260912/stock_replay_inputs/",
+  "output": "data/products/research_program/launch_20260912/liquidity_amount_lower_bound",
+  "paths": [
+    "data/canonical/daily/year=2021/month=12/2021-12-06.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-07.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-08.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-09.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-10.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-13.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-14.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-15.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-16.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-17.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-20.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-21.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-22.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-23.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-24.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-27.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-28.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-29.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-30.parquet",
+    "data/canonical/daily/year=2021/month=12/2021-12-31.parquet"
+  ],
+  "provider_calls": 0,
+  "resources": {
+    "max_generated_bytes": 8388608,
+    "max_rss_bytes": 2147483648,
+    "max_wakeup_seconds": 300,
+    "next_partition_time_reserve_seconds": 30,
+    "reserve_host_D_bytes": 8589934592
+  },
+  "schema": "liquidity_amount_lower_bound_v1"
+}
