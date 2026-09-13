@@ -63,11 +63,12 @@ Rules (ids fixed): `C80`, `C50`, `V`, `M`, `D`, `VM`, `VMD`.
   (ValueError); non-positive or non-finite NAV rejects; wrong `as_of` rejects.
   Update order per decision: `hwm_new = max(hwm, nav)`, then
   `drawdown = (hwm_new - nav) / hwm_new` (exact Decimal comparisons).
-  Coefficient transitions with deterioration before recovery and at most one
-  recovery step per decision:
+  Coefficient transitions with at most one recovery step per decision:
   1. `drawdown >= 0.15` → 0.25 (may jump tiers);
-  2. else `drawdown >= 0.10` → `min(current, 0.5)`;
-  3. else current 0.25 and `drawdown <= 0.12` → 0.5;
+  2. else current 0.25 and `drawdown <= 0.12` → 0.5 — the severe-tier
+     recovery band, including drawdowns of 10–12%, takes precedence over the
+     10% entry rule, otherwise the approved 12% threshold could never fire;
+  3. else `drawdown >= 0.10` → `min(current, 0.5)`;
   4. else current 0.5 and `drawdown <= 0.08` → 1.0;
   5. else unchanged. "达到" is `>=`, "以内" is `<=`.
   From 0.25 with `drawdown <= 0.08` the tier moves to 0.5 only — staged
@@ -106,3 +107,14 @@ unsellable-is-not-de-risked. Full `uv run pytest`, `uv run ruff check .` and
 `git diff --check` must pass with pre-existing semantics untouched. The PR
 reports start/end SHAs, changed files, check results, known limitations and
 interface examples, and claims no drawdown or return guarantee.
+
+## Amendment 2026-09-13 (before any implementation commit)
+
+The first card draft ordered the 10% entry rule before the severe-tier
+recovery rule ("deterioration before recovery"). That ordering made the
+approved 12% recovery threshold unreachable — a 0.25-tier state could only
+recover below a 10% drawdown, so "修复到12%以内可回0.5档" was dead. The list
+above now places the severe-tier recovery band (`current 0.25 and drawdown
+<= 0.12`, which includes the 10–12% range) ahead of the 10% entry rule. This
+amendment was made before the implementation was committed; the failing
+boundary tests that exposed it are retained in the test suite.
