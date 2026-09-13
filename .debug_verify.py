@@ -1,4 +1,3 @@
-import json
 import pathlib
 import sys
 import tempfile
@@ -6,12 +5,12 @@ import tempfile
 sys.path.insert(0, "tests/research")
 sys.path.insert(0, "scripts")
 
+import s4_admission_independent_verify as verifier  # noqa: E402
 from test_s4_admission_verifier import (  # noqa: E402
     _build_world,
     _hand_build_package,
     _write_completed,
 )
-import s4_admission_independent_verify as verifier  # noqa: E402
 
 tmp = pathlib.Path(tempfile.mkdtemp())
 source, canonical, plan, recon_body = _build_world(tmp)

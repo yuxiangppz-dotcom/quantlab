@@ -552,7 +552,6 @@ class TestAttemptVerificationAndGaps:
 
 
 def hashlib_sha256(data: bytes) -> str:
-    import hashlib
 
     return hashlib.sha256(data).hexdigest()
 

@@ -10,20 +10,21 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pandas as pd
-
 from test_s4_replay_admission import _plan, _volume_row
+
 from quantlab.research.round2_dataset import canonical_payload_fingerprint
+
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "scripts"))
 
 import s4_admission_independent_verify as verifier  # noqa: E402
+
 VERIFY = REPO / "scripts" / "s4_admission_independent_verify.py"
 
 
