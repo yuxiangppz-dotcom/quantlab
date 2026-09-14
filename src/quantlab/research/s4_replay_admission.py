@@ -1036,10 +1036,17 @@ def run(source_dir: Path, canonical_dir: Path, output_dir: Path) -> dict:
         )
         package, instruments = build_input_package(plan, admitted, gaps)
         manifest["files"] = dict(manifest.get("files", {}))
-        for name, entry in binding.entries.items():
-            manifest["files"][f"sealed:{name}"] = {**entry, "root": "sealed"}
-        for name, entry in canonical_binding.entries.items():
-            manifest["files"][f"canonical:{name}"] = {**entry, "root": "canonical"}
+        for root_label, root_binding, root_dir in (
+            ("sealed", binding, source_dir),
+            ("canonical", canonical_binding, canonical_dir),
+        ):
+            for name, entry in root_binding.entries.items():
+                manifest["files"][f"{root_label}:{name}"] = {
+                    "path": str(root_dir / name),
+                    "sha256": entry["sha256"],
+                    "bytes": entry["bytes"],
+                    "root": root_label,
+                }
         manifest["bound_files"] = dict(bound_files)
         manifest["roots"] = {"sealed": str(source_dir), "canonical": str(canonical_dir)}
         report = build_preflight_report(package, instruments, gaps, manifest)
