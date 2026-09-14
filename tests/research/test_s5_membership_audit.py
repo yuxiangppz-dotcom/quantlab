@@ -251,7 +251,10 @@ def test_sector_and_source_summaries_preserve_population_and_provenance() -> Non
         evidence=evidence,
     )
 
-    power, bank, unknown = audit.sector_summaries
+    by_sector = {summary.sector_id: summary for summary in audit.sector_summaries}
+    power = by_sector["POWER"]
+    bank = by_sector["BANK"]
+    unknown = by_sector[None]
     assert (
         power.sector_id,
         power.total,
