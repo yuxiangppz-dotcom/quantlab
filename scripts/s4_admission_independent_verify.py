@@ -381,7 +381,9 @@ def verify(
         # relabelled or redirected path is rejected even if the hash matches.
         if declared_path != expected_path:
             manifest_ok = False
-            manifest_notes.append(f"{key}: path {entry.get('path')!r} is not {str(expected_path)!r}")
+            manifest_notes.append(
+                f"{key}: path {entry.get('path')!r} is not {str(expected_path)!r}"
+            )
             continue
         if not path_is_under(declared_path, pathlib.Path(declared_root)):
             manifest_ok = False
