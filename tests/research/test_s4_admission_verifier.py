@@ -118,7 +118,9 @@ def _build_world(root: Path) -> tuple[Path, Path, dict, dict]:
     return source, canonical, plan, recon_body, synthetic_frozen
 
 
-def _hand_build_package(output: Path, plan: dict, recon_body: dict) -> None:
+def _hand_build_package(
+    output: Path, plan: dict, recon_body: dict, source: Path, canonical: Path
+) -> None:
     """Write a self-consistent v3-style package without production functions."""
     output.mkdir(parents=True)
     (output / "started.json").write_text(json.dumps({"status": "started"}))
@@ -237,10 +239,48 @@ def _hand_build_package(output: Path, plan: dict, recon_body: dict) -> None:
         "economic_paths_started": 0,
         "model_fits_used": 0,
         "provider_calls": 0,
-        "manifest": {"files": {}},
+        "manifest": {"files": _bound_files(source, canonical)},
         "package": package,
     }
     (output / "preflight_report.json").write_text(json.dumps(report))
+
+
+def _bound_files(source: Path, canonical: Path) -> dict:
+    """Manifest of every file a real production run would consume."""
+    files: dict[str, dict] = {}
+    for label, root, relative in (
+        ("sealed", source, "s4_first_entry_plan/plan.json"),
+        ("sealed", source, "s4_entry_raw_precision/reconciliation.json"),
+        ("sealed", source, "cohort_dividend_readiness/profiles.json"),
+        (
+            "sealed",
+            source,
+            "s4_entry_raw_precision/attempts/daily_000301.SZ_20211222/intent.json",
+        ),
+        (
+            "sealed",
+            source,
+            "s4_entry_raw_precision/attempts/daily_000301.SZ_20211222/result.json",
+        ),
+        (
+            "sealed",
+            source,
+            "s4_entry_raw_precision/attempts/daily_000301.SZ_20211222/response.body",
+        ),
+        ("canonical", canonical, "daily/year=2021/month=12/part.parquet"),
+        (
+            "canonical",
+            canonical,
+            "lifecycle_context_v1/suspensions/year=2021/month=12/part.parquet",
+        ),
+    ):
+        path = root / relative
+        files[f"{label}:{relative}"] = {
+            "path": str(path),
+            "sha256": _sha(path),
+            "root": label,
+        }
+    return files
 
 
 def _write_completed(output: Path) -> None:
@@ -279,20 +319,22 @@ class TestVerifierTamperRegressions:
     def _world(self, tmp: Path) -> tuple[Path, Path, dict, dict, dict]:
         return _build_world(tmp)
 
-    def _package(self, output: Path, plan: dict, recon_body: dict) -> None:
-        _hand_build_package(output, plan, recon_body)
+    def _package(
+        self, output: Path, plan: dict, recon_body: dict, source: Path, canonical: Path
+    ) -> None:
+        _hand_build_package(output, plan, recon_body, source, canonical)
         _write_completed(output)
 
     def test_clean_world_verifies(self, tmp_path):
         source, canonical, plan, recon_body, frozen = self._world(tmp_path)
         output = tmp_path / "pkg"
-        self._package(output, plan, recon_body)
+        self._package(output, plan, recon_body, source, canonical)
         assert _run_verifier(output, source, canonical, frozen) == 0
 
     def test_tampered_package_field_fails(self, tmp_path):
         source, canonical, plan, recon_body, frozen = self._world(tmp_path)
         output = tmp_path / "pkg"
-        self._package(output, plan, recon_body)
+        self._package(output, plan, recon_body, source, canonical)
         package_path = output / "input_package.json"
         package = json.loads(package_path.read_text())
         package["instruments"][0]["context"]["raw_close_fen"] = 1
@@ -303,7 +345,7 @@ class TestVerifierTamperRegressions:
     def test_dropped_prior20_reason_fails(self, tmp_path):
         source, canonical, plan, recon_body, frozen = self._world(tmp_path)
         output = tmp_path / "pkg"
-        self._package(output, plan, recon_body)
+        self._package(output, plan, recon_body, source, canonical)
         package_path = output / "input_package.json"
         package = json.loads(package_path.read_text())
         item = package["instruments"][0]
@@ -317,7 +359,7 @@ class TestVerifierTamperRegressions:
     def test_changed_source_content_fails(self, tmp_path):
         source, canonical, plan, recon_body, frozen = self._world(tmp_path)
         output = tmp_path / "pkg"
-        self._package(output, plan, recon_body)
+        self._package(output, plan, recon_body, source, canonical)
         plan_path = source / "s4_first_entry_plan/plan.json"
         payload = json.loads(plan_path.read_text())
         body = {k: v for k, v in payload.items() if k != "fingerprint"}
@@ -330,7 +372,7 @@ class TestVerifierTamperRegressions:
     def test_altered_suspension_source_fails(self, tmp_path):
         source, canonical, plan, recon_body, frozen = self._world(tmp_path)
         output = tmp_path / "pkg"
-        self._package(output, plan, recon_body)
+        self._package(output, plan, recon_body, source, canonical)
         susp = (
             canonical
             / "lifecycle_context_v1/suspensions/year=2021/month=12/part.parquet"
@@ -349,7 +391,7 @@ class TestVerifierTamperRegressions:
     def test_stale_proof_with_new_package_fails(self, tmp_path):
         source, canonical, plan, recon_body, frozen = self._world(tmp_path)
         output = tmp_path / "pkg"
-        self._package(output, plan, recon_body)
+        self._package(output, plan, recon_body, source, canonical)
         first = verifier.verify(
             output, source, canonical, frozen=frozen, expected_gap_count=1
         )

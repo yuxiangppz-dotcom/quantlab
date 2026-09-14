@@ -851,3 +851,59 @@ class TestExclusiveOutputs:
             run(source, canonical, output)
         failed = json.loads((output / "failed.json").read_text())
         assert failed["status"] == "failed"
+
+
+class TestReviewRound3ProbeGaps:
+    def _base_context(self):
+        return _full_context("000301.SZ", prior20_amount_fen=10**12)
+
+    @pytest.mark.parametrize(
+        "mutate, expected",
+        [
+            (
+                lambda c: c.update(participation="2"),
+                "participation: must be a finite fraction",
+            ),
+            (
+                lambda c: c.update(participation="NaN"),
+                "participation: must be a finite fraction",
+            ),
+            (
+                lambda c: c["fees"].update(commission_rate="2"),
+                "rate outside the modeled 0-1 range",
+            ),
+            (
+                lambda c: c["fees"].update(additional_fee_fixed_fen=-1),
+                "fees.additional_fee_fixed_fen: must be a nonnegative integer",
+            ),
+            (
+                lambda c: c.update(prior20_amount_fen=-1),
+                "prior20_amount_fen: negative amounts are invalid",
+            ),
+            (
+                lambda c: c.update(next_session="2022-99-99"),
+                "next_session: not a valid ISO date",
+            ),
+        ],
+    )
+    def test_counterexamples_are_listed(self, mutate, expected):
+        context = self._base_context()
+        mutate(context)
+        gaps = necessary_field_gaps(context)
+        assert any(expected in g for g in gaps), gaps
+
+    def test_counterexample_context_rejected_by_assembly(self):
+        context = self._base_context()
+        context["next_session"] = "2022-99-99"
+        with pytest.raises(ValueError):
+            research_session_from_context(context)
+
+    def test_legal_zero_boundary_stays_clean(self):
+        context = self._base_context()
+        context["session_volume_shares"] = 0
+        context["session_amount_fen"] = 0
+        context["fees"]["minimum_commission_fen"] = 0
+        joined = "; ".join(necessary_field_gaps(context))
+        assert "session_volume_shares" not in joined
+        assert "session_amount_fen" not in joined
+        assert "minimum_commission_fen" not in joined

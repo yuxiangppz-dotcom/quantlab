@@ -380,12 +380,17 @@ def check_prior20_gaps(
             code_col = "ts_code" if "ts_code" in frame.columns else "instrument_id"
             date_col = "trade_date" if "trade_date" in frame.columns else "session"
             if code_col in frame.columns and date_col in frame.columns:
-                coverage = "full"
-                matched = frame[
-                    (frame[code_col] == instrument)
-                    & (frame[date_col].astype(str).str[:10] == trade_date)
+                date_rows = frame[
+                    frame[date_col].astype(str).str[:10] == trade_date
                 ]
-                bar_present = len(matched) > 0
+                if date_rows.empty:
+                    # A month partition holding only other dates does not
+                    # prove the target session was ever ingested locally.
+                    coverage = "target_date_absent"
+                else:
+                    coverage = "full"
+                    matched = date_rows[date_rows[code_col] == instrument]
+                    bar_present = len(matched) > 0
             else:
                 coverage = "missing_columns"
 
@@ -522,6 +527,28 @@ def necessary_field_gaps(context: dict) -> list[str]:
             gaps.append(f"{name}: missing (unknown)")
         elif type(value) is not int:
             gaps.append(f"{name}: must be an integer fen")
+        elif value < 0:
+            # Zero is a legal known no-trade observation, never a gap.
+            gaps.append(f"{name}: negative amounts are invalid")
+    for name in ("next_session", "evidence_date", "prior20_asof"):
+        raw = context.get(name)
+        if isinstance(raw, str):
+            try:
+                date.fromisoformat(raw)
+            except ValueError:
+                gaps.append(f"{name}: not a valid ISO date")
+    if isinstance(context.get("prior20_asof"), str) and len(
+        context["prior20_asof"]
+    ) == 10:
+        try:
+            if date.fromisoformat(context["prior20_asof"]) > date.fromisoformat(
+                DECISION_DATE
+            ):
+                gaps.append(
+                    "prior20_asof: later than the decision date (future information)"
+                )
+        except ValueError:
+            pass  # the invalid-format gap is already listed
     volume = context.get("session_volume_shares")
     if volume is None:
         gaps.append("session_volume_shares: missing (unknown)")
@@ -538,7 +565,7 @@ def necessary_field_gaps(context: dict) -> list[str]:
     participation = context.get("participation")
     if participation is None:
         gaps.append("participation: missing (unknown)")
-    elif not isinstance(participation, (int, float, str)):
+    else:
         try:
             level = Decimal(str(participation))
         except InvalidOperation:
@@ -573,14 +600,17 @@ def necessary_field_gaps(context: dict) -> list[str]:
             and not rules["effective_from"] <= EXECUTION_DATE <= rules["effective_through"]
         ):
             gaps.append("rules: interval does not cover the execution date")
-    asof = context.get("prior20_asof")
-    if isinstance(asof, str) and len(asof) == 10 and asof > DECISION_DATE:
-        gaps.append("prior20_asof: later than the decision date (future information)")
     if context.get("evidence_date") not in (None, EXECUTION_DATE):
         gaps.append("evidence_date: must be the execution date")
-    if context.get("next_session") is not None:
-        if context["next_session"] <= EXECUTION_DATE:
-            gaps.append("next_session: must follow the execution date")
+    following = context.get("next_session")
+    if following is not None:
+        try:
+            following_date = date.fromisoformat(following)
+        except (ValueError, TypeError):
+            pass  # the invalid-format gap is already listed above
+        else:
+            if following_date <= date.fromisoformat(EXECUTION_DATE):
+                gaps.append("next_session: must follow the execution date")
     bounds = [
         context.get(name)
         for name in ("down_limit_fen", "low_fen", "raw_close_fen", "high_fen", "up_limit_fen")
@@ -610,6 +640,23 @@ def necessary_field_gaps(context: dict) -> list[str]:
                 gaps.append(f"fees.{name}: missing (unknown)")
             elif not isinstance(value, str):
                 gaps.append(f"fees.{name}: must be a decimal string")
+            else:
+                try:
+                    parsed_rate = Decimal(value)
+                except InvalidOperation:
+                    gaps.append(f"fees.{name}: not a finite decimal string")
+                    continue
+                if not parsed_rate.is_finite() or not 0 <= parsed_rate <= 1:
+                    gaps.append(
+                        f"fees.{name}: rate outside the modeled 0-1 range"
+                    )
+        fixed_additional = fees.get("additional_fee_fixed_fen")
+        if fixed_additional is not None and (
+            type(fixed_additional) is not int or fixed_additional < 0
+        ):
+            gaps.append(
+                "fees.additional_fee_fixed_fen: must be a nonnegative integer"
+            )
         minimum = fees.get("minimum_commission_fen")
         if minimum is None:
             gaps.append("fees.minimum_commission_fen: missing (unknown)")

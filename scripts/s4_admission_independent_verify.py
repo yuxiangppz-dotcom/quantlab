@@ -106,7 +106,15 @@ def verify(
         sealed_vols[row["instrument_id"]] = row["raw_normalized"]["vol"]
     plan_rows = {row["instrument_id"]: row for row in plan["rows"]}
     selected = plan["selected_in_priority_order"]
-    by_id = {item["instrument_id"]: item for item in package["instruments"]}
+    entries = package["instruments"]
+    check(
+        "exactly_20_unique_instruments_in_frozen_order",
+        len(entries) == 20
+        and len({item["instrument_id"] for item in entries}) == 20
+        and [item["instrument_id"] for item in entries] == list(selected),
+        f"{len(entries)} entries",
+    )
+    by_id = {item["instrument_id"]: item for item in entries}
     diff_failures = []
     for code in selected:
         sealed_ctx = plan_rows[code]["contexts"]["baseline"]
@@ -176,6 +184,59 @@ def verify(
         "; ".join(consistency_failures[:6]) or "all 20 agree field-by-field",
     )
 
+    # 5. prior20 classifications re-derived from raw evidence, including the
+    # daily coverage: a report claiming confirmed no-bar must be backed by a
+    # daily partition that actually contains the target date.
+    manifest_files = report.get("manifest", {}).get("files", {})
+    manifest_ok = True
+    manifest_notes = []
+    for name, entry in manifest_files.items():
+        path = pathlib.Path(entry["path"])
+        if not path.is_file() or sha_bytes(path.read_bytes()) != entry.get("sha256"):
+            manifest_ok = False
+            manifest_notes.append(f"{name}: missing or changed")
+    check(
+        "manifest_files_recomputed",
+        manifest_ok and bool(manifest_files),
+        "; ".join(manifest_notes[:4]) or f"{len(manifest_files)} bound files verified",
+    )
+    daily_failures = []
+    for gap in report.get("prior20_gaps", []):
+        code, trade_date = gap["instrument_id"], gap["trade_date"]
+        year, month, _ = trade_date.split("-")
+        month_dir = canonical_dir / f"daily/year={year}/month={month}"
+        parts = sorted(month_dir.glob("*.parquet")) if month_dir.is_dir() else []
+        if not parts:
+            if gap.get("local_bar_present") is not None:
+                daily_failures.append(
+                    f"{code} {trade_date}: no daily partitions but a bar claim"
+                )
+            continue
+        frame = pd.concat(pd.read_parquet(p) for p in parts)
+        date_col = "trade_date" if "trade_date" in frame.columns else "session"
+        date_rows = frame[frame[date_col].astype(str).str[:10] == trade_date]
+        if date_rows.empty:
+            if gap.get("local_bar_present") is not None:
+                daily_failures.append(
+                    f"{code} {trade_date}: target date absent locally but a "
+                    "bar claim exists"
+                )
+            continue
+        code_col = "ts_code" if "ts_code" in frame.columns else "instrument_id"
+        actual_bar = bool(
+            len(date_rows[date_rows[code_col] == code]) > 0
+        )
+        if actual_bar != gap.get("local_bar_present"):
+            daily_failures.append(
+                f"{code} {trade_date}: actual bar {actual_bar} vs report "
+                f"{gap.get('local_bar_present')}"
+            )
+    check(
+        "daily_coverage_independently_rederived",
+        not daily_failures,
+        "; ".join(daily_failures[:4]) or "bar claims match the local daily data",
+    )
+
     # 5. prior20 classifications re-derived from raw evidence.
     gap_failures = []
     for gap in report["prior20_gaps"]:
@@ -237,6 +298,13 @@ def verify(
         or f"{len(report['prior20_gaps'])} dates re-derive from intent/body/suspension files",
     )
 
+    # 5b. The report must embed exactly this package.
+    check(
+        "report_embeds_the_package",
+        report.get("package") == package,
+        "report.package equals input_package.json",
+    )
+
     # 6. Budgets and signal date.
     check(
         "zero_budgets_and_signal_date",
@@ -263,27 +331,24 @@ def verify(
 
 def main() -> int:
     args = PARSER.parse_args()
-    payload = verify(args.package_dir, args.source_dir, args.canonical_dir)
     proof_path = args.package_dir / "independent_verification.json"
     if proof_path.exists():
-        previous = json.loads(proof_path.read_text())
-        if previous.get("verified_hashes", {}).get("input_package") not in (
-            None,
-            payload["verified_hashes"]["input_package"],
-        ):
-            # A stale proof must never vouch for different package content.
-            proof_path.write_text(
-                json.dumps(
-                    {
-                        "all_ok": False,
-                        "error": "stale proof: this directory was verified with "
-                        "different package content",
-                    },
-                    indent=2,
-                )
+        # An existing proof is never overwritten, not even by a failing run:
+        # rerun verification in a fresh output directory instead.
+        print(
+            json.dumps(
+                {
+                    "all_ok": False,
+                    "error": (
+                        "refusing to overwrite an existing proof; use a fresh "
+                        "output directory"
+                    ),
+                },
+                indent=2,
             )
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
-            return 1
+        )
+        return 2
+    payload = verify(args.package_dir, args.source_dir, args.canonical_dir)
     proof_path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
     )
