@@ -1,4 +1,3 @@
-import json
 import pathlib
 import sys
 import tempfile
@@ -6,11 +5,10 @@ import tempfile
 sys.path.insert(0, "tests/research")
 sys.path.insert(0, "scripts")
 
+import s4_admission_independent_verify as verifier  # noqa: E402
 from test_s4_admission_verifier import (  # noqa: E402
     TestProducerToVerifierContract,
 )
-
-import s4_admission_independent_verify as verifier  # noqa: E402
 
 contract = TestProducerToVerifierContract()
 tmp = pathlib.Path(tempfile.mkdtemp())
