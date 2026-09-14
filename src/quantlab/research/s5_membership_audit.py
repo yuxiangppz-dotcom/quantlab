@@ -68,11 +68,36 @@ class S5MembershipYearSummary:
 
 
 @dataclass(frozen=True)
+class S5MembershipSectorSummary:
+    sector_id: str | None
+    total: int
+    covered_verified: int
+    mismatch: int
+    missing: int
+    unverified: int
+    conflicting: int
+    coverage_rate: float
+
+
+@dataclass(frozen=True)
+class S5MembershipSourceSummary:
+    source_id: str
+    requirement_count: int
+    covered_verified: int
+    mismatch: int
+    unverified: int
+    conflicting: int
+    coverage_rate: float
+
+
+@dataclass(frozen=True)
 class S5MembershipAudit:
     """Complete deterministic membership audit for a non-empty population."""
 
     rows: tuple[S5MembershipAuditRow, ...]
     year_summaries: tuple[S5MembershipYearSummary, ...]
+    sector_summaries: tuple[S5MembershipSectorSummary, ...]
+    source_summaries: tuple[S5MembershipSourceSummary, ...]
     fully_covered_dates: tuple[date, ...]
     earliest_fully_covered_date: date | None
     latest_fully_covered_date: date | None
@@ -147,6 +172,8 @@ def audit_s5_membership_readiness(
     )
 
     year_summaries = _year_summaries(rows)
+    sector_summaries = _sector_summaries(rows)
+    source_summaries = _source_summaries(rows)
     fully_covered_dates = _fully_covered_dates(rows)
     counts = Counter(row.status for row in rows)
     blockers = tuple(
@@ -172,6 +199,8 @@ def audit_s5_membership_readiness(
     return S5MembershipAudit(
         rows=rows,
         year_summaries=year_summaries,
+        sector_summaries=sector_summaries,
+        source_summaries=source_summaries,
         fully_covered_dates=fully_covered_dates,
         earliest_fully_covered_date=(
             fully_covered_dates[0] if fully_covered_dates else None
@@ -326,6 +355,67 @@ def _year_summaries(
                 covered_verified=covered,
                 mismatch=counts[S5MembershipAuditStatus.MISMATCH],
                 missing=counts[S5MembershipAuditStatus.MISSING],
+                unverified=counts[S5MembershipAuditStatus.UNVERIFIED],
+                conflicting=counts[S5MembershipAuditStatus.CONFLICTING],
+                coverage_rate=covered / total,
+            )
+        )
+    return tuple(summaries)
+
+
+def _sector_summaries(
+    rows: tuple[S5MembershipAuditRow, ...],
+) -> tuple[S5MembershipSectorSummary, ...]:
+    by_sector: dict[str | None, list[S5MembershipAuditRow]] = defaultdict(list)
+    for row in rows:
+        sector_id = (
+            row.expected_sector_id
+            if row.expected_sector_id is not None
+            else row.resolved_sector_id
+        )
+        by_sector[sector_id].append(row)
+
+    summaries: list[S5MembershipSectorSummary] = []
+    for sector_id in sorted(by_sector, key=lambda value: (value is None, value or "")):
+        sector_rows = by_sector[sector_id]
+        counts = Counter(row.status for row in sector_rows)
+        covered = counts[S5MembershipAuditStatus.COVERED_VERIFIED]
+        total = len(sector_rows)
+        summaries.append(
+            S5MembershipSectorSummary(
+                sector_id=sector_id,
+                total=total,
+                covered_verified=covered,
+                mismatch=counts[S5MembershipAuditStatus.MISMATCH],
+                missing=counts[S5MembershipAuditStatus.MISSING],
+                unverified=counts[S5MembershipAuditStatus.UNVERIFIED],
+                conflicting=counts[S5MembershipAuditStatus.CONFLICTING],
+                coverage_rate=covered / total,
+            )
+        )
+    return tuple(summaries)
+
+
+def _source_summaries(
+    rows: tuple[S5MembershipAuditRow, ...],
+) -> tuple[S5MembershipSourceSummary, ...]:
+    by_source: dict[str, list[S5MembershipAuditRow]] = defaultdict(list)
+    for row in rows:
+        for source_id in sorted(set(row.source_ids)):
+            by_source[source_id].append(row)
+
+    summaries: list[S5MembershipSourceSummary] = []
+    for source_id in sorted(by_source):
+        source_rows = by_source[source_id]
+        counts = Counter(row.status for row in source_rows)
+        covered = counts[S5MembershipAuditStatus.COVERED_VERIFIED]
+        total = len(source_rows)
+        summaries.append(
+            S5MembershipSourceSummary(
+                source_id=source_id,
+                requirement_count=total,
+                covered_verified=covered,
+                mismatch=counts[S5MembershipAuditStatus.MISMATCH],
                 unverified=counts[S5MembershipAuditStatus.UNVERIFIED],
                 conflicting=counts[S5MembershipAuditStatus.CONFLICTING],
                 coverage_rate=covered / total,
