@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pandas as pd
+from quantlab.research.round2_dataset import canonical_payload_fingerprint
 from test_s4_replay_admission import _full_context, _plan, _volume_row
 
 FROZEN_GAPS = (
@@ -26,8 +27,6 @@ FROZEN_GAPS = (
     ("000777.SZ", "2021-12-10"),
     ("000777.SZ", "2021-12-13"),
 )
-
-from quantlab.research.round2_dataset import canonical_payload_fingerprint
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "scripts"))
