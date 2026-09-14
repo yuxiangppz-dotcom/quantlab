@@ -20,10 +20,14 @@ from quantlab.research.s5_materialization import (
 START = date(2025, 1, 1)
 SESSIONS = tuple(START + timedelta(days=index) for index in range(272))
 AS_OF = SESSIONS[-1]
+_DEFAULT_ELIGIBILITY = object()
 
 
 def _wave_prices(base: float, drift: float, period: float) -> list[float]:
-    return [base + drift * index + 2.0 * math.sin(index / period) for index in range(272)]
+    return [
+        base + drift * index + 2.0 * math.sin(index / period)
+        for index in range(272)
+    ]
 
 
 BENCHMARK_VALUES = _wave_prices(100.0, 0.03, 9.0)
@@ -99,20 +103,28 @@ def _stock_input(
     close_values: list[float] | None = None,
     volume_values: list[float] | None = None,
     memberships: tuple[S5MembershipEvidence, ...] | None = None,
-    eligibility: S5EligibilityEvidence | None | object = ...,
+    eligibility: S5EligibilityEvidence | None | object = _DEFAULT_ELIGIBILITY,
 ) -> S5StockSeriesInput:
-    eligibility_value = _eligibility() if eligibility is ... else eligibility
+    eligibility_value = (
+        _eligibility() if eligibility is _DEFAULT_ELIGIBILITY else eligibility
+    )
     return S5StockSeriesInput(
         instrument_id="000001.SZ",
         sector_id="POWER",
-        closes=_series("000001.SZ", close_values or STOCK_VALUES, source="stock_close_v1"),
+        closes=_series(
+            "000001.SZ",
+            close_values or STOCK_VALUES,
+            source="stock_close_v1",
+        ),
         volumes=_series(
             "000001.SZ",
             volume_values or VOLUME_VALUES,
             source="stock_volume_v1",
         ),
-        membership_evidence=memberships if memberships is not None else (_membership(),),
-        eligibility_evidence=eligibility_value,  # type: ignore[arg-type]
+        membership_evidence=(
+            memberships if memberships is not None else (_membership(),)
+        ),
+        eligibility_evidence=eligibility_value,
     )
 
 
@@ -130,6 +142,62 @@ def _materialize(
         or _series("000985.SH", BENCHMARK_VALUES, source="benchmark_v1"),
         sectors=sectors if sectors is not None else (_sector_input(),),
         stocks=stocks if stocks is not None else (_stock_input(),),
+    )
+
+
+def _short_materialization(length: int, *, include_stock: bool = False):
+    sessions = SESSIONS[-length:]
+    benchmark_values = BENCHMARK_VALUES[-length:]
+    sector_values = SECTOR_VALUES[-length:]
+    stock_values = STOCK_VALUES[-length:]
+    volume_values = VOLUME_VALUES[-length:]
+    benchmark = _series(
+        "000985.SH",
+        benchmark_values,
+        source=f"benchmark_{length}",
+        sessions=sessions,
+    )
+    sector = S5SectorSeriesInput(
+        "POWER",
+        _series(
+            "POWER",
+            sector_values,
+            source=f"sector_{length}",
+            sessions=sessions,
+        ),
+    )
+    stocks: tuple[S5StockSeriesInput, ...] = ()
+    if include_stock:
+        stocks = (
+            S5StockSeriesInput(
+                instrument_id="000001.SZ",
+                sector_id="POWER",
+                closes=_series(
+                    "000001.SZ",
+                    stock_values,
+                    source=f"stock_{length}",
+                    sessions=sessions,
+                ),
+                volumes=_series(
+                    "000001.SZ",
+                    volume_values,
+                    source=f"volume_{length}",
+                    sessions=sessions,
+                ),
+                membership_evidence=(
+                    _membership(start=sessions[0], source=f"membership_{length}"),
+                ),
+                eligibility_evidence=_eligibility(
+                    as_of=sessions[-1],
+                    source=f"eligibility_{length}",
+                ),
+            ),
+        )
+    return _materialize(
+        sessions=sessions,
+        benchmark=benchmark,
+        sectors=(sector,),
+        stocks=stocks,
     )
 
 
@@ -152,12 +220,20 @@ def test_materializes_frozen_s5_formula_contract() -> None:
     endpoint_volumes = VOLUME_VALUES[-20:]
     positive = [
         volume
-        for daily_return, volume in zip(endpoint_returns, endpoint_volumes, strict=True)
+        for daily_return, volume in zip(
+            endpoint_returns,
+            endpoint_volumes,
+            strict=True,
+        )
         if daily_return > 0.0
     ]
     negative = [
         volume
-        for daily_return, volume in zip(endpoint_returns, endpoint_volumes, strict=True)
+        for daily_return, volume in zip(
+            endpoint_returns,
+            endpoint_volumes,
+            strict=True,
+        )
         if daily_return < 0.0
     ]
 
@@ -199,32 +275,38 @@ def test_new_low_rate_counts_only_last_20_endpoints_and_includes_ties() -> None:
     assert sector.history_complete is True
 
 
-def test_exact_272_close_boundary_is_required_for_volatility_percentile() -> None:
-    short_sessions = SESSIONS[1:]
-    sector_values = SECTOR_VALUES[1:]
-    benchmark_values = BENCHMARK_VALUES[1:]
-    result = _materialize(
-        sessions=short_sessions,
-        benchmark=_series(
-            "000985.SH", benchmark_values, source="benchmark_short", sessions=short_sessions
-        ),
-        sectors=(
-            S5SectorSeriesInput(
-                "POWER",
-                _series("POWER", sector_values, source="sector_short", sessions=short_sessions),
-            ),
-        ),
-        stocks=(),
-    )
+@pytest.mark.parametrize(
+    ("length", "field", "known"),
+    [
+        (119, "drawdown_from_120d_high", False),
+        (120, "drawdown_from_120d_high", True),
+        (78, "new_low_rate_20", False),
+        (79, "new_low_rate_20", True),
+        (271, "volatility_percentile_252", False),
+        (272, "volatility_percentile_252", True),
+        (20, "relative_return_20", False),
+        (21, "relative_return_20", True),
+    ],
+)
+def test_sector_window_boundaries(length: int, field: str, known: bool) -> None:
+    sector = _short_materialization(length).sector_observations[0]
+    assert (getattr(sector, field) is not None) is known
 
-    sector = result.sector_observations[0]
-    assert sector.volatility_percentile_252 is None
-    assert sector.history_complete is False
-    assert any(
-        issue.field == "volatility_percentile_252"
-        and issue.reason == "insufficient_history"
-        for issue in result.issues
-    )
+
+@pytest.mark.parametrize(
+    ("length", "field", "known"),
+    [
+        (19, "close_to_ma20_ratio", False),
+        (20, "close_to_ma20_ratio", True),
+        (24, "ma20_slope_5", False),
+        (25, "ma20_slope_5", True),
+        (20, "up_down_volume_ratio_20", False),
+        (21, "up_down_volume_ratio_20", True),
+    ],
+)
+def test_stock_window_boundaries(length: int, field: str, known: bool) -> None:
+    stock = _short_materialization(length, include_stock=True).stock_observations[0]
+    assert (getattr(stock, field) is not None) is known
 
 
 def test_missing_or_nonpositive_required_price_stays_unknown() -> None:
@@ -268,6 +350,23 @@ def test_one_sided_stock_return_window_keeps_volume_ratio_unknown() -> None:
     )
 
 
+def test_missing_or_invalid_volume_keeps_ratio_unknown() -> None:
+    stock = _stock_input()
+    missing_volume = replace(
+        stock.volumes,
+        points=tuple(point for point in stock.volumes.points if point.trade_date != AS_OF),
+    )
+    missing_result = _materialize(stocks=(replace(stock, volumes=missing_volume),))
+    assert missing_result.stock_observations[0].up_down_volume_ratio_20 is None
+
+    invalid_values = list(VOLUME_VALUES)
+    invalid_values[-1] = -1.0
+    invalid_result = _materialize(
+        stocks=(_stock_input(volume_values=invalid_values),)
+    )
+    assert invalid_result.stock_observations[0].up_down_volume_ratio_20 is None
+
+
 def test_membership_is_true_false_or_unknown_from_pit_evidence() -> None:
     verified = _materialize(stocks=(_stock_input(memberships=(_membership(),)),))
     assert verified.stock_observations[0].membership_verified is True
@@ -285,7 +384,10 @@ def test_membership_is_true_false_or_unknown_from_pit_evidence() -> None:
     conflicting = _materialize(
         stocks=(
             _stock_input(
-                memberships=(_membership("POWER"), _membership("ENERGY", source="other"))
+                memberships=(
+                    _membership("POWER"),
+                    _membership("ENERGY", source="other"),
+                )
             ),
         )
     )
@@ -305,7 +407,9 @@ def test_membership_effective_interval_switch_is_respected() -> None:
 
 def test_eligibility_requires_exact_date_and_pit_verification() -> None:
     wrong_date = _materialize(
-        stocks=(_stock_input(eligibility=_eligibility(as_of=AS_OF - timedelta(days=1))),)
+        stocks=(
+            _stock_input(eligibility=_eligibility(as_of=AS_OF - timedelta(days=1))),
+        )
     )
     assert wrong_date.stock_observations[0].research_eligible is None
 
@@ -320,7 +424,7 @@ def test_eligibility_requires_exact_date_and_pit_verification() -> None:
     assert explicit_false.stock_observations[0].research_eligible is False
 
 
-def test_future_points_and_future_membership_cannot_change_prior_result_or_fingerprint() -> None:
+def test_future_points_and_future_membership_do_not_change_prior_result() -> None:
     base = _materialize()
     future_day = AS_OF + timedelta(days=10)
 
@@ -361,6 +465,23 @@ def test_future_points_and_future_membership_cannot_change_prior_result_or_finge
     assert changed.fingerprint == base.fingerprint
 
 
+def test_future_membership_end_date_does_not_rewrite_prior_fingerprint() -> None:
+    future_end_a = AS_OF + timedelta(days=30)
+    future_end_b = AS_OF + timedelta(days=90)
+    first = _materialize(
+        stocks=(_stock_input(memberships=(_membership(end=future_end_a),)),)
+    )
+    second = _materialize(
+        stocks=(_stock_input(memberships=(_membership(end=future_end_b),)),)
+    )
+    open_ended = _materialize(
+        stocks=(_stock_input(memberships=(_membership(end=None),)),)
+    )
+
+    assert first.stock_observations == second.stock_observations
+    assert first.fingerprint == second.fingerprint == open_ended.fingerprint
+
+
 def test_historical_source_or_membership_drift_changes_fingerprint() -> None:
     base = _materialize()
     changed_source = _materialize(
@@ -382,17 +503,32 @@ def test_point_and_input_order_do_not_change_materialization() -> None:
     benchmark = _series("000985.SH", BENCHMARK_VALUES, source="benchmark_v1")
     sector = _sector_input()
     stock = _stock_input()
-    reversed_result = _materialize(
-        benchmark=replace(benchmark, points=tuple(reversed(benchmark.points))),
-        sectors=(replace(sector, closes=replace(sector.closes, points=tuple(reversed(sector.closes.points)))),),
-        stocks=(
-            replace(
-                stock,
-                closes=replace(stock.closes, points=tuple(reversed(stock.closes.points))),
-                volumes=replace(stock.volumes, points=tuple(reversed(stock.volumes.points))),
-                membership_evidence=tuple(reversed(stock.membership_evidence)),
-            ),
+    reversed_sector = replace(
+        sector,
+        closes=replace(
+            sector.closes,
+            points=tuple(reversed(sector.closes.points)),
         ),
+    )
+    reversed_stock = replace(
+        stock,
+        closes=replace(
+            stock.closes,
+            points=tuple(reversed(stock.closes.points)),
+        ),
+        volumes=replace(
+            stock.volumes,
+            points=tuple(reversed(stock.volumes.points)),
+        ),
+        membership_evidence=tuple(reversed(stock.membership_evidence)),
+    )
+    reversed_result = _materialize(
+        benchmark=replace(
+            benchmark,
+            points=tuple(reversed(benchmark.points)),
+        ),
+        sectors=(reversed_sector,),
+        stocks=(reversed_stock,),
     )
 
     assert reversed_result == _materialize()
@@ -409,11 +545,12 @@ def test_duplicate_consumed_series_date_is_rejected() -> None:
 
 
 def test_calendar_must_be_strict_and_end_at_as_of() -> None:
+    benchmark = _series("000985.SH", BENCHMARK_VALUES, source="benchmark_v1")
     with pytest.raises(ValueError, match="strictly increasing"):
         materialize_s5_inputs(
             as_of=AS_OF,
             sessions=(AS_OF, AS_OF),
-            benchmark_closes=_series("000985.SH", BENCHMARK_VALUES, source="benchmark_v1"),
+            benchmark_closes=benchmark,
             sectors=(),
             stocks=(),
         )
@@ -422,7 +559,7 @@ def test_calendar_must_be_strict_and_end_at_as_of() -> None:
         materialize_s5_inputs(
             as_of=AS_OF,
             sessions=SESSIONS[:-1],
-            benchmark_closes=_series("000985.SH", BENCHMARK_VALUES, source="benchmark_v1"),
+            benchmark_closes=benchmark,
             sectors=(),
             stocks=(),
         )
