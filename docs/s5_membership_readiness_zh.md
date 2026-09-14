@@ -40,6 +40,8 @@ S5 的核心逻辑是“先看行业，再在行业里挑股票”。这意味�
 
 - 完整逐行状态；
 - 每年 coverage rate；
+- 按预期行业（未声明时按已解析行业）的完整状态计数与覆盖率；
+- 按证据来源统计其实际影响的 requirement 数量、状态和覆盖率；
 - 哪些日期是 fully covered；
 - 最早 / 最晚 fully covered date；
 - mismatch / missing / unverified / conflicting 的数量；
