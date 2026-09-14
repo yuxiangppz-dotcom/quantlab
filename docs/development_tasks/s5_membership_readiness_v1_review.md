@@ -11,6 +11,7 @@ Scope: Issue #137, branch `chatgpt/s5-membership-readiness-v1`.
 - Empty evidence cannot become successful coverage; it produces missing rows and a blocked audit.
 - A decision date is fully covered only when every required row on that date is `covered_verified`.
 - Annual coverage uses the complete predeclared denominator; no missing row is removed from the denominator.
+- Sector summaries retain the expected sector denominator (or the resolved sector when no expectation exists); unresolved rows remain an explicit `None` group. Source summaries count affected requirements once per source even when duplicate evidence rows agree.
 
 ## PIT / fingerprint
 
