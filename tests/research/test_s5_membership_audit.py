@@ -233,6 +233,65 @@ def test_year_summaries_preserve_full_denominator() -> None:
     assert y2026.coverage_rate == 1.0
 
 
+def test_sector_and_source_summaries_preserve_population_and_provenance() -> None:
+    requirements = (
+        _requirement("000001.SZ", D1, "POWER"),
+        _requirement("000002.SZ", D1, "POWER"),
+        _requirement("600001.SH", D1, "BANK"),
+        _requirement("600002.SH", D1, None),
+    )
+    evidence = (
+        _fact("000001.SZ", source="source_a"),
+        _fact("000001.SZ", source="source_b"),
+        _fact("000002.SZ", verified=False, source="source_a"),
+        _fact("600001.SH", "ENERGY", source="source_c"),
+    )
+    audit = audit_s5_membership_readiness(
+        requirements=requirements,
+        evidence=evidence,
+    )
+
+    power, bank, unknown = audit.sector_summaries
+    assert (
+        power.sector_id,
+        power.total,
+        power.covered_verified,
+        power.unverified,
+        power.coverage_rate,
+    ) == ("POWER", 2, 1, 1, 0.5)
+    assert (
+        bank.sector_id,
+        bank.total,
+        bank.mismatch,
+        bank.coverage_rate,
+    ) == ("BANK", 1, 1, 0.0)
+    assert (
+        unknown.sector_id,
+        unknown.total,
+        unknown.missing,
+        unknown.coverage_rate,
+    ) == (None, 1, 1, 0.0)
+
+    by_source = {summary.source_id: summary for summary in audit.source_summaries}
+    assert set(by_source) == {"source_a", "source_b", "source_c"}
+    assert (
+        by_source["source_a"].requirement_count,
+        by_source["source_a"].covered_verified,
+        by_source["source_a"].unverified,
+        by_source["source_a"].coverage_rate,
+    ) == (2, 1, 1, 0.5)
+    assert (
+        by_source["source_b"].requirement_count,
+        by_source["source_b"].covered_verified,
+        by_source["source_b"].coverage_rate,
+    ) == (1, 1, 1.0)
+    assert (
+        by_source["source_c"].requirement_count,
+        by_source["source_c"].mismatch,
+        by_source["source_c"].coverage_rate,
+    ) == (1, 1, 0.0)
+
+
 def test_empty_requirement_population_is_rejected_but_empty_evidence_is_blocked() -> None:
     with pytest.raises(ValueError, match="requirements cannot be empty"):
         audit_s5_membership_readiness(requirements=(), evidence=())
