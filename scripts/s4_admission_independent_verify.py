@@ -37,6 +37,14 @@ PARSER.add_argument("--source-dir", required=True, type=pathlib.Path)
 PARSER.add_argument("--canonical-dir", required=True, type=pathlib.Path)
 
 
+def path_is_under(path: pathlib.Path, root: pathlib.Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
 def sha_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -205,31 +213,21 @@ def verify(
         volume = context.get("session_volume_shares")
         if volume is None:
             expected_unknown.append("session_volume_shares")
-        # The producer may name the field entry directly or as a context.*
-        # structural finding; accept any unknown entry whose field name
-        # carries the required variable, and require a real reason.
+        # Historical identity is contractually required for every
+        # instrument and can never be satisfied by a context value.
+        expected_unknown.append("historical_identity_and_signal_eligibility")
         for name in expected_unknown:
-            candidates = [
-                (field_name, entry)
-                for field_name, entry in fields.items()
-                if name in field_name
-            ]
-            if not candidates:
+            entry = fields.get(name)
+            if entry is None:
                 semantic_failures.append(
                     f"{code}: {name} is factually unknown but not reported"
                 )
                 continue
-            if not any(
-                entry.get("status") == "unknown" for _, entry in candidates
-            ):
+            if entry.get("status") != "unknown":
                 semantic_failures.append(
                     f"{code}: {name} is factually unknown but not reported"
                 )
-            if any(
-                entry.get("status") == "unknown"
-                and not str(entry.get("reason") or "").strip()
-                for _, entry in candidates
-            ):
+            elif not str(entry.get("reason") or "").strip():
                 semantic_failures.append(f"{code}: {name} unknown without reason")
         corporate_entry = fields.get("corporate_actions_processed")
         corporate_value = context.get("corporate_actions_processed")
@@ -264,6 +262,44 @@ def verify(
             for code, names in unknown_fields_by_instrument.items()
             for name in names
         }
+    )
+    # Per-instrument open_gaps must equal the re-derived unknown set exactly
+    # (this also catches wrong-attribution: a gap moved to another code).
+    attribution_failures = []
+    for code, item in by_id.items():
+        expected = sorted(unknown_fields_by_instrument.get(code, []))
+        if sorted(item["open_gaps"]) != expected:
+            attribution_failures.append(
+                f"{code}: open_gaps {sorted(item['open_gaps'])} != {expected}"
+            )
+    check(
+        "per_instrument_open_gaps_match_rederivation",
+        not attribution_failures,
+        "; ".join(attribution_failures[:4]) or "20/20 open_gaps re-derive exactly",
+    )
+    reported_counts = report.get("gap_counts_by_field", {})
+    count_failures = []
+    # Invert the per-instrument unknown sets into per-field instrument lists.
+    unknown_by_field: dict[str, list[str]] = {}
+    for code, names in unknown_fields_by_instrument.items():
+        for name in names:
+            unknown_by_field.setdefault(name, []).append(code)
+    rederived_counts = {
+        name: len(codes)
+        for name, codes in unknown_by_field.items()
+    }
+    for name in sorted(set(rederived_counts) | set(reported_counts)):
+        expected_count = rederived_counts.get(name, 0)
+        reported_entry = reported_counts.get(name)
+        reported_n = reported_entry.get("instruments") if reported_entry else 0
+        if reported_n != expected_count:
+            count_failures.append(
+                f"{name}: reported {reported_n} vs re-derived {expected_count}"
+            )
+    check(
+        "gap_summary_matches_rederivation",
+        not count_failures,
+        "; ".join(count_failures[:6]) or "gap summary matches exactly",
     )
     expected_verdict = (
         "inputs_ready_to_request_first_replay_run"
@@ -327,11 +363,35 @@ def verify(
     manifest_files = report.get("manifest", {}).get("files", {})
     manifest_ok = True
     manifest_notes = []
-    for name, entry in manifest_files.items():
-        path = pathlib.Path(entry["path"])
-        if not path.is_file() or sha_bytes(path.read_bytes()) != entry.get("sha256"):
+    declared_roots = report.get("manifest", {}).get("roots", {})
+    for key, entry in manifest_files.items():
+        if ":" not in key:
             manifest_ok = False
-            manifest_notes.append(f"{name}: missing or changed")
+            manifest_notes.append(f"{key}: key is not root:relative")
+            continue
+        root_label, relative = key.split(":", 1)
+        declared_root = declared_roots.get(root_label)
+        if declared_root is None:
+            manifest_ok = False
+            manifest_notes.append(f"{key}: unknown root label")
+            continue
+        declared_path = pathlib.Path(entry.get("path", ""))
+        expected_path = pathlib.Path(declared_root) / relative
+        # The key must name exactly this file under exactly this root: a
+        # relabelled or redirected path is rejected even if the hash matches.
+        if declared_path != expected_path:
+            manifest_ok = False
+            manifest_notes.append(f"{key}: path {entry.get('path')!r} is not {str(expected_path)!r}")
+            continue
+        if not path_is_under(declared_path, pathlib.Path(declared_root)):
+            manifest_ok = False
+            manifest_notes.append(f"{key}: path escapes its declared root")
+            continue
+        if not declared_path.is_file() or sha_bytes(
+            declared_path.read_bytes()
+        ) != entry.get("sha256"):
+            manifest_ok = False
+            manifest_notes.append(f"{key}: missing or changed")
     check(
         "manifest_files_recomputed",
         manifest_ok and bool(manifest_files),

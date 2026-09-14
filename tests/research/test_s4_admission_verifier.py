@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pandas as pd
-from test_s4_replay_admission import _plan, _volume_row
+from test_s4_replay_admission import _full_context, _plan, _volume_row
 
 from quantlab.research.round2_dataset import canonical_payload_fingerprint
 
@@ -215,6 +215,14 @@ def _hand_build_package(
                 "open_gaps": open_gaps,
             }
         )
+    unknown_by_field: dict[str, list[str]] = {}
+    for item in instruments:
+        for name in item["open_gaps"]:
+            unknown_by_field.setdefault(name, []).append(item["instrument_id"])
+    gap_counts = {
+        name: {"instruments": len(codes), "examples": codes[:5]}
+        for name, codes in sorted(unknown_by_field.items())
+    }
     package = {
         "decision_date": "2021-12-31",
         "execution_date": "2022-01-04",
@@ -226,11 +234,13 @@ def _hand_build_package(
         "scope": "s4_first_entry_input_package_only",
         "performance_evidence": False,
         "execution_authority": False,
+        "gap_counts_by_field": gap_counts,
     }
     (output / "input_package.json").write_text(json.dumps(package))
     report = {
         "verdict": "preflight_stopped_before_execution_day",
         "precise_stop_date": "2022-01-04",
+        "gap_counts_by_field": gap_counts,
         "prior20_gaps": [
             {
                 "instrument_id": "000301.SZ",
@@ -487,3 +497,137 @@ class TestSemanticFalsePassRegressions(TestVerifierTamperRegressions):
             _run_verifier(tmp_path / "pkg", source, canonical, frozen)
             != 0
         )
+
+
+class TestRound3CloseOutRegressions(TestVerifierTamperRegressions):
+    def test_missing_rule_and_fee_dates_are_listed(self):
+        from quantlab.research.s4_replay_admission import necessary_field_gaps
+
+        context = _full_context("000301.SZ", session_volume_shares=1000)
+        context["rules"] = {
+            **context["rules"],
+            "effective_from": None,
+            "effective_through": None,
+        }
+        context["fees"] = {
+            **context["fees"],
+            "effective_from": None,
+            "effective_through": None,
+        }
+        joined = "; ".join(necessary_field_gaps(context))
+        for needle in (
+            "rules.effective_from: missing",
+            "rules.effective_through: missing",
+            "fees.effective_from: missing",
+            "fees.effective_through: missing",
+        ):
+            assert needle in joined, needle
+
+    def test_manifest_key_path_swap_fails(self, tmp_path):
+        # Every key present, every hash correct - but the daily partition
+        # entry points at another legitimate canonical file. The exact
+        # key-to-path identity check must reject this relabelling.
+        source, canonical, plan, recon_body, frozen = _build_world(tmp_path)
+        output = tmp_path / "pkg"
+        self._package(output, plan, recon_body, source, canonical)
+        report_path = output / "preflight_report.json"
+        report = json.loads(report_path.read_text())
+        files = report["manifest"]["files"]
+        daily_key = next(
+            k for k in files if k.startswith("canonical:daily/")
+        )
+        decoy = next(
+            k for k in files if k.startswith("canonical:lifecycle")
+        )
+        files[daily_key] = dict(files[decoy])  # same path+hash, wrong identity
+        report_path.write_text(json.dumps(report))
+        _write_completed(output)
+        import s4_admission_independent_verify as verifier
+
+        payload = verifier.verify(output, source, canonical, frozen=self._frozen(source))
+        assert payload["all_ok"] is False
+
+    def _frozen(self, source: Path) -> dict:
+        plan_payload = json.loads((source / "s4_first_entry_plan/plan.json").read_text())
+        recon_payload = json.loads(
+            (source / "s4_entry_raw_precision/reconciliation.json").read_text()
+        )
+        return {
+            "plan": plan_payload["fingerprint"],
+            "reconciliation": recon_payload["fingerprint"],
+        }
+
+    def test_dropped_identity_entry_fails(self, tmp_path):
+        source, canonical, plan, recon_body, frozen = _build_world(tmp_path)
+        output = tmp_path / "pkg"
+        self._package(output, plan, recon_body, source, canonical)
+        package_path = output / "input_package.json"
+        package = json.loads(package_path.read_text())
+        item = package["instruments"][0]
+        item["fields"] = [
+            f
+            for f in item["fields"]
+            if f["field"] != "historical_identity_and_signal_eligibility"
+        ]
+        item["open_gaps"] = [
+            g
+            for g in item["open_gaps"]
+            if g != "historical_identity_and_signal_eligibility"
+        ]
+        package_path.write_text(json.dumps(package))
+        _write_completed(output)
+        import s4_admission_independent_verify as verifier
+
+        payload = verifier.verify(output, source, canonical, frozen=frozen, expected_gap_count=1)
+        assert payload["all_ok"] is False
+
+    def test_dropped_fee_gap_and_wrong_count_fail(self, tmp_path):
+        source, canonical, plan, recon_body, frozen = _build_world(tmp_path)
+        output = tmp_path / "pkg"
+        self._package(output, plan, recon_body, source, canonical)
+        report_path = output / "preflight_report.json"
+        report = json.loads(report_path.read_text())
+        # Drop one of the two additional-fee gap families entirely and
+        # corrupt the count of another: both must be caught.
+        dropped = "fees.additional_fee_fixed_fen"
+        report["gap_counts_by_field"].pop(dropped, None)
+        package = json.loads((output / "input_package.json").read_text())
+        for item in package["instruments"]:
+            item["fields"] = [
+                f for f in item["fields"] if f["field"] != dropped
+            ]
+            item["open_gaps"] = [g for g in item["open_gaps"] if g != dropped]
+        report["package"] = package
+        report_path.write_text(json.dumps(report))
+        (output / "input_package.json").write_text(json.dumps(package))
+        _write_completed(output)
+        import s4_admission_independent_verify as verifier
+
+        payload = verifier.verify(output, source, canonical, frozen=frozen, expected_gap_count=1)
+        assert payload["all_ok"] is False
+
+    def test_wrong_instrument_attribution_fails(self, tmp_path):
+        source, canonical, plan, recon_body, frozen = _build_world(tmp_path)
+        output = tmp_path / "pkg"
+        self._package(output, plan, recon_body, source, canonical)
+        package_path = output / "input_package.json"
+        package = json.loads(package_path.read_text())
+        # Move one of A's unknowns to B: per-instrument re-derivation and the
+        # exact open_gaps sweep must reject the swap.
+        victim = package["instruments"][0]
+        receiver = package["instruments"][1]
+        entry = next(
+            f for f in victim["fields"] if f["field"] == "market_open"
+        )
+        victim["fields"] = [f for f in victim["fields"] if f["field"] != "market_open"]
+        victim["open_gaps"] = [g for g in victim["open_gaps"] if g != "market_open"]
+        receiver["fields"] = list(receiver["fields"]) + [entry]
+        receiver["open_gaps"] = receiver["open_gaps"] + ["market_open"]
+        package_path.write_text(json.dumps(package))
+        _write_completed(output)
+        import s4_admission_independent_verify as verifier
+
+        payload = verifier.verify(
+            output, source, canonical, frozen=frozen, expected_gap_count=1
+        )
+        assert payload["all_ok"] is False

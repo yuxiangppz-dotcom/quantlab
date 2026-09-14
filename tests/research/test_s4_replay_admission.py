@@ -356,13 +356,15 @@ class TestNecessaryFieldGaps:
         gaps = [f.field for f in instruments[1].fields if f.status == "unknown"]
         # No context.* structural gap for a fully filled context; only the
         # genuinely unknown facts remain.
-        assert not any(g.startswith("context.fees.additional_fee") for g in gaps) or True
+        # The two additional-fee unknowns now carry their own stable ids
+        # instead of context.* structural entries.
         structural = [g for g in gaps if g.startswith("context.")]
-        assert structural == [
-            "context.prior20_amount_fen: missing (unknown)",
-            "context.fees.additional_fee_rate: missing (unknown)",
-            "context.fees.additional_fee_fixed_fen: missing (unknown)",
-        ]
+        assert structural == ["context.prior20_amount_fen: missing (unknown)"]
+        stable = {g for g in gaps if g.startswith("fees.additional_fee")}
+        assert stable == {
+            "fees.additional_fee_rate",
+            "fees.additional_fee_fixed_fen",
+        }
 
 
 class TestAttemptVerificationAndGaps:

@@ -641,11 +641,17 @@ def necessary_field_gaps(context: dict) -> list[str]:
                 add(f"rules.{name}: must be a positive integer")
         if type(rules.get("full_position_odd_exit")) is not bool:
             add("rules.full_position_odd_exit: must be boolean")
-        rule_from = parse_iso(rules.get("effective_from"))
-        rule_through = parse_iso(rules.get("effective_through"))
-        if rules.get("effective_from") is not None and rule_from is None:
+        raw_from = rules.get("effective_from")
+        raw_through = rules.get("effective_through")
+        rule_from = parse_iso(raw_from)
+        rule_through = parse_iso(raw_through)
+        if raw_from is None:
+            add("rules.effective_from: missing (unknown)")
+        elif rule_from is None:
             add("rules.effective_from: not a valid ISO date")
-        if rules.get("effective_through") is not None and rule_through is None:
+        if raw_through is None:
+            add("rules.effective_through: missing (unknown)")
+        elif rule_through is None:
             add("rules.effective_through: not a valid ISO date")
         if rule_from is not None and rule_through is not None:
             if rule_from > rule_through:
@@ -678,11 +684,17 @@ def necessary_field_gaps(context: dict) -> list[str]:
             add("fees.additional_fee_fixed_fen: missing (unknown)")
         elif type(fixed) is not int or fixed < 0:
             add("fees.additional_fee_fixed_fen: must be a nonnegative integer")
-        fee_from = parse_iso(fees.get("effective_from"))
-        fee_through = parse_iso(fees.get("effective_through"))
-        if fees.get("effective_from") is not None and fee_from is None:
+        raw_fee_from = fees.get("effective_from")
+        raw_fee_through = fees.get("effective_through")
+        fee_from = parse_iso(raw_fee_from)
+        fee_through = parse_iso(raw_fee_through)
+        if raw_fee_from is None:
+            add("fees.effective_from: missing (unknown)")
+        elif fee_from is None:
             add("fees.effective_from: not a valid ISO date")
-        if fees.get("effective_through") is not None and fee_through is None:
+        if raw_fee_through is None:
+            add("fees.effective_through: missing (unknown)")
+        elif fee_through is None:
             add("fees.effective_through: not a valid ISO date")
         if fee_from is not None and fee_through is not None:
             if fee_from > fee_through:
@@ -881,13 +893,32 @@ def build_input_package(
                     reason=reason,
                 )
             )
+        stable_fee_ids = {
+            "fees.additional_fee_rate: missing (unknown)",
+            "fees.additional_fee_fixed_fen: missing (unknown)",
+        }
         for gap in necessary_field_gaps(context):
+            if gap in stable_fee_ids:
+                # These two carry their own stable dedicated entries below.
+                continue
             fields.append(
                 FieldAdmission(
                     field=f"context.{gap}",
                     source="derived context validation",
                     status=STATUS_UNKNOWN,
                     reason=gap,
+                )
+            )
+        for fee_id in ("fees.additional_fee_rate", "fees.additional_fee_fixed_fen"):
+            fields.append(
+                FieldAdmission(
+                    field=fee_id,
+                    source="none",
+                    status=STATUS_UNKNOWN,
+                    reason=(
+                        "additional-fee scope is unconfirmed for this "
+                        "historical scenario; never zero-filled"
+                    ),
                 )
             )
         instruments.append(
