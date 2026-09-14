@@ -1,8 +1,8 @@
 """Point-in-time feature materialization for the frozen S5 research kernel.
 
-This module deliberately stops at research observations.  It never reads a
+This module deliberately stops at research observations. It never reads a
 provider, writes Canonical data, evaluates future returns, promotes a strategy,
-or creates an order.  Callers remain responsible for supplying trustworthy
+or creates an order. Callers remain responsible for supplying trustworthy
 source identities and point-in-time membership / universe evidence.
 """
 
@@ -24,7 +24,7 @@ _REQUIRED_VOL_CLOSES = 272
 class S5SeriesPoint:
     """One numeric observation in a caller-supplied research series.
 
-    Values are intentionally validated only when their dates are consumed.  A
+    Values are intentionally validated only when their dates are consumed. A
     future bad value must not make an earlier materialization depend on future
     information.
     """
@@ -181,7 +181,13 @@ def materialize_s5_inputs(
         sector_maps[sector_id] = closes
 
         drawdown, reason = _drawdown_120(sessions, closes)
-        _append_issue(issues, "sector", sector_id, "drawdown_from_120d_high", reason)
+        _append_issue(
+            issues,
+            "sector",
+            sector_id,
+            "drawdown_from_120d_high",
+            reason,
+        )
 
         new_low_rate, reason = _new_low_rate_20(sessions, closes)
         _append_issue(issues, "sector", sector_id, "new_low_rate_20", reason)
@@ -208,7 +214,13 @@ def materialize_s5_inputs(
         else:
             relative_return = sector_return - benchmark_return
             relative_reason = None
-        _append_issue(issues, "sector", sector_id, "relative_return_20", relative_reason)
+        _append_issue(
+            issues,
+            "sector",
+            sector_id,
+            "relative_return_20",
+            relative_reason,
+        )
 
         complete = all(
             value is not None
@@ -267,7 +279,9 @@ def materialize_s5_inputs(
         sector_return_reason: str | None = "sector_series_missing"
         if sector_closes is not None:
             sector_return, sector_return_reason = _simple_return(
-                sessions, sector_closes, 20
+                sessions,
+                sector_closes,
+                20,
             )
         relative_stock: float | None
         relative_stock_reason: str | None
@@ -289,7 +303,13 @@ def materialize_s5_inputs(
         )
 
         close_to_ma20, reason = _close_to_ma20(sessions, closes)
-        _append_issue(issues, "stock", instrument_id, "close_to_ma20_ratio", reason)
+        _append_issue(
+            issues,
+            "stock",
+            instrument_id,
+            "close_to_ma20_ratio",
+            reason,
+        )
 
         ma20_slope, reason = _ma20_slope_5(sessions, closes)
         _append_issue(issues, "stock", instrument_id, "ma20_slope_5", reason)
@@ -366,7 +386,7 @@ def _new_low_rate_20(
     if values is None:
         return None, reason
     hits = 0
-    for offset in range(19, 79):
+    for offset in range(59, 79):
         trailing = values[offset - 59 : offset + 1]
         if values[offset] <= min(trailing):
             hits += 1
@@ -383,7 +403,10 @@ def _volatility_percentile_252(
     prices, reason = _positive_dates(needed, closes)
     if prices is None:
         return None, reason
-    returns = [prices[index] / prices[index - 1] - 1.0 for index in range(1, len(prices))]
+    returns = [
+        prices[index] / prices[index - 1] - 1.0
+        for index in range(1, len(prices))
+    ]
     volatilities = [
         statistics.stdev(returns[end - 20 : end])
         for end in range(20, len(returns) + 1)
@@ -509,7 +532,10 @@ def _validate_sessions(as_of: date, sessions: tuple[date, ...]) -> None:
         raise ValueError("sessions cannot be empty")
     if sessions[-1] != as_of:
         raise ValueError("sessions must end exactly at as_of")
-    if any(left >= right for left, right in zip(sessions, sessions[1:], strict=False)):
+    if any(
+        left >= right
+        for left, right in zip(sessions, sessions[1:], strict=False)
+    ):
         raise ValueError("sessions must be strictly increasing")
 
 
@@ -568,19 +594,14 @@ def _materialization_fingerprint(
 
     def series_payload(series: S5ResearchSeries) -> dict[str, object]:
         points = sorted(
-            (
-                point.trade_date.isoformat(),
-                point.value,
-            )
+            (point.trade_date.isoformat(), point.value)
             for point in series.points
             if point.trade_date in session_set
         )
         return {
             "series_id": series.series_id,
             "source_id": series.source_id,
-            "used_date_range": (
-                [points[0][0], points[-1][0]] if points else None
-            ),
+            "used_date_range": [points[0][0], points[-1][0]] if points else None,
             "points": points,
         }
 
@@ -599,9 +620,7 @@ def _materialization_fingerprint(
                 evidence.instrument_id,
                 evidence.sector_id,
                 evidence.effective_from.isoformat(),
-                evidence.effective_to.isoformat()
-                if evidence.effective_to is not None
-                else None,
+                _effective_end_for_fingerprint(evidence, as_of),
                 evidence.source_id,
                 evidence.pit_verified,
             )
@@ -651,6 +670,22 @@ def _materialization_fingerprint(
         "stocks": stock_payload,
     }
     return canonical_payload_fingerprint(payload)
+
+
+def _effective_end_for_fingerprint(
+    evidence: S5MembershipEvidence,
+    as_of: date,
+) -> str:
+    """Bind only membership end information knowable/relevant by ``as_of``.
+
+    An open interval and an interval that ends after ``as_of`` are equivalent for
+    this materialization. Their later end-date difference must not rewrite an
+    earlier fingerprint.
+    """
+
+    if evidence.effective_to is None or evidence.effective_to > as_of:
+        return "after_as_of_or_open"
+    return evidence.effective_to.isoformat()
 
 
 def _append_issue(
