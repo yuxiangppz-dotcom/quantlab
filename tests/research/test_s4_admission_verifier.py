@@ -16,8 +16,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pandas as pd
-from quantlab.research.round2_dataset import canonical_payload_fingerprint
 from test_s4_replay_admission import _full_context, _plan, _volume_row
+
+from quantlab.research.round2_dataset import canonical_payload_fingerprint
 
 FROZEN_GAPS = (
     ("000301.SZ", "2021-12-22"),
