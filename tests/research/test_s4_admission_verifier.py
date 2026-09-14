@@ -18,6 +18,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pandas as pd
 from test_s4_replay_admission import _full_context, _plan, _volume_row
 
+FROZEN_GAPS = (
+    ("000301.SZ", "2021-12-22"),
+    ("000777.SZ", "2021-12-07"),
+    ("000777.SZ", "2021-12-08"),
+    ("000777.SZ", "2021-12-09"),
+    ("000777.SZ", "2021-12-10"),
+    ("000777.SZ", "2021-12-13"),
+)
+
 from quantlab.research.round2_dataset import canonical_payload_fingerprint
 
 REPO = Path(__file__).resolve().parents[2]
@@ -63,61 +72,73 @@ def _build_world(root: Path) -> tuple[Path, Path, dict, dict]:
             {"fingerprint": canonical_payload_fingerprint(profiles_body), **profiles_body}
         )
     )
-    stamp = "20211222"
-    attempt = attempts / f"attempts/daily_000301.SZ_{stamp}"
-    attempt.mkdir(parents=True)
-    body_bytes = b'{"code":0,"data":{"items":[]}}'
-    intent_fp = "intent-000301"
-    intent = {
-        "fingerprint": intent_fp,
-        "request": {
-            "id": f"daily_000301.SZ_{stamp}",
-            "parameters": {
-                "api_name": "daily",
-                "params": {
-                    "ts_code": "000301.SZ",
-                    "start_date": stamp,
-                    "end_date": stamp,
+    for code, trade_date in FROZEN_GAPS:
+        stamp = trade_date.replace("-", "")
+        attempt = attempts / f"attempts/daily_{code}_{stamp}"
+        attempt.mkdir(parents=True, exist_ok=True)
+        body_bytes = b'{"code":0,"data":{"items":[]}}'
+        intent_fp = f"intent-{code}-{stamp}"
+        intent = {
+            "fingerprint": intent_fp,
+            "request": {
+                "id": f"daily_{code}_{stamp}",
+                "parameters": {
+                    "api_name": "daily",
+                    "params": {
+                        "ts_code": code,
+                        "start_date": stamp,
+                        "end_date": stamp,
+                    },
                 },
             },
-        },
-    }
-    body_sha = hashlib.sha256(body_bytes).hexdigest()
-    (attempt / "intent.json").write_text(json.dumps(intent))
-    (attempt / "response.body").write_bytes(body_bytes)
-    (attempt / "result.json").write_text(
-        json.dumps(
+        }
+        body_sha = hashlib.sha256(body_bytes).hexdigest()
+        (attempt / "intent.json").write_text(json.dumps(intent))
+        (attempt / "response.body").write_bytes(body_bytes)
+        (attempt / "result.json").write_text(
+            json.dumps(
+                {
+                    "transport_status": "received",
+                    "http_status": 200,
+                    "server_code": 0,
+                    "rows": 0,
+                    "status": "empty",
+                    "intent_fingerprint": intent_fp,
+                    "wire_sha256": body_sha,
+                    "artifacts": {"response.body": {"sha256": body_sha}},
+                }
+            )
+        )
+    susp_rows = []
+    rec_id = 0
+    for code, trade_date in FROZEN_GAPS:
+        rec_id += 1
+        susp_rows.append(
             {
-                "transport_status": "received",
-                "http_status": 200,
-                "server_code": 0,
-                "rows": 0,
-                "status": "empty",
-                "intent_fingerprint": intent_fp,
-                "wire_sha256": body_sha,
-                "artifacts": {"response.body": {"sha256": body_sha}},
+                "instrument_id": code,
+                "trade_date": trade_date,
+                "suspend_type": "S",
+                "suspend_timing": None,
+                "source_record_id": f"rec-{rec_id}",
             }
         )
-    )
     susp_dir = canonical / "lifecycle_context_v1/suspensions/year=2021/month=12"
     susp_dir.mkdir(parents=True)
-    pd.DataFrame(
-        {
-            "instrument_id": ["000301.SZ"],
-            "trade_date": ["2021-12-22"],
-            "suspend_type": ["S"],
-            "suspend_timing": [None],
-            "source_record_id": ["rec-1"],
-        }
-    ).to_parquet(susp_dir / "part.parquet")
+    pd.DataFrame(susp_rows).to_parquet(susp_dir / "part.parquet")
+    daily_rows = [
+        {"ts_code": f"99999{i}.SZ", "trade_date": trade_date, "vol": 1}
+        for i, (_, trade_date) in enumerate(FROZEN_GAPS)
+    ]
     daily_dir = canonical / "daily/year=2021/month=12"
     daily_dir.mkdir(parents=True)
-    pd.DataFrame(
-        {"ts_code": ["999999.SZ"], "trade_date": ["2021-12-22"], "vol": [1]}
-    ).to_parquet(daily_dir / "part.parquet")
+    pd.DataFrame(daily_rows).to_parquet(daily_dir / "part.parquet")
+    profiles_payload = json.loads(
+        (source / "cohort_dividend_readiness/profiles.json").read_text()
+    )
     synthetic_frozen = {
         "plan": plan["fingerprint"],
         "reconciliation": recon_body["fingerprint"],
+        "profiles": profiles_payload["fingerprint"],
     }
     return source, canonical, plan, recon_body, synthetic_frozen
 
@@ -247,30 +268,52 @@ def _hand_build_package(
         "gap_counts_by_field": gap_counts,
         "prior20_gaps": [
             {
-                "instrument_id": "000301.SZ",
-                "trade_date": "2021-12-22",
+                "instrument_id": code,
+                "trade_date": trade_date,
                 "request_identity_verified": True,
                 "response_verified_empty": True,
                 "response_sha256": "0" * 64,
                 "local_bar_present": False,
                 "suspension_on_date": True,
                 "suspend_timing_empty": True,
-                "suspension_source_record_ids": ["rec-1"],
+                "suspension_source_record_ids": [f"rec-{i + 1}"],
                 "classification": "proven_full_day_suspension_supplier_basis",
                 "note": "n",
             }
+            for i, (code, trade_date) in enumerate(FROZEN_GAPS)
         ],
         "economic_paths_started": 0,
         "model_fits_used": 0,
         "provider_calls": 0,
         "manifest": {
             "manifest_version": 2,
+            "fingerprint_checks": {
+                "sealed:s4_first_entry_plan/plan.json": {
+                    "embedded_fingerprint": plan["fingerprint"],
+                    "frozen_identity": plan["fingerprint"],
+                    "match": True,
+                },
+                "sealed:s4_entry_raw_precision/reconciliation.json": {
+                    "embedded_fingerprint": recon_body["fingerprint"],
+                    "frozen_identity": recon_body["fingerprint"],
+                    "match": True,
+                },
+                "sealed:cohort_dividend_readiness/profiles.json": {
+                    "embedded_fingerprint": json.loads(
+                        (source / "cohort_dividend_readiness/profiles.json").read_text()
+                    )["fingerprint"],
+                    "frozen_identity": json.loads(
+                        (source / "cohort_dividend_readiness/profiles.json").read_text()
+                    )["fingerprint"],
+                    "match": True,
+                },
+            },
             "files": _bound_files(source, canonical),
             "roots": {"sealed": str(source.resolve()), "canonical": str(canonical.resolve())},
             "bound_files": {
                 k: {"sha256": v["sha256"], "bytes": v["bytes"]}
                 for k, v in _bound_files(source, canonical).items()
-                if "/attempts/" in k or "/daily/" in k or "suspensions/" in k
+                if "/attempts/" in k or "daily/" in k or "suspensions/" in k
             },
         },
         "package": package,
@@ -281,32 +324,32 @@ def _hand_build_package(
 def _bound_files(source: Path, canonical: Path) -> dict:
     """Manifest of every file a real production run would consume."""
     files: dict[str, dict] = {}
-    for label, root, relative in (
-        ("sealed", source, "s4_first_entry_plan/plan.json"),
-        ("sealed", source, "s4_entry_raw_precision/reconciliation.json"),
-        ("sealed", source, "cohort_dividend_readiness/profiles.json"),
-        (
-            "sealed",
-            source,
-            "s4_entry_raw_precision/attempts/daily_000301.SZ_20211222/intent.json",
-        ),
-        (
-            "sealed",
-            source,
-            "s4_entry_raw_precision/attempts/daily_000301.SZ_20211222/result.json",
-        ),
-        (
-            "sealed",
-            source,
-            "s4_entry_raw_precision/attempts/daily_000301.SZ_20211222/response.body",
-        ),
-        ("canonical", canonical, "daily/year=2021/month=12/part.parquet"),
-        (
-            "canonical",
-            canonical,
-            "lifecycle_context_v1/suspensions/year=2021/month=12/part.parquet",
-        ),
-    ):
+    relatives = [
+        ("sealed", "s4_first_entry_plan/plan.json"),
+        ("sealed", "s4_entry_raw_precision/reconciliation.json"),
+        ("sealed", "cohort_dividend_readiness/profiles.json"),
+    ]
+    for code, trade_date in FROZEN_GAPS:
+        stamp = trade_date.replace("-", "")
+        base = f"s4_entry_raw_precision/attempts/daily_{code}_{stamp}"
+        relatives.extend(
+            [
+                ("sealed", f"{base}/intent.json"),
+                ("sealed", f"{base}/result.json"),
+                ("sealed", f"{base}/response.body"),
+            ]
+        )
+    relatives.extend(
+        [
+            ("canonical", "daily/year=2021/month=12/part.parquet"),
+            (
+                "canonical",
+                "lifecycle_context_v1/suspensions/year=2021/month=12/part.parquet",
+            ),
+        ]
+    )
+    for label, relative in relatives:
+        root = source if label == "sealed" else canonical
         path = root / relative
         files[f"{label}:{relative}"] = {
             "path": str(path),
@@ -334,7 +377,7 @@ def _run_verifier(
     source: Path,
     canonical: Path,
     frozen: dict,
-    expected_gap_count: int = 1,
+    expected_gap_count: int = 6,
 ) -> int:
     """In-process verification against the generation-time frozen map."""
     payload = verifier.verify(
@@ -427,7 +470,7 @@ class TestVerifierTamperRegressions:
         output = tmp_path / "pkg"
         self._package(output, plan, recon_body, source, canonical)
         first = verifier.verify(
-            output, source, canonical, frozen=frozen, expected_gap_count=1
+            output, source, canonical, frozen=frozen, expected_gap_count=6
         )
         assert first["all_ok"]
         (output / "independent_verification.json").write_text(
@@ -442,7 +485,7 @@ class TestVerifierTamperRegressions:
         completed["input_package_sha256"] = _sha(package_path)
         completed_path.write_text(json.dumps(completed))
         second = verifier.verify(
-            output, source, canonical, frozen=frozen, expected_gap_count=1
+            output, source, canonical, frozen=frozen, expected_gap_count=6
         )
         # The prior proof file no longer matches the new package: the CLI
         # wrapper refuses to overwrite it with a passing proof.
@@ -563,9 +606,13 @@ class TestRound3CloseOutRegressions(TestVerifierTamperRegressions):
         recon_payload = json.loads(
             (source / "s4_entry_raw_precision/reconciliation.json").read_text()
         )
+        profiles_payload = json.loads(
+            (source / "cohort_dividend_readiness/profiles.json").read_text()
+        )
         return {
             "plan": plan_payload["fingerprint"],
             "reconciliation": recon_payload["fingerprint"],
+            "profiles": profiles_payload["fingerprint"],
         }
 
     def test_dropped_identity_entry_fails(self, tmp_path):
@@ -589,7 +636,7 @@ class TestRound3CloseOutRegressions(TestVerifierTamperRegressions):
         _write_completed(output)
         import s4_admission_independent_verify as verifier
 
-        payload = verifier.verify(output, source, canonical, frozen=frozen, expected_gap_count=1)
+        payload = verifier.verify(output, source, canonical, frozen=frozen, expected_gap_count=6)
         assert payload["all_ok"] is False
 
     def test_dropped_fee_gap_and_wrong_count_fail(self, tmp_path):
@@ -614,7 +661,7 @@ class TestRound3CloseOutRegressions(TestVerifierTamperRegressions):
         _write_completed(output)
         import s4_admission_independent_verify as verifier
 
-        payload = verifier.verify(output, source, canonical, frozen=frozen, expected_gap_count=1)
+        payload = verifier.verify(output, source, canonical, frozen=frozen, expected_gap_count=6)
         assert payload["all_ok"] is False
 
     def test_wrong_instrument_attribution_fails(self, tmp_path):
@@ -639,7 +686,7 @@ class TestRound3CloseOutRegressions(TestVerifierTamperRegressions):
         import s4_admission_independent_verify as verifier
 
         payload = verifier.verify(
-            output, source, canonical, frozen=frozen, expected_gap_count=1
+            output, source, canonical, frozen=frozen, expected_gap_count=6
         )
         assert payload["all_ok"] is False
 

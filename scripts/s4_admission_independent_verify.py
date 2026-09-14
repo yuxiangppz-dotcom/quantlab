@@ -26,6 +26,16 @@ from fractions import Fraction
 
 import pandas as pd
 
+# The six empty prior20 code-date pairs, frozen independently of any report.
+FROZEN_PRIOR20_GAPS = (
+    ("000301.SZ", "2021-12-22"),
+    ("000777.SZ", "2021-12-07"),
+    ("000777.SZ", "2021-12-08"),
+    ("000777.SZ", "2021-12-09"),
+    ("000777.SZ", "2021-12-10"),
+    ("000777.SZ", "2021-12-13"),
+)
+
 FROZEN = {
     "plan": "6359d58599328340b43a84215ffa2f15725944171edea0b0f2786cf0cadfce92",
     "reconciliation": "a9e30b671ace89d59b272d5558295a1b1ee68f75e93c79309bd310d8951c3e10",
@@ -95,12 +105,13 @@ def verify(
     recon_path = source_dir / "s4_entry_raw_precision/reconciliation.json"
     plan = json.loads(plan_path.read_text())
     recon = json.loads(recon_path.read_text())
+    profiles_path = source_dir / "cohort_dividend_readiness/profiles.json"
+    profiles = json.loads(profiles_path.read_text())
     check(
         "sealed_fingerprints_recomputed",
         canonical_fingerprint(plan) == plan["fingerprint"] == frozen["plan"]
-        and canonical_fingerprint(recon)
-        == recon["fingerprint"]
-        == frozen["reconciliation"],
+        and canonical_fingerprint(recon) == recon["fingerprint"] == frozen["reconciliation"]
+        and canonical_fingerprint(profiles) == profiles["fingerprint"] == frozen["profiles"],
         "recomputed over the file bodies and equal to the frozen identities",
     )
 
@@ -325,6 +336,41 @@ def verify(
         manifest_version == 2,
         f"manifest_version={manifest_version!r}; regenerate with the current producer",
     )
+    # fingerprint_checks: exactly the three base keys, each recording the
+    # recomputed embedded fingerprint equal to the frozen identity.
+    fingerprint_checks = manifest.get("fingerprint_checks", {})
+    recomputed_sources = {
+        "sealed:s4_first_entry_plan/plan.json": plan,
+        "sealed:s4_entry_raw_precision/reconciliation.json": recon,
+        "sealed:cohort_dividend_readiness/profiles.json": profiles,
+    }
+    short_names = {
+        "sealed:s4_first_entry_plan/plan.json": "plan",
+        "sealed:s4_entry_raw_precision/reconciliation.json": "reconciliation",
+        "sealed:cohort_dividend_readiness/profiles.json": "profiles",
+    }
+    checks_failures = []
+    if set(fingerprint_checks) != set(recomputed_sources):
+        checks_failures.append(
+            f"keys {sorted(fingerprint_checks)} != {sorted(recomputed_sources)}"
+        )
+    for key, source_payload in recomputed_sources.items():
+        entry = fingerprint_checks.get(key)
+        recomputed = canonical_fingerprint(source_payload)
+        if entry is None:
+            checks_failures.append(f"{key}: fingerprint check missing")
+            continue
+        if entry.get("embedded_fingerprint") != recomputed:
+            checks_failures.append(f"{key}: recorded fingerprint != recomputed")
+        if entry.get("frozen_identity") != frozen[short_names[key]]:
+            checks_failures.append(f"{key}: frozen identity mismatch")
+        if entry.get("match") is not True:
+            checks_failures.append(f"{key}: match flag is not true")
+    check(
+        "fingerprint_checks_complete_and_factual",
+        not checks_failures,
+        "; ".join(checks_failures[:4]) or "three base provenance records verified",
+    )
     manifest_files = manifest.get("files", {})
     roots = manifest.get("roots", {})
     roots_ok = roots.get("sealed") == str(source_dir.resolve()) and roots.get(
@@ -340,9 +386,26 @@ def verify(
         "sealed:s4_entry_raw_precision/reconciliation.json",
         "sealed:cohort_dividend_readiness/profiles.json",
     }
+    # A. The six gap identities are frozen in this verifier, independent of
+    # the report. Duplicates, omissions, substitutions and extra dates in
+    # the report are all rejected before anything else is derived.
+    report_pairs = [
+        (gap.get("instrument_id"), gap.get("trade_date"))
+        for gap in report.get("prior20_gaps", [])
+    ]
+    frozen_pairs = list(FROZEN_PRIOR20_GAPS)
+    pairs_match = (
+        len(report_pairs) == len(frozen_pairs)
+        and set(report_pairs) == set(frozen_pairs)
+        and len(set(report_pairs)) == len(frozen_pairs)
+    )
+    check(
+        "prior20_gap_identities_match_frozen_contract",
+        pairs_match,
+        f"report pairs {sorted(report_pairs)}" if not pairs_match else "6/6 frozen identities",
+    )
     consumed_partition_keys: set[str] = set()
-    for gap in report.get("prior20_gaps", []):
-        code, trade_date = gap["instrument_id"], gap["trade_date"]
+    for code, trade_date in FROZEN_PRIOR20_GAPS:
         stamp = trade_date.replace("-", "")
         year, month, _ = trade_date.split("-")
         base = f"s4_entry_raw_precision/attempts/daily_{code}_{stamp}"
@@ -375,8 +438,21 @@ def verify(
         )
     bound_files = manifest.get("bound_files", {})
     bound_failures = []
-    if not bound_files:
-        bound_failures.append("bound_files is empty")
+    # Exact membership per the producer binding contract: the attempt
+    # triples for all six frozen gap dates plus every consumed partition
+    # file. Base artifacts are bound through the main binding, not here.
+    expected_bound_keys = sorted(
+        key
+        for key in required_sources
+        if key.startswith("sealed:s4_entry_raw_precision/attempts/")
+        or key.startswith("canonical:")
+    )
+    if sorted(bound_files) != expected_bound_keys:
+        missing = sorted(set(expected_bound_keys) - set(bound_files))
+        extra = sorted(set(bound_files) - set(expected_bound_keys))
+        bound_failures.append(
+            f"membership mismatch: missing {missing[:3]} extra {extra[:3]}"
+        )
     for key, entry in bound_files.items():
         file_entry = manifest_files.get(key)
         if file_entry is None:
@@ -423,9 +499,19 @@ def verify(
             manifest_ok = False
             manifest_notes.append(f"{key}: path escapes its declared root")
             continue
-        if not declared_path.is_file() or sha_bytes(
-            declared_path.read_bytes()
-        ) != entry.get("sha256"):
+        actual_size = (
+            declared_path.stat().st_size if declared_path.is_file() else None
+        )
+        if actual_size is None:
+            manifest_ok = False
+            manifest_notes.append(f"{key}: missing")
+            continue
+        if entry.get("bytes") is not None and entry.get("bytes") != actual_size:
+            manifest_ok = False
+            manifest_notes.append(
+                f"{key}: byte count {entry.get('bytes')} != {actual_size}"
+            )
+        if sha_bytes(declared_path.read_bytes()) != entry.get("sha256"):
             manifest_ok = False
             manifest_notes.append(f"{key}: missing or changed")
     check(
