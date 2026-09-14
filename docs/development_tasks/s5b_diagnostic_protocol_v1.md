@@ -8,9 +8,16 @@ materializer and v1.2 decision assembler, requires 100% verified membership and
 positive eligibility, and permits only a date range chosen from fully covered
 membership evidence.
 
-Horizons are 5/10/20 market sessions. The report must retain every state,
-transition, selected-N, cash date, negative month/regime and unavailable
-comparison. Comparisons and one-run/no-rescan rules are fixed in Issue #145.
+Signal-diagnostic horizons are 1/5/10/20 market sessions. The added one-session
+label measures immediate signal resolution; it is not an executable holding
+return. A later execution protocol must separately bind the signal timestamp,
+next-session entry, earliest legally sellable exit, suspension/limit evidence
+and costs. Therefore these diagnostic horizons do not lock the user's holding
+period.
+
+The report must retain every state, transition, selected-N, cash date, negative
+month/regime and unavailable comparison. Comparisons and one-run/no-rescan
+rules are fixed in Issue #145.
 
 Insufficient membership/eligibility/reference evidence or a forward window
 crossing the frozen end date stops the diagnostic. No denominator shrinking,
