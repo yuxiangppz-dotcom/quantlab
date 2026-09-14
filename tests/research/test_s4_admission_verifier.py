@@ -194,6 +194,16 @@ def _hand_build_package(
             }
         )
         open_gaps.append("prior20_amount_fen")
+        for fee_name in ("fees.additional_fee_rate", "fees.additional_fee_fixed_fen"):
+            fields.append(
+                {
+                    "field": fee_name,
+                    "source": "none",
+                    "status": "unknown",
+                    "reason": "additional-fee scope unconfirmed",
+                }
+            )
+            open_gaps.append(fee_name)
         instruments.append(
             {
                 "instrument_id": code,
@@ -239,7 +249,10 @@ def _hand_build_package(
         "economic_paths_started": 0,
         "model_fits_used": 0,
         "provider_calls": 0,
-        "manifest": {"files": _bound_files(source, canonical)},
+        "manifest": {
+            "files": _bound_files(source, canonical),
+            "roots": {"sealed": str(source.resolve()), "canonical": str(canonical.resolve())},
+        },
         "package": package,
     }
     (output / "preflight_report.json").write_text(json.dumps(report))
@@ -415,3 +428,62 @@ class TestVerifierTamperRegressions:
         assert verifier.main.__doc__ is not None or second["all_ok"] is False
         proof = json.loads((output / "independent_verification.json").read_text())
         assert proof["verified_hashes"]["input_package"] != _sha(package_path)
+
+
+class TestSemanticFalsePassRegressions(TestVerifierTamperRegressions):
+    def _prepared(self, tmp: Path):
+        source, canonical, plan, recon_body, frozen = self._world(tmp)
+        output = tmp / "pkg"
+        self._package(output, plan, recon_body, source, canonical)
+        return source, canonical, frozen
+
+    def test_forced_admitted_labels_with_none_fees_fail(self, tmp_path):
+        # Scenario A: every field forced admitted, reasons and gaps cleared,
+        # verdict flipped to ready while the actual fee facts stay None.
+        source, canonical, frozen = self._prepared(tmp_path)
+        package_path = tmp_path / "pkg" / "input_package.json"
+        report_path = tmp_path / "pkg" / "preflight_report.json"
+        package = json.loads(package_path.read_text())
+        for item in package["instruments"]:
+            item["open_gaps"] = []
+            for f in item["fields"]:
+                f["status"] = "admitted"
+                f["reason"] = ""
+        package_path.write_text(json.dumps(package))
+        report = json.loads(report_path.read_text())
+        report["verdict"] = "inputs_ready_to_request_first_replay_run"
+        report["precise_stop_date"] = None
+        report["package"] = package
+        report_path.write_text(json.dumps(report))
+        _write_completed(tmp_path / "pkg")
+        assert (
+            _run_verifier(
+                tmp_path / "pkg", source, canonical, frozen
+            )
+            != 0
+        )
+
+    def test_shrunk_manifest_with_wrong_roots_fails(self, tmp_path):
+        # Scenario B: the manifest shrunk to a single legitimate plan file,
+        # roots pointing elsewhere, bound_files emptied — the completed hash
+        # stays internally consistent, but the semantic checks must fail.
+        source, canonical, frozen = self._prepared(tmp_path)
+        report_path = tmp_path / "pkg" / "preflight_report.json"
+        report = json.loads(report_path.read_text())
+        plan_rel = "s4_first_entry_plan/plan.json"
+        report["manifest"] = {
+            "files": {
+                f"sealed:{plan_rel}": {
+                    "path": str(source / plan_rel),
+                    "sha256": _sha(source / plan_rel),
+                    "root": "sealed",
+                }
+            },
+            "roots": {"sealed": "/nowhere", "canonical": "/nowhere"},
+        }
+        report_path.write_text(json.dumps(report))
+        _write_completed(tmp_path / "pkg")
+        assert (
+            _run_verifier(tmp_path / "pkg", source, canonical, frozen)
+            != 0
+        )

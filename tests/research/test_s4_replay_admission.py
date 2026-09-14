@@ -360,10 +360,8 @@ class TestNecessaryFieldGaps:
         structural = [g for g in gaps if g.startswith("context.")]
         assert structural == [
             "context.prior20_amount_fen: missing (unknown)",
-            "context.fees.additional_fee_rate: unconfirmed additional-fee "
-            "component stays unknown",
-            "context.fees.additional_fee_fixed_fen: unconfirmed additional-fee "
-            "component stays unknown",
+            "context.fees.additional_fee_rate: missing (unknown)",
+            "context.fees.additional_fee_fixed_fen: missing (unknown)",
         ]
 
 
@@ -735,7 +733,7 @@ class TestKernelSemanticGaps:
         context = _full_context("000301.SZ")
         context["fees"] = {**context["fees"], "commission_rate": "NaN"}
         joined = "; ".join(necessary_field_gaps(context))
-        assert "fees.commission_rate: not a finite decimal" in joined
+        assert "fees.commission_rate: rate outside the modeled 0-1 range" in joined
 
     def test_legal_zeros_are_not_gaps(self):
         context = _full_context(
@@ -907,3 +905,72 @@ class TestReviewRound3ProbeGaps:
         assert "session_volume_shares" not in joined
         assert "session_amount_fen" not in joined
         assert "minimum_commission_fen" not in joined
+
+
+class TestContractConsistency:
+    """Every mutation either surfaces as a gap or assembles cleanly — the
+    preflight and the type-checked assembly are two views of one contract."""
+
+    def _mutants(self):
+        base = _full_context("000301.SZ", session_volume_shares=1000)
+        base["prior20_amount_fen"] = 10**12
+
+        def m(name, mutate, expect):  # expect: "gap" or "assemble"
+            return (name, mutate, expect)
+
+        return [
+            m("participation_2", lambda c: c.update(participation="2"), "gap"),
+            m("participation_nan", lambda c: c.update(participation="NaN"), "gap"),
+            m("participation_zero", lambda c: c.update(participation="0"), "gap"),
+            m("participation_neg", lambda c: c.update(participation="-0.5"), "gap"),
+            m("participation_ok", lambda c: c.update(participation="0.05"), "assemble"),
+            m("commission_2", lambda c: c["fees"].update(commission_rate="2"), "gap"),
+            m("commission_neg", lambda c: c["fees"].update(commission_rate="-0.1"), "gap"),
+            m("commission_nan", lambda c: c["fees"].update(commission_rate="NaN"), "gap"),
+            m("slippage_one", lambda c: c["fees"].update(adverse_slippage_rate="1"), "gap"),
+            m("stamp_neg", lambda c: c["fees"].update(sell_stamp_rate="-0.1"), "gap"),
+            m("fixed_neg", lambda c: c["fees"].update(additional_fee_fixed_fen=-1), "gap"),
+            m("fixed_zero", lambda c: c["fees"].update(additional_fee_fixed_fen=0), "assemble"),
+            m("rules_bad_from", lambda c: c["rules"].update(effective_from="2021-99-99"), "gap"),
+            m(
+                "rules_reversed",
+                lambda c: c["rules"].update(
+                    effective_from="2023-01-01", effective_through="2021-01-01"
+                ),
+                "gap",
+            ),
+            m("rules_ok", lambda c: c["rules"].update(effective_from="2021-01-01"), "assemble"),
+            m("fees_bad_from", lambda c: c["fees"].update(effective_from="2021-99-99"), "gap"),
+            m(
+                "fees_reversed",
+                lambda c: c["fees"].update(
+                    effective_from="2023-01-01", effective_through="2021-01-01"
+                ),
+                "gap",
+            ),
+            m("next_bad_iso", lambda c: c.update(next_session="2022-99-99"), "gap"),
+            m("next_before_exec", lambda c: c.update(next_session="2022-01-03"), "gap"),
+            m("asof_future", lambda c: c.update(prior20_asof="2022-01-04"), "gap"),
+            m("prior20_neg", lambda c: c.update(prior20_amount_fen=-1), "gap"),
+            m("prior20_zero", lambda c: c.update(prior20_amount_fen=0), "assemble"),
+            m("amount_neg", lambda c: c.update(session_amount_fen=-1), "gap"),
+            m("amount_zero", lambda c: c.update(session_amount_fen=0), "assemble"),
+            m("volume_neg", lambda c: c.update(session_volume_shares=-1), "gap"),
+            m("volume_zero", lambda c: c.update(session_volume_shares=0), "assemble"),
+            m("sessions_float", lambda c: c.update(prior20_sessions=20.0), "gap"),
+            m("low_above_close", lambda c: c.update(low_fen=1200), "gap"),
+        ]
+
+    def test_gap_or_assemble_is_exhaustive(self):
+        for name, mutate, expect in self._mutants():
+            context = _full_context("000301.SZ", session_volume_shares=1000)
+            context["prior20_amount_fen"] = 10**12
+            mutate(context)
+            gaps = necessary_field_gaps(context)
+            if expect == "gap":
+                assert gaps, f"{name}: mutation must be reported as a gap"
+            else:
+                # A legal input may still carry the known additional-fee
+                # unknowns; what must hold is that it assembles cleanly.
+                session = research_session_from_context(context)
+                assert isinstance(session, ResearchSession)

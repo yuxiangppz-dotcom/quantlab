@@ -184,6 +184,143 @@ def verify(
         "; ".join(consistency_failures[:6]) or "all 20 agree field-by-field",
     )
 
+    # 4b. Re-derive per-field status and the overall verdict from the actual
+    # context values: labels agreeing with each other is not enough — they
+    # must agree with the facts. Required reasons must be present.
+    semantic_failures = []
+    unknown_fields_by_instrument: dict[str, list[str]] = {}
+    for code, item in by_id.items():
+        context = item["context"]
+        fields = {f["field"]: f for f in item["fields"]}
+        expected_unknown: list[str] = []
+        fees = context.get("fees") or {}
+        if fees.get("additional_fee_rate") is None:
+            expected_unknown.append("fees.additional_fee_rate")
+        if fees.get("additional_fee_fixed_fen") is None:
+            expected_unknown.append("fees.additional_fee_fixed_fen")
+        if context.get("market_open") is None:
+            expected_unknown.append("market_open")
+        if context.get("prior20_amount_fen") is None:
+            expected_unknown.append("prior20_amount_fen")
+        volume = context.get("session_volume_shares")
+        if volume is None:
+            expected_unknown.append("session_volume_shares")
+        # The producer may name the field entry directly or as a context.*
+        # structural finding; accept any unknown entry whose field name
+        # carries the required variable, and require a real reason.
+        for name in expected_unknown:
+            candidates = [
+                (field_name, entry)
+                for field_name, entry in fields.items()
+                if name in field_name
+            ]
+            if not candidates:
+                semantic_failures.append(
+                    f"{code}: {name} is factually unknown but not reported"
+                )
+                continue
+            if not any(
+                entry.get("status") == "unknown" for _, entry in candidates
+            ):
+                semantic_failures.append(
+                    f"{code}: {name} is factually unknown but not reported"
+                )
+            if any(
+                entry.get("status") == "unknown"
+                and not str(entry.get("reason") or "").strip()
+                for _, entry in candidates
+            ):
+                semantic_failures.append(f"{code}: {name} unknown without reason")
+        corporate_entry = fields.get("corporate_actions_processed")
+        corporate_value = context.get("corporate_actions_processed")
+        if corporate_entry is None or corporate_value is not True:
+            semantic_failures.append(f"{code}: entry-day corporate flag must be true")
+        elif corporate_entry.get("status") != "admitted" or not str(
+            corporate_entry.get("reason") or ""
+        ).strip():
+            semantic_failures.append(
+                f"{code}: corporate admission lacks a written justification"
+            )
+        for name, entry in fields.items():
+            if entry.get("status") == "admitted" and not str(
+                entry.get("reason") or ""
+            ).strip():
+                semantic_failures.append(f"{code}: admitted {name} without reason")
+        unknown_fields_by_instrument[code] = [
+            name
+            for name, entry in fields.items()
+            if entry.get("status") == "unknown"
+        ]
+    check(
+        "per_field_status_matches_actual_values",
+        not semantic_failures,
+        "; ".join(semantic_failures[:6]) or "20/20 field statuses re-derive",
+    )
+
+    # 4c. The verdict must be re-derived from the per-instrument results.
+    recomputed_gaps = sorted(
+        {
+            name
+            for code, names in unknown_fields_by_instrument.items()
+            for name in names
+        }
+    )
+    expected_verdict = (
+        "inputs_ready_to_request_first_replay_run"
+        if not recomputed_gaps
+        else "preflight_stopped_before_execution_day"
+    )
+    check(
+        "verdict_rederived_from_facts",
+        report.get("verdict") == expected_verdict
+        and (report.get("precise_stop_date") == "2022-01-04" if recomputed_gaps else True),
+        f"independently re-derived verdict {expected_verdict}",
+    )
+
+    # 4d. The manifest must cover every source the frozen contract requires:
+    # the three base artifacts, the raw attempt triples for every gap date,
+    # and the daily/suspension partitions backing each coverage claim.
+    required_sources = {
+        "sealed:s4_first_entry_plan/plan.json",
+        "sealed:s4_entry_raw_precision/reconciliation.json",
+        "sealed:cohort_dividend_readiness/profiles.json",
+    }
+    for gap in report.get("prior20_gaps", []):
+        code, trade_date = gap["instrument_id"], gap["trade_date"]
+        stamp = trade_date.replace("-", "")
+        year, month, _ = trade_date.split("-")
+        base = f"s4_entry_raw_precision/attempts/daily_{code}_{stamp}"
+        required_sources.add(f"sealed:{base}/intent.json")
+        required_sources.add(f"sealed:{base}/result.json")
+        required_sources.add(f"sealed:{base}/response.body")
+        required_sources.add(
+            f"canonical:daily/year={year}/month={month}"
+        )
+        required_sources.add(
+            f"canonical:lifecycle_context_v1/suspensions/year={year}/month={month}"
+        )
+    manifest_files = report.get("manifest", {}).get("files", {})
+    missing_required = sorted(
+        req
+        for req in required_sources
+        if not any(key.startswith(req) for key in manifest_files)
+    )
+    if missing_required:
+        check(
+            "manifest_covers_required_sources",
+            False,
+            "; ".join(missing_required[:4]) or "covered",
+        )
+    roots = report.get("manifest", {}).get("roots", {})
+    roots_ok = roots.get("sealed") == str(source_dir.resolve()) and roots.get(
+        "canonical"
+    ) == str(canonical_dir.resolve())
+    check(
+        "manifest_roots_match_passed_directories",
+        roots_ok,
+        str(roots) if not roots_ok else "sealed/canonical roots match",
+    )
+
     # 5. prior20 classifications re-derived from raw evidence, including the
     # daily coverage: a report claiming confirmed no-bar must be backed by a
     # daily partition that actually contains the target date.

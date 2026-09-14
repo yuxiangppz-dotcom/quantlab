@@ -499,86 +499,137 @@ def _is_bool_or_none(value: object) -> bool:
 def necessary_field_gaps(context: dict) -> list[str]:
     """Every kernel-necessary field problem in one derived context.
 
-    ``None`` on a kernel-required field is an explicit unknown and counts as
-    a gap; the three boolean flags additionally accept None (their dedicated
-    fields above already carry that state).
+    One systematic sweep over the frozen contracts (`ResearchSession`,
+    `ResearchFeeScenario`, `ResearchQuantityRules`, scheduler
+    preconditions). ``None`` on a kernel-required field is an explicit
+    unknown and counts as a gap; the three boolean flags additionally
+    accept None (their dedicated fields already carry that state). Zero
+    volume, zero amount and zero minimum commission are legal known
+    no-trade observations, never gaps; negative values and out-of-range
+    rates are invalid. Every finding is reported; the first problem never
+    masks the rest.
     """
     gaps: list[str] = []
+
+    def add(gap: str) -> None:
+        if gap not in gaps:
+            gaps.append(gap)
+
+    def parse_iso(value: object) -> date | None:
+        if isinstance(value, str):
+            try:
+                return date.fromisoformat(value)
+            except ValueError:
+                return None
+        return None
+
+    def rate_gap(prefix: str, value: object, *, allow_one: bool) -> None:
+        name = f"{prefix}: "
+        if value is None:
+            add(f"{name}missing (unknown)")
+            return
+        if not isinstance(value, str):
+            add(f"{name}must be a decimal string")
+            return
+        try:
+            parsed = Decimal(value)
+        except InvalidOperation:
+            add(f"{name}not a finite decimal string")
+            return
+        if not parsed.is_finite() or parsed < 0 or parsed > 1:
+            add(f"{name}rate outside the modeled 0-1 range")
+        elif not allow_one and parsed == 1:
+            add(f"{name}must stay below 1 so the modeled sell price stays positive")
+
+    # --- identity flags ---------------------------------------------------
     for name in ("calendar_verified", "market_open", "corporate_actions_processed"):
         if not _is_bool_or_none(context.get(name)):
-            gaps.append(f"{name}: must be boolean or explicit unknown")
+            add(f"{name}: must be boolean or explicit unknown")
     if context.get("calendar_verified") is not True:
-        gaps.append("calendar_verified: the execution session is not verified")
+        add("calendar_verified: the execution session is not verified")
+
+    # --- dates: real parsing first, relations only on parseable values ----
+    date_fields = {}
     for name in ("next_session", "evidence_date", "prior20_asof"):
         value = context.get(name)
         if value is None:
-            gaps.append(f"{name}: missing (unknown)")
+            add(f"{name}: missing (unknown)")
         elif not isinstance(value, str):
-            gaps.append(f"{name}: must be a date string")
+            add(f"{name}: must be a date string")
+        else:
+            parsed = parse_iso(value)
+            if parsed is None:
+                add(f"{name}: not a valid ISO date")
+            else:
+                date_fields[name] = parsed
+    execution = parse_iso(EXECUTION_DATE)
+    decision = parse_iso(DECISION_DATE)
+    if "evidence_date" in date_fields and execution is not None:
+        if date_fields["evidence_date"] != execution:
+            add("evidence_date: must be the execution date")
+    if "next_session" in date_fields and execution is not None:
+        if date_fields["next_session"] <= execution:
+            add("next_session: must follow the execution date")
+    if "prior20_asof" in date_fields and decision is not None:
+        if date_fields["prior20_asof"] > decision:
+            add("prior20_asof: later than the decision date (future information)")
+
+    # --- integer money quantities: zero is legal known no-trade -----------
     for name in ("raw_close_fen", "low_fen", "high_fen", "down_limit_fen", "up_limit_fen"):
         value = context.get(name)
         if value is None:
-            gaps.append(f"{name}: missing (unknown)")
+            add(f"{name}: missing (unknown)")
         elif not _is_positive_int(value):
-            gaps.append(f"{name}: must be a positive integer fen")
+            add(f"{name}: must be a positive integer fen")
     for name in ("prior20_amount_fen", "session_amount_fen"):
         value = context.get(name)
         if value is None:
-            gaps.append(f"{name}: missing (unknown)")
+            add(f"{name}: missing (unknown)")
         elif type(value) is not int:
-            gaps.append(f"{name}: must be an integer fen")
+            add(f"{name}: must be an integer fen")
         elif value < 0:
-            # Zero is a legal known no-trade observation, never a gap.
-            gaps.append(f"{name}: negative amounts are invalid")
-    for name in ("next_session", "evidence_date", "prior20_asof"):
-        raw = context.get(name)
-        if isinstance(raw, str):
-            try:
-                date.fromisoformat(raw)
-            except ValueError:
-                gaps.append(f"{name}: not a valid ISO date")
-    if isinstance(context.get("prior20_asof"), str) and len(
-        context["prior20_asof"]
-    ) == 10:
-        try:
-            if date.fromisoformat(context["prior20_asof"]) > date.fromisoformat(
-                DECISION_DATE
-            ):
-                gaps.append(
-                    "prior20_asof: later than the decision date (future information)"
-                )
-        except ValueError:
-            pass  # the invalid-format gap is already listed
+            add(f"{name}: negative amounts are invalid")
     volume = context.get("session_volume_shares")
     if volume is None:
-        gaps.append("session_volume_shares: missing (unknown)")
+        add("session_volume_shares: missing (unknown)")
     elif type(volume) is not int:
-        gaps.append("session_volume_shares: must be an integer")
+        add("session_volume_shares: must be an integer")
     elif volume < 0:
-        # Zero is a legal known no-trade observation, never a gap.
-        gaps.append("session_volume_shares: negative volumes are invalid")
+        add("session_volume_shares: negative volumes are invalid")
+    bounds = [
+        context.get(name)
+        for name in ("down_limit_fen", "low_fen", "raw_close_fen", "high_fen", "up_limit_fen")
+    ]
+    if all(isinstance(b, int) for b in bounds) and not (
+        bounds[0] <= bounds[1] <= bounds[2] <= bounds[3] <= bounds[4]
+    ):
+        add("price bounds: down<=low<=close<=high<=up violated")
     sessions = context.get("prior20_sessions")
     if sessions is None:
-        gaps.append("prior20_sessions: missing (unknown)")
+        add("prior20_sessions: missing (unknown)")
     elif type(sessions) is not int or sessions != 20:
-        gaps.append("prior20_sessions: must be the integer 20")
+        add("prior20_sessions: must be the integer 20")
+
+    # --- participation: one finite fraction in (0, 1] ---------------------
     participation = context.get("participation")
     if participation is None:
-        gaps.append("participation: missing (unknown)")
+        add("participation: missing (unknown)")
     else:
         try:
             level = Decimal(str(participation))
         except InvalidOperation:
-            gaps.append("participation: must be a finite fraction or explicit unknown")
+            add("participation: must be a finite fraction or explicit unknown")
         else:
             if not level.is_finite() or not 0 < level <= 1:
-                gaps.append("participation: must be a finite fraction or explicit unknown")
+                add("participation: must be a finite fraction or explicit unknown")
+
+    # --- quantity rules ----------------------------------------------------
     rules = context.get("rules")
     if not isinstance(rules, dict):
-        gaps.append("rules: missing quantity-rule scenario")
+        add("rules: missing quantity-rule scenario")
     else:
         if not rules.get("scenario_id"):
-            gaps.append("rules.scenario_id: missing (unknown)")
+            add("rules.scenario_id: missing (unknown)")
         for name in (
             "buy_minimum",
             "buy_increment",
@@ -587,117 +638,65 @@ def necessary_field_gaps(context: dict) -> list[str]:
             "max_order_quantity",
         ):
             if not _is_positive_int(rules.get(name)):
-                gaps.append(f"rules.{name}: must be a positive integer")
+                add(f"rules.{name}: must be a positive integer")
         if type(rules.get("full_position_odd_exit")) is not bool:
-            gaps.append("rules.full_position_odd_exit: must be boolean")
-        for name in ("effective_from", "effective_through"):
-            value = rules.get(name)
-            if not isinstance(value, str) or len(value) != 10:
-                gaps.append(f"rules.{name}: must be an ISO date")
-        if (
-            isinstance(rules.get("effective_from"), str)
-            and isinstance(rules.get("effective_through"), str)
-            and not rules["effective_from"] <= EXECUTION_DATE <= rules["effective_through"]
-        ):
-            gaps.append("rules: interval does not cover the execution date")
-    if context.get("evidence_date") not in (None, EXECUTION_DATE):
-        gaps.append("evidence_date: must be the execution date")
-    following = context.get("next_session")
-    if following is not None:
-        try:
-            following_date = date.fromisoformat(following)
-        except (ValueError, TypeError):
-            pass  # the invalid-format gap is already listed above
-        else:
-            if following_date <= date.fromisoformat(EXECUTION_DATE):
-                gaps.append("next_session: must follow the execution date")
-    bounds = [
-        context.get(name)
-        for name in ("down_limit_fen", "low_fen", "raw_close_fen", "high_fen", "up_limit_fen")
-    ]
-    if all(isinstance(b, int) for b in bounds) and not (
-        bounds[0] <= bounds[1] <= bounds[2] <= bounds[3] <= bounds[4]
-    ):
-        gaps.append("price bounds: down<=low<=close<=high<=up violated")
-    amount = context.get("session_amount_fen")
-    if type(amount) is int and amount < 0:
-        gaps.append("session_amount_fen: negative amounts are invalid (zero is legal no-trade)")
-    volume_value = context.get("session_volume_shares")
-    if type(volume_value) is int and volume_value < 0:
-        gaps.append("session_volume_shares: negative volumes are invalid (zero is legal no-trade)")
+            add("rules.full_position_odd_exit: must be boolean")
+        rule_from = parse_iso(rules.get("effective_from"))
+        rule_through = parse_iso(rules.get("effective_through"))
+        if rules.get("effective_from") is not None and rule_from is None:
+            add("rules.effective_from: not a valid ISO date")
+        if rules.get("effective_through") is not None and rule_through is None:
+            add("rules.effective_through: not a valid ISO date")
+        if rule_from is not None and rule_through is not None:
+            if rule_from > rule_through:
+                add("rules: interval reversed")
+            elif execution is not None and not rule_from <= execution <= rule_through:
+                add("rules: interval does not cover the execution date")
+
+    # --- fees ---------------------------------------------------------------
     fees = context.get("fees")
     if not isinstance(fees, dict):
-        gaps.append("fees: missing fee scenario")
+        add("fees: missing fee scenario")
     else:
+        if not fees.get("scenario_id"):
+            add("fees.scenario_id: missing (unknown)")
         for name in (
             "commission_rate",
             "buy_stamp_rate",
             "sell_stamp_rate",
             "adverse_slippage_rate",
+            "additional_fee_rate",
         ):
-            value = fees.get(name)
-            if value is None:
-                gaps.append(f"fees.{name}: missing (unknown)")
-            elif not isinstance(value, str):
-                gaps.append(f"fees.{name}: must be a decimal string")
-            else:
-                try:
-                    parsed_rate = Decimal(value)
-                except InvalidOperation:
-                    gaps.append(f"fees.{name}: not a finite decimal string")
-                    continue
-                if not parsed_rate.is_finite() or not 0 <= parsed_rate <= 1:
-                    gaps.append(
-                        f"fees.{name}: rate outside the modeled 0-1 range"
-                    )
-        fixed_additional = fees.get("additional_fee_fixed_fen")
-        if fixed_additional is not None and (
-            type(fixed_additional) is not int or fixed_additional < 0
-        ):
-            gaps.append(
-                "fees.additional_fee_fixed_fen: must be a nonnegative integer"
-            )
+            rate_gap(f"fees.{name}", fees.get(name), allow_one=(name != "adverse_slippage_rate"))
         minimum = fees.get("minimum_commission_fen")
         if minimum is None:
-            gaps.append("fees.minimum_commission_fen: missing (unknown)")
+            add("fees.minimum_commission_fen: missing (unknown)")
         elif type(minimum) is not int or minimum < 0:
-            gaps.append("fees.minimum_commission_fen: must be a nonnegative integer")
-        for name in ("effective_from", "effective_through"):
-            value = fees.get(name)
-            if not isinstance(value, str) or len(value) != 10:
-                gaps.append(f"fees.{name}: must be an ISO date")
-        if (
-            isinstance(fees.get("effective_from"), str)
-            and isinstance(fees.get("effective_through"), str)
-            and not fees["effective_from"] <= EXECUTION_DATE <= fees["effective_through"]
-        ):
-            gaps.append("fees: interval does not cover the execution date")
-        if fees.get("minimum_commission_fen") is None:
-            gaps.append("fees.minimum_commission_fen: missing (unknown)")
-        if fees.get("scenario_id") is None:
-            gaps.append("fees.scenario_id: missing (unknown)")
-        for name in ("additional_fee_rate", "additional_fee_fixed_fen"):
-            if fees.get(name) is None:
-                gaps.append(
-                    f"fees.{name}: unconfirmed additional-fee component stays unknown"
-                )
-    if isinstance(fees, dict):
-        for name in (
-            "commission_rate",
-            "buy_stamp_rate",
-            "sell_stamp_rate",
-            "adverse_slippage_rate",
-        ):
-            value = fees.get(name)
-            if isinstance(value, str):
-                try:
-                    parsed = Decimal(value)
-                except InvalidOperation:
-                    gaps.append(f"fees.{name}: not a finite decimal string")
-                    continue
-                if not parsed.is_finite():
-                    gaps.append(f"fees.{name}: not a finite decimal string")
-    return gaps
+            add("fees.minimum_commission_fen: must be a nonnegative integer")
+        fixed = fees.get("additional_fee_fixed_fen")
+        if fixed is None:
+            add("fees.additional_fee_fixed_fen: missing (unknown)")
+        elif type(fixed) is not int or fixed < 0:
+            add("fees.additional_fee_fixed_fen: must be a nonnegative integer")
+        fee_from = parse_iso(fees.get("effective_from"))
+        fee_through = parse_iso(fees.get("effective_through"))
+        if fees.get("effective_from") is not None and fee_from is None:
+            add("fees.effective_from: not a valid ISO date")
+        if fees.get("effective_through") is not None and fee_through is None:
+            add("fees.effective_through: not a valid ISO date")
+        if fee_from is not None and fee_through is not None:
+            if fee_from > fee_through:
+                add("fees: interval reversed")
+            elif execution is not None and not fee_from <= execution <= fee_through:
+                add("fees: interval does not cover the execution date")
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for gap in gaps:
+        if gap not in seen:
+            seen.add(gap)
+            unique.append(gap)
+    return unique
 
 
 def research_session_from_context(context: dict) -> ResearchSession:
