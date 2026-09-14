@@ -31,6 +31,10 @@ VERIFY = REPO / "scripts" / "s4_admission_independent_verify.py"
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
+def _sha_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
 
 def _build_world(root: Path) -> tuple[Path, Path, dict, dict]:
     source = root / "sealed"
@@ -260,8 +264,14 @@ def _hand_build_package(
         "model_fits_used": 0,
         "provider_calls": 0,
         "manifest": {
+            "manifest_version": 2,
             "files": _bound_files(source, canonical),
             "roots": {"sealed": str(source.resolve()), "canonical": str(canonical.resolve())},
+            "bound_files": {
+                k: {"sha256": v["sha256"], "bytes": v["bytes"]}
+                for k, v in _bound_files(source, canonical).items()
+                if "/attempts/" in k or "/daily/" in k or "suspensions/" in k
+            },
         },
         "package": package,
     }
@@ -301,6 +311,7 @@ def _bound_files(source: Path, canonical: Path) -> dict:
         files[f"{label}:{relative}"] = {
             "path": str(path),
             "sha256": _sha(path),
+            "bytes": path.stat().st_size,
             "root": label,
         }
     return files
@@ -631,3 +642,180 @@ class TestRound3CloseOutRegressions(TestVerifierTamperRegressions):
             output, source, canonical, frozen=frozen, expected_gap_count=1
         )
         assert payload["all_ok"] is False
+
+
+class TestProducerToVerifierContract:
+    """Run the real producer entry over a hand world, pass the untouched
+    output straight to the independent verifier, then inject faults."""
+
+    def _build_all_attempts(self, source: Path) -> None:
+        attempts = source / "s4_entry_raw_precision/attempts"
+        attempts.mkdir(parents=True, exist_ok=True)
+        for code, dates in (
+            ("000301.SZ", ["2021-12-22"]),
+            ("000777.SZ", ["2021-12-07", "2021-12-08", "2021-12-09", "2021-12-10", "2021-12-13"]),
+        ):
+            for trade_date in dates:
+                stamp = trade_date.replace("-", "")
+                attempt = attempts / f"daily_{code}_{stamp}"
+                attempt.mkdir(parents=True, exist_ok=True)
+                body = b'{"code":0,"data":{"items":[]}}'
+                intent_fp = f"intent-{code}-{stamp}"
+                intent = {
+                    "fingerprint": intent_fp,
+                    "request": {
+                        "id": f"daily_{code}_{stamp}",
+                        "parameters": {
+                            "api_name": "daily",
+                            "params": {
+                                "ts_code": code,
+                                "start_date": stamp,
+                                "end_date": stamp,
+                            },
+                        },
+                    },
+                }
+                body_sha = hashlib.sha256(body).hexdigest()
+                (attempt / "intent.json").write_text(json.dumps(intent))
+                (attempt / "response.body").write_bytes(body)
+                (attempt / "result.json").write_text(
+                    json.dumps(
+                        {
+                            "transport_status": "received",
+                            "http_status": 200,
+                            "server_code": 0,
+                            "rows": 0,
+                            "status": "empty",
+                            "intent_fingerprint": intent_fp,
+                            "wire_sha256": body_sha,
+                            "artifacts": {"response.body": {"sha256": body_sha}},
+                        }
+                    )
+                )
+
+    def _generate(self, tmp: Path, monkeypatch):
+        source, canonical, plan, recon_body, frozen = _build_world(tmp)
+        self._build_all_attempts(source)
+        synthetic = {
+            "plan": plan["fingerprint"],
+            "reconciliation": recon_body["fingerprint"],
+            "profiles": json.loads(
+                (source / "cohort_dividend_readiness/profiles.json").read_text()
+            )["fingerprint"],
+        }
+        import quantlab.research.s4_replay_admission as producer
+
+        monkeypatch.setattr(producer, "FROZEN_FINGERPRINTS", synthetic)
+        output = tmp / "pkg_v6"
+        producer.run(source, canonical, output)
+        monkeypatch.undo()
+        return source, canonical, output, synthetic
+
+    def _verify(self, package: Path, source: Path, canonical: Path, frozen) -> int:
+        payload = verifier.verify(
+            package, source, canonical, frozen=frozen, expected_gap_count=6
+        )
+        (package / "independent_verification.json").write_text(
+            json.dumps(payload, indent=2)
+        )
+        return 0 if payload["all_ok"] else 1
+
+    def test_production_output_passes_independent_verifier(
+        self, tmp_path, monkeypatch
+    ):
+        source, canonical, output, frozen = self._generate(tmp_path, monkeypatch)
+        assert self._verify(output, source, canonical, frozen) == 0
+
+    def test_fault_missing_manifest_entry_fails(self, tmp_path, monkeypatch):
+        source, canonical, output, frozen = self._generate(tmp_path, monkeypatch)
+        self._drop_manifest_entry(output)
+        self._rewrite_completed(output)
+        assert self._verify(output, source, canonical, frozen) != 0
+
+    def test_fault_redirected_path_fails(self, tmp_path, monkeypatch):
+        source, canonical, output, frozen = self._generate(tmp_path, monkeypatch)
+        self._redirect_manifest_path(output)
+        self._rewrite_completed(output)
+        assert self._verify(output, source, canonical, frozen) != 0
+
+    def test_fault_forged_hash_fails(self, tmp_path, monkeypatch):
+        source, canonical, output, frozen = self._generate(tmp_path, monkeypatch)
+        self._forge_manifest_hash(output)
+        self._rewrite_completed(output)
+        assert self._verify(output, source, canonical, frozen) != 0
+
+    def test_fault_wrong_root_fails(self, tmp_path, monkeypatch):
+        source, canonical, output, frozen = self._generate(tmp_path, monkeypatch)
+        self._swap_manifest_root(output)
+        self._rewrite_completed(output)
+        assert self._verify(output, source, canonical, frozen) != 0
+
+    def test_fault_contradictory_bound_files_fails(self, tmp_path, monkeypatch):
+        source, canonical, output, frozen = self._generate(tmp_path, monkeypatch)
+        self._contradict_bound_files(output)
+        self._rewrite_completed(output)
+        assert self._verify(output, source, canonical, frozen) != 0
+
+    def _drop_manifest_entry(self, output: Path) -> None:
+        report_path = output / "preflight_report.json"
+        report = json.loads(report_path.read_text())
+        files = report["manifest"]["files"]
+        drop = next(
+            k for k in files if k.startswith("canonical:daily/year=2021/month=12")
+        )
+        files.pop(drop)
+        report_path.write_text(json.dumps(report))
+
+    def _redirect_manifest_path(self, output: Path) -> None:
+        report_path = output / "preflight_report.json"
+        report = json.loads(report_path.read_text())
+        files = report["manifest"]["files"]
+        daily_key = next(
+            k for k in files if k.startswith("canonical:daily/year=2021/month=12")
+        )
+        other = next(
+            k
+            for k in files
+            if k.startswith("canonical:lifecycle_context_v1/suspensions")
+        )
+        files[daily_key]["path"] = files[other]["path"]
+        files[daily_key]["sha256"] = files[other]["sha256"]
+        report_path.write_text(json.dumps(report))
+
+    def _forge_manifest_hash(self, output: Path) -> None:
+        report_path = output / "preflight_report.json"
+        report = json.loads(report_path.read_text())
+        key = next(
+            k for k in report["manifest"]["files"] if k.endswith("plan.json")
+        )
+        report["manifest"]["files"][key]["sha256"] = "f" * 64
+        report_path.write_text(json.dumps(report))
+
+    def _swap_manifest_root(self, output: Path) -> None:
+        report_path = output / "preflight_report.json"
+        report = json.loads(report_path.read_text())
+        roots = report["manifest"]["roots"]
+        roots["sealed"], roots["canonical"] = (
+            roots["canonical"],
+            roots["sealed"],
+        )
+        report_path.write_text(json.dumps(report))
+
+    def _contradict_bound_files(self, output: Path) -> None:
+        report_path = output / "preflight_report.json"
+        report = json.loads(report_path.read_text())
+        bound = report["manifest"]["bound_files"]
+        first = next(iter(bound))
+        bound[first]["sha256"] = "0" * 64
+        report_path.write_text(json.dumps(report))
+
+    def _rewrite_completed(self, output: Path) -> None:
+        completed_path = output / "completed.json"
+        completed = json.loads(completed_path.read_text())
+        completed["input_package_sha256"] = _sha_bytes(
+            (output / "input_package.json").read_bytes()
+        )
+        completed["preflight_report_sha256"] = _sha_bytes(
+            (output / "preflight_report.json").read_bytes()
+        )
+        completed_path.write_text(json.dumps(completed))

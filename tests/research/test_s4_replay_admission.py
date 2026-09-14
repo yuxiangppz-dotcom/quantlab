@@ -260,7 +260,15 @@ class TestSealedSourceValidation:
         )
         binding = InputBinding(source)
         manifest = validate_sealed_sources(source, binding)
-        assert all(e["frozen_identity_match"] for e in manifest["files"].values())
+        assert all(
+            check["match"] and check["embedded_fingerprint"] == check["frozen_identity"]
+            for check in manifest["fingerprint_checks"].values()
+        )
+        assert set(manifest["files"]) == {
+            "sealed:s4_first_entry_plan/plan.json",
+            "sealed:s4_entry_raw_precision/reconciliation.json",
+            "sealed:cohort_dividend_readiness/profiles.json",
+        }
         binding.check()
 
 

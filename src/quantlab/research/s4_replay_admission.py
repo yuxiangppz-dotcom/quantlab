@@ -127,14 +127,21 @@ class Prior20Gap:
 # --------------------------------------------------------------------------
 
 
+MANIFEST_VERSION = 2
+
+
 def validate_sealed_sources(source_dir: Path, binding: InputBinding) -> dict:
-    """Recompute embedded fingerprints, compare with the frozen identity, bind files."""
+    """Recompute embedded fingerprints, compare with the frozen identity and
+    return the version-2 manifest fragment for the three base artifacts:
+    every file under its exact ``root:relative`` key, plus a separate
+    ``fingerprint_checks`` section carrying each file's provenance."""
     consumed = {
         "plan": source_dir / "s4_first_entry_plan/plan.json",
         "reconciliation": source_dir / "s4_entry_raw_precision/reconciliation.json",
         "profiles": source_dir / "cohort_dividend_readiness/profiles.json",
     }
-    entries: dict[str, dict] = {}
+    files: dict[str, dict] = {}
+    fingerprint_checks: dict[str, dict] = {}
     for name, path in consumed.items():
         if not path.is_file():
             raise FileNotFoundError(f"sealed source missing: {path}")
@@ -146,13 +153,20 @@ def validate_sealed_sources(source_dir: Path, binding: InputBinding) -> dict:
                 f"frozen identity {FROZEN_FINGERPRINTS[name]!r}"
             )
         binding.read(path)
-        entries[name] = {
+        relative = path.resolve().relative_to(binding.root.resolve()).as_posix()
+        key = f"sealed:{relative}"
+        files[key] = {
             "path": str(path),
             "sha256": sha256_file(path),
-            "embedded_fingerprint": embedded,
-            "frozen_identity_match": True,
+            "bytes": path.stat().st_size,
+            "root": "sealed",
         }
-    return {"files": entries}
+        fingerprint_checks[key] = {
+            "embedded_fingerprint": embedded,
+            "frozen_identity": FROZEN_FINGERPRINTS[name],
+            "match": True,
+        }
+    return {"files": files, "fingerprint_checks": fingerprint_checks}
 
 
 def _verify_plan_contract(plan: dict) -> None:
@@ -1031,6 +1045,10 @@ def build_preflight_report(
     }
 
 
+def _root_for(label: str, source_dir: Path, canonical_dir: Path) -> Path:
+    return source_dir if label == "sealed" else canonical_dir
+
+
 def run(source_dir: Path, canonical_dir: Path, output_dir: Path) -> dict:
     """Generate the input package and preflight report once, exclusively."""
     source_dir = source_dir.resolve()
@@ -1066,19 +1084,20 @@ def run(source_dir: Path, canonical_dir: Path, output_dir: Path) -> dict:
         )
         package, instruments = build_input_package(plan, admitted, gaps)
         manifest["files"] = dict(manifest.get("files", {}))
-        for root_label, root_binding, root_dir in (
-            ("sealed", binding, source_dir),
-            ("canonical", canonical_binding, canonical_dir),
+        for root_label, root_binding in (
+            ("sealed", binding),
+            ("canonical", canonical_binding),
         ):
             for name, entry in root_binding.entries.items():
                 manifest["files"][f"{root_label}:{name}"] = {
-                    "path": str(root_dir / name),
+                    "path": str(_root_for(root_label, source_dir, canonical_dir) / name),
                     "sha256": entry["sha256"],
                     "bytes": entry["bytes"],
                     "root": root_label,
                 }
         manifest["bound_files"] = dict(bound_files)
         manifest["roots"] = {"sealed": str(source_dir), "canonical": str(canonical_dir)}
+        manifest["manifest_version"] = MANIFEST_VERSION
         report = build_preflight_report(package, instruments, gaps, manifest)
     except Exception as error:
         (output_dir / "failed.json").write_text(
