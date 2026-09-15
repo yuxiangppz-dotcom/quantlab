@@ -141,19 +141,45 @@ def audit_s6_formula_input_bindings(
         item.metric_id: item
         for item in formula_catalog.admission_rows
     }
+    return _audit_spec(
+        spec=bound_spec,
+        formula_catalog=formula_catalog,
+        catalog_specs=catalog_specs,
+        formula_rows=formula_rows,
+        field_catalog=field_catalog,
+        context=context,
+        cache={},
+    )
+
+
+def _audit_spec(
+    *,
+    spec: S6FormulaSpec,
+    formula_catalog: S6FormulaSpecCatalog,
+    catalog_specs: dict[str, S6FormulaSpec],
+    formula_rows: dict[str, S6FormulaAdmissionRow],
+    field_catalog: S6FinancialFieldCatalog,
+    context: S6FormulaBindingContext,
+    cache: dict[str, S6FormulaInputBindingAudit],
+) -> S6FormulaInputBindingAudit:
+    cached = cache.get(spec.metric_id)
+    if cached is not None:
+        return cached
     rows = tuple(
         _bind_input(
             input_ref=input_ref,
             formula_catalog=formula_catalog,
+            catalog_specs=catalog_specs,
             formula_rows=formula_rows,
             field_catalog=field_catalog,
             context=context,
+            cache=cache,
         )
         for input_ref in spec.inputs
     )
     formula_admitted = formula_rows[spec.metric_id].admitted
     all_inputs_admitted = all(item.admissible for item in rows)
-    return S6FormulaInputBindingAudit(
+    audit = S6FormulaInputBindingAudit(
         metric_id=spec.metric_id,
         formula_fingerprint=spec.fingerprint,
         formula_catalog_fingerprint=formula_catalog.fingerprint,
@@ -165,15 +191,19 @@ def audit_s6_formula_input_bindings(
         all_inputs_admitted=all_inputs_admitted,
         overall_admissible=formula_admitted and all_inputs_admitted,
     )
+    cache[spec.metric_id] = audit
+    return audit
 
 
 def _bind_input(
     *,
     input_ref: S6FormulaInputRef,
     formula_catalog: S6FormulaSpecCatalog,
+    catalog_specs: dict[str, S6FormulaSpec],
     formula_rows: dict[str, S6FormulaAdmissionRow],
     field_catalog: S6FinancialFieldCatalog,
     context: S6FormulaBindingContext,
+    cache: dict[str, S6FormulaInputBindingAudit],
 ) -> S6FormulaInputBindingRow:
     position = input_ref.position
     input_id = input_ref.input_id
@@ -190,14 +220,7 @@ def _bind_input(
             "market_input_contract_has_not_been_frozen",
         )
     if kind is S6FormulaInputKind.DERIVED_METRIC:
-        dependency = next(
-            (
-                item
-                for item in formula_catalog.specs
-                if item.metric_id == semantic_id
-            ),
-            None,
-        )
+        dependency = catalog_specs.get(semantic_id)
         if dependency is None:
             return _blocked_row(
                 position,
@@ -217,13 +240,31 @@ def _bind_input(
                 S6FormulaInputBindingVerdict.DERIVED_METRIC_BLOCKED,
                 "derived_metric_formula_is_not_admitted",
             )
+        dependency_audit = _audit_spec(
+            spec=dependency,
+            formula_catalog=formula_catalog,
+            catalog_specs=catalog_specs,
+            formula_rows=formula_rows,
+            field_catalog=field_catalog,
+            context=context,
+            cache=cache,
+        )
+        if not dependency_audit.overall_admissible:
+            return _blocked_row(
+                position,
+                input_id,
+                kind,
+                semantic_id,
+                S6FormulaInputBindingVerdict.DERIVED_METRIC_BLOCKED,
+                "derived_metric_inputs_are_not_fully_admitted",
+            )
         return _admitted_row(
             position,
             input_id,
             kind,
             semantic_id,
-            dependency.fingerprint,
-            "derived_metric_formula_is_admitted",
+            dependency_audit.fingerprint,
+            "derived_metric_formula_and_inputs_are_admitted",
         )
 
     candidates = tuple(
