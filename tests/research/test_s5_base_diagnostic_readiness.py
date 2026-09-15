@@ -45,7 +45,11 @@ def _audit(
             instrument_id=key.instrument_id,
             as_of=key.as_of,
             expected_sector_id="bank",
-            resolved_sector_id="bank" if status is S5MembershipAuditStatus.COVERED_VERIFIED else None,
+            resolved_sector_id=(
+                "bank"
+                if status is S5MembershipAuditStatus.COVERED_VERIFIED
+                else None
+            ),
             status=status,
             source_ids=("membership-v1",),
             active_evidence_count=1,
