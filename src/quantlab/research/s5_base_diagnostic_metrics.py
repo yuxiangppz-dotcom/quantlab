@@ -124,10 +124,14 @@ def compute_s5_base_diagnostic_metrics(
     """Compute the preregistered metrics without reading data or choosing a holding period."""
 
     protocol = frozen_s5_base_diagnostic_protocol()
-    _validate_package(package, protocol.fingerprint, protocol.signal_horizons, protocol.comparison_ids)
+    _validate_package(
+        package,
+        protocol.fingerprint,
+        protocol.signal_horizons,
+        protocol.comparison_ids,
+    )
 
     signals = package.signal_rows
-    signal_by_key = {(row.instrument_id, row.as_of): row for row in signals}
     outcome_by_key = {
         (row.instrument_id, row.as_of, row.horizon): row.close_return
         for row in package.instrument_outcomes
@@ -316,12 +320,22 @@ def _validate_package(
         for instrument_id, as_of in signal_keys
         for horizon in horizons
     }
-    if len(instrument_keys) != len(set(instrument_keys)) or set(instrument_keys) != expected_instruments:
+    if (
+        len(instrument_keys) != len(set(instrument_keys))
+        or set(instrument_keys) != expected_instruments
+    ):
         raise ValueError("input package instrument outcome grid is not exact")
 
-    benchmark_keys = [(row.as_of, row.horizon) for row in package.benchmark_outcomes]
-    expected_date_horizons = {(as_of, horizon) for as_of in dates for horizon in horizons}
-    if len(benchmark_keys) != len(set(benchmark_keys)) or set(benchmark_keys) != expected_date_horizons:
+    benchmark_keys = [
+        (row.as_of, row.horizon) for row in package.benchmark_outcomes
+    ]
+    expected_date_horizons = {
+        (as_of, horizon) for as_of in dates for horizon in horizons
+    }
+    if (
+        len(benchmark_keys) != len(set(benchmark_keys))
+        or set(benchmark_keys) != expected_date_horizons
+    ):
         raise ValueError("input package benchmark outcome grid is not exact")
 
     comparison_keys = [
@@ -333,7 +347,10 @@ def _validate_package(
         for comparison_id in comparison_ids
         for as_of, horizon in expected_date_horizons
     }
-    if len(comparison_keys) != len(set(comparison_keys)) or set(comparison_keys) != expected_comparisons:
+    if (
+        len(comparison_keys) != len(set(comparison_keys))
+        or set(comparison_keys) != expected_comparisons
+    ):
         raise ValueError("input package comparison outcome grid is not exact")
 
 
