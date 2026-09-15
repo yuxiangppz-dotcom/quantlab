@@ -26,6 +26,7 @@ class S6FormulaReadinessPreflight:
     fiscal_period_end: date
     trade_date: date
     as_of: datetime
+    binding_overall_admissible: bool
     binding_input_count: int
     financial_input_count: int
     market_input_count: int
@@ -67,11 +68,14 @@ class S6FormulaReadinessPreflight:
             raise ValueError("child_input_coverage_complete does not match counts")
         if self.derived_inputs_expanded:
             raise ValueError("preflight cannot claim derived inputs were expanded")
-        if self.metadata_preflight_ready and (
-            not self.child_input_coverage_complete
-            or not self.all_direct_inputs_ready
-            or self.derived_input_count
-        ):
+        expected_ready = (
+            self.binding_overall_admissible
+            and self.child_input_coverage_complete
+            and bool(self.financial_input_count + self.market_input_count)
+            and self.all_direct_inputs_ready
+            and not self.derived_input_count
+        )
+        if self.metadata_preflight_ready != expected_ready:
             raise ValueError("metadata readiness contradicts input state")
         if (
             self.numeric_values_included
@@ -158,6 +162,7 @@ def build_s6_formula_readiness_preflight(
         fiscal_period_end=financial_readiness.fiscal_period_end,
         trade_date=market_readiness.trade_date,
         as_of=financial_readiness.as_of,
+        binding_overall_admissible=binding_audit.overall_admissible,
         binding_input_count=len(binding_audit.rows),
         financial_input_count=len(financial_inputs),
         market_input_count=len(market_inputs),
@@ -190,6 +195,7 @@ def _preflight_payload(item: S6FormulaReadinessPreflight) -> dict[str, object]:
         "fiscal_period_end": item.fiscal_period_end.isoformat(),
         "trade_date": item.trade_date.isoformat(),
         "as_of": item.as_of.isoformat(),
+        "binding_overall_admissible": item.binding_overall_admissible,
         "binding_input_count": item.binding_input_count,
         "financial_input_count": item.financial_input_count,
         "market_input_count": item.market_input_count,
