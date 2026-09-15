@@ -255,6 +255,8 @@ def _validate_denominator_policy_shape(spec: S6FormulaSpec) -> None:
     if spec.operator is S6FormulaOperator.RATIO:
         if S6DenominatorPolicy.NOT_APPLICABLE in policies:
             raise ValueError("ratio formulas require explicit denominator policies")
+        if spec.zero_denominator_policy is S6DenominatorPolicy.ALLOW_SIGNED:
+            raise ValueError("zero denominator cannot allow signed evaluation")
     elif policies != (
         S6DenominatorPolicy.NOT_APPLICABLE,
         S6DenominatorPolicy.NOT_APPLICABLE,
