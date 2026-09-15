@@ -33,6 +33,16 @@ from quantlab.research.s6_formula_spec import (
     S6PeriodAlignmentPolicy,
     build_s6_formula_spec_catalog,
 )
+from quantlab.research.s6_market_input_admission import (
+    S6MarketCorporateActionBasis,
+    S6MarketFieldDefinition,
+    S6MarketFieldEvidenceStatus,
+    S6MarketInputKind,
+    S6MarketObservationTiming,
+    S6MarketPriceBasis,
+    S6MarketShareScope,
+    build_s6_market_input_catalog,
+)
 
 _CONTEXT = S6FormulaBindingContext("synthetic-provider", "synthetic-source")
 
@@ -61,6 +71,35 @@ def _field(
         documentation_fingerprint=(
             "field-documentation"
             if evidence is not S6FinancialFieldEvidenceStatus.UNKNOWN
+            else None
+        ),
+    )
+
+
+def _market(
+    raw_field_id: str,
+    semantic_field_id: str,
+    *,
+    evidence: S6MarketFieldEvidenceStatus = S6MarketFieldEvidenceStatus.VERIFIED,
+    provider_id: str = "synthetic-provider",
+) -> S6MarketFieldDefinition:
+    return S6MarketFieldDefinition(
+        provider_id=provider_id,
+        source_id=_CONTEXT.source_id,
+        raw_field_id=raw_field_id,
+        semantic_field_id=semantic_field_id,
+        input_kind=S6MarketInputKind.MARKET_CAP,
+        price_basis=S6MarketPriceBasis.RAW_UNADJUSTED,
+        share_scope=S6MarketShareScope.TOTAL_OUTSTANDING,
+        currency="CNY",
+        observation_timing=S6MarketObservationTiming.EXCHANGE_SESSION_CLOSE,
+        corporate_action_basis=(
+            S6MarketCorporateActionBasis.AS_OBSERVED_ON_TRADE_DATE
+        ),
+        evidence_status=evidence,
+        documentation_fingerprint=(
+            "market-documentation"
+            if evidence is not S6MarketFieldEvidenceStatus.UNKNOWN
             else None
         ),
     )
@@ -213,8 +252,8 @@ def test_missing_unverified_and_ambiguous_financial_fields_are_distinct() -> Non
     assert ambiguous.overall_admissible is False
 
 
-def test_market_input_is_explicitly_blocked_until_its_contract_exists() -> None:
-    spec = _identity(
+def _market_spec() -> S6FormulaSpec:
+    return _identity(
         "market_identity",
         _input(
             0,
@@ -223,6 +262,10 @@ def test_market_input_is_explicitly_blocked_until_its_contract_exists() -> None:
             S6FormulaInputKind.MARKET_FIELD,
         ),
     )
+
+
+def test_market_input_is_explicitly_blocked_without_a_catalog() -> None:
+    spec = _market_spec()
 
     audit = audit_s6_formula_input_bindings(
         spec=spec,
@@ -234,7 +277,114 @@ def test_market_input_is_explicitly_blocked_until_its_contract_exists() -> None:
     assert audit.rows[0].verdict is (
         S6FormulaInputBindingVerdict.MARKET_INPUT_CONTRACT_MISSING
     )
+    assert audit.market_catalog_fingerprint is None
     assert audit.overall_admissible is False
+
+
+def test_exactly_one_admitted_market_definition_binds() -> None:
+    spec = _market_spec()
+    market_catalog = build_s6_market_input_catalog(
+        (_market("total_mv", "market_cap"),)
+    )
+
+    audit = audit_s6_formula_input_bindings(
+        spec=spec,
+        formula_catalog=build_s6_formula_spec_catalog((spec,)),
+        field_catalog=build_s6_financial_field_catalog(()),
+        context=_CONTEXT,
+        market_catalog=market_catalog,
+    )
+
+    assert audit.rows[0].verdict is S6FormulaInputBindingVerdict.ADMISSIBLE
+    assert audit.rows[0].bound_fingerprint == (
+        market_catalog.definitions[0].fingerprint
+    )
+    assert audit.market_catalog_fingerprint == market_catalog.fingerprint
+    assert audit.overall_admissible is True
+
+
+def test_market_missing_unverified_and_ambiguous_are_distinct() -> None:
+    spec = _market_spec()
+    formulas = build_s6_formula_spec_catalog((spec,))
+    fields = build_s6_financial_field_catalog(())
+
+    missing = audit_s6_formula_input_bindings(
+        spec=spec,
+        formula_catalog=formulas,
+        field_catalog=fields,
+        context=_CONTEXT,
+        market_catalog=build_s6_market_input_catalog(
+            (_market("elsewhere", "market_cap", provider_id="other-provider"),)
+        ),
+    )
+    assert missing.rows[0].verdict is (
+        S6FormulaInputBindingVerdict.MARKET_FIELD_MISSING
+    )
+
+    unverified = audit_s6_formula_input_bindings(
+        spec=spec,
+        formula_catalog=formulas,
+        field_catalog=fields,
+        context=_CONTEXT,
+        market_catalog=build_s6_market_input_catalog(
+            (
+                _market(
+                    "total_mv",
+                    "market_cap",
+                    evidence=S6MarketFieldEvidenceStatus.UNKNOWN,
+                ),
+            )
+        ),
+    )
+    assert unverified.rows[0].verdict is (
+        S6FormulaInputBindingVerdict.MARKET_FIELD_UNVERIFIED
+    )
+
+    ambiguous = audit_s6_formula_input_bindings(
+        spec=spec,
+        formula_catalog=formulas,
+        field_catalog=fields,
+        context=_CONTEXT,
+        market_catalog=build_s6_market_input_catalog(
+            (
+                _market("total_mv_a", "market_cap"),
+                _market("total_mv_b", "market_cap"),
+            )
+        ),
+    )
+    assert ambiguous.rows[0].verdict is (
+        S6FormulaInputBindingVerdict.MARKET_FIELD_AMBIGUOUS
+    )
+    assert ambiguous.overall_admissible is False
+
+
+def test_derived_metric_inherits_the_market_catalog() -> None:
+    market_dependency = _market_spec()
+    consumer = _identity(
+        "market_consumer",
+        _input(
+            0,
+            "derived",
+            market_dependency.metric_id,
+            S6FormulaInputKind.DERIVED_METRIC,
+        ),
+    )
+    formulas = build_s6_formula_spec_catalog((market_dependency, consumer))
+    market_catalog = build_s6_market_input_catalog(
+        (_market("total_mv", "market_cap"),)
+    )
+
+    audit = audit_s6_formula_input_bindings(
+        spec=consumer,
+        formula_catalog=formulas,
+        field_catalog=build_s6_financial_field_catalog(()),
+        context=_CONTEXT,
+        market_catalog=market_catalog,
+    )
+
+    assert audit.rows[0].verdict is S6FormulaInputBindingVerdict.ADMISSIBLE
+    assert audit.market_catalog_fingerprint == market_catalog.fingerprint
+    assert audit.overall_admissible is True
 
 
 def test_derived_metric_must_exist_and_be_admitted() -> None:
@@ -373,6 +523,8 @@ def test_direct_audit_construction_cannot_bypass_order_or_summary() -> None:
         context=_CONTEXT,
     )
 
+    with pytest.raises(ValueError, match="normalized when present"):
+        replace(audit, market_catalog_fingerprint=" ")
     with pytest.raises(ValueError, match="contiguous formula-input order"):
         replace(audit, rows=tuple(reversed(audit.rows)))
     with pytest.raises(ValueError, match="all_inputs_admitted"):
