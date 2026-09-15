@@ -180,7 +180,7 @@ def verify_s5_base_diagnostic_bundle(
     if not review_content.endswith("\n") or review_content.endswith("\n\n"):
         raise ValueError("review Markdown must have exactly one trailing newline")
     expected_content_fingerprint = canonical_payload_fingerprint(
-        {"markdown_zh": review_content[:-1]}
+        {"markdown_zh": review_content}
     )
     if expected_content_fingerprint != bundle.review_content_fingerprint:
         raise ValueError("review Markdown fingerprint does not match bundle")
