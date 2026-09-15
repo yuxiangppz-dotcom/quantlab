@@ -63,7 +63,7 @@ def report(base, exst, root, output):
             path = (root / "data/canonical/daily" / f"year={stamp.year}"
                     / f"month={stamp.month:02d}" / f"{stamp.date()}.parquet")
             bars = pd.read_parquet(path)
-            matched = bars.loc[bars.ts_code == item["event"].split(":")[0], "close"]
+            matched = bars.loc[bars.instrument_id == item["event"].split(":")[0], "close"]
             if len(matched) != 1:
                 raise ValueError("fractional-share valuation needs one raw close")
             item["listing_day_close_cny"] = float(matched.iloc[0])
@@ -217,6 +217,17 @@ FIFO卖出计算红利税，未结税计准备。
 运行入口：scripts/replay_alpha158_model.py；校验入口：scripts/verify_model_replay.py；报告入口：scripts/report_model_replay.py。首次运行须新输出目录，旧结果不会覆盖。具体目录与数值见comparison.json。
 """
     )
+    fraction_lines = []
+    for key, cost in costs.items():
+        for item in cost["excluded_fractional_shares"]:
+            fraction_lines.append(
+                f"{names[key]}：{item['date']}，{item['event'].split(':')[0]}，"
+                f"舍去 {item['quantity']} 股；当日原始收盘价 "
+                f"{item['listing_day_close_cny']:.2f} 元，对应 "
+                f"{item['excluded_listing_day_value_cny']:.2f} 元。"
+            )
+    text += "\n## 零碎股份影响\n\n" + "\n\n".join(fraction_lines)
+    text += "\n\n上述为分配当日估值影响，不代表持有至期末的反事实收益。\n"
     (output / "report_zh.md").write_text(text)
     image = base64.b64encode((output / "nav_drawdown.png").read_bytes()).decode()
     rendered, table_open = [], False
