@@ -168,7 +168,7 @@ def _research_status(as_json: bool) -> int:
         registry_path=PROJECT_ROOT / "config" / "strategy_registry_v1.json",
         forward_config_path=PROJECT_ROOT / "config" / "forward_shadow_v1.json",
         experiment_root=PROJECT_ROOT / "data" / "experiments",
-        shadow_root=PROJECT_ROOT / "data" / "products" / "forward_shadow",
+        shadow_root=PROJECT_ROOT / "data" / "predictions" / "forward_shadow",
     )
     if as_json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
