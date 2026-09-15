@@ -7,6 +7,10 @@ import pytest
 
 from quantlab.research.s5_base_completion import S5BaseState
 from quantlab.research.s5_base_decision import S5BaseAdmissionState
+from quantlab.research.s5_base_diagnostic_bundle import (
+    build_s5_base_diagnostic_bundle,
+    verify_s5_base_diagnostic_bundle,
+)
 from quantlab.research.s5_base_diagnostic_inputs import (
     S5BaseBenchmarkOutcomeRow,
     S5BaseComparisonOutcomeRow,
@@ -441,3 +445,101 @@ def test_chinese_review_rejects_metrics_not_bound_by_the_seal() -> None:
 
     with pytest.raises(ValueError, match="input fingerprints"):
         build_s5_base_diagnostic_review(metrics=changed, seal=seal)
+
+
+def test_content_addressed_bundle_emits_exact_verified_files() -> None:
+    package = _package()
+    metrics = compute_s5_base_diagnostic_metrics(package)
+    seal = seal_s5_base_diagnostic_run(
+        package=package,
+        metrics=metrics,
+        recorded_at=datetime(2024, 3, 1, tzinfo=UTC),
+    )
+    review = build_s5_base_diagnostic_review(metrics=metrics, seal=seal)
+
+    bundle = build_s5_base_diagnostic_bundle(
+        metrics=metrics,
+        seal=seal,
+        review=review,
+    )
+
+    assert [item.name for item in bundle.files] == [
+        "s5b_metrics.json",
+        "s5b_run_seal.json",
+        "s5b_review.md",
+    ]
+    assert all(item.byte_length == len(item.content.encode("utf-8")) for item in bundle.files)
+    assert bundle.files[0].content.endswith("\n")
+    assert not bundle.files[0].content.endswith("\n\n")
+    assert bundle.files[1].content.endswith("\n")
+    assert bundle.files[2].content.endswith("\n")
+    assert "筑底完成信号" in bundle.files[2].content
+    assert bundle.input_fingerprint == package.fingerprint
+    assert bundle.metrics_fingerprint == metrics.fingerprint
+    assert bundle.seal_fingerprint == seal.fingerprint
+    assert bundle.review_fingerprint == review.fingerprint
+    assert bundle.review_content_fingerprint == review.content_fingerprint
+    assert bundle.diagnostic_only is True
+    assert bundle.executable_pnl is False
+    assert bundle.performance_verdict is False
+    assert bundle.broker_order_authority is False
+    assert bundle.fingerprint
+    verify_s5_base_diagnostic_bundle(bundle)
+
+
+def test_content_addressed_bundle_is_deterministic() -> None:
+    package = _package()
+    metrics = compute_s5_base_diagnostic_metrics(package)
+    seal = seal_s5_base_diagnostic_run(
+        package=package,
+        metrics=metrics,
+        recorded_at=datetime(2024, 3, 1, tzinfo=UTC),
+    )
+    review = build_s5_base_diagnostic_review(metrics=metrics, seal=seal)
+
+    first = build_s5_base_diagnostic_bundle(
+        metrics=metrics,
+        seal=seal,
+        review=review,
+    )
+    second = build_s5_base_diagnostic_bundle(
+        metrics=metrics,
+        seal=seal,
+        review=review,
+    )
+
+    assert first == second
+    assert first.files == second.files
+    assert first.fingerprint == second.fingerprint
+
+
+def test_bundle_rejects_changed_review_and_detects_content_tampering() -> None:
+    package = _package()
+    metrics = compute_s5_base_diagnostic_metrics(package)
+    seal = seal_s5_base_diagnostic_run(
+        package=package,
+        metrics=metrics,
+        recorded_at=datetime(2024, 3, 1, tzinfo=UTC),
+    )
+    review = build_s5_base_diagnostic_review(metrics=metrics, seal=seal)
+    changed_review = replace(review, markdown_zh=review.markdown_zh + "changed")
+
+    with pytest.raises(ValueError, match="deterministic rebuild"):
+        build_s5_base_diagnostic_bundle(
+            metrics=metrics,
+            seal=seal,
+            review=changed_review,
+        )
+
+    bundle = build_s5_base_diagnostic_bundle(
+        metrics=metrics,
+        seal=seal,
+        review=review,
+    )
+    object.__setattr__(
+        bundle.files[0],
+        "content",
+        bundle.files[0].content + " ",
+    )
+    with pytest.raises(ValueError, match="byte length changed"):
+        verify_s5_base_diagnostic_bundle(bundle)
