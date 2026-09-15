@@ -44,11 +44,22 @@ def _entry(status: str = IDEA) -> StrategyRegistryEntry:
 
 def test_repository_registry_loads_without_real_money_authority() -> None:
     entries = load_strategy_registry(Path("config/strategy_registry_v1.json"))
-    assert {entry.strategy_id for entry in entries} == {
+    by_id = {entry.strategy_id: entry for entry in entries}
+    assert set(by_id) == {
         "momentum_20d_reversal_example",
         "transparent_combo_v1",
+        "price_volume_base_breakout",
     }
-    assert all(entry.status == FORWARD_EVIDENCE_ACCUMULATING for entry in entries)
+    assert by_id["momentum_20d_reversal_example"].status == FORWARD_EVIDENCE_ACCUMULATING
+    assert by_id["transparent_combo_v1"].status == FORWARD_EVIDENCE_ACCUMULATING
+    s5b = by_id["price_volume_base_breakout"]
+    assert s5b.version == "s5b_frozen"
+    assert s5b.status == RESEARCHED
+    assert s5b.evidence_refs == (
+        "src/quantlab/research/base_breakout_strategy.py",
+        "config/base_breakout_strategy.json",
+        "docs/base_breakout_strategy_zh.md",
+    )
     assert all(entry.user_approved is False for entry in entries)
 
 

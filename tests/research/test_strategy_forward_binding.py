@@ -119,6 +119,7 @@ def test_repository_registry_explicitly_binds_baseline_name_mismatch() -> None:
         by_strategy["transparent_combo_v1"].forward_model_id
         == "transparent_combo_v1"
     )
+    assert "price_volume_base_breakout" not in by_strategy
     assert audit.forward_config_id == "forward_shadow_v1"
     assert len(audit.binding_fingerprint) == 64
 
@@ -143,6 +144,15 @@ def test_registered_readiness_uses_binding_not_strategy_name() -> None:
     assert baseline.forward_prediction_count == 3
     assert "FORWARD_SHADOW_SUMMARY_NOT_FOUND" not in baseline.blockers
     assert baseline.strategy_forward_binding_fingerprint is not None
+
+    s5b = by_strategy["price_volume_base_breakout"]
+    assert s5b.registry_status == "RESEARCHED"
+    assert s5b.forward_prediction_count == 0
+    assert s5b.ready_for_user_review is False
+    assert s5b.user_approved is False
+    assert s5b.broker_order_authority is False
+    assert "REGISTRY_STAGE_NOT_ELIGIBLE_FOR_USER_REVIEW" in s5b.blockers
+    assert "FORWARD_SHADOW_SUMMARY_NOT_FOUND" in s5b.blockers
 
 
 def test_missing_forward_model_id_fails_closed(tmp_path: Path) -> None:
