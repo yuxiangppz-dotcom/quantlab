@@ -154,3 +154,20 @@ def test_forged_identity_authority_or_budget_fails_closed(column, value, message
 def test_missing_initial_target_fails_instead_of_assuming_cash() -> None:
     with pytest.raises(DataValidationError, match="first decision session"):
         materialize_base_breakout_targets(_signals().iloc[[1]], CALENDAR[1:3])
+
+
+def test_runner_rejects_a_carried_target_from_outside_the_market_calendar() -> None:
+    signals = _signals().iloc[[0]].copy()
+    signals.loc[signals.index[0], "trade_date"] = START - timedelta(days=1)
+    checkpoint = RiskLedgerCheckpoint.start(
+        signal_date=CALENDAR[0], initial_cash_fen=20_000_000, config=CONFIG
+    )
+    with pytest.raises(DataValidationError, match="absent from the supplied calendar"):
+        run_base_breakout_risk_ledger(
+            signals=signals,
+            checkpoint=checkpoint,
+            calendar=CALENDAR,
+            requested_end=CALENDAR[3],
+            evidence=_evidence(),
+            config=CONFIG,
+        )
