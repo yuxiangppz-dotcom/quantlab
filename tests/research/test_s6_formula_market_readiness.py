@@ -122,6 +122,7 @@ def _record(
     definition: S6MarketFieldDefinition,
     *,
     available_at: datetime = _AVAILABLE,
+    retrieved_at: datetime = _RETRIEVED,
     status: S6MarketObservationStatus = (
         S6MarketObservationStatus.ORIGINAL_OBSERVATION_VERIFIED
     ),
@@ -133,7 +134,7 @@ def _record(
         revision_id="original",
         observed_at=_OBSERVED,
         available_at=available_at,
-        retrieved_at=_RETRIEVED,
+        retrieved_at=retrieved_at,
         content_fingerprint="market-content",
         status=status,
     )
@@ -212,8 +213,8 @@ def test_future_observation_remains_not_yet_available() -> None:
     future = _record(
         catalog.definitions[0],
         available_at=datetime(2024, 6, 5, tzinfo=UTC),
+        retrieved_at=datetime(2024, 6, 6, tzinfo=UTC),
     )
-    future = replace(future, retrieved_at=datetime(2024, 6, 6, tzinfo=UTC))
 
     audit = audit_s6_formula_market_readiness(
         binding_audit=binding,
