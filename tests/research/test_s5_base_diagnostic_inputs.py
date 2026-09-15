@@ -22,6 +22,8 @@ from quantlab.research.s5_base_diagnostic_protocol import (
 )
 from quantlab.research.s5_base_diagnostic_readiness import (
     S5BaseDiagnosticPopulationKey,
+    S5BaseDiagnosticReadinessBlocker,
+    S5BaseDiagnosticReadinessVerdict,
     S5BaseEligibilityEvidence,
     evaluate_s5_base_diagnostic_readiness,
 )
@@ -177,10 +179,15 @@ def test_blocked_readiness_cannot_admit_outcomes() -> None:
     values = _world()
     values["readiness"] = replace(
         values["readiness"],
-        verdict="blocked_before_outcomes",
+        verdict=S5BaseDiagnosticReadinessVerdict.BLOCKED,
         admissible_start=None,
         admissible_end=None,
-        blockers=values["readiness"].blockers,
+        blockers=(
+            S5BaseDiagnosticReadinessBlocker(
+                "blocked_eligibility_evidence",
+                "synthetic_blocker",
+            ),
+        ),
     )
     with pytest.raises(ValueError):
         admit_s5_base_diagnostic_inputs(**values)
