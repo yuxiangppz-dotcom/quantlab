@@ -101,6 +101,14 @@ class S6FormulaMarketReadinessRow:
         ):
             raise ValueError("ready rows require one admitted selected observation")
         if (
+            self.observation_verdict is not None
+            and self.readiness_verdict
+            is not _SELECTION_TO_READINESS[self.observation_verdict]
+        ):
+            raise ValueError(
+                "readiness verdict must preserve the observation selection verdict"
+            )
+        if (
             self.observation_verdict is None
             and self.readiness_verdict
             not in {
@@ -153,6 +161,9 @@ class S6FormulaMarketReadinessAudit:
         positions = tuple(row.position for row in self.rows)
         if positions != tuple(sorted(set(positions))):
             raise ValueError("rows must retain unique increasing formula positions")
+        input_ids = tuple(row.input_id for row in self.rows)
+        if len(input_ids) != len(set(input_ids)):
+            raise ValueError("market readiness row input IDs must be unique")
         if self.market_input_count != len(self.rows):
             raise ValueError("market_input_count does not match rows")
         if self.ready_count != sum(row.ready for row in self.rows):
