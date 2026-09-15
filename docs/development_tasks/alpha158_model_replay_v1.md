@@ -1,0 +1,10 @@
+# Alpha158 LightGBM historical replay commission
+
+Expected starting head: ad5e16147929e8f6a35ede10936086c1adf691d6.
+Direct user commission: use saved Alpha158 rolling LightGBM as the strategy; calculate portfolio net return, maximum drawdown, Sharpe and comparison to SSE Composite. User additionally authorizes missing selected-stock dividends, share distributions and delisting information acquisition, with declared full commission 0.000086/minimum CNY5, historical sell stamp tax and one-way 5bp slippage. No retraining, new strategies or orders.
+
+Freeze before outcomes: 2023-01-03 to 2026-09-10 signal windows from the three existing evaluation models and fold3 observed_2026 scores; top20 descending finite score with code ties, no label-based membership, equal 5% nominal weight, daily target refresh, next common market-session execution, CNY200000 initial cash. Retrospective evaluation, not fresh OOS. Model inference is not new training. No newly invented ST filter: report existing ST membership explicitly.
+
+Use isolated checkout, preserve all original artifacts. Audit source receipts, historical quantity-rule coverage, exact execution prices, corporate-action eligibility and calendar first. An unresolved financial fact must stop admission; never generate a complete curve by dropping missing sessions, changing the universe after outcomes, filling unknown payouts/marks/fees or using engineering rule fallbacks. Benchmark uses 000001.SH price index, matched valuation dates, 252-session annualization and zero risk-free-rate research convention. All requested portfolio metrics remain unavailable unless a complete admitted replay exists.
+
+Implement and test reusable bounded intake/metric support as needed. Raw acquisition, if needed, uses a new exclusive staging directory and only commissioned instruments. Canonical and sealed sources remain read-only. Full pytest, ruff and diff checks for code changes; source hash and arithmetic consistency checks for real data. Commit/push each completed code part. Do not restart automations.
