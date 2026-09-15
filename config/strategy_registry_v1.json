@@ -29,6 +29,20 @@
       ],
       "user_approved": false,
       "notes": "Unpromoted candidate under immutable Forward Shadow observation."
+    },
+    {
+      "strategy_id": "price_volume_base_breakout",
+      "version": "s5b_frozen",
+      "role": "candidate",
+      "score_source": "state_priority_then_recovery_location_volume higher_is_better",
+      "status": "RESEARCHED",
+      "evidence_refs": [
+        "src/quantlab/research/base_breakout_strategy.py",
+        "config/base_breakout_strategy.json",
+        "docs/base_breakout_strategy_zh.md"
+      ],
+      "user_approved": false,
+      "notes": "S5-B deterministic price/volume research strategy with synthetic risk-ledger integration; no completed local historical economic replay or Forward Shadow evidence."
     }
   ]
 }
