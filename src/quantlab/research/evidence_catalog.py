@@ -33,6 +33,7 @@ class EvidenceCatalogEntry:
 class EvidenceCatalogIssue:
     relative_path: str
     message: str
+    classification: str = "malformed_evidence"
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,34 @@ def _string_or_none(value: object, field: str, label: str) -> str | None:
             f"{label}: {field} must be a non-empty string when present"
         )
     return value.strip()
+
+
+# Legacy producer identities, not evidence eligibility. See the execution
+# readiness and research-backtest producers and docs/architecture.md history.
+_LEGACY_EXPERIMENT_SCHEMAS = frozenset({
+    "execution_readiness_v0_1", "execution_readiness_v0_2",
+    "execution_readiness_v0_2_1", "execution_readiness_v0_2_2",
+    "systematic_lifecycle_event_data_v0_1", "lifecycle_risk_policy_v0_1",
+    "lifecycle_date_semantics_v0_1_1",
+    "performance_baseline_benchmark_correctness_v0_1_1",
+    "performance_baseline_benchmark_correctness_v0_1_2",
+    "performance_baseline_benchmark_correctness_v0_1_3",
+})
+_LEGACY_ENGINE_VERSIONS = frozenset({
+    "v0.2", "v0.2.1", "v0.2.2", "v0.2.3", "v0.2.4",
+})
+
+
+def _identified_legacy(payload: dict) -> bool:
+    experiment = payload.get("experiment_schema")
+    if experiment is not None:
+        return isinstance(experiment, str) and experiment in _LEGACY_EXPERIMENT_SCHEMAS
+    engine = payload.get("engine_schema_version")
+    return (
+        isinstance(engine, str)
+        and engine in _LEGACY_ENGINE_VERSIONS
+        and payload.get("analysis_type") == "portfolio_engineering_backtest"
+    )
 
 
 def _parse_entry(root: Path, path: Path) -> EvidenceCatalogEntry:
@@ -174,12 +203,38 @@ def build_evidence_catalog(
                     f"{relative}: cannot read evidence artifact"
                 ) from exc
             message = str(exc)
+            classification = "malformed_evidence"
+            try:
+                probe = json.loads(path.read_bytes().decode("utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                probe = None
+            if not isinstance(probe, dict) or "schema" in probe:
+                # A current-format declaration exists: the artifact is judged
+                # against the current contract first, and corruption is never
+                # downgraded to legacy by an unrelated extra field.
+                classification = "malformed_evidence"
+            elif _identified_legacy(probe):
+                classification = "identified_legacy"
+                message = (
+                    f"{message}; identified legacy/non-evidence summary "
+                    "(matches a known producer version) and gains no eligibility"
+                )
+            else:
+                classification = "unrecognized_format"
+                message = (
+                    f"{message}; unrecognized schema or producer version - needs "
+                    "manual review and gains no eligibility"
+                )
             root_text = str(root)
             resolved_root_text = str(root.resolve())
             message = message.replace(resolved_root_text, "<root>").replace(
                 root_text, "<root>"
             )
-            issues.append(EvidenceCatalogIssue(relative, message))
+            issues.append(
+                EvidenceCatalogIssue(
+                    relative, message, classification=classification
+                )
+            )
             continue
         entries.append(entry)
 

@@ -57,7 +57,10 @@ def build_research_status(
     registry_sha256 = _sha256(registry_path, "strategy registry")
     forward_config_sha256 = _sha256(forward_config_path, "Forward Shadow config")
 
-    catalog = build_evidence_catalog(experiment_root, strict=True)
+    # Legacy experiment summaries and malformed artifacts are classified and
+    # reported instead of crashing the whole status view; the strict entry
+    # remains for consumers that must hard-fail.
+    catalog = build_evidence_catalog(experiment_root, strict=False)
     shadow_summaries = summarize_forward_shadow(
         shadow_root,
         evaluation_root=evaluation_root,
@@ -83,6 +86,14 @@ def build_research_status(
             "entries": [asdict(item) for item in catalog.entries],
             "issues": [asdict(item) for item in catalog.issues],
         },
+        "incompatible_artifacts": [
+            {
+                "relative_path": issue.relative_path,
+                "classification": issue.classification,
+                "message": issue.message,
+            }
+            for issue in catalog.issues
+        ],
         "forward_shadow": {
             "summaries": [asdict(item) for item in shadow_summaries],
             "label_semantics": "overlapping_forward_labels_are_diagnostics_not_portfolio_nav",
@@ -96,6 +107,22 @@ def build_research_status(
         "broker_order_authority": False,
         "claim": "read_only_structural_research_status_not_performance_or_execution_authority",
     }
+    # Overall naming describes report integrity, never strategy readiness.
+    has_unrecognized = any(
+        issue.classification == "unrecognized_format" for issue in catalog.issues
+    )
+    has_malformed = any(
+        issue.classification == "malformed_evidence" for issue in catalog.issues
+    )
+    has_legacy = any(
+        issue.classification == "identified_legacy" for issue in catalog.issues
+    )
+    if has_unrecognized or has_malformed:
+        core["overall_status"] = "report_has_evidence_issues"
+    elif has_legacy:
+        core["overall_status"] = "report_has_legacy_artifacts"
+    else:
+        core["overall_status"] = "clean"
     return {**core, "status_fingerprint": _canonical_hash(core)}
 
 
@@ -105,8 +132,10 @@ def format_research_status(payload: dict) -> str:
     sources = payload["sources"]
     catalog = payload["evidence_catalog"]["summary"]
     strategies = payload["strategy_readiness"]["strategies"]
+    incompatible = payload.get("incompatible_artifacts", [])
     lines = [
         "QuantLab research status",
+        f"  overall status: {payload.get('overall_status', 'clean')}",
         f"  evidence root: {'present' if sources['experiment_root_exists'] else 'missing'}",
         f"  evidence artifacts: {catalog['entry_count']}",
         f"  Forward Shadow root: {'present' if sources['shadow_root_exists'] else 'missing'}",
@@ -130,5 +159,12 @@ def format_research_status(payload: dict) -> str:
                 ),
             ]
         )
+    if incompatible:
+        lines.append("  incompatible artifacts:")
+        for artifact in incompatible:
+            lines.append(
+                f"    {artifact['relative_path']}: "
+                f"{artifact['classification']} - {artifact['message']}"
+            )
     lines.append("  performance claim: false")
     return "\n".join(lines)
