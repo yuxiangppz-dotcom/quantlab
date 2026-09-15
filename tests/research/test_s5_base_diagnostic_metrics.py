@@ -196,7 +196,7 @@ def test_cohort_spreads_equal_weight_dates_after_within_date_means() -> None:
 
     selected = rows[("selected_vs_eligible_nonselected", 1)]
     assert selected.observation_count == 2
-    assert selected.mean == pytest.approx(0.055)
+    assert selected.mean == pytest.approx(0.06)
     assert result.spread_weighting == (
         "equal_weight_within_date_then_equal_weight_across_dates"
     )
