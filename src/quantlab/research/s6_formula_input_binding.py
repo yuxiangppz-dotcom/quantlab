@@ -8,7 +8,9 @@ from enum import StrEnum
 from quantlab.data.models import canonical_payload_fingerprint
 from quantlab.research.s6_financial_field_admission import S6FinancialFieldCatalog
 from quantlab.research.s6_formula_spec import (
+    S6FormulaAdmissionRow,
     S6FormulaInputKind,
+    S6FormulaInputRef,
     S6FormulaSpec,
     S6FormulaSpecCatalog,
 )
@@ -167,9 +169,9 @@ def audit_s6_formula_input_bindings(
 
 def _bind_input(
     *,
-    input_ref: object,
+    input_ref: S6FormulaInputRef,
     formula_catalog: S6FormulaSpecCatalog,
-    formula_rows: dict[str, object],
+    formula_rows: dict[str, S6FormulaAdmissionRow],
     field_catalog: S6FinancialFieldCatalog,
     context: S6FormulaBindingContext,
 ) -> S6FormulaInputBindingRow:
