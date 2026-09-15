@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 import quantlab.__main__ as main_module
-from quantlab.data.models import DataValidationError
 from quantlab.research.research_status import (
     build_research_status,
     format_research_status,
