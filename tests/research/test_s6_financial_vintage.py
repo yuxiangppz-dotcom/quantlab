@@ -266,3 +266,43 @@ def test_field_ids_must_be_nonempty_and_unique_after_normalization() -> None:
 
     with pytest.raises(ValueError, match="non-empty identifiers"):
         replace(_record(), raw_field_ids=("",))
+
+
+def test_direct_inventory_construction_cannot_bypass_builder_invariants() -> None:
+    original = _record()
+    revision = _record(
+        revision_id="revision-1",
+        available_at=datetime(2024, 4, 25, tzinfo=UTC),
+        status=S6FinancialVintageStatus.REVISION_CHAIN_VERIFIED,
+        content_fingerprint="content-revision",
+    )
+    inventory = build_s6_financial_vintage_inventory((original, revision))
+
+    with pytest.raises(ValueError, match="deterministic frozen order"):
+        replace(inventory, records=tuple(reversed(inventory.records)))
+    bad_counts = (
+        replace(inventory.status_counts[0], count=0),
+        replace(inventory.status_counts[1], count=2),
+        *inventory.status_counts[2:],
+    )
+    with pytest.raises(ValueError, match="status_counts do not match"):
+        replace(inventory, status_counts=bad_counts)
+    with pytest.raises(ValueError, match="earliest_available_at"):
+        replace(
+            inventory,
+            earliest_available_at=datetime(2024, 4, 21, tzinfo=UTC),
+        )
+
+
+def test_direct_selection_construction_cannot_embed_an_ineligible_record() -> None:
+    result = select_s6_financial_vintage(
+        (_record(),),
+        instrument_id="000001.SZ",
+        fiscal_period_end=_PERIOD_END,
+        statement=S6FinancialStatement.INCOME_STATEMENT,
+        as_of=datetime(2024, 4, 21, tzinfo=UTC),
+    )
+    weak = _record(status=S6FinancialVintageStatus.UNKNOWN)
+
+    with pytest.raises(ValueError, match="frozen PIT target"):
+        replace(result, selected=weak)
