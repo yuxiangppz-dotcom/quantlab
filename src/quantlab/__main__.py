@@ -178,7 +178,10 @@ def _research_status(as_json: bool) -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         print(format_research_status(payload))
-    if payload.get("overall_status") == "ready_with_corrupt_evidence":
+    if payload.get("overall_status") in (
+        "report_has_evidence_issues",
+        "report_has_unrecognized_artifacts",
+    ):
         return 1
     return 0
 

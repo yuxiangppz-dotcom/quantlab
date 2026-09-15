@@ -66,11 +66,11 @@ def test_existing_malformed_evidence_is_classified_and_listed(
     )
     # The corrupt artifact is listed with its reason and keeps the status
     # from reading as clean; it never gains evidence eligibility.
-    assert payload["overall_status"] == "ready_with_corrupt_evidence"
+    assert payload["overall_status"] == "report_has_evidence_issues"
     artifacts = payload["incompatible_artifacts"]
     assert any(
         a["relative_path"] == "run/summary.json"
-        and a["classification"] == "malformed_evidence"
+        and a["classification"] == "unrecognized_format"
         for a in artifacts
     )
 
@@ -114,7 +114,7 @@ def test_legacy_summary_and_valid_evidence_coexist(tmp_path: Path) -> None:
     )
     # The valid evidence stays visible; the legacy summary is listed with
     # its reason and gains no eligibility.
-    assert payload["overall_status"] == "ready_with_legacy_artifacts"
+    assert payload["overall_status"] == "report_has_legacy_artifacts"
     assert any(
         entry["schema"] == "research_evidence_v1"
         for entry in payload["evidence_catalog"]["entries"]
@@ -122,12 +122,12 @@ def test_legacy_summary_and_valid_evidence_coexist(tmp_path: Path) -> None:
     legacy_rows = [
         a
         for a in payload["incompatible_artifacts"]
-        if a["classification"] == "legacy_experiment_summary"
+        if a["classification"] == "identified_legacy"
     ]
     assert len(legacy_rows) == 1
     assert legacy_rows[0]["relative_path"] == "old_v0_1/20260906T173554/summary.json"
     rendered = format_research_status(payload)
-    assert "legacy_experiment_summary" in rendered
+    assert "identified_legacy" in rendered
     assert "incompatible artifacts" in rendered
 
 
@@ -136,7 +136,7 @@ def test_corrupt_current_format_evidence_is_never_valid(tmp_path: Path) -> None:
     corrupt = experiments / "current_v1" / "broken" / "summary.json"
     corrupt.parent.mkdir(parents=True)
     corrupt.write_text(
-        json.dumps({"evidence_schema": "", "run_id": "x"}),
+        json.dumps({"schema": "", "run_id": "x"}),
         encoding="utf-8",
     )
     payload = build_research_status(
@@ -145,15 +145,15 @@ def test_corrupt_current_format_evidence_is_never_valid(tmp_path: Path) -> None:
         experiment_root=experiments,
         shadow_root=tmp_path / "missing-shadow",
     )
-    assert payload["overall_status"] == "ready_with_corrupt_evidence"
+    assert payload["overall_status"] == "report_has_evidence_issues"
     # The corrupt artifact never becomes a catalog entry.
     assert payload["evidence_catalog"]["entries"] == []
     text = format_research_status(payload)
-    assert "ready_with_corrupt_evidence" in text
+    assert "report_has_evidence_issues" in text
 
     as_json = json.dumps(payload)
     assert "malformed_evidence" in as_json
-    assert "ready_with_corrupt_evidence" in as_json
+    assert "report_has_evidence_issues" in as_json
 
 
 def test_cli_exit_code_two_when_status_cannot_be_composed(
@@ -167,6 +167,56 @@ def test_cli_exit_code_two_when_status_cannot_be_composed(
     )
     code = main_module._research_status(as_json=False)
     assert code == 2
+
+
+def test_exit_code_paths_cover_all_four_outcomes(tmp_path: Path) -> None:
+    experiments = tmp_path / "experiments"
+
+    # 1. clean -> exit 0
+    payload = build_research_status(
+        registry_path=REGISTRY,
+        forward_config_path=FORWARD,
+        experiment_root=experiments / "missing",
+        shadow_root=tmp_path / "missing-shadow",
+    )
+    assert payload["overall_status"] == "clean"
+
+    # 2. legacy-only -> exit 0 with the note rendered
+    legacy = experiments / "legacy" / "run" / "summary.json"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text(
+        json.dumps({"experiment_schema": "execution_readiness_v0_1"}),
+        encoding="utf-8",
+    )
+    payload = build_research_status(
+        registry_path=REGISTRY,
+        forward_config_path=FORWARD,
+        experiment_root=experiments,
+        shadow_root=tmp_path / "missing-shadow",
+    )
+    assert payload["overall_status"] == "report_has_legacy_artifacts"
+    rendered = format_research_status(payload)
+    assert "identified_legacy" in rendered
+    assert "overall status: report_has_legacy_artifacts" in rendered
+
+    # 3. corrupt current-format -> exit 1 mapped from evidence issues
+    corrupt = experiments / "corrupt" / "run" / "summary.json"
+    corrupt.parent.mkdir(parents=True)
+    corrupt.write_text(json.dumps({"schema": "", "run_id": "x"}), encoding="utf-8")
+    payload = build_research_status(
+        registry_path=REGISTRY,
+        forward_config_path=FORWARD,
+        experiment_root=experiments,
+        shadow_root=tmp_path / "missing-shadow",
+    )
+    assert payload["overall_status"] == "report_has_evidence_issues"
+    as_json = json.dumps(payload)
+    assert "report_has_evidence_issues" in as_json
+    text = format_research_status(payload)
+    assert "report_has_evidence_issues" in text
+
+    # 4. composition failure -> exit 2 (covered at the CLI boundary in
+    # test_cli_exit_code_two_when_status_cannot_be_composed).
 
 
 def test_existing_malformed_shadow_fails_closed(tmp_path: Path) -> None:

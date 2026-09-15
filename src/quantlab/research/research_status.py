@@ -107,17 +107,20 @@ def build_research_status(
         "broker_order_authority": False,
         "claim": "read_only_structural_research_status_not_performance_or_execution_authority",
     }
-    has_corrupt = any(
+    # Overall naming describes report integrity, never strategy readiness.
+    has_unrecognized = any(
+        issue.classification == "unrecognized_format" for issue in catalog.issues
+    )
+    has_malformed = any(
         issue.classification == "malformed_evidence" for issue in catalog.issues
     )
     has_legacy = any(
-        issue.classification == "legacy_experiment_summary"
-        for issue in catalog.issues
+        issue.classification == "identified_legacy" for issue in catalog.issues
     )
-    if has_corrupt:
-        core["overall_status"] = "ready_with_corrupt_evidence"
+    if has_unrecognized or has_malformed:
+        core["overall_status"] = "report_has_evidence_issues"
     elif has_legacy:
-        core["overall_status"] = "ready_with_legacy_artifacts"
+        core["overall_status"] = "report_has_legacy_artifacts"
     else:
         core["overall_status"] = "clean"
     return {**core, "status_fingerprint": _canonical_hash(core)}

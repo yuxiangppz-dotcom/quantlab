@@ -72,6 +72,10 @@ def _string_or_none(value: object, field: str, label: str) -> str | None:
     return value.strip()
 
 
+def _nonempty(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
 def _parse_entry(root: Path, path: Path) -> EvidenceCatalogEntry:
     resolved_root = root.resolve()
     resolved_path = path.resolve()
@@ -180,15 +184,27 @@ def build_evidence_catalog(
                 probe = json.loads(path.read_bytes().decode("utf-8"))
             except Exception:
                 probe = None
-            if isinstance(probe, dict):
-                legacy_schema = probe.get("experiment_schema")
-                if isinstance(legacy_schema, str) and legacy_schema.strip():
-                    classification = "legacy_experiment_summary"
-                    message = (
-                        f"{message}; legacy experiment summary "
-                        f"(experiment_schema={legacy_schema.strip()!r}) is not "
-                        "an evidence-catalog artifact and gains no eligibility"
-                    )
+            if isinstance(probe, dict) and "schema" in probe:
+                # A current-format declaration exists: the artifact is judged
+                # against the current contract first, and corruption is never
+                # downgraded to legacy by an unrelated extra field.
+                classification = "malformed_evidence"
+            elif isinstance(probe, dict) and (
+                _nonempty(probe.get("experiment_schema"))
+                or _nonempty(probe.get("engine_schema_version"))
+            ):
+                classification = "identified_legacy"
+                message = (
+                    f"{message}; identified legacy/non-evidence summary "
+                    "(carries experiment_schema or engine_schema_version "
+                    "versioning) and gains no eligibility"
+                )
+            else:
+                classification = "unrecognized_format"
+                message = (
+                    f"{message}; no recognizable schema marker - needs "
+                    "manual review and gains no eligibility"
+                )
             root_text = str(root)
             resolved_root_text = str(root.resolve())
             message = message.replace(resolved_root_text, "<root>").replace(
