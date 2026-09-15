@@ -60,6 +60,7 @@ def _observation(
     *,
     as_of: datetime = _AS_OF,
     feature_available_at: datetime = _AS_OF,
+    feature_evidence_fingerprint: str | None = "feature-evidence",
     history_complete: bool | None = True,
     adjusted_price_evidence_verified: bool | None = True,
     research_eligible: bool | None = True,
@@ -68,6 +69,7 @@ def _observation(
         instrument_id=instrument_id,
         as_of=as_of,
         feature_available_at=feature_available_at,
+        feature_evidence_fingerprint=feature_evidence_fingerprint,
         universe_fingerprint=universe.fingerprint,
         total_return_120=total_return_120,
         history_complete=history_complete,
@@ -292,6 +294,13 @@ def test_timezone_normalization_and_frozen_rule_parameters() -> None:
         S7Config(lookback_sessions=60)
     with pytest.raises(ValueError, match="frozen at three"):
         S7Config(max_positions=5)
+    with pytest.raises(ValueError, match="require evidence fingerprint"):
+        _observation(
+            universe,
+            "ETF_A",
+            0.20,
+            feature_evidence_fingerprint=None,
+        )
     with pytest.raises(ValueError, match="timezone-aware"):
         build_s7_decision(
             as_of=datetime(2024, 7, 1, 8),
