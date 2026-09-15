@@ -158,6 +158,25 @@ def _shadow() -> int:
     return 0
 
 
+def _research_status(as_json: bool) -> int:
+    from quantlab.research.research_status import (
+        build_research_status,
+        format_research_status,
+    )
+
+    payload = build_research_status(
+        registry_path=PROJECT_ROOT / "config" / "strategy_registry_v1.json",
+        forward_config_path=PROJECT_ROOT / "config" / "forward_shadow_v1.json",
+        experiment_root=PROJECT_ROOT / "data" / "experiments",
+        shadow_root=PROJECT_ROOT / "data" / "products" / "forward_shadow",
+    )
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(format_research_status(payload))
+    return 0
+
+
 def _accept(account_id: str) -> int:
     from quantlab.daily.acceptance import run_v1_acceptance
 
@@ -297,6 +316,11 @@ def _parser() -> argparse.ArgumentParser:
     accept = sub.add_parser("accept", help="Run local Daily v1 end-to-end acceptance.")
     accept.add_argument("--account-id", default="demo_200k")
     sub.add_parser("shadow", help="Freeze forward-only scores; append matured diagnostics.")
+    research_status = sub.add_parser(
+        "research-status",
+        help="Inspect strategy evidence and readiness without changing local state.",
+    )
+    research_status.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     return parser
 
 
@@ -329,6 +353,8 @@ def main() -> None:
         code = _accept(args.account_id)
     elif args.command == "shadow":
         code = _shadow()
+    elif args.command == "research-status":
+        code = _research_status(args.json)
     else:  # pragma: no cover - argparse enforces this
         raise AssertionError(args.command)
     raise SystemExit(code)
