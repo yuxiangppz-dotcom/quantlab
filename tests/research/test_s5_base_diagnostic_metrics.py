@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -21,6 +21,9 @@ from quantlab.research.s5_base_diagnostic_metrics import (
 )
 from quantlab.research.s5_base_diagnostic_protocol import (
     frozen_s5_base_diagnostic_protocol,
+)
+from quantlab.research.s5_base_diagnostic_run_seal import (
+    seal_s5_base_diagnostic_run,
 )
 
 
@@ -260,4 +263,106 @@ def test_kernel_rejects_protocol_or_grid_drift() -> None:
     with pytest.raises(ValueError, match="instrument outcome grid"):
         compute_s5_base_diagnostic_metrics(
             replace(package, instrument_outcomes=package.instrument_outcomes[1:])
+        )
+
+
+def test_single_run_seal_binds_independently_recomputed_evidence() -> None:
+    package = _package()
+    metrics = compute_s5_base_diagnostic_metrics(package)
+    recorded_at = datetime(
+        2024,
+        3,
+        1,
+        12,
+        tzinfo=timezone(timedelta(hours=8)),
+    )
+
+    seal = seal_s5_base_diagnostic_run(
+        package=package,
+        metrics=metrics,
+        recorded_at=recorded_at,
+    )
+
+    assert seal.recorded_at == datetime(2024, 3, 1, 4, tzinfo=timezone.utc)
+    assert seal.run_ordinal == 1
+    assert seal.run_budget == 1
+    assert seal.input_fingerprint == package.fingerprint
+    assert seal.metrics_fingerprint == metrics.fingerprint
+    assert seal.review_status == "awaiting_explicit_user_review"
+    assert seal.allow_parameter_rescan is False
+    assert seal.performance_claim is False
+    assert seal.promotion_authority is False
+    assert seal.account_mutation_authority is False
+    assert seal.broker_order_authority is False
+    assert seal.fingerprint
+
+
+def test_exact_seal_retry_is_idempotent_and_keeps_original_timestamp() -> None:
+    package = _package()
+    metrics = compute_s5_base_diagnostic_metrics(package)
+    first = seal_s5_base_diagnostic_run(
+        package=package,
+        metrics=metrics,
+        recorded_at=datetime(2024, 3, 1, tzinfo=timezone.utc),
+    )
+
+    retried = seal_s5_base_diagnostic_run(
+        package=package,
+        metrics=metrics,
+        recorded_at=datetime(2024, 3, 2, tzinfo=timezone.utc),
+        prior_seals=(first,),
+    )
+
+    assert retried is first
+    assert retried.recorded_at == datetime(2024, 3, 1, tzinfo=timezone.utc)
+
+
+def test_changed_evidence_cannot_spend_a_second_protocol_run() -> None:
+    package = _package()
+    metrics = compute_s5_base_diagnostic_metrics(package)
+    first = seal_s5_base_diagnostic_run(
+        package=package,
+        metrics=metrics,
+        recorded_at=datetime(2024, 3, 1, tzinfo=timezone.utc),
+    )
+    changed_package = replace(package, readiness_fingerprint="changed-readiness")
+    changed_metrics = compute_s5_base_diagnostic_metrics(changed_package)
+
+    with pytest.raises(ValueError, match="run budget already consumed"):
+        seal_s5_base_diagnostic_run(
+            package=changed_package,
+            metrics=changed_metrics,
+            recorded_at=datetime(2024, 3, 2, tzinfo=timezone.utc),
+            prior_seals=(first,),
+        )
+
+
+def test_seal_rejects_mismatched_metrics_naive_time_and_bad_ledger() -> None:
+    package = _package()
+    metrics = compute_s5_base_diagnostic_metrics(package)
+    changed_package = replace(package, readiness_fingerprint="changed-readiness")
+    with pytest.raises(ValueError, match="independent recomputation"):
+        seal_s5_base_diagnostic_run(
+            package=changed_package,
+            metrics=metrics,
+            recorded_at=datetime(2024, 3, 1, tzinfo=timezone.utc),
+        )
+    with pytest.raises(ValueError, match="timezone-aware"):
+        seal_s5_base_diagnostic_run(
+            package=package,
+            metrics=metrics,
+            recorded_at=datetime(2024, 3, 1),
+        )
+
+    first = seal_s5_base_diagnostic_run(
+        package=package,
+        metrics=metrics,
+        recorded_at=datetime(2024, 3, 1, tzinfo=timezone.utc),
+    )
+    with pytest.raises(ValueError, match="duplicate run_id"):
+        seal_s5_base_diagnostic_run(
+            package=package,
+            metrics=metrics,
+            recorded_at=datetime(2024, 3, 2, tzinfo=timezone.utc),
+            prior_seals=(first, first),
         )
