@@ -202,6 +202,8 @@ uv run quantlab update --through 2026-09-09 --no-context --enrichment \
   --financial-period 2024-12-31 --dividend-instrument 000001.SZ
 uv run quantlab daily --as-of 2026-09-10
 uv run quantlab shadow
+uv run quantlab research-status
+uv run quantlab research-status --json
 uv run quantlab portfolio demo
 uv run quantlab portfolio plan --account-id demo_200k
 uv run quantlab portfolio fills-preview --account-id my_account --file fills.csv
@@ -225,6 +227,11 @@ Financial versions are prospective-only because the endpoint does not expose a
 revision timestamp; they are not retroactively joined to historical research.
 `shadow` freezes immutable forward-only scores and targets for the baseline and
 transparent candidate, without creating orders or fills.
+
+`research-status` is read-only and does not require Canonical market data. It combines the
+strategy registry, content-bound experiment catalog and Forward Shadow diagnostics; missing
+optional evidence directories remain visibly missing, while malformed existing evidence stops
+the command. Its label summaries are overlapping diagnostics, not NAV, CAGR or executable PnL.
 
 Personal accounts can be imported with:
 
