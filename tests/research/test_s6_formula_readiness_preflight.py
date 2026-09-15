@@ -211,6 +211,7 @@ def test_ready_children_complete_metadata_preflight_without_numeric_authority() 
     )
 
     assert result.binding_input_count == 2
+    assert result.binding_overall_admissible is True
     assert result.financial_input_count == 1
     assert result.market_input_count == 1
     assert result.derived_input_count == 0
@@ -320,5 +321,7 @@ def test_direct_construction_cannot_add_authority_or_fake_counts() -> None:
         replace(result, binding_input_count=3)
     with pytest.raises(ValueError, match="derived inputs"):
         replace(result, derived_inputs_expanded=True)
+    with pytest.raises(ValueError, match="metadata readiness"):
+        replace(result, binding_overall_admissible=False)
     with pytest.raises(ValueError, match="cannot acquire"):
         replace(result, formula_computation_ready=True)
