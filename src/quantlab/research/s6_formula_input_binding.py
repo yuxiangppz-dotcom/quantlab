@@ -7,6 +7,7 @@ from enum import StrEnum
 
 from quantlab.data.models import canonical_payload_fingerprint
 from quantlab.research.s6_financial_field_admission import S6FinancialFieldCatalog
+from quantlab.research.s6_market_input_admission import S6MarketInputCatalog
 from quantlab.research.s6_formula_spec import (
     S6FormulaAdmissionRow,
     S6FormulaInputKind,
@@ -24,6 +25,9 @@ class S6FormulaInputBindingVerdict(StrEnum):
     DERIVED_METRIC_MISSING = "derived_metric_missing"
     DERIVED_METRIC_BLOCKED = "derived_metric_blocked"
     MARKET_INPUT_CONTRACT_MISSING = "market_input_contract_missing"
+    MARKET_FIELD_MISSING = "market_field_missing"
+    MARKET_FIELD_UNVERIFIED = "market_field_unverified"
+    MARKET_FIELD_AMBIGUOUS = "market_field_ambiguous"
 
 
 @dataclass(frozen=True)
@@ -70,6 +74,7 @@ class S6FormulaInputBindingAudit:
     formula_fingerprint: str
     formula_catalog_fingerprint: str
     field_catalog_fingerprint: str
+    market_catalog_fingerprint: str | None
     provider_id: str
     source_id: str
     formula_admitted: bool
@@ -127,6 +132,7 @@ def audit_s6_formula_input_bindings(
     formula_catalog: S6FormulaSpecCatalog,
     field_catalog: S6FinancialFieldCatalog,
     context: S6FormulaBindingContext,
+    market_catalog: S6MarketInputCatalog | None = None,
 ) -> S6FormulaInputBindingAudit:
     """Audit every formula input without reading or calculating numeric values."""
 
@@ -147,6 +153,7 @@ def audit_s6_formula_input_bindings(
         catalog_specs=catalog_specs,
         formula_rows=formula_rows,
         field_catalog=field_catalog,
+        market_catalog=market_catalog,
         context=context,
         cache={},
     )
@@ -159,6 +166,7 @@ def _audit_spec(
     catalog_specs: dict[str, S6FormulaSpec],
     formula_rows: dict[str, S6FormulaAdmissionRow],
     field_catalog: S6FinancialFieldCatalog,
+    market_catalog: S6MarketInputCatalog | None,
     context: S6FormulaBindingContext,
     cache: dict[str, S6FormulaInputBindingAudit],
 ) -> S6FormulaInputBindingAudit:
@@ -172,6 +180,7 @@ def _audit_spec(
             catalog_specs=catalog_specs,
             formula_rows=formula_rows,
             field_catalog=field_catalog,
+            market_catalog=market_catalog,
             context=context,
             cache=cache,
         )
@@ -184,6 +193,9 @@ def _audit_spec(
         formula_fingerprint=spec.fingerprint,
         formula_catalog_fingerprint=formula_catalog.fingerprint,
         field_catalog_fingerprint=field_catalog.fingerprint,
+        market_catalog_fingerprint=(
+            market_catalog.fingerprint if market_catalog is not None else None
+        ),
         provider_id=context.provider_id,
         source_id=context.source_id,
         formula_admitted=formula_admitted,
@@ -202,6 +214,7 @@ def _bind_input(
     catalog_specs: dict[str, S6FormulaSpec],
     formula_rows: dict[str, S6FormulaAdmissionRow],
     field_catalog: S6FinancialFieldCatalog,
+    market_catalog: S6MarketInputCatalog | None,
     context: S6FormulaBindingContext,
     cache: dict[str, S6FormulaInputBindingAudit],
 ) -> S6FormulaInputBindingRow:
@@ -211,13 +224,57 @@ def _bind_input(
     semantic_id = input_ref.semantic_id
 
     if kind is S6FormulaInputKind.MARKET_FIELD:
-        return _blocked_row(
+        if market_catalog is None:
+            return _blocked_row(
+                position,
+                input_id,
+                kind,
+                semantic_id,
+                S6FormulaInputBindingVerdict.MARKET_INPUT_CONTRACT_MISSING,
+                "market_input_catalog_was_not_supplied",
+            )
+        candidates = tuple(
+            item
+            for item in market_catalog.definitions
+            if item.provider_id == context.provider_id
+            and item.source_id == context.source_id
+            and item.semantic_field_id == semantic_id
+        )
+        if not candidates:
+            return _blocked_row(
+                position,
+                input_id,
+                kind,
+                semantic_id,
+                S6FormulaInputBindingVerdict.MARKET_FIELD_MISSING,
+                "market_semantic_field_is_missing_for_provider_source",
+            )
+        admitted = tuple(item for item in candidates if item.semantically_admissible)
+        if not admitted:
+            return _blocked_row(
+                position,
+                input_id,
+                kind,
+                semantic_id,
+                S6FormulaInputBindingVerdict.MARKET_FIELD_UNVERIFIED,
+                "market_semantic_field_has_no_admitted_definition",
+            )
+        if len(admitted) > 1:
+            return _blocked_row(
+                position,
+                input_id,
+                kind,
+                semantic_id,
+                S6FormulaInputBindingVerdict.MARKET_FIELD_AMBIGUOUS,
+                "multiple_admitted_raw_fields_map_to_one_market_semantic_field",
+            )
+        return _admitted_row(
             position,
             input_id,
             kind,
             semantic_id,
-            S6FormulaInputBindingVerdict.MARKET_INPUT_CONTRACT_MISSING,
-            "market_input_contract_has_not_been_frozen",
+            admitted[0].fingerprint,
+            "exactly_one_admitted_market_field_definition",
         )
     if kind is S6FormulaInputKind.DERIVED_METRIC:
         dependency = catalog_specs.get(semantic_id)
@@ -246,6 +303,7 @@ def _bind_input(
             catalog_specs=catalog_specs,
             formula_rows=formula_rows,
             field_catalog=field_catalog,
+            market_catalog=market_catalog,
             context=context,
             cache=cache,
         )
@@ -358,6 +416,7 @@ def _audit_payload(item: S6FormulaInputBindingAudit) -> dict[str, object]:
         "formula_fingerprint": item.formula_fingerprint,
         "formula_catalog_fingerprint": item.formula_catalog_fingerprint,
         "field_catalog_fingerprint": item.field_catalog_fingerprint,
+        "market_catalog_fingerprint": item.market_catalog_fingerprint,
         "provider_id": item.provider_id,
         "source_id": item.source_id,
         "formula_admitted": item.formula_admitted,
