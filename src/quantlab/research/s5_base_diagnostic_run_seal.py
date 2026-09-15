@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from quantlab.data.models import canonical_payload_fingerprint
 from quantlab.research.s5_base_diagnostic_inputs import S5BaseDiagnosticInputPackage
@@ -195,7 +195,7 @@ def _validate_prior_seals(
 def _utc(value: datetime) -> datetime:
     if value.utcoffset() is None:
         raise ValueError("recorded_at must be timezone-aware")
-    return value.astimezone(timezone.utc)
+    return value.astimezone(UTC)
 
 
 def _payload(seal: S5BaseDiagnosticRunSeal) -> dict[str, object]:
