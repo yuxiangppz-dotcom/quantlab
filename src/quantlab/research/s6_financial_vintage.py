@@ -91,6 +91,8 @@ class S6FinancialVintageRecord:
             value = getattr(self, name)
             if not value or not value.strip():
                 raise ValueError(f"{name} must be non-empty")
+            if value != value.strip():
+                raise ValueError(f"{name} must be normalized")
         expected_month_day = _PERIOD_ENDS[self.report_kind]
         if (
             self.fiscal_period_end.month,
@@ -113,6 +115,8 @@ class S6FinancialVintageRecord:
             raise ValueError("raw_field_ids must be non-empty")
         if any(not item or not item.strip() for item in self.raw_field_ids):
             raise ValueError("raw_field_ids must contain non-empty identifiers")
+        if any(item != item.strip() for item in self.raw_field_ids):
+            raise ValueError("raw_field_ids must contain normalized identifiers")
         if self.raw_field_ids != tuple(sorted(set(self.raw_field_ids))):
             raise ValueError("raw_field_ids must be sorted and unique")
         object.__setattr__(
@@ -182,8 +186,20 @@ class S6FinancialVintageInventory:
             S6FinancialVintageStatus
         ):
             raise ValueError("status_counts must cover every status in frozen order")
-        if sum(item.count for item in self.status_counts) != len(self.records):
+        if self.records != tuple(sorted(self.records, key=_record_sort_key)):
+            raise ValueError("records must be in deterministic frozen order")
+        _validate_record_set(self.records)
+        expected_counts = tuple(
+            sum(record.status is status for record in self.records)
+            for status in S6FinancialVintageStatus
+        )
+        if tuple(item.count for item in self.status_counts) != expected_counts:
             raise ValueError("status_counts do not match records")
+        availability = tuple(record.available_at for record in self.records)
+        if self.earliest_available_at != min(availability, default=None):
+            raise ValueError("earliest_available_at does not match records")
+        if self.latest_available_at != max(availability, default=None):
+            raise ValueError("latest_available_at does not match records")
         if (
             not self.source_time_pit_only
             or self.historical_local_knowledge_proven
@@ -229,6 +245,14 @@ class S6FinancialVintageSelection:
             self.selected is not None
         ):
             raise ValueError("only an admissible selection may contain a record")
+        if self.selected is not None and (
+            self.selected.instrument_id != self.instrument_id
+            or self.selected.fiscal_period_end != self.fiscal_period_end
+            or self.selected.statement is not self.statement
+            or self.selected.status not in _VERIFIED_STATUSES
+            or self.selected.available_at > self.as_of
+        ):
+            raise ValueError("selected record does not satisfy the frozen PIT target")
         if (
             not self.source_time_pit_only
             or self.historical_local_knowledge_proven
