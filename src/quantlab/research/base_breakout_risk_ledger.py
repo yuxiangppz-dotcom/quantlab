@@ -182,6 +182,10 @@ def run_base_breakout_risk_ledger(
     if first > last:
         raise ValueError("requested_end must follow the checkpoint")
     targets = materialize_base_breakout_targets(signals, calendar[first : last + 1])
+    signal_dates = set(pd.to_datetime(signals["trade_date"], errors="raise").dt.date)
+    outside_calendar = sorted(signal_dates - set(calendar))
+    if outside_calendar:
+        raise DataValidationError(f"signal dates are absent from the supplied calendar: {outside_calendar}")
     ledger = run_risk_ledger_loop(
         checkpoint=checkpoint,
         calendar=calendar,
