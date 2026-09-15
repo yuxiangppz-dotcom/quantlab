@@ -156,10 +156,11 @@ def test_state_counts_transitions_and_allocations_are_complete() -> None:
         (S5BaseState.BASE_READY, S5BaseState.BASE_READY)
     ].conditional_rate == pytest.approx(0.5)
 
-    assert [(row.selected_n, row.research_target_exposure, row.cash_exposure) for row in result.allocations] == [
-        (2, 0.08, 0.92),
-        (1, 0.04, 0.96),
+    allocations = [
+        (row.selected_n, row.research_target_exposure, row.cash_exposure)
+        for row in result.allocations
     ]
+    assert allocations == [(2, 0.08, 0.92), (1, 0.04, 0.96)]
     assert result.transition_semantics == "adjacent_observed_signal_dates_per_instrument"
 
 
