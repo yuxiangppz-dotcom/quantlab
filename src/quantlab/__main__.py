@@ -164,16 +164,22 @@ def _research_status(as_json: bool) -> int:
         format_research_status,
     )
 
-    payload = build_research_status(
-        registry_path=PROJECT_ROOT / "config" / "strategy_registry_v1.json",
-        forward_config_path=PROJECT_ROOT / "config" / "forward_shadow_v1.json",
-        experiment_root=PROJECT_ROOT / "data" / "experiments",
-        shadow_root=PROJECT_ROOT / "data" / "predictions" / "forward_shadow",
-    )
+    try:
+        payload = build_research_status(
+            registry_path=PROJECT_ROOT / "config" / "strategy_registry_v1.json",
+            forward_config_path=PROJECT_ROOT / "config" / "forward_shadow_v1.json",
+            experiment_root=PROJECT_ROOT / "data" / "experiments",
+            shadow_root=PROJECT_ROOT / "data" / "predictions" / "forward_shadow",
+        )
+    except Exception as exc:  # CLI boundary reports the failure explicitly
+        print(f"research status could not be composed: {exc}")
+        return 2
     if as_json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         print(format_research_status(payload))
+    if payload.get("overall_status") == "ready_with_corrupt_evidence":
+        return 1
     return 0
 
 

@@ -39,6 +39,10 @@ FROZEN_PRIOR20_GAPS = (
 FROZEN = {
     "plan": "6359d58599328340b43a84215ffa2f15725944171edea0b0f2786cf0cadfce92",
     "reconciliation": "a9e30b671ace89d59b272d5558295a1b1ee68f75e93c79309bd310d8951c3e10",
+    # Independently recomputed from the sealed profiles.json body
+    # (canonical fingerprint over the payload minus its fingerprint key);
+    # recorded fingerprint 6e5fbc67... matches the recomputation.
+    "profiles": "6e5fbc67e4d8169dfa5797eaca313d525c7106fafb42af282c188abe6845f0de",
 }
 
 PARSER = argparse.ArgumentParser()

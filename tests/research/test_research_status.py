@@ -52,18 +52,122 @@ def test_missing_optional_roots_are_explicit_and_do_not_fabricate_evidence(
     assert len(first["status_fingerprint"]) == 64
 
 
-def test_existing_malformed_evidence_fails_closed(tmp_path: Path) -> None:
+def test_existing_malformed_evidence_is_classified_and_listed(
+    tmp_path: Path,
+) -> None:
     bad = tmp_path / "experiments" / "run" / "summary.json"
     bad.parent.mkdir(parents=True)
     bad.write_text("{not-json", encoding="utf-8")
 
-    with pytest.raises(DataValidationError, match="invalid JSON evidence artifact"):
-        build_research_status(
-            registry_path=REGISTRY,
-            forward_config_path=FORWARD,
-            experiment_root=tmp_path / "experiments",
-            shadow_root=tmp_path / "missing-shadow",
-        )
+    payload = build_research_status(
+        registry_path=REGISTRY,
+        forward_config_path=FORWARD,
+        experiment_root=tmp_path / "experiments",
+        shadow_root=tmp_path / "missing-shadow",
+    )
+    # The corrupt artifact is listed with its reason and keeps the status
+    # from reading as clean; it never gains evidence eligibility.
+    assert payload["overall_status"] == "ready_with_corrupt_evidence"
+    artifacts = payload["incompatible_artifacts"]
+    assert any(
+        a["relative_path"] == "run/summary.json"
+        and a["classification"] == "malformed_evidence"
+        for a in artifacts
+    )
+
+
+def _write_evidence_summary(path: Path, schema: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema": schema,
+                "run_id": "20240101T000000",
+                "code_head": "0" * 40,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_legacy_summary_and_valid_evidence_coexist(tmp_path: Path) -> None:
+    experiments = tmp_path / "experiments"
+    legacy = experiments / "old_v0_1" / "20260906T173554" / "summary.json"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text(
+        json.dumps(
+            {
+                "analysis_type": "execution_readiness",
+                "experiment_schema": "execution_readiness_v0_1",
+                "run_id": "20260906T173554",
+            }
+        ),
+        encoding="utf-8",
+    )
+    valid = experiments / "current_v1" / "20240101T000000" / "summary.json"
+    _write_evidence_summary(valid, "research_evidence_v1")
+
+    payload = build_research_status(
+        registry_path=REGISTRY,
+        forward_config_path=FORWARD,
+        experiment_root=experiments,
+        shadow_root=tmp_path / "missing-shadow",
+    )
+    # The valid evidence stays visible; the legacy summary is listed with
+    # its reason and gains no eligibility.
+    assert payload["overall_status"] == "ready_with_legacy_artifacts"
+    assert any(
+        entry["schema"] == "research_evidence_v1"
+        for entry in payload["evidence_catalog"]["entries"]
+    )
+    legacy_rows = [
+        a
+        for a in payload["incompatible_artifacts"]
+        if a["classification"] == "legacy_experiment_summary"
+    ]
+    assert len(legacy_rows) == 1
+    assert legacy_rows[0]["relative_path"] == "old_v0_1/20260906T173554/summary.json"
+    rendered = format_research_status(payload)
+    assert "legacy_experiment_summary" in rendered
+    assert "incompatible artifacts" in rendered
+
+
+def test_corrupt_current_format_evidence_is_never_valid(tmp_path: Path) -> None:
+    experiments = tmp_path / "experiments"
+    corrupt = experiments / "current_v1" / "broken" / "summary.json"
+    corrupt.parent.mkdir(parents=True)
+    corrupt.write_text(
+        json.dumps({"evidence_schema": "", "run_id": "x"}),
+        encoding="utf-8",
+    )
+    payload = build_research_status(
+        registry_path=REGISTRY,
+        forward_config_path=FORWARD,
+        experiment_root=experiments,
+        shadow_root=tmp_path / "missing-shadow",
+    )
+    assert payload["overall_status"] == "ready_with_corrupt_evidence"
+    # The corrupt artifact never becomes a catalog entry.
+    assert payload["evidence_catalog"]["entries"] == []
+    text = format_research_status(payload)
+    assert "ready_with_corrupt_evidence" in text
+
+    as_json = json.dumps(payload)
+    assert "malformed_evidence" in as_json
+    assert "ready_with_corrupt_evidence" in as_json
+
+
+def test_cli_exit_code_two_when_status_cannot_be_composed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def boom(**_kwargs):
+        raise RuntimeError("registry unreadable")
+
+    monkeypatch.setattr(
+        "quantlab.research.research_status.build_research_status", boom
+    )
+    code = main_module._research_status(as_json=False)
+    assert code == 2
 
 
 def test_existing_malformed_shadow_fails_closed(tmp_path: Path) -> None:

@@ -33,6 +33,7 @@ class EvidenceCatalogEntry:
 class EvidenceCatalogIssue:
     relative_path: str
     message: str
+    classification: str = "malformed_evidence"
 
 
 @dataclass(frozen=True)
@@ -174,12 +175,30 @@ def build_evidence_catalog(
                     f"{relative}: cannot read evidence artifact"
                 ) from exc
             message = str(exc)
+            classification = "malformed_evidence"
+            try:
+                probe = json.loads(path.read_bytes().decode("utf-8"))
+            except Exception:
+                probe = None
+            if isinstance(probe, dict):
+                legacy_schema = probe.get("experiment_schema")
+                if isinstance(legacy_schema, str) and legacy_schema.strip():
+                    classification = "legacy_experiment_summary"
+                    message = (
+                        f"{message}; legacy experiment summary "
+                        f"(experiment_schema={legacy_schema.strip()!r}) is not "
+                        "an evidence-catalog artifact and gains no eligibility"
+                    )
             root_text = str(root)
             resolved_root_text = str(root.resolve())
             message = message.replace(resolved_root_text, "<root>").replace(
                 root_text, "<root>"
             )
-            issues.append(EvidenceCatalogIssue(relative, message))
+            issues.append(
+                EvidenceCatalogIssue(
+                    relative, message, classification=classification
+                )
+            )
             continue
         entries.append(entry)
 
