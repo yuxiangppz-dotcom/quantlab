@@ -468,7 +468,10 @@ def test_content_addressed_bundle_emits_exact_verified_files() -> None:
         "s5b_run_seal.json",
         "s5b_review.md",
     ]
-    assert all(item.byte_length == len(item.content.encode("utf-8")) for item in bundle.files)
+    assert all(
+        item.byte_length == len(item.content.encode("utf-8"))
+        for item in bundle.files
+    )
     assert bundle.files[0].content.endswith("\n")
     assert not bundle.files[0].content.endswith("\n\n")
     assert bundle.files[1].content.endswith("\n")
