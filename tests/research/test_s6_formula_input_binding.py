@@ -296,7 +296,9 @@ def test_exactly_one_admitted_market_definition_binds() -> None:
     )
 
     assert audit.rows[0].verdict is S6FormulaInputBindingVerdict.ADMISSIBLE
-    assert audit.rows[0].bound_fingerprint == market_catalog.definitions[0].fingerprint
+    assert audit.rows[0].bound_fingerprint == (
+        market_catalog.definitions[0].fingerprint
+    )
     assert audit.market_catalog_fingerprint == market_catalog.fingerprint
     assert audit.overall_admissible is True
 
@@ -315,7 +317,9 @@ def test_market_missing_unverified_and_ambiguous_are_distinct() -> None:
             (_market("elsewhere", "market_cap", provider_id="other-provider"),)
         ),
     )
-    assert missing.rows[0].verdict is S6FormulaInputBindingVerdict.MARKET_FIELD_MISSING
+    assert missing.rows[0].verdict is (
+        S6FormulaInputBindingVerdict.MARKET_FIELD_MISSING
+    )
 
     unverified = audit_s6_formula_input_bindings(
         spec=spec,
@@ -352,6 +356,35 @@ def test_market_missing_unverified_and_ambiguous_are_distinct() -> None:
         S6FormulaInputBindingVerdict.MARKET_FIELD_AMBIGUOUS
     )
     assert ambiguous.overall_admissible is False
+
+
+def test_derived_metric_inherits_the_market_catalog() -> None:
+    market_dependency = _market_spec()
+    consumer = _identity(
+        "market_consumer",
+        _input(
+            0,
+            "derived",
+            market_dependency.metric_id,
+            S6FormulaInputKind.DERIVED_METRIC,
+        ),
+    )
+    formulas = build_s6_formula_spec_catalog((market_dependency, consumer))
+    market_catalog = build_s6_market_input_catalog(
+        (_market("total_mv", "market_cap"),)
+    )
+
+    audit = audit_s6_formula_input_bindings(
+        spec=consumer,
+        formula_catalog=formulas,
+        field_catalog=build_s6_financial_field_catalog(()),
+        context=_CONTEXT,
+        market_catalog=market_catalog,
+    )
+
+    assert audit.rows[0].verdict is S6FormulaInputBindingVerdict.ADMISSIBLE
+    assert audit.market_catalog_fingerprint == market_catalog.fingerprint
+    assert audit.overall_admissible is True
 
 
 def test_derived_metric_must_exist_and_be_admitted() -> None:
@@ -490,6 +523,8 @@ def test_direct_audit_construction_cannot_bypass_order_or_summary() -> None:
         context=_CONTEXT,
     )
 
+    with pytest.raises(ValueError, match="normalized when present"):
+        replace(audit, market_catalog_fingerprint=" ")
     with pytest.raises(ValueError, match="contiguous formula-input order"):
         replace(audit, rows=tuple(reversed(audit.rows)))
     with pytest.raises(ValueError, match="all_inputs_admitted"):
