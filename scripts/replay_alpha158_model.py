@@ -6,6 +6,8 @@ import argparse
 import copy
 import hashlib
 import json
+import os
+import uuid
 from collections import Counter
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -28,11 +30,16 @@ from quantlab.research.quantity_kernel import ResearchBook, ResearchOrder, simul
 
 def write_json(path, value):
     text = json.dumps(value, default=str, ensure_ascii=False, indent=2)
-    with path.open("x") as handle:
+    pending = path.with_name(path.name + ".pending-" + uuid.uuid4().hex)
+    with pending.open("x") as handle:
         handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.link(pending, path)  # Atomic, exclusive publish. Existing records cannot be replaced.
+    pending.unlink()
 
 
-def run(root, output, delisted_valuation="stop", exclude_st=False):
+def run(root, output, delisted_valuation="stop", exclude_st=False, fractional_policy="stop"):
     if delisted_valuation not in {"stop", "zero", "last"}:
         raise ValueError("unknown delisted valuation policy")
     if output.exists() or output.is_relative_to(root / "data/canonical"):
@@ -45,9 +52,19 @@ def run(root, output, delisted_valuation="stop", exclude_st=False):
             "execution_authority": False,
             "delisted_valuation": delisted_valuation,
             "exclude_st": exclude_st,
+            "fractional_policy": fractional_policy,
         },
     )
     data = ReplayData(root)
+    code_root = Path(__file__).resolve().parents[1]
+    for relative in (
+        "scripts/replay_alpha158_model.py",
+        "src/quantlab/research/model_replay_accounting.py",
+        "src/quantlab/research/model_replay_data.py",
+        "src/quantlab/research/model_replay_intake.py",
+        "src/quantlab/research/quantity_kernel.py",
+    ):
+        data.bind(code_root / relative)
     targets = data.targets(exclude_st=exclude_st)
     start, end = targets.trade_date.min().date(), targets.trade_date.max().date()
     data.load_events(set(targets.instrument_id), start, end)
@@ -66,7 +83,7 @@ def run(root, output, delisted_valuation="stop", exclude_st=False):
         attempts, corporate, stale = [], [], []
         try:
             if index:
-                book, corporate = open_corporate_day(book, claims, day)
+                book, corporate = open_corporate_day(book, claims, day, fractional_policy)
                 for change in data.changes:
                     if str(day) == change["effective_date"] and any(
                         lot.instrument_id == change["old_instrument_id"] for lot in book.lots
@@ -262,6 +279,7 @@ def run(root, output, delisted_valuation="stop", exclude_st=False):
         "metrics": metrics,
         "delisted_valuation": delisted_valuation,
         "exclude_st": exclude_st,
+        "fractional_policy": fractional_policy,
         "delisted_recovery_is_unknown": any(m["method"].startswith("delisted_") for m in all_marks),
         "execution_authority": False,
         "actual_broker_performance": False,
@@ -280,5 +298,12 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--delisted-valuation", choices=["stop", "zero", "last"], default="stop")
     parser.add_argument("--exclude-st", action="store_true")
+    parser.add_argument("--fractional-policy", choices=["stop", "floor"], default="stop")
     args = parser.parse_args()
-    run(args.source_root.resolve(), args.output.resolve(), args.delisted_valuation, args.exclude_st)
+    run(
+        args.source_root.resolve(),
+        args.output.resolve(),
+        args.delisted_valuation,
+        args.exclude_st,
+        args.fractional_policy,
+    )

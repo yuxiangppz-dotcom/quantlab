@@ -116,8 +116,35 @@ def capture_claims(book, events):
     return claims
 
 
-def open_corporate_day(book, claims, day):
+def open_corporate_day(book, claims, day, fractional_policy="stop"):
+    if fractional_policy not in {"stop", "floor"}:
+        raise ValueError("unknown fractional share policy")
     cash, lots, trace = book.cash_fen, list(book.lots), []
+    allocations = {}
+    groups = {}
+    for claim in claims:
+        if claim.event.ex == day and claim.event.stock and not claim.activated:
+            groups.setdefault(claim.event.event_id, []).append(claim)
+    for event_id, group in groups.items():
+        exact = {c.lot_id: c.original_quantity * c.event.stock for c in group}
+        total = sum(exact.values())
+        if total != int(total) and fractional_policy == "stop":
+            raise ReplayEvidenceError(f"fractional_share_allocation:{event_id}")
+        shares = {lot_id: int(value) for lot_id, value in exact.items()}
+        remainder = int(total) - sum(shares.values())
+        order = sorted(exact, key=lambda lot_id: (-(exact[lot_id] - shares[lot_id]), lot_id))
+        for lot_id in order[:remainder]:
+            shares[lot_id] += 1
+        allocations.update({(event_id, key): value for key, value in shares.items()})
+        if total != int(total):
+            trace.append(
+                {
+                    "event": event_id,
+                    "kind": "fractional_shares_not_counted",
+                    "quantity": str(total - int(total)),
+                    "method": "user_authorized_account_level_floor_scenario",
+                }
+            )
     for claim in claims:
         event = claim.event
         if event.ex == day and not claim.activated:
@@ -128,9 +155,7 @@ def open_corporate_day(book, claims, day):
                     raise ReplayEvidenceError(
                         f"share_availability_not_same_ex_date:{event.event_id}"
                     )
-                extra = claim.original_quantity * event.stock
-                if extra != int(extra):
-                    raise ReplayEvidenceError(f"fractional_share_allocation:{event.event_id}")
+                extra = allocations[(event.event_id, claim.lot_id)]
                 matching = [i for i, lot in enumerate(lots) if lot.lot_id == claim.lot_id]
                 if not matching:
                     raise ReplayEvidenceError(f"shares_due_after_record_lot_sold:{event.event_id}")

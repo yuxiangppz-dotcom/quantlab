@@ -13,3 +13,5 @@ Full-period metrics only after a complete path. Distinguish simulated executable
 ## Direct user amendment before complete outcomes
 
 User chooses zero valuation from delisting, retaining unknown recovery rights and share quantities without any synthetic sale/cash. User also commissions an ex-ST comparison. Run exactly two variants: original all finite scores and exclude ST using each signal day's canonical stock_st records BEFORE descending score ranking and refill to at most20. Same model scores, costs, dates, sizing and execution rules. This is a retrospective portfolio-filter comparison, not new training or independent fresh out-of-sample evidence. Both variants use zero delisted valuation; do not optimize further variants against the results.
+
+User additionally confirms account-level floor for fractional distributed shares. Retain and report excluded fractions; do not represent modeled allocation as an observed depository allotment. Allocation among internal tax lots is deterministic largest remainder, preserving the floored account total and original holding ages.

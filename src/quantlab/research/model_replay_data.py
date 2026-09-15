@@ -8,6 +8,7 @@ import math
 from datetime import date, datetime
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal, localcontext
 from functools import lru_cache
+from pathlib import Path
 
 import pandas as pd
 
@@ -24,12 +25,12 @@ from quantlab.research.rule_evidence_v2 import load_catalogue
 
 
 def canonical_integer(value, scale=1):
-    """Recover only the binary-float ULP error in a canonical CNY amount."""
+    """Recover at most two ULPs from provider float parsing and unit scaling."""
     with localcontext() as ctx:
         ctx.prec = 70
         decimal = Decimal.from_float(float(value)) * scale
         closest = decimal.to_integral_value()
-        tolerance = Decimal.from_float(math.ulp(float(value))) * scale
+        tolerance = Decimal.from_float(math.ulp(float(value))) * scale * 2
         if not decimal.is_finite() or abs(decimal - closest) > tolerance:
             raise ReplayEvidenceError(f"amount has material sub-fen precision:{value}")
         return int(closest)
@@ -74,6 +75,14 @@ class ReplayData:
         self.partition = lru_cache(maxsize=100)(self._partition)
         self.events = {}
         self.unplaced = {}
+        evidence_path = (
+            Path(__file__).resolve().parents[3] / "config/model_replay_corporate_evidence_v1.json"
+        )
+        self.bind(evidence_path)
+        self.corporate_evidence = json.loads(evidence_path.read_text())["events"]
+        for evidence in self.corporate_evidence.values():
+            if self.bind(root / evidence["path"])["sha256"] != evidence["sha256"]:
+                raise ReplayEvidenceError("corporate disclosure source mismatch")
 
     def bind(self, path):
         raw = path.read_bytes()
@@ -302,6 +311,13 @@ class ReplayData:
         if len(unique) != 1:
             raise ReplayEvidenceError(f"conflicting_distribution:{code}:{day}")
         row = next(iter(unique.values()))
+        evidence = self.corporate_evidence.get(f"{code}:{day}")
+        if evidence:
+            if any(row.get(key) != value for key, value in evidence["expected"].items()):
+                raise ReplayEvidenceError("reviewed corporate event identity changed")
+            if evidence["effect"] == "no_ordinary_holder_distribution":
+                return []
+            row = {**row, **evidence.get("resolved", {})}
 
         def number(key):
             value = row[key]
@@ -329,7 +345,9 @@ class ReplayData:
             if not 0 <= bonus <= stock:
                 raise ReplayEvidenceError(f"stock_ratio_inconsistent:{code}:{day}")
             # Conversion provenance must be verified before excluding it from taxable dividends.
-            if stock != bonus:
+            if stock != bonus and not (
+                evidence and evidence["effect"] == "ordinary_distribution_verified"
+            ):
                 raise ReplayEvidenceError(f"conversion_tax_source_required:{code}:{day}")
         else:
             bonus = Decimal(0)

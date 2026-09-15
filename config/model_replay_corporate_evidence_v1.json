@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "accounting_only_not_signal_evidence": true,
+  "events": {
+    "000656.SZ:2025-09-11": {
+      "effect": "no_ordinary_holder_distribution",
+      "expected": {
+        "stk_div": 1.0,
+        "record_date": "20250911",
+        "ex_date": "20250912",
+        "cash_div_tax": null
+      },
+      "path": "data/products/model_replay/issuer_sources_v1/000656_20250912.pdf",
+      "sha256": "e9212df161f9e47b4bfc281d01eca511f0db28b72977849eae23594d051cc490",
+      "url": "https://epaper.stcn.com/att/202509/12/ZQ12B050-MM_eBook.pdf",
+      "issuer_announcement": "000656, 2025-110",
+      "reason": "Restructuring shares are allocated entirely by administrator to investors and creditors, not original shareholders. This is not an ordinary-holder cash or share distribution."
+    },
+    "002805.SZ:2023-05-25": {
+      "effect": "ordinary_distribution_verified",
+      "expected": {
+        "stk_div": 0.4,
+        "stk_co_rate": 0.4,
+        "cash_div_tax": 0.1,
+        "record_date": "20230525",
+        "ex_date": "20230526",
+        "pay_date": "20230526",
+        "div_listdate": "20230526"
+      },
+      "path": "data/products/model_replay/issuer_sources_v1/002805_20230518.pdf",
+      "sha256": "737d718120cbf176065498c1856b4d18c93469ee49f59a65ea68f6a3fdaba8ce",
+      "url": "https://disc.static.szse.cn/disc/disk03/finalpage/2023-05-17/becf3746-4a27-4349-91c2-934b772115ac.PDF",
+      "issuer_announcement": "002805 2023-036 pages 1-2",
+      "reason": "All ordinary holders receive cash 0.1 and conversion 0.4 per old share; available and cash paid May26. Published tax schedule is 0.02/0.01/0 per old share, confirming no additional conversion tax base."
+    },
+    "688327.SH:2023-06-12": {
+      "effect": "ordinary_distribution_verified",
+      "expected": {
+        "stk_div": 0.4,
+        "stk_co_rate": 0.4,
+        "cash_div_tax": null,
+        "record_date": "20230612",
+        "ex_date": "20230613",
+        "div_listdate": "20230613"
+      },
+      "resolved": {
+        "cash_div_tax": 0.0
+      },
+      "path": "data/products/model_replay/issuer_sources_v1/688327_20230607.pdf",
+      "sha256": "a6bdbc5d232e5bace2a0f88ae976b8bd2b8a394e8e4ee143bde43fbeb9a8657c",
+      "url": "https://static.cninfo.com.cn/finalpage/2023-06-07/1217001965.PDF",
+      "issuer_announcement": "688327 2023-033 pp1-2",
+      "reason": "Only conversion 0.4 per share, issued to all holders, explicitly not taxed because capital is share premium. No cash in this distribution; record/listing dates confirmed."
+    }
+  }
+}

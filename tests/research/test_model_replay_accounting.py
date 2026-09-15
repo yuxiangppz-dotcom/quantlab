@@ -26,6 +26,7 @@ def d(value):
 def test_exact_price_and_float_amount_recovery_are_separate():
     assert canonical_amount_fen(132550852.00000001) == 13255085200
     assert canonical_amount_fen(264146474.99999997) == 26414647500
+    assert canonical_amount_fen(133053839.71999998) == 13305383972
     with pytest.raises(ReplayEvidenceError):
         fen(1.001)
     with pytest.raises(ReplayEvidenceError):
@@ -115,3 +116,54 @@ def test_later_sale_tax_uses_actual_lot_age_and_receipts_are_not_paid_twice():
 def test_record_claims_use_filled_inventory_only():
     book, claims = example()
     assert capture_claims(replace(book, lots=()), [claims[0].event]) == []
+
+
+def test_bound_conversion_does_not_round_transaction_prices():
+    from quantlab.research.model_replay_data import price_bound_fen
+
+    assert price_bound_fen(999999.999, upper=True) == 99999999
+    assert price_bound_fen(0.001, upper=False) == 1
+    assert price_bound_fen(10.005, upper=True) == 1000
+    assert price_bound_fen(10.005, upper=False) == 1001
+    with pytest.raises(ReplayEvidenceError):
+        fen(10.005)
+
+
+def test_issuer_override_is_event_specific_and_raw_terms_cannot_drift(tmp_path):
+    from quantlab.research.model_replay_data import ReplayData
+
+    data = object.__new__(ReplayData)
+    row = dict.fromkeys(
+        (
+            "record_date",
+            "ex_date",
+            "pay_date",
+            "div_listdate",
+            "cash_div_tax",
+            "stk_div",
+            "stk_bo_rate",
+            "stk_co_rate",
+        )
+    )
+    row.update(record_date="20250911", ex_date="20250912", stk_div=1.0)
+    data.events = {("000656.SZ", d("2025-09-11")): [row]}
+    data.corporate_evidence = {
+        "000656.SZ:2025-09-11": {
+            "expected": {"stk_div": 1.0},
+            "effect": "no_ordinary_holder_distribution",
+        }
+    }
+    assert data.distributions("000656.SZ", d("2025-09-11")) == []
+    row["stk_div"] = 2
+    with pytest.raises(ReplayEvidenceError, match="identity changed"):
+        data.distributions("000656.SZ", d("2025-09-11"))
+
+
+def test_authorized_fractional_floor_retains_explicit_loss_and_whole_shares():
+    book, claims = example()
+    claims[0].event = replace(claims[0].event, stock=Decimal(".333"), listing=d("2023-01-06"))
+    book, trace = open_corporate_day(book, claims, d("2023-01-06"), "floor")
+    assert book.lots[0].quantity == 133
+    rounding = [row for row in trace if row["kind"] == "fractional_shares_not_counted"]
+    assert Decimal(rounding[0]["quantity"]) == Decimal(".3")
+    assert claims[0].remaining_quantity == 133
