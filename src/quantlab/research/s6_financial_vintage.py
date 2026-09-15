@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from enum import StrEnum
-from typing import Iterable
 
 from quantlab.data.models import canonical_payload_fingerprint
 
