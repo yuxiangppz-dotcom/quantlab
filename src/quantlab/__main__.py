@@ -172,7 +172,13 @@ def _research_status(as_json: bool) -> int:
             shadow_root=PROJECT_ROOT / "data" / "predictions" / "forward_shadow",
         )
     except Exception as exc:  # CLI boundary reports the failure explicitly
-        print(f"research status could not be composed: {exc}")
+        if as_json:
+            print(json.dumps({
+                "overall_status": "composition_failed",
+                "error": str(exc),
+            }, ensure_ascii=False))
+        else:
+            print(f"research status could not be composed: {exc}")
         return 2
     if as_json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))

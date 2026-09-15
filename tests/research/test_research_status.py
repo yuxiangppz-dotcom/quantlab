@@ -70,7 +70,7 @@ def test_existing_malformed_evidence_is_classified_and_listed(
     artifacts = payload["incompatible_artifacts"]
     assert any(
         a["relative_path"] == "run/summary.json"
-        and a["classification"] == "unrecognized_format"
+        and a["classification"] == "malformed_evidence"
         for a in artifacts
     )
 
@@ -169,54 +169,77 @@ def test_cli_exit_code_two_when_status_cannot_be_composed(
     assert code == 2
 
 
-def test_exit_code_paths_cover_all_four_outcomes(tmp_path: Path) -> None:
-    experiments = tmp_path / "experiments"
+@pytest.mark.parametrize("as_json", [False, True])
+@pytest.mark.parametrize("scenario, expected_code, expected_status", [
+    ("clean", 0, "clean"),
+    ("legacy", 0, "report_has_legacy_artifacts"),
+    ("corrupt", 1, "report_has_evidence_issues"),
+    ("failure", 2, "composition_failed"),
+])
+def test_cli_outcomes(
+    tmp_path, monkeypatch, capsys, as_json, scenario, expected_code, expected_status
+):
+    if scenario != "failure":
+        config = tmp_path / "config"
+        config.mkdir()
+        shutil.copy(REGISTRY, config / REGISTRY.name)
+        shutil.copy(FORWARD, config / FORWARD.name)
+    if scenario in ("legacy", "corrupt"):
+        path = tmp_path / "data/experiments/run/summary.json"
+        path.parent.mkdir(parents=True)
+        value = (
+            {"experiment_schema": "execution_readiness_v0_1"}
+            if scenario == "legacy" else {"schema": "research_evidence_v1", "run_id": None}
+        )
+        path.write_text(json.dumps(value))
+    monkeypatch.setattr(main_module, "PROJECT_ROOT", tmp_path)
+    argv = ["quantlab", "research-status"] + (["--json"] if as_json else [])
+    monkeypatch.setattr("sys.argv", argv)
+    with pytest.raises(SystemExit) as stopped:
+        main_module.main()
+    assert stopped.value.code == expected_code
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    if as_json:
+        payload = json.loads(captured.out)
+        assert payload["overall_status"] == expected_status
+        if scenario == "failure":
+            assert "strategy registry" in payload["error"]
+    elif scenario == "failure":
+        assert "could not be composed" in captured.out
+        assert "strategy registry" in captured.out
+    else:
+        assert f"overall status: {expected_status}" in captured.out
+        if scenario == "legacy":
+            assert "identified_legacy" in captured.out
+        elif scenario == "corrupt":
+            assert "malformed_evidence" in captured.out
 
-    # 1. clean -> exit 0
-    payload = build_research_status(
-        registry_path=REGISTRY,
-        forward_config_path=FORWARD,
-        experiment_root=experiments / "missing",
-        shadow_root=tmp_path / "missing-shadow",
-    )
-    assert payload["overall_status"] == "clean"
 
-    # 2. legacy-only -> exit 0 with the note rendered
-    legacy = experiments / "legacy" / "run" / "summary.json"
-    legacy.parent.mkdir(parents=True)
-    legacy.write_text(
-        json.dumps({"experiment_schema": "execution_readiness_v0_1"}),
-        encoding="utf-8",
-    )
-    payload = build_research_status(
-        registry_path=REGISTRY,
-        forward_config_path=FORWARD,
-        experiment_root=experiments,
-        shadow_root=tmp_path / "missing-shadow",
-    )
-    assert payload["overall_status"] == "report_has_legacy_artifacts"
-    rendered = format_research_status(payload)
-    assert "identified_legacy" in rendered
-    assert "overall status: report_has_legacy_artifacts" in rendered
+@pytest.mark.parametrize("raw, classification", [
+    (b'{not-json', "malformed_evidence"),
+    (b'\xff', "malformed_evidence"),
+    (b'[]', "malformed_evidence"),
+    (b'{"experiment_schema":"anything"}', "unrecognized_format"),
+    (b'{"engine_schema_version":"v99"}', "unrecognized_format"),
+    (b'{"experiment_schema":[]}', "unrecognized_format"),
+    (b'{"schema":"research_evidence_v1","run_id":null,'
+     b'"experiment_schema":"execution_readiness_v0_1"}', "malformed_evidence"),
+    (b'{"engine_schema_version":"v0.2.4",'
+     b'"analysis_type":"portfolio_engineering_backtest"}', "identified_legacy"),
+])
+def test_catalog_classification_preserves_strict_rejection(tmp_path, raw, classification):
+    from quantlab.data.models import DataValidationError
+    from quantlab.research.evidence_catalog import build_evidence_catalog
 
-    # 3. corrupt current-format -> exit 1 mapped from evidence issues
-    corrupt = experiments / "corrupt" / "run" / "summary.json"
-    corrupt.parent.mkdir(parents=True)
-    corrupt.write_text(json.dumps({"schema": "", "run_id": "x"}), encoding="utf-8")
-    payload = build_research_status(
-        registry_path=REGISTRY,
-        forward_config_path=FORWARD,
-        experiment_root=experiments,
-        shadow_root=tmp_path / "missing-shadow",
-    )
-    assert payload["overall_status"] == "report_has_evidence_issues"
-    as_json = json.dumps(payload)
-    assert "report_has_evidence_issues" in as_json
-    text = format_research_status(payload)
-    assert "report_has_evidence_issues" in text
-
-    # 4. composition failure -> exit 2 (covered at the CLI boundary in
-    # test_cli_exit_code_two_when_status_cannot_be_composed).
+    path = tmp_path / "summary.json"
+    path.write_bytes(raw)
+    result = build_evidence_catalog(tmp_path, strict=False)
+    assert result.entries == ()
+    assert result.issues[0].classification == classification
+    with pytest.raises(DataValidationError):
+        build_evidence_catalog(tmp_path, strict=True)
+    assert path.read_bytes() == raw
 
 
 def test_existing_malformed_shadow_fails_closed(tmp_path: Path) -> None:
