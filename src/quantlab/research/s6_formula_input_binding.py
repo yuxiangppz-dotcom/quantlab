@@ -100,6 +100,20 @@ class S6FormulaInputBindingAudit:
             value = getattr(self, name)
             if not value or not value.strip():
                 raise ValueError(f"{name} must be non-empty")
+        if self.market_catalog_fingerprint is not None and (
+            not self.market_catalog_fingerprint.strip()
+            or self.market_catalog_fingerprint
+            != self.market_catalog_fingerprint.strip()
+        ):
+            raise ValueError("market_catalog_fingerprint must be normalized when present")
+        if (
+            self.market_catalog_fingerprint is None
+            and any(
+                row.kind is S6FormulaInputKind.MARKET_FIELD and row.admissible
+                for row in self.rows
+            )
+        ):
+            raise ValueError("admitted market rows require a market catalog fingerprint")
         if tuple(row.position for row in self.rows) != tuple(range(len(self.rows))):
             raise ValueError("binding rows must retain contiguous formula-input order")
         input_ids = tuple(row.input_id for row in self.rows)
