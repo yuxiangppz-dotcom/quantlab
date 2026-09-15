@@ -7,7 +7,6 @@ from enum import StrEnum
 
 from quantlab.data.models import canonical_payload_fingerprint
 from quantlab.research.s6_financial_field_admission import S6FinancialFieldCatalog
-from quantlab.research.s6_market_input_admission import S6MarketInputCatalog
 from quantlab.research.s6_formula_spec import (
     S6FormulaAdmissionRow,
     S6FormulaInputKind,
@@ -15,6 +14,7 @@ from quantlab.research.s6_formula_spec import (
     S6FormulaSpec,
     S6FormulaSpecCatalog,
 )
+from quantlab.research.s6_market_input_admission import S6MarketInputCatalog
 
 
 class S6FormulaInputBindingVerdict(StrEnum):
