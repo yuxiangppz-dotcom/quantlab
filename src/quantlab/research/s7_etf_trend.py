@@ -156,6 +156,7 @@ class S7TrendObservation:
     instrument_id: str
     as_of: datetime
     feature_available_at: datetime
+    feature_evidence_fingerprint: str | None
     universe_fingerprint: str
     total_return_120: float | None
     history_complete: bool | None
@@ -167,6 +168,14 @@ class S7TrendObservation:
             value = getattr(self, name)
             if not value or value != value.strip():
                 raise ValueError(f"{name} must be non-empty and normalized")
+        if self.feature_evidence_fingerprint is not None and (
+            not self.feature_evidence_fingerprint.strip()
+            or self.feature_evidence_fingerprint
+            != self.feature_evidence_fingerprint.strip()
+        ):
+            raise ValueError(
+                "feature_evidence_fingerprint must be normalized when present"
+            )
         _require_utc(self.as_of, "as_of")
         _require_utc(self.feature_available_at, "feature_available_at")
         if self.total_return_120 is not None and (
@@ -182,6 +191,15 @@ class S7TrendObservation:
             value = getattr(self, name)
             if value is not None and type(value) is not bool:
                 raise ValueError(f"{name} must be bool or None")
+        if (
+            self.total_return_120 is not None
+            and self.history_complete is True
+            and self.adjusted_price_evidence_verified is True
+            and self.feature_evidence_fingerprint is None
+        ):
+            raise ValueError(
+                "verified 120-session features require evidence fingerprint"
+            )
 
 
 @dataclass(frozen=True)
@@ -191,6 +209,7 @@ class S7InstrumentResult:
     state: S7State
     reasons: tuple[str, ...]
     total_return_120: float | None
+    feature_evidence_fingerprint: str | None
     relative_strength_rank: int | None = None
     selected: bool = False
 
@@ -465,6 +484,11 @@ def _result(
         total_return_120=(
             observation.total_return_120 if observation is not None else None
         ),
+        feature_evidence_fingerprint=(
+            observation.feature_evidence_fingerprint
+            if observation is not None
+            else None
+        ),
     )
 
 
@@ -515,6 +539,7 @@ def _decision_payload(decision: S7Decision) -> dict[str, object]:
                 "state": row.state.value,
                 "reasons": list(row.reasons),
                 "total_return_120": row.total_return_120,
+                "feature_evidence_fingerprint": row.feature_evidence_fingerprint,
                 "relative_strength_rank": row.relative_strength_rank,
                 "selected": row.selected,
             }
