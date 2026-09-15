@@ -300,10 +300,22 @@ def test_derived_metric_must_exist_and_be_admitted() -> None:
     admitted_catalog = build_s6_formula_spec_catalog(
         (admitted_dependency, admitted_consumer)
     )
-    admitted_audit = audit_s6_formula_input_bindings(
+    missing_dependency_input = audit_s6_formula_input_bindings(
         spec=admitted_consumer,
         formula_catalog=admitted_catalog,
         field_catalog=build_s6_financial_field_catalog(()),
+        context=_CONTEXT,
+    )
+    assert missing_dependency_input.rows[0].verdict is (
+        S6FormulaInputBindingVerdict.DERIVED_METRIC_BLOCKED
+    )
+
+    admitted_audit = audit_s6_formula_input_bindings(
+        spec=admitted_consumer,
+        formula_catalog=admitted_catalog,
+        field_catalog=build_s6_financial_field_catalog(
+            (_field("raw_provider_field", "raw_semantic"),)
+        ),
         context=_CONTEXT,
     )
     assert admitted_audit.rows[0].verdict is (
