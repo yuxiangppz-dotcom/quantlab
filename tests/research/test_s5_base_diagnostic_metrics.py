@@ -22,6 +22,9 @@ from quantlab.research.s5_base_diagnostic_metrics import (
 from quantlab.research.s5_base_diagnostic_protocol import (
     frozen_s5_base_diagnostic_protocol,
 )
+from quantlab.research.s5_base_diagnostic_review import (
+    build_s5_base_diagnostic_review,
+)
 from quantlab.research.s5_base_diagnostic_run_seal import (
     seal_s5_base_diagnostic_run,
 )
@@ -366,3 +369,75 @@ def test_seal_rejects_mismatched_metrics_naive_time_and_bad_ledger() -> None:
             recorded_at=datetime(2024, 3, 2, tzinfo=UTC),
             prior_seals=(first, first),
         )
+
+
+def test_chinese_review_renders_every_metric_family_without_a_verdict() -> None:
+    package = _package()
+    metrics = compute_s5_base_diagnostic_metrics(package)
+    seal = seal_s5_base_diagnostic_run(
+        package=package,
+        metrics=metrics,
+        recorded_at=datetime(2024, 3, 1, tzinfo=UTC),
+    )
+
+    review = build_s5_base_diagnostic_review(metrics=metrics, seal=seal)
+
+    assert review.strategy_id == "s5b_base_completion_v1"
+    assert review.input_fingerprint == package.fingerprint
+    assert review.metrics_fingerprint == metrics.fingerprint
+    assert review.seal_fingerprint == seal.fingerprint
+    assert review.review_status == "awaiting_explicit_user_review"
+    assert review.diagnostic_only is True
+    assert review.executable_pnl is False
+    assert review.holding_policy_frozen is False
+    assert review.performance_verdict is False
+    assert review.promotion_authority is False
+    assert review.account_mutation_authority is False
+    assert review.broker_order_authority is False
+
+    text = review.markdown_zh
+    assert "不是最低持有期" in text
+    assert "后续仍可独立选择持有 1 日" in text
+    assert "各状态未来标签分布" in text
+    assert "状态与入选组日期配对差值" in text
+    assert "与冻结对照的日期配对差值" in text
+    assert "入选信号月度分布" in text
+    assert "入选信号宽基准环境分布" in text
+    assert "s5a_frozen" in text
+    assert "broad_market_control" in text
+    assert "N/A" in text
+    assert "建议买入" not in text
+    assert review.content_fingerprint
+    assert review.fingerprint
+
+
+def test_chinese_review_is_deterministic_for_the_same_sealed_result() -> None:
+    package = _package()
+    metrics = compute_s5_base_diagnostic_metrics(package)
+    seal = seal_s5_base_diagnostic_run(
+        package=package,
+        metrics=metrics,
+        recorded_at=datetime(2024, 3, 1, tzinfo=UTC),
+    )
+
+    first = build_s5_base_diagnostic_review(metrics=metrics, seal=seal)
+    second = build_s5_base_diagnostic_review(metrics=metrics, seal=seal)
+
+    assert first == second
+    assert first.markdown_zh == second.markdown_zh
+    assert first.content_fingerprint == second.content_fingerprint
+    assert first.fingerprint == second.fingerprint
+
+
+def test_chinese_review_rejects_metrics_not_bound_by_the_seal() -> None:
+    package = _package()
+    metrics = compute_s5_base_diagnostic_metrics(package)
+    seal = seal_s5_base_diagnostic_run(
+        package=package,
+        metrics=metrics,
+        recorded_at=datetime(2024, 3, 1, tzinfo=UTC),
+    )
+    changed = replace(metrics, input_fingerprint="changed")
+
+    with pytest.raises(ValueError, match="input fingerprints"):
+        build_s5_base_diagnostic_review(metrics=changed, seal=seal)
