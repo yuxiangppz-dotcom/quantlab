@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 
@@ -283,7 +283,7 @@ def test_single_run_seal_binds_independently_recomputed_evidence() -> None:
         recorded_at=recorded_at,
     )
 
-    assert seal.recorded_at == datetime(2024, 3, 1, 4, tzinfo=timezone.utc)
+    assert seal.recorded_at == datetime(2024, 3, 1, 4, tzinfo=UTC)
     assert seal.run_ordinal == 1
     assert seal.run_budget == 1
     assert seal.input_fingerprint == package.fingerprint
@@ -303,18 +303,18 @@ def test_exact_seal_retry_is_idempotent_and_keeps_original_timestamp() -> None:
     first = seal_s5_base_diagnostic_run(
         package=package,
         metrics=metrics,
-        recorded_at=datetime(2024, 3, 1, tzinfo=timezone.utc),
+        recorded_at=datetime(2024, 3, 1, tzinfo=UTC),
     )
 
     retried = seal_s5_base_diagnostic_run(
         package=package,
         metrics=metrics,
-        recorded_at=datetime(2024, 3, 2, tzinfo=timezone.utc),
+        recorded_at=datetime(2024, 3, 2, tzinfo=UTC),
         prior_seals=(first,),
     )
 
     assert retried is first
-    assert retried.recorded_at == datetime(2024, 3, 1, tzinfo=timezone.utc)
+    assert retried.recorded_at == datetime(2024, 3, 1, tzinfo=UTC)
 
 
 def test_changed_evidence_cannot_spend_a_second_protocol_run() -> None:
@@ -323,7 +323,7 @@ def test_changed_evidence_cannot_spend_a_second_protocol_run() -> None:
     first = seal_s5_base_diagnostic_run(
         package=package,
         metrics=metrics,
-        recorded_at=datetime(2024, 3, 1, tzinfo=timezone.utc),
+        recorded_at=datetime(2024, 3, 1, tzinfo=UTC),
     )
     changed_package = replace(package, readiness_fingerprint="changed-readiness")
     changed_metrics = compute_s5_base_diagnostic_metrics(changed_package)
@@ -332,7 +332,7 @@ def test_changed_evidence_cannot_spend_a_second_protocol_run() -> None:
         seal_s5_base_diagnostic_run(
             package=changed_package,
             metrics=changed_metrics,
-            recorded_at=datetime(2024, 3, 2, tzinfo=timezone.utc),
+            recorded_at=datetime(2024, 3, 2, tzinfo=UTC),
             prior_seals=(first,),
         )
 
@@ -345,7 +345,7 @@ def test_seal_rejects_mismatched_metrics_naive_time_and_bad_ledger() -> None:
         seal_s5_base_diagnostic_run(
             package=changed_package,
             metrics=metrics,
-            recorded_at=datetime(2024, 3, 1, tzinfo=timezone.utc),
+            recorded_at=datetime(2024, 3, 1, tzinfo=UTC),
         )
     with pytest.raises(ValueError, match="timezone-aware"):
         seal_s5_base_diagnostic_run(
@@ -357,12 +357,12 @@ def test_seal_rejects_mismatched_metrics_naive_time_and_bad_ledger() -> None:
     first = seal_s5_base_diagnostic_run(
         package=package,
         metrics=metrics,
-        recorded_at=datetime(2024, 3, 1, tzinfo=timezone.utc),
+        recorded_at=datetime(2024, 3, 1, tzinfo=UTC),
     )
     with pytest.raises(ValueError, match="duplicate run_id"):
         seal_s5_base_diagnostic_run(
             package=package,
             metrics=metrics,
-            recorded_at=datetime(2024, 3, 2, tzinfo=timezone.utc),
+            recorded_at=datetime(2024, 3, 2, tzinfo=UTC),
             prior_seals=(first, first),
         )
