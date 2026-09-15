@@ -65,6 +65,15 @@ class S5BaseDiagnosticRunSeal:
             raise ValueError("protocol_fingerprint must equal the frozen protocol")
         if self.run_ordinal != 1 or self.run_budget != protocol.run_budget:
             raise ValueError("S5-B diagnostic seal must use the sole run ordinal")
+        expected_run_id = _run_id_for(
+            strategy_id=self.strategy_id,
+            protocol_fingerprint=self.protocol_fingerprint,
+            readiness_fingerprint=self.readiness_fingerprint,
+            input_fingerprint=self.input_fingerprint,
+            metrics_fingerprint=self.metrics_fingerprint,
+        )
+        if self.run_id != expected_run_id:
+            raise ValueError("run_id does not match the sealed evidence")
         if self.recorded_at.utcoffset() != timedelta(0):
             raise ValueError("recorded_at must be an aware UTC datetime")
         if self.review_status != _REVIEW_STATUS:
@@ -98,6 +107,7 @@ def seal_s5_base_diagnostic_run(
     """Seal the sole diagnostic result, allowing only an exact idempotent retry."""
 
     protocol = frozen_s5_base_diagnostic_protocol()
+    normalized_at = _utc(recorded_at)
     if protocol.run_budget != 1 or protocol.allow_parameter_rescan:
         raise ValueError("frozen protocol no longer authorizes the single-run seal")
     expected_metrics = compute_s5_base_diagnostic_metrics(package)
@@ -128,17 +138,12 @@ def seal_s5_base_diagnostic_run(
             return existing
         raise ValueError("single diagnostic run budget already consumed by different evidence")
 
-    normalized_at = _utc(recorded_at)
-    run_id = canonical_payload_fingerprint(
-        {
-            "schema": _SCHEMA,
-            "strategy_id": protocol.strategy_id,
-            "run_ordinal": 1,
-            "protocol_fingerprint": protocol.fingerprint,
-            "readiness_fingerprint": package.readiness_fingerprint,
-            "input_fingerprint": package.fingerprint,
-            "metrics_fingerprint": metrics.fingerprint,
-        }
+    run_id = _run_id_for(
+        strategy_id=protocol.strategy_id,
+        protocol_fingerprint=protocol.fingerprint,
+        readiness_fingerprint=package.readiness_fingerprint,
+        input_fingerprint=package.fingerprint,
+        metrics_fingerprint=metrics.fingerprint,
     )
     return S5BaseDiagnosticRunSeal(
         schema=_SCHEMA,
@@ -152,6 +157,27 @@ def seal_s5_base_diagnostic_run(
         input_fingerprint=package.fingerprint,
         metrics_fingerprint=metrics.fingerprint,
         review_status=_REVIEW_STATUS,
+    )
+
+
+def _run_id_for(
+    *,
+    strategy_id: str,
+    protocol_fingerprint: str,
+    readiness_fingerprint: str,
+    input_fingerprint: str,
+    metrics_fingerprint: str,
+) -> str:
+    return canonical_payload_fingerprint(
+        {
+            "schema": _SCHEMA,
+            "strategy_id": strategy_id,
+            "run_ordinal": 1,
+            "protocol_fingerprint": protocol_fingerprint,
+            "readiness_fingerprint": readiness_fingerprint,
+            "input_fingerprint": input_fingerprint,
+            "metrics_fingerprint": metrics_fingerprint,
+        }
     )
 
 
