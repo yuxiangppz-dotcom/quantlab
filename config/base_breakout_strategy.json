@@ -1,0 +1,23 @@
+{
+  "strategy_id": "price_volume_base_breakout",
+  "signal_interval_sessions": 1,
+  "max_names": 20,
+  "weight_per_name": 0.04,
+  "evaluation_horizons": [1, 5, 10, 20],
+  "state_thresholds": {
+    "max_prior_drawdown": -0.2,
+    "max_undercut_depth_10": 0.03,
+    "min_recent_return_10": -0.06,
+    "max_recent_drawdown_10": 0.08,
+    "max_volatility_ratio": 1.1,
+    "max_new_low_count_ready": 3,
+    "max_new_low_count_20_ready": 5,
+    "max_reclaim_sessions": 3,
+    "min_recovery_from_low": 0.04,
+    "min_close_location_20": 0.55,
+    "min_close_to_ma20_ratio": 1.0,
+    "min_ma20_slope_5": 0.0,
+    "min_breakout_distance_20": 0.0,
+    "min_breakout_volume_ratio": 1.2
+  }
+}
