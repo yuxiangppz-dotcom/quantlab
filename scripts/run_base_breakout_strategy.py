@@ -82,9 +82,9 @@ def run_strategy(
     if first_index + 1 < FEATURE_HISTORY_SESSIONS:
         raise DataValidationError("insufficient 120-session history before start")
     padded_start = open_dates[first_index - FEATURE_HISTORY_SESSIONS + 1]
-    cadence = int(raw_config["holding_sessions"])
+    cadence = int(raw_config["signal_interval_sessions"])
     if cadence <= 0:
-        raise ValueError("holding_sessions must be positive")
+        raise ValueError("signal_interval_sessions must be positive")
     signal_dates = tuple(in_range[::cadence])
 
     dataset = filter_v1_universe(
@@ -140,10 +140,11 @@ def run_strategy(
         "signal_dates": len(signal_dates),
         "signal_rows": len(signals),
         "selected_rows": int(signals["selected"].sum()),
-        "holding_sessions": cadence,
-        "holding_note": (
-            "controls non-overlapping signal cadence; detection windows remain unchanged"
+        "signal_interval_sessions": cadence,
+        "signal_interval_note": (
+            "controls signal cadence; it is not a forced holding or lock-up period"
         ),
+        "holding_policy_enforced": False,
         "evaluation_horizons": list(config.evaluation_horizons),
         "config_sha256": hashlib.sha256(config_path.read_bytes()).hexdigest(),
         "input_fingerprint": _frame_fingerprint(strategy_input),

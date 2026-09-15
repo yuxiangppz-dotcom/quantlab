@@ -1,6 +1,6 @@
 {
   "strategy_id": "price_volume_base_breakout",
-  "holding_sessions": 1,
+  "signal_interval_sessions": 1,
   "max_names": 20,
   "weight_per_name": 0.04,
   "evaluation_horizons": [1, 5, 10, 20],
