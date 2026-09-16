@@ -97,6 +97,13 @@ class ObservedClient:
             "fields",
             "market",
             "index_code",
+            # Reviewed for the SW membership evidence intake: taxonomy scope,
+            # industry code and result paging carry no credential material.
+            "level",
+            "src",
+            "l1_code",
+            "limit",
+            "offset",
         }
         if set(params) - allowed:
             raise ProviderRequestError(f"{endpoint}:unreviewed_archive_parameters")

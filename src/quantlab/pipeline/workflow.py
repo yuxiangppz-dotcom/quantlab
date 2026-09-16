@@ -349,6 +349,7 @@ def ingest(project, start, end, *, adopt_existing=False):
         end,
         indices=tuple(project["indices"]),
         adopt_existing=adopt_existing,
+        code_changes_path=ROOT / "config/security_code_changes.csv",
     )
 
 

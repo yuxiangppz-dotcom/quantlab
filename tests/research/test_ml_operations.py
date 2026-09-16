@@ -59,9 +59,16 @@ def test_bonus_shares_are_locked_until_explicit_settlement():
     book, _, _ = apply_events(held, ex, [event], state, date(2024, 1, 1))
     assert sum(lot.quantity for lot in book.lots) == 110
     assert book.lots[-1].sellable_on == pay
+    # CSDC rounds the holder's distribution down to whole shares and discards
+    # the fractional remainder; the discard is recorded, never settled silently.
     bad = replace(event, share_denominator=3)
-    with pytest.raises(ValueError, match="fractional"):
-        apply_events(held, ex, [bad], state, date(2024, 1, 1))
+    book3, _, movements = apply_events(held, ex, [bad], state, date(2024, 1, 1))
+    assert sum(lot.quantity for lot in book3.lots) == 133
+    discard = next(
+        m for m in movements if m["kind"] == "bonus_shares_fraction_discarded"
+    )
+    assert discard["entitled"] == 100
+    assert discard["discarded_numerator"] == 1
 
 
 def test_atomic_json_failure_leaves_no_published_partial(tmp_path):

@@ -1,8 +1,11 @@
 """Explicit corporate-event scenarios, entitlements and dividend receivables.
 
 No provider/tax inference. Rates are declared NET cash scenarios; historical
-admission must verify their tax basis. Fractional shares and rights require an
-explicit adapter and stop here instead of silently inventing a settlement.
+admission must verify their tax basis. Share distributions apply the CSDC
+holder-level rule: entitlements are rounded down to whole shares and the
+fractional remainder is discarded and recorded. Rights issues, mergers and
+delisting settlements require an explicit adapter and stop here instead of
+silently inventing a settlement.
 """
 
 from __future__ import annotations
@@ -122,7 +125,17 @@ def apply_events(book, day, events, state, inception):
         elif event.kind == "bonus_shares":
             count, remainder = divmod(entitled * event.share_numerator, event.share_denominator)
             if remainder:
-                raise ValueError("fractional corporate shares require explicit settlement")
+                # CSDC rounds a holder's distribution down to whole shares; the
+                # fractional remainder is discarded (the vendor's tail-share
+                # reallocation to other holders is not observable per account).
+                movements.append(
+                    {
+                        "event_id": event.event_id,
+                        "kind": "bonus_shares_fraction_discarded",
+                        "entitled": entitled,
+                        "discarded_numerator": remainder,
+                    }
+                )
             if count:
                 lot = ResearchLot(
                     f"corporate:{event.event_id}",

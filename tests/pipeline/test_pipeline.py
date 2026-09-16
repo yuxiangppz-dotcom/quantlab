@@ -147,6 +147,213 @@ def test_ingestion_validates_before_commit_recovers_and_detects_tampering(tmp_pa
         verify_session(storage, receipts, first)
 
 
+def _write_code_changes(tmp_path):
+    path = tmp_path / "code_changes.csv"
+    path.write_text(
+        "old_instrument_id,new_instrument_id,effective_date,old_name,original_list_date,source,note\n"
+        "000001.SZ,000003.SZ,2024-02-01,successor,2000-01-01,synthetic,synthetic successor remap\n"
+    )
+    return path
+
+
+def test_limit_evidence_required_for_valid_codes_not_backfilled_successors(tmp_path):
+    """Provider backfills a successor code's history before its change date.
+
+    With the dated code lifecycle loaded, the backfilled identity is excluded
+    from per-day limit evidence (and the receipt records no gap). Without it,
+    the same session commits but records the gap verbatim. A systemic provider
+    gap above 1% of the session bars still blocks the commit.
+    """
+    day = date(2024, 1, 2)
+
+    def provider_with_backfill():
+        provider = SyntheticProvider()
+        base_bars = provider.get_daily_bars_by_date
+        base_factors = provider.get_adj_factors_by_date
+        base_basics = provider.get_daily_basic_by_date
+        base_limits = provider.get_daily_price_limits_by_date
+
+        def bars(day):
+            return base_bars(day) + [DailyBar("000003.SZ", day, 10, 11, 9, 10, 10, 10000, 100000)]
+
+        def factors(day):
+            return base_factors(day) + [AdjFactor("000003.SZ", day, 1)]
+
+        def basics(day):
+            return base_basics(day) + [DailyBasic("000003.SZ", day, 0.01, 1e9, 8e8)]
+
+        def limits(day):
+            return [row for row in base_limits(day) if row.instrument_id != "000003.SZ"]
+
+        provider.get_daily_bars_by_date = bars
+        provider.get_adj_factors_by_date = factors
+        provider.get_daily_basic_by_date = basics
+        provider.get_daily_price_limits_by_date = limits
+        return provider
+
+    changes = _write_code_changes(tmp_path)
+    storage, receipts = ParquetStorage(tmp_path / "canonical"), tmp_path / "receipts"
+    synchronize(
+        provider_with_backfill(),
+        storage,
+        receipts,
+        day,
+        day,
+        indices=("000300.SH",),
+    )
+    unscoped = json.loads((receipts / "sessions" / f"{day}.json").read_text())
+    assert unscoped["limit_evidence_gaps"]["count"] == 1
+    assert unscoped["limit_evidence_gaps"]["instruments"] == ["000003.SZ"]
+
+    storage2, receipts2 = ParquetStorage(tmp_path / "canonical2"), tmp_path / "receipts2"
+    synchronize(
+        provider_with_backfill(),
+        storage2,
+        receipts2,
+        day,
+        day,
+        indices=("000300.SH",),
+        code_changes_path=changes,
+    )
+    scoped = json.loads((receipts2 / "sessions" / f"{day}.json").read_text())
+    assert scoped["limit_evidence_gaps"]["count"] == 0
+
+    provider = provider_with_backfill()
+    truncated_limits = provider.get_daily_price_limits_by_date
+
+    def truncated(d):
+        return truncated_limits(d)[:1]
+
+    provider.get_daily_price_limits_by_date = truncated
+    base_security = SyntheticProvider().get_securities()[0]
+
+    def many():
+        return [
+            replace(base_security, instrument_id=f"{n:06}.SZ", symbol=f"{n:06}")
+            for n in range(1, 62)
+        ]
+
+    provider.get_securities = many
+    def many_bars(d):
+        return [DailyBar(s.instrument_id, d, 10, 11, 9, 10, 10, 10000, 100000) for s in many()]
+
+    def many_factors(d):
+        return [AdjFactor(s.instrument_id, d, 1) for s in many()]
+
+    def many_basics(d):
+        return [DailyBasic(s.instrument_id, d, 0.01, 1e9, 8e8) for s in many()]
+
+    provider.get_daily_bars_by_date = many_bars
+    provider.get_adj_factors_by_date = many_factors
+    provider.get_daily_basic_by_date = many_basics
+    other = ParquetStorage(tmp_path / "canonical3")
+    with pytest.raises(ValueError, match="missing daily price-limit evidence"):
+        synchronize(
+            provider,
+            other,
+            tmp_path / "receipts3",
+            day,
+            day,
+            indices=("000300.SH",),
+            code_changes_path=changes,
+        )
+
+
+def test_valuation_rows_for_unlisted_code_remap_cannot_block_commit(tmp_path):
+    """Vendor daily_basic backfills pre-listing history under renamed codes.
+
+    The provider artifact is filtered by dated listing identity, mirroring the
+    bar placeholder filter; residual valuation gaps are receipted verbatim and
+    a systemic failure still blocks.
+    """
+    provider = SyntheticProvider()
+    base_basics = provider.get_daily_basic_by_date
+    securities = provider.get_securities() + [
+        Security(
+            "920999.SZ",
+            "920999",
+            "renamed",
+            "SZSE",
+            "SZ",
+            "synthetic",
+            "L",
+            date(2025, 1, 1),
+            None,
+        )
+    ]
+
+    def basics(day):
+        return base_basics(day) + [DailyBasic("920999.SZ", day, 0.01, 1e9, 8e8)]
+
+    provider.get_securities = lambda: securities
+    provider.get_daily_basic_by_date = basics
+    storage, receipts = ParquetStorage(tmp_path / "canonical"), tmp_path / "receipts"
+    day = date(2024, 1, 2)
+    synchronize(
+        provider,
+        storage,
+        receipts,
+        day,
+        day,
+        indices=("000300.SH",),
+        code_changes_path=_write_code_changes(tmp_path),
+    )
+    verify_session(storage, receipts, day)
+    stored = pd.read_parquet(
+        storage.daily_basic_path(day), columns=["instrument_id"]
+    ).instrument_id
+    assert "920999.SZ" not in set(stored)
+    assert {"000001.SZ", "000002.SZ"} <= set(stored)
+
+    # A traded instrument without a valuation row is receipted as a gap.
+    provider = SyntheticProvider()
+    base_basics = provider.get_daily_basic_by_date
+    provider.get_daily_basic_by_date = lambda d: base_basics(d)[:1]
+    gap_storage, gap_receipts = ParquetStorage(tmp_path / "c2"), tmp_path / "r2"
+    synchronize(
+        provider,
+        gap_storage,
+        gap_receipts,
+        day,
+        day,
+        indices=("000300.SH",),
+        code_changes_path=_write_code_changes(tmp_path),
+    )
+    receipt = json.loads((gap_receipts / "sessions" / f"{day}.json").read_text())
+    assert receipt["valuation_gaps"]["count"] == 1
+
+    # A systemic failure still blocks.
+    provider = SyntheticProvider()
+    base_security = SyntheticProvider().get_securities()[0]
+
+    def many():
+        return [
+            replace(base_security, instrument_id=f"{n:06}.SZ", symbol=f"{n:06}")
+            for n in range(1, 62)
+        ]
+
+    def many_bars(d):
+        return [DailyBar(s.instrument_id, d, 10, 11, 9, 10, 10, 10000, 100000) for s in many()]
+
+    def many_factors(d):
+        return [AdjFactor(s.instrument_id, d, 1) for s in many()]
+
+    provider.get_securities = many
+    provider.get_daily_bars_by_date = many_bars
+    provider.get_adj_factors_by_date = many_factors
+    provider.get_daily_basic_by_date = lambda d: [DailyBasic("000001.SZ", d, 0.01, 1e9, 8e8)]
+    with pytest.raises(ValueError, match="daily_basic"):
+        synchronize(
+            provider,
+            ParquetStorage(tmp_path / "c3"),
+            tmp_path / "r3",
+            day,
+            day,
+            indices=("000300.SH",),
+            code_changes_path=_write_code_changes(tmp_path),
+        )
+
+
 @pytest.fixture
 def history(tmp_path, request):
     days = pd.bdate_range("2024-01-02", periods=getattr(request, "param", 75))

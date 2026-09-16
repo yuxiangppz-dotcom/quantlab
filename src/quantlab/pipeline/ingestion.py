@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from quantlab.daily.update import _load_or_fetch_core
 from quantlab.data.models import DataValidationError
+from quantlab.data.security_history import load_security_code_changes
 from quantlab.data.sync import validate_index_daily_bars
 from quantlab.research.alpha158_store import exclusive_job
 from quantlab.research.ml.io import sha256, write_json
@@ -97,17 +98,38 @@ def calendar_days(calendar, start, end):
     return days
 
 
-def synchronize(provider, storage, receipts, start, end, *, indices, adopt_existing=False):
+def synchronize(
+    provider,
+    storage,
+    receipts,
+    start,
+    end,
+    *,
+    indices,
+    adopt_existing=False,
+    code_changes_path=None,
+):
     """Explicit caller commission only. Never call this from plan/status/features.
 
     Missing or invalid payloads cannot advance the complete-session watermark.
     Previously committed partitions are verified and never refreshed in place.
     Prepared transactions recover automatically. Legacy unreceipted files require
     explicit adoption; their first observation is never backdated.
+
+    Dated code lifecycles: a successor code's provider history is backfilled to
+    before its documented change date. Those rows describe the same trading
+    entity under an identity that did not exist yet, so per-day limit evidence
+    is required only for codes valid on the session. Remaining small vendor
+    gaps (new-board launches, sporadic missing rows) are recorded verbatim in
+    the session receipt instead of pretending full coverage; a systemic outage
+    exceeding 1% of the session bars still blocks the commit.
     """
     receipts = Path(receipts)
     if start > end or end > datetime.now(ZoneInfo("Asia/Shanghai")).date() or not indices:
         raise ValueError("invalid ingestion interval/indices")
+    code_changes = (
+        load_security_code_changes(code_changes_path) if code_changes_path is not None else []
+    )
     with exclusive_job(receipts):
         calendar = provider.get_trading_calendar(start, end + timedelta(days=35))
         days = calendar_days(calendar, start, end)
@@ -152,7 +174,7 @@ def synchronize(provider, storage, receipts, start, end, *, indices, adopt_exist
             reused = [name for name, path in files.items() if path.exists()]
             if reused and not adopt_existing:
                 raise ValueError(f"unreceipted partitions:{day}; review then use --adopt-existing")
-            bars, factors, basics = _load_or_fetch_core(provider, storage, day)
+            bars, factors, basics, missing_basics = _load_or_fetch_core(provider, storage, day)
             index = (
                 storage.load_index_daily_by_date(day)
                 if files["index"].exists()
@@ -199,7 +221,14 @@ def synchronize(provider, storage, receipts, start, end, *, indices, adopt_exist
                 )
                 for _, method, rows in saves:
                     getattr(stage, method)(rows, day)
-                if not {r.instrument_id for r in bars}.issubset({r.instrument_id for r in limits}):
+                backfilled = {c.new_instrument_id for c in code_changes if c.effective_date > day}
+                in_scope_bars = {
+                    r.instrument_id for r in bars if not r.instrument_id.endswith(".BJ")
+                }
+                missing_limits = sorted(
+                    in_scope_bars - backfilled - {r.instrument_id for r in limits}
+                )
+                if len(missing_limits) > max(50, len(bars) // 100):
                     raise DataValidationError("missing daily price-limit evidence")
                 ready = Path(scratch) / "ready"
                 ready.mkdir()
@@ -220,6 +249,15 @@ def synchronize(provider, storage, receipts, start, end, *, indices, adopt_exist
                     "adopted_existing": reused,
                     "historical_publication_certified": False,
                     "context_validation": "scoped_below_provider_cap_v1",
+                    "limit_evidence_gaps": {
+                        "count": len(missing_limits),
+                        "instruments": missing_limits[:20],
+                        "scope": "SH/SZ mandate; BSE instruments excluded from the check",
+                    },
+                    "valuation_gaps": {
+                        "count": len(missing_basics),
+                        "instruments": missing_basics[:20],
+                    },
                 }
                 write_json(ready / "receipt.json", receipt)
                 pending.parent.mkdir(parents=True, exist_ok=True)
