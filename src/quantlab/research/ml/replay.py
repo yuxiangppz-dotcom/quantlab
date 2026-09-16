@@ -13,6 +13,7 @@ from datetime import date
 import pandas as pd
 
 from quantlab.research.ml.config import MLConfig
+from quantlab.research.ml.execution import admit_orders, exposure_report
 from quantlab.research.ml.portfolio import buffered_target
 from quantlab.research.quantity_kernel import ResearchBook, ResearchOrder
 from quantlab.research.quantity_scheduler import (
@@ -149,6 +150,8 @@ def replay_scores(
                     decision_day,
                 )
             )
+        industries = cross.set_index("instrument_id").industry.to_dict()
+        orders, deferred = admit_orders(orders, book, marks, industries, config)
         batch = ResearchDay(
             day,
             tuple(orders),
@@ -162,57 +165,10 @@ def replay_scores(
             return finish(advance.reason, day)
         record = advance.record
         assert record is not None
-        # Buy-side execution controls: price gaps/failed sales cannot increase
-        # a pre-existing risk breach. A small explicit band accommodates marking
-        # and modeled fees; passive price drift itself cannot force a fake sale.
-        execution_marks = {m.instrument_id: m.price_fen for m in evidence.marks}
-
-        def exposures(state, execution_marks=execution_marks, cross=cross):
-            amounts = {}
-            for lot in state.lots:
-                amounts[lot.instrument_id] = amounts.get(lot.instrument_id, 0) + (
-                    lot.quantity * execution_marks[lot.instrument_id]
-                )
-            nav = state.cash_fen + sum(amounts.values())
-            by_name = {k: v / nav for k, v in amounts.items()}
-            by_industry = {}
-            industries = cross.set_index("instrument_id").industry.to_dict()
-            for k, weight in by_name.items():
-                group = industries[k]
-                by_industry[group] = by_industry.get(group, 0) + weight
-            return by_name, by_industry
-
-        before_name, before_industry = exposures(book)
-        after_name, after_industry = exposures(record.book)
-        tolerance = config.execution_weight_tolerance
-        breach = len(after_name) > config.max_positions
-        breach |= sum(after_name.values()) > max(
-            config.gross_exposure + tolerance, sum(before_name.values()) + 1e-12
+        # End-of-day exposure is diagnostic. Never rewrite a completed fill.
+        exposure = exposure_report(
+            record.book, {m.instrument_id: m.price_fen for m in evidence.marks}, industries, config
         )
-        breach |= any(
-            v > max(config.max_weight + tolerance, before_name.get(k, 0) + 1e-12)
-            for k, v in after_name.items()
-        )
-        breach |= any(
-            v > max(config.max_industry_weight + tolerance, before_industry.get(k, 0) + 1e-12)
-            for k, v in after_industry.items()
-        )
-        if breach and any(o.side == "buy" for o in orders):
-            # Repeat the hypothetical day with sells only; no mutations escaped.
-            batch = ResearchDay(
-                day,
-                tuple(o for o in orders if o.side == "sell"),
-                evidence.contexts,
-                evidence.marks,
-                evidence.corporate_processing_complete,
-            )
-            local_attempted = set(attempted)
-            advance = advance_research_day(book, calendar, i, batch, local_attempted)
-            record = advance.record
-            assert record is not None
-            deferred = True
-        else:
-            deferred = False
         decisions.append(
             {
                 "signal_date": str(decision_day),
@@ -220,9 +176,10 @@ def replay_scores(
                 "scheduled_rebalance": scheduled,
                 "planned_one_way_turnover": decision.planned_one_way_turnover,
                 "risk_reduction_one_way_turnover": decision.risk_reduction_one_way_turnover,
-                "buys_deferred_after_blocked_exits": deferred,
+                "pretrade_deferred": deferred,
+                "execution_policy": "prior_close_admission_no_same_auction_sale_credit",
+                "realized_exposure": exposure,
                 "target_weights": desired,
-                "buy_risk_guard_triggered": bool(breach),
             }
         )
         book, attempted = record.book, local_attempted

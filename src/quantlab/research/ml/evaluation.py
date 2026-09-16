@@ -16,12 +16,26 @@ def signal_diagnostics(scores, min_cross_section=20):
             if valid.raw_label.nunique() > 1:
                 rank_ic = float(valid.score.rank().corr(valid.raw_label.rank()))
                 ic = float(valid.score.corr(valid.raw_label))
-        valid["quantile"] = (
-            np.minimum(9, ((valid.score.rank() - 1) / len(valid) * 10).astype(int))
-            if len(valid)
+        # Freeze membership before looking at outcomes. Ties stay together.
+        ranked_universe = group.loc[np.isfinite(group.score)].copy()
+        ranked_universe["quantile"] = (
+            np.minimum(
+                9,
+                (
+                    (ranked_universe.score.rank(method="average") - 1) / len(ranked_universe) * 10
+                ).astype(int),
+            )
+            if len(ranked_universe)
             else pd.Series(dtype="int64")
         )
-        buckets = valid.groupby("quantile").raw_label.mean()
+        ranked_universe["raw_label"] = ranked_universe.raw_label.where(
+            np.isfinite(ranked_universe.raw_label)
+        )
+        buckets = ranked_universe.groupby("quantile").raw_label.mean()
+        coverage = (
+            ranked_universe.groupby("quantile").raw_label.count()
+            / ranked_universe.groupby("quantile").size()
+        )
         row = {
             "model": model,
             "trade_date": day,
@@ -32,6 +46,7 @@ def signal_diagnostics(scores, min_cross_section=20):
             "label_coverage": len(valid) / len(group),
         }
         row.update({f"q{i + 1}_raw_return": buckets.get(i, np.nan) for i in range(10)})
+        row.update({f"q{i + 1}_label_coverage": coverage.get(i, np.nan) for i in range(10)})
         row["top_minus_bottom_label_spread"] = buckets.get(9, np.nan) - buckets.get(0, np.nan)
         ranked = group.sort_values(["score", "instrument_id"], ascending=[False, True])
         top = ranked.head(20)

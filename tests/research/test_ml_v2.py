@@ -309,7 +309,8 @@ def test_replay_uses_actual_shares_minimum_fees_and_sells_before_buys():
     assert first.attempts[0].transition.commission_fen == 800
     assert first.book.cash_fen == 1_999_200
     second = result.schedule.records[1]
-    assert [a.order.side for a in second.attempts] == ["sell", "buy"]
+    assert [a.order.side for a in second.attempts] == ["sell"]
+    assert result.schedule.records[2].attempts[0].order.side == "buy"
     assert second.attempts[0].transition.stamp_fen == 4000
     assert second.book.cash_fen >= 0
     small = run_fixture(capital=1_000_000)
@@ -333,7 +334,7 @@ def test_failed_sale_cannot_create_extra_position_or_fake_sale_cash():
     assert {lot.instrument_id for lot in record.book.lots} == {"A"}
     assert record.book.cash_fen == result.schedule.records[0].book.cash_fen
     assert record.attempts[0].transition.simulated_quantity == 0
-    assert result.decisions[1]["buys_deferred_after_blocked_exits"] is True
+    assert result.decisions[1]["pretrade_deferred"][0]["reason"] == "no_slot_without_assumed_sale"
 
 
 def test_unknown_fee_stops_before_any_day_mutation_and_retains_positions():
@@ -405,7 +406,7 @@ def test_minimum_holding_age_and_discretionary_turnover_cap():
     assert len(mature.target.positions) <= 2
 
 
-def test_execution_price_gap_cannot_increase_buy_exposure_beyond_limit():
+def test_execution_price_gap_is_reported_without_rewriting_fills():
     _, market, *_ = replay_fixture()
     first = market[0]
     a = replace(
@@ -422,8 +423,9 @@ def test_execution_price_gap_cannot_increase_buy_exposure_beyond_limit():
         marks=(replace(first.marks[0], price_fen=2000), *first.marks[1:]),
     )
     result = run_fixture(market)
-    assert not result.schedule.records[0].book.lots
-    assert result.decisions[0]["buy_risk_guard_triggered"]
+    assert result.schedule.records[0].book.lots
+    assert result.decisions[0]["realized_exposure"]["breaches"]
+    assert result.schedule.records[0].attempts[0].transition.simulated_quantity > 0
 
 
 def test_runner_writes_bound_models_scores_and_does_not_overwrite(tmp_path, monkeypatch):
@@ -550,3 +552,31 @@ def test_market_json_decoder_retains_unknowns_and_decimal_rates():
     decoded = decode_market_day(encode(payload))
     assert decoded.corporate_processing_complete is None
     assert decoded.contexts[0] == day.contexts[0]
+
+
+def test_quantile_membership_is_frozen_before_missing_outcomes():
+    scores = pd.DataFrame(
+        {
+            "model": "x",
+            "trade_date": [1] * 20,
+            "instrument_id": [str(i) for i in range(20)],
+            "score": range(20),
+            "raw_label": np.arange(20, dtype=float),
+        }
+    )
+    scores.loc[0, "raw_label"] = np.nan
+    daily, _ = signal_diagnostics(scores)
+    assert daily.iloc[0].q1_raw_return == 1
+    assert daily.iloc[0].q1_label_coverage == 0.5
+
+
+def test_admission_does_not_depend_on_execution_day_outcomes():
+    _, market, *_ = replay_fixture()
+    original = run_fixture()
+    day = market[1]
+    market[1] = replace(
+        day, contexts=(replace(day.contexts[0], market_open=False), *day.contexts[1:])
+    )
+    blocked = run_fixture(market)
+    assert original.decisions[1]["pretrade_deferred"] == blocked.decisions[1]["pretrade_deferred"]
+    assert original.decisions[1]["target_weights"] == blocked.decisions[1]["target_weights"]
