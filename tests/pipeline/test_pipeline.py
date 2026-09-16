@@ -391,6 +391,10 @@ def test_project_data_train_replay_report_and_account_chain(history, tmp_path, m
     monkeypatch.setattr(runner, "code_identity", lambda root: {"synthetic": True})
     monkeypatch.setattr(ml_cli, "code_identity", lambda root: {"synthetic": True})
     storage, receipts, days = history
+    context = pd.read_parquet(tmp_path / "context.parquet")
+    context["can_open"], context["must_exit"], context["soft_exit"] = True, False, False
+    context["eligibility_reason"], context["universe_policy_sha256"] = "synthetic", "a" * 64
+    context.to_parquet(tmp_path / "context.parquet", index=False)
     config = MLConfig(
         decision_hour=18,
         horizon_sessions=2,
@@ -490,9 +494,58 @@ def test_project_data_train_replay_report_and_account_chain(history, tmp_path, m
         return dispatch(parser().parse_args(["--project", str(path), *argv]))
 
     run("build")
-    run("train")
+    # Use the actual study reservation path for a synthetic end-to-end report.
+    from quantlab.research.ml.study import initialize
+
+    initialize(tmp_path / "workspace/study", days[116].date(), days[117].date(), days[124].date())
+    ml_cli.dispatch(
+        ml_cli.parser().parse_args(
+            [
+                "train",
+                "--bundle",
+                str(tmp_path / "workspace/bundle"),
+                "--config",
+                str(tmp_path / "ml.json"),
+                "--start",
+                project["test_start"],
+                "--end",
+                project["test_end"],
+                "--study",
+                str(tmp_path / "workspace/study"),
+                "--output",
+                str(tmp_path / "workspace/training"),
+            ]
+        )
+    )
+    run("baseline")
     run("replay")
     run("report")
+    enriched = ml_cli.dispatch(
+        ml_cli.parser().parse_args(
+            [
+                "report",
+                "--replay",
+                str(tmp_path / "workspace/replay"),
+                "--benchmark",
+                str(tmp_path / "workspace/market/benchmark.parquet"),
+                "--training",
+                str(tmp_path / "workspace/training"),
+                "--baseline-replay",
+                str(tmp_path / "workspace/baseline"),
+                "--bundle",
+                str(tmp_path / "workspace/bundle"),
+                "--study",
+                str(tmp_path / "workspace/study"),
+                "--output",
+                str(tmp_path / "workspace/enriched-report"),
+            ]
+        )
+    )
+    assert enriched["selection_diagnostics"]["inventory"]["registered_candidate_count"] == 1
+    assert len(enriched["signal_decay"]["horizons"]) == 4
+    assert all(
+        r["status"] == "compared" for r in enriched["same_pool_baseline"]["scenarios"].values()
+    )
     # Exercise the real multi-capital/cost orchestration, without a provider or
     # replacing the quantity ledger. Only source evidence is synthetic here.
     from quantlab.pipeline import refresh as project_refresh
@@ -531,6 +584,9 @@ def test_project_data_train_replay_report_and_account_chain(history, tmp_path, m
     for row in stress["scenarios"]:
         result = json.loads((__import__("pathlib").Path(row["report"]) / "report.json").read_text())
         assert len(result["scenarios"]) == 2
+        assert all(
+            r["status"] == "compared" for r in result["same_pool_baseline"]["scenarios"].values()
+        )
         assert all(x["last_session"] == project["test_end"] for x in result["scenarios"])
 
     parent = serving.register_model(

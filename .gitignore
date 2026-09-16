@@ -15,6 +15,7 @@ venv/
 .mypy_cache/
 .coverage
 htmlcov/
+coverage.xml
 
 # Raw market data (repo root only)
 /data/

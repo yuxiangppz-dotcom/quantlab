@@ -41,7 +41,7 @@ def parser():
         prepare.add_argument(f"--{name}", type=Path, required=True)
     prepare.add_argument("--lineage", type=Path)
     prepare.add_argument("--feature-contract", type=Path)
-    for command in ("check", "train", "replay", "shadow"):
+    for command in ("check", "train", "replay", "shadow", "baseline"):
         child = sub.add_parser(command)
         child.add_argument("--bundle", type=Path, required=True)
         child.add_argument("--config", type=Path, default=ROOT / "config/ml_daily_v2.json")
@@ -54,10 +54,11 @@ def parser():
         if command == "train":
             child.add_argument("--study", type=Path)
             child.add_argument("--final-holdout", action="store_true")
-        if command in {"replay", "shadow"}:
-            child.add_argument(
-                "--run" if command == "replay" else "--signals", type=Path, required=True
-            )
+        if command in {"replay", "shadow", "baseline"}:
+            if command != "baseline":
+                child.add_argument(
+                    "--run" if command == "replay" else "--signals", type=Path, required=True
+                )
             for name in ("market-days", "initial-marks", "corporate-actions"):
                 child.add_argument(f"--{name}", type=Path, required=True)
             child.add_argument(
@@ -88,6 +89,9 @@ def parser():
         report.add_argument(f"--{name}", type=Path, required=True)
     report.add_argument("--training", type=Path)
     report.add_argument("--exposures", type=Path)
+    report.add_argument("--baseline-replay", type=Path)
+    report.add_argument("--bundle", type=Path)
+    report.add_argument("--study", type=Path)
     study = sub.add_parser("init-study")
     study.add_argument("--output", type=Path, required=True)
     for name in ("development-end", "holdout-start", "holdout-end"):
@@ -130,11 +134,13 @@ def execute_replay(args, manifest, config, sessions):
             raise ValueError("replay inputs/config differ from completed training")
         scores = pd.read_parquet(args.run / "scores.parquet")
         signal_binding = {"training_completion_sha256": sha256(args.run / "completed.json")}
-    else:
+    elif args.action == "shadow":
         scores, archive = archived_signals(
             args.signals, [d.date() for d in sessions[first - 1 : last]]
         )
         signal_binding = {"forward_archive": archive}
+    else:
+        signal_binding = {"signal_source": "historical_can_open_pool_without_model"}
     hashes = {
         key: sha256(getattr(args, key))
         for key in ("market_days", "initial_marks", "corporate_actions")
@@ -162,6 +168,17 @@ def execute_replay(args, manifest, config, sessions):
         max_bytes=config.max_matrix_bytes,
     )
 
+    if args.action == "baseline":
+        from dataclasses import replace
+
+        capacity = max(config.max_positions, universe.instrument_id.nunique())
+        config = replace(
+            config, max_positions=capacity, entry_rank=capacity, exit_rank=capacity + 1
+        )
+        scores = universe[["trade_date", "instrument_id"]].assign(
+            score=float("nan"), model="eligible_equal_weight"
+        )
+
     def final_check():
         if (
             any(sha256(getattr(args, k)) != v for k, v in hashes.items())
@@ -171,7 +188,7 @@ def execute_replay(args, manifest, config, sessions):
             raise ValueError("replay inputs/code changed during execution")
         if args.action == "replay":
             verify_completed(args.run)
-        else:
+        elif args.action == "shadow":
             _, current = archived_signals(
                 args.signals, [d.date() for d in sessions[first - 1 : last]]
             )
@@ -193,7 +210,13 @@ def execute_replay(args, manifest, config, sessions):
         resume=args.resume,
         binding_extra={"code": identity, "inputs": hashes, **signal_binding},
         final_check=final_check,
-        strategy_mode="archived_forward_signals" if args.action == "shadow" else "backtest",
+        strategy_mode=(
+            "archived_forward_signals"
+            if args.action == "shadow"
+            else "eligible_equal_weight"
+            if args.action == "baseline"
+            else "backtest"
+        ),
     )
 
 
@@ -292,6 +315,9 @@ def dispatch(args):
             args.output,
             training=args.training,
             exposures_path=args.exposures,
+            baseline_replay=args.baseline_replay,
+            bundle=args.bundle,
+            study=args.study,
         )
     if args.action == "init-study":
         from quantlab.research.ml.study import initialize
@@ -365,7 +391,7 @@ def dispatch(args):
             root=ROOT,
             resume=args.resume,
         )
-    if args.action in {"replay", "shadow"}:
+    if args.action in {"replay", "shadow", "baseline"}:
         return execute_replay(args, manifest, config, sessions)
     names = json.loads((args.bundle / "feature_names.json").read_text())
     folds = monthly_folds(sessions, args.start, args.end, config)

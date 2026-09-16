@@ -42,7 +42,7 @@ def read_range(
     return dataset.to_table(filter=where, columns=columns).to_pandas()
 
 
-def fold_panel(bundle, fold, names, sessions, config):
+def fold_panel(bundle, fold, names, sessions, config, *, label_cutoff=None):
     features = read_range(
         bundle / "features.parquet",
         fold.train_start,
@@ -53,10 +53,11 @@ def fold_panel(bundle, fold, names, sessions, config):
     features = validate_features(features, names, sessions, config)
     audit_window(bundle, features, names, config)
     tail = min(len(sessions) - 1, sessions.get_loc(fold.test_end) + 1 + config.horizon_sessions)
+    price_end = min(sessions[tail], pd.Timestamp(label_cutoff)) if label_cutoff else sessions[tail]
     prices = read_range(
         bundle / "prices.parquet",
         fold.train_start,
-        sessions[tail],
+        price_end,
         columns=["trade_date", "instrument_id", "adj_close"],
         instruments=features.instrument_id.unique(),
         max_bytes=config.max_matrix_bytes,

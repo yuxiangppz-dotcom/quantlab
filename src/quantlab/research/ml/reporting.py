@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
 import pandas as pd
@@ -97,11 +99,46 @@ def portfolio_style(positions, ledger, exposures, *, decision_hour=16):
     return pd.DataFrame(rows)
 
 
-def build_report(replay, benchmark_path, output, *, training=None, exposures_path=None):
+def build_report(replay, benchmark_path, output, **kwargs):
+    """Publish a complete report atomically; a failed diagnostic leaves no final directory."""
+    from quantlab.research.alpha158_store import exclusive_job
+
+    output = research_output(Path(output))
+    with exclusive_job(output.parent):
+        if output.exists():
+            raise FileExistsError(output)
+        with TemporaryDirectory(dir=output.parent) as temporary:
+            stage = Path(temporary) / "report"
+            result = _build_report(replay, benchmark_path, stage, **kwargs)
+            stage.rename(output)
+    return result
+
+
+def _build_report(
+    replay,
+    benchmark_path,
+    output,
+    *,
+    training=None,
+    exposures_path=None,
+    baseline_replay=None,
+    bundle=None,
+    study=None,
+):
     research_output(output)
     verify_completed(replay)
     benchmark_hash = sha256(benchmark_path)
     exposures_hash = sha256(exposures_path) if exposures_path else None
+    metadata_path = benchmark_path.with_name("benchmark_metadata.json")
+    benchmark_metadata = (
+        json.loads(metadata_path.read_text())
+        if metadata_path.exists()
+        else {
+            "return_basis": "unspecified",
+            "comparable_to_net_dividend_portfolio": False,
+        }
+    )
+    metadata_hash = sha256(metadata_path) if metadata_path.exists() else None
     benchmark = pd.read_parquet(benchmark_path)
     if set(benchmark.columns) != {"session", "benchmark_return"}:
         raise ValueError("benchmark requires exactly session and benchmark_return columns")
@@ -130,6 +167,11 @@ def build_report(replay, benchmark_path, output, *, training=None, exposures_pat
     missing = common - set(benchmark.session)
     if missing:
         raise ValueError(f"benchmark missing common sessions:{sorted(missing)[:3]}")
+    baseline_comparison = None
+    if baseline_replay:
+        from quantlab.research.ml.baselines import compare_pool_baseline
+
+        baseline_comparison = compare_pool_baseline(replay, baseline_replay)
     output.mkdir(parents=True, exist_ok=False)
     rows = []
     exposures = pd.read_parquet(exposures_path) if exposures_path else None
@@ -210,8 +252,60 @@ def build_report(replay, benchmark_path, output, *, training=None, exposures_pat
             ic[model] = block_mean_interval(
                 group.sort_values("trade_date").rank_ic, config["horizon_sessions"] + 1
             )
+    selection = None
+    if study:
+        if training is None:
+            raise ValueError("study diagnostics require training")
+        from quantlab.research.ml.selection import selection_diagnostics
+
+        selection = selection_diagnostics(study, training, replay)
+    decay = None
+    bundle_manifest = None
+    if bundle:
+        if training is None:
+            raise ValueError("signal decay requires training")
+        from quantlab.research.ml.config import MLConfig
+        from quantlab.research.ml.diagnostics import signal_decay
+        from quantlab.research.ml.io import verify_bundle
+        from quantlab.research.ml.panel import read_range
+
+        bundle_manifest = verify_bundle(bundle)
+        run_intent = json.loads((training / "intent.json").read_text())
+        if run_intent["inputs"] != bundle_manifest:
+            raise ValueError("diagnostic bundle differs from trained inputs")
+        diagnostic_config = MLConfig(**run_intent["config"])
+        sessions = pd.DatetimeIndex(json.loads((bundle / "calendar.json").read_text()))
+        scores = pd.read_parquet(training / "scores.parquet")
+        start = pd.Timestamp(scores.trade_date.min())
+        # Diagnostic horizons must not consume outcomes beyond the registered evaluation.
+        evaluation_end = sessions[sessions <= pd.Timestamp(run_intent["end"])][-1]
+        prices = read_range(
+            bundle / "prices.parquet",
+            start,
+            evaluation_end,
+            columns=["trade_date", "instrument_id", "adj_close"],
+            instruments=scores.instrument_id.unique(),
+            max_bytes=diagnostic_config.max_matrix_bytes,
+        )
+        decay_daily, persistence, decay = signal_decay(
+            scores, prices, sessions, diagnostic_config, evaluation_end=evaluation_end
+        )
+        write_frame(output / "signal-decay.parquet", decay_daily)
+        write_frame(output / "signal-persistence.parquet", persistence)
+        if verify_bundle(bundle) != bundle_manifest:
+            raise ValueError("diagnostic bundle changed during analysis")
     result = {
         "schema": "quantlab_ml_report_v1",
+        "same_pool_baseline": baseline_comparison,
+        "baseline_completion_sha256": sha256(baseline_replay / "completed.json")
+        if baseline_replay
+        else None,
+        "selection_diagnostics": selection,
+        "signal_decay": decay,
+        "diagnostic_bundle_manifest": bundle_manifest,
+        "benchmark_metadata": benchmark_metadata,
+        "benchmark_metadata_sha256": metadata_hash,
+        "dividend_comparability_verified": False,
         "scenarios": rows,
         "signal_uncertainty": ic,
         "scenario_statuses": summary,
@@ -242,6 +336,11 @@ def build_report(replay, benchmark_path, output, *, training=None, exposures_pat
             "成本加回仅解释同一成交路径的成本，不是重新运行的零成本策略。",
             "不同情景只比较共同完成区间；停止原因及区间外天数见 report.json。",
             "容量需结合资金规模、参与率、拒单及部分成交共同判断。",
+            "指数收益口径见 benchmark_metadata；价格指数不含股息再投资。",
+            "同池等权比较见 same_pool_baseline；手数、最小交易额可能使小资金大量闲置。",
+            "研究选择统计见 selection_diagnostics；DSR 假设不等于已验证的独立试验数。",
+            "多期限 IC：signal-decay.parquet；"
+            "分数持续性：signal-persistence.parquet（若提供 bundle）。",
         ]
     )
     (output / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -249,8 +348,12 @@ def build_report(replay, benchmark_path, output, *, training=None, exposures_pat
         exposures_path and sha256(exposures_path) != exposures_hash
     ):
         raise ValueError("report input changed during computation")
+    if metadata_hash and sha256(metadata_path) != metadata_hash:
+        raise ValueError("benchmark metadata changed during report")
     verify_completed(replay)
     if training:
         verify_completed(training)
+    if baseline_replay:
+        verify_completed(baseline_replay)
     complete(output)
     return result

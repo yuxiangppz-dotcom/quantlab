@@ -105,6 +105,18 @@ def prepare_market(project, bundle, output, start, end):
                     {"session": str(day), "benchmark_return": row.close / row.pre_close - 1}
                 )
             pd.DataFrame(benchmarks).to_parquet(stage / "benchmark.parquet", index=False)
+            write_json(
+                stage / "benchmark_metadata.json",
+                {
+                    "instrument_id": project["benchmark"],
+                    "return_basis": "price_index"
+                    if project["benchmark"] == "000906.SH"
+                    else "unverified",
+                    "construction": "daily_close_divided_by_previous_close_minus_one",
+                    "dividends_reinvested": False if project["benchmark"] == "000906.SH" else None,
+                    "comparable_to_net_dividend_portfolio": False,
+                },
+            )
             shutil.copyfile(project["corporate_actions"], stage / "corporate_actions.json")
             for path, digest in sources.items():
                 if sha256(path) != digest:
@@ -187,7 +199,9 @@ def research_stage(project, action, *, resume=False):
             argv += ["--study", str(workspace / "study")]
             if strategy["study"]["phase"] == "final_holdout":
                 argv += ["--final-holdout"]
-    elif action == "replay":
+    elif action in {"replay", "baseline"}:
+        if action == "replay" and strategy:
+            research_stage(project, "baseline", resume=resume)
         sessions = json.loads((workspace / "bundle/calendar.json").read_text())
         first = next(d for d in sessions if d >= project["test_start"])
         execution_start = sessions[sessions.index(first) + 1]
@@ -200,10 +214,9 @@ def research_stage(project, action, *, resume=False):
             date.fromisoformat(project["test_end"]),
         )
         argv = [
-            "replay",
+            action,
             *common,
-            "--run",
-            str(workspace / "training"),
+            *(["--run", str(workspace / "training")] if action == "replay" else []),
             "--market-days",
             str(market / "market.jsonl"),
             "--initial-marks",
@@ -218,7 +231,7 @@ def research_stage(project, action, *, resume=False):
                 )
             ],
             "--output",
-            str(workspace / "replay"),
+            str(workspace / action),
         ]
     else:
         argv = [
@@ -233,8 +246,17 @@ def research_stage(project, action, *, resume=False):
             str(workspace / "report"),
         ]
         if strategy:
-            argv += ["--exposures", str(universe_inputs(project) / "exposures.parquet")]
-    if resume and action in {"train", "replay"}:
+            argv += [
+                "--exposures",
+                str(universe_inputs(project) / "exposures.parquet"),
+                "--baseline-replay",
+                str(workspace / "baseline"),
+                "--bundle",
+                str(workspace / "bundle"),
+                "--study",
+                str(workspace / "study"),
+            ]
+    if resume and action in {"train", "replay", "baseline"}:
         argv.append("--resume")
     return dispatch(parser().parse_args(argv))
 

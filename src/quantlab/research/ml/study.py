@@ -33,6 +33,8 @@ def reserve(path, start, end, specification, *, final_holdout=False):
     research_output(path)
     protocol = json.loads((path / "study.json").read_text())
     start, end = pd.Timestamp(start).date(), pd.Timestamp(end).date()
+    # Hash exactly the JSON representation that will be persisted (tuples become lists).
+    specification = json.loads(json.dumps(specification, allow_nan=False))
     key = fingerprint(specification)
     with exclusive_job(path):
         if final_holdout:
@@ -45,7 +47,8 @@ def reserve(path, start, end, specification, *, final_holdout=False):
                 raise ValueError("final evaluation must stay within the predeclared holdout")
             claim = path / "holdout_claim.json"
             if claim.exists():
-                if json.loads(claim.read_text())["specification_sha256"] != key:
+                saved = json.loads(claim.read_text())
+                if saved["specification"] != specification:
                     raise ValueError("holdout already claimed by another frozen specification")
             else:
                 write_json(claim, {"specification_sha256": key, "specification": specification})

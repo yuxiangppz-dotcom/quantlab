@@ -81,3 +81,8 @@ QUANTLAB_TEST_OPTIONAL_RESEARCH=1 uv run --extra research --extra qlib pytest -q
 
 开发遵守 [AGENTS.md](AGENTS.md)：保护 PIT 与冻结语义，不伪造缺失事实，不提交本地数据或凭据。
 真实数据只读接入、费用/公司行动核验、真实样本对账、WSL 定时任务和前向观察在本地验收。
+
+
+研究方法复核与新对照：见 [Claude 建议核对及方法补强](docs/methodology_review_zh.md)。
+v2 的 `replay` 自动完成同池等权独立账户，`report` 接入试验计数/PSR/DSR及多期限信号诊断。
+小资金全池等权可能大量留现金；必须读取实际仓位，不能把模型与基线差额直接称为纯alpha。

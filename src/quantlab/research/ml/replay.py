@@ -20,7 +20,7 @@ from quantlab.research.ml.corporate import (
     receivable_value,
 )
 from quantlab.research.ml.execution import admit_orders, exposure_report
-from quantlab.research.ml.portfolio import buffered_target
+from quantlab.research.ml.strategies import portfolio_policy
 from quantlab.research.quantity_kernel import ResearchBook, ResearchOrder
 from quantlab.research.quantity_scheduler import (
     ResearchDay,
@@ -50,6 +50,7 @@ def replay_scores(
     corporate_actions=(),
     checkpoint_dir=None,
     binding=None,
+    policy_name="buffered_rank",
 ):
     """market_days includes *every* session, including those without rebalancing.
 
@@ -148,6 +149,7 @@ def replay_scores(
                 day,
                 (i - first) % config.rebalance_sessions == 0,
                 config,
+                policy_name=policy_name,
             )
             state, record, decision = settle_plan(
                 state, plan, evidence, corporate_actions, calendar, calendar[first - 1], config
@@ -174,8 +176,21 @@ def replay_scores(
     return finish()
 
 
-def plan_orders(book, marks, corporate_state, scores, universe, calendar, day, scheduled, config):
+def plan_orders(
+    book,
+    marks,
+    corporate_state,
+    scores,
+    universe,
+    calendar,
+    day,
+    scheduled,
+    config,
+    *,
+    policy_name="buffered_rank",
+):
     """Pure decision using completed-session information, shared by replay and daily service."""
+    policy = portfolio_policy(policy_name)
     i = calendar.index(day)
     decision_day = calendar[i - 1]
     if book.asof_date != decision_day:
@@ -203,9 +218,12 @@ def plan_orders(book, marks, corporate_state, scores, universe, calendar, day, s
     weights = {k: q * marks[k] / equity for k, q in quantities.items()}
     cross = universe.loc[universe.trade_date.eq(pd.Timestamp(decision_day))].copy()
     daily_scores = scores.loc[scores.trade_date.eq(pd.Timestamp(decision_day))]
-    if "fit_asof" not in daily_scores or (
-        pd.to_datetime(daily_scores.fit_asof).isna().any()
-        or pd.to_datetime(daily_scores.fit_asof).ge(pd.Timestamp(decision_day)).any()
+    if policy.requires_scores and (
+        "fit_asof" not in daily_scores
+        or (
+            pd.to_datetime(daily_scores.fit_asof).isna().any()
+            or pd.to_datetime(daily_scores.fit_asof).ge(pd.Timestamp(decision_day)).any()
+        )
     ):
         raise ValueError("model_fit_cutoff_not_strictly_before_decision")
     cross = cross.merge(
@@ -214,15 +232,9 @@ def plan_orders(book, marks, corporate_state, scores, universe, calendar, day, s
         how="left",
         validate="one_to_one",
     )
-    if scheduled and daily_scores.empty:
+    if policy.requires_scores and scheduled and daily_scores.empty:
         raise ValueError("scheduled_scores_missing")
-    try:
-        if not scheduled:
-            # Risk review remains daily; suppress discretionary ranking changes.
-            cross["score"] = float("nan")
-        decision = buffered_target(decision_day, cross, weights, ages, config)
-    except ValueError as exc:
-        raise ValueError(str(exc)) from exc
+    decision = policy.decide(decision_day, cross, weights, ages, config, scheduled=scheduled)
     desired = {p.instrument_id: p.target_weight for p in decision.target.positions}
     orders = []
     for code in sorted(quantities.keys() | desired.keys()):
@@ -263,6 +275,7 @@ def plan_orders(book, marks, corporate_state, scores, universe, calendar, day, s
         "pretrade_deferred": deferred,
         "execution_policy": "prior_close_admission_no_same_auction_sale_credit",
         "target_weights": desired,
+        "portfolio_policy": policy.name,
     }
 
 

@@ -85,6 +85,12 @@ def stress(project, *, resume=False):
         ]
         if resume:
             argv += ["--resume"]
+        baseline_argv = list(argv)
+        baseline_argv[0] = "baseline"
+        run_index = baseline_argv.index("--run")
+        del baseline_argv[run_index : run_index + 2]
+        baseline_argv[baseline_argv.index("--output") + 1] = str(folder / "baseline")
+        dispatch(parser().parse_args(baseline_argv))
         dispatch(parser().parse_args(argv))
         report_path = folder / "report"
         if report_path.exists():
@@ -102,6 +108,8 @@ def stress(project, *, resume=False):
                         str(root / "training"),
                         "--exposures",
                         str(universe_inputs(project) / "exposures.parquet"),
+                        "--baseline-replay",
+                        str(folder / "baseline"),
                         "--output",
                         str(report_path),
                     ]
@@ -208,6 +216,21 @@ def release_model(project, identifier):
     failures = assess_reports(
         reports, model["kind"], strategy, sessions[sessions.index(first) + 1], project["test_end"]
     )
+    from quantlab.research.ml.selection import trial_inventory
+
+    inventory, _ = trial_inventory(root / "study")
+    selection = reports[0][1].get("selection_diagnostics")
+    if not selection or selection["inventory"]["trial_files"] != inventory["trial_files"]:
+        failures.append("missing/stale cumulative trial diagnostics; rebuild research report")
+    for name, report in reports:
+        baseline = (
+            report.get("same_pool_baseline", {}).get("scenarios", {})
+            if report.get("same_pool_baseline")
+            else {}
+        )
+        expected = [f"{model['kind']}-{n * 100}fen" for n in strategy["capital_scenarios_cny"]]
+        if any(baseline.get(key, {}).get("status") != "compared" for key in expected):
+            failures.append(f"{name}:complete same-pool account comparison absent")
     if failures:
         return {"status": "blocked", "reason": "; ".join(failures), "model_id": identifier}
     payload = {
@@ -222,6 +245,9 @@ def release_model(project, identifier):
         "performance_certified": False,
         "research_protocol": json.loads((root / "study/study.json").read_text()),
         "matched_trials": matching,
+        "cumulative_trial_inventory": inventory,
+        "selection_diagnostics": selection,
+        "multiple_testing_adjustment_certified": False,
     }
     destination = project["registry"] / "releases" / identifier
     with exclusive_job(project["registry"]):

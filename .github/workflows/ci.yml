@@ -40,6 +40,9 @@ jobs:
       - name: Ruff
         run: uv run ruff check .
 
+      - name: Strict types for the numerical statistics contract
+        run: uv run mypy
+
       - name: Diff whitespace check
         shell: bash
         run: |
@@ -74,7 +77,15 @@ jobs:
       - name: Sync locked research runtimes
         run: uv sync --frozen --extra research --extra qlib
 
-      - name: Exercise Qlib and LightGBM adapters
+      - name: Full suite with Qlib, LightGBM and branch coverage
         env:
           QUANTLAB_TEST_OPTIONAL_RESEARCH: "1"
-        run: uv run pytest -q tests/research/test_optional_runtime.py tests/research/test_ml_v2.py tests/research/test_ml_operations.py tests/research/test_ml_reliability.py tests/research/test_ml_service.py tests/pipeline
+        run: uv run pytest -q --cov --cov-report=xml --cov-report=term
+
+      - name: Save coverage evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-branch-coverage
+          path: coverage.xml
+          if-no-files-found: error

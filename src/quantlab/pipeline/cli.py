@@ -23,11 +23,12 @@ def parser():
         "build",
         "train",
         "replay",
+        "baseline",
         "report",
         "stress",
     ):
         child = sub.add_parser(action)
-        if action in {"train", "replay", "stress"}:
+        if action in {"train", "replay", "baseline", "stress"}:
             child.add_argument("--resume", action="store_true")
     sync = sub.add_parser("sync")
     sync.add_argument("--start", type=date.fromisoformat)
@@ -167,7 +168,7 @@ def dispatch(args):
         from quantlab.pipeline.research import stress
 
         return stress(project, resume=args.resume)
-    if args.action in {"train", "replay", "report"}:
+    if args.action in {"train", "replay", "baseline", "report"}:
         return workflow.research_stage(project, args.action, resume=getattr(args, "resume", False))
     if args.action in {"register", "activate"}:
         from quantlab.research.ml import serving

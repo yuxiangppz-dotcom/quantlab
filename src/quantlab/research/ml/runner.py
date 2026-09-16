@@ -91,7 +91,7 @@ def run_training(
                 else:
                     if verify_bundle(bundle) != manifest or code_identity(root) != identity:
                         raise ValueError("input/code/runtime changed before fold")
-                    frame = fold_panel(bundle, fold, names, sessions, config)
+                    frame = fold_panel(bundle, fold, names, sessions, config, label_cutoff=end)
                     if verify_bundle(bundle) != manifest:
                         raise ValueError("input changed while reading fold")
                     # An interrupted work directory is kept for diagnosis, never reused as a model.
@@ -179,8 +179,14 @@ def run_scenarios(
         raise ValueError("capital scenarios must be nonempty and unique")
     if any(type(c) is not int or c <= 0 for c in capitals_fen):
         raise ValueError("capital scenarios must be positive integer fen")
+    if strategy_mode not in {"backtest", "archived_forward_signals", "eligible_equal_weight"}:
+        raise ValueError("unknown scenario strategy mode")
     expected_models = (
-        {"shadow"} if strategy_mode == "archived_forward_signals" else set(config.models)
+        {"shadow"}
+        if strategy_mode == "archived_forward_signals"
+        else {"eligible_equal_weight"}
+        if strategy_mode == "eligible_equal_weight"
+        else set(config.models)
     )
     if scores.empty or set(scores.model) != expected_models:
         raise ValueError("score models differ from the frozen configuration")
@@ -247,6 +253,11 @@ def run_scenarios(
                         corporate_actions=corporate_actions,
                         checkpoint_dir=folder / "sessions",
                         binding=binding,
+                        policy_name=(
+                            "eligible_equal_weight"
+                            if strategy_mode == "eligible_equal_weight"
+                            else "buffered_rank"
+                        ),
                     )
                     schedule = result.schedule
                     ledger, orders, positions = [], [], []
