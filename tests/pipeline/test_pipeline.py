@@ -493,6 +493,66 @@ def test_project_data_train_replay_report_and_account_chain(history, tmp_path, m
     run("train")
     run("replay")
     run("report")
+    # Exercise the real multi-capital/cost orchestration, without a provider or
+    # replacing the quantity ledger. Only source evidence is synthetic here.
+    from quantlab.pipeline import refresh as project_refresh
+    from quantlab.pipeline import research as project_research
+    from quantlab.pipeline.config import load_project
+    from quantlab.research.ml import serving
+    from quantlab.research.ml.io import sha256
+
+    parsed = load_project(path)
+    frame = pd.read_parquet(tmp_path / "context.parquet")
+    exposure_dir = tmp_path / "synthetic_exposures"
+    exposure_dir.mkdir()
+    pd.DataFrame(
+        {
+            "session": frame.trade_date.dt.strftime("%Y-%m-%d"),
+            "instrument_id": frame.instrument_id,
+            "available_at": frame.known_at,
+            "log_size": 20.0,
+        }
+    ).to_parquet(exposure_dir / "exposures.parquet")
+    frozen_market = sha256(tmp_path / "workspace/market/market.jsonl")
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            project_research,
+            "load_strategy",
+            lambda p: {
+                "strategy_sha256": "a" * 64,
+                "capital_scenarios_cny": [50000, 200000],
+                "slippage_bps": [5, 20],
+            },
+        )
+        patch.setattr(workflow, "universe_inputs", lambda p: exposure_dir)
+        stress = project_research.stress(parsed)
+    assert len(stress["scenarios"]) == 2
+    assert sha256(tmp_path / "workspace/market/market.jsonl") == frozen_market
+    for row in stress["scenarios"]:
+        result = json.loads((__import__("pathlib").Path(row["report"]) / "report.json").read_text())
+        assert len(result["scenarios"]) == 2
+        assert all(x["last_session"] == project["test_end"] for x in result["scenarios"])
+
+    parent = serving.register_model(
+        tmp_path / "workspace/training", days[108].strftime("%Y-%m"), "ridge", tmp_path / "registry"
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(project_refresh, "load_strategy", lambda p: {"strategy_sha256": "a" * 64})
+        patch.setattr(
+            project_refresh,
+            "verify_release",
+            lambda *a: {
+                "evidence": {
+                    str(tmp_path / "workspace/training/completed.json"): sha256(
+                        tmp_path / "workspace/training/completed.json"
+                    )
+                }
+            },
+        )
+        candidate = project_refresh.refresh(parsed, days[123].date(), parent["model_id"])
+    assert candidate["status"] == "blocked"  # Constant synthetic factors cannot pass validation IC.
+    assert candidate["model_id"] != parent["model_id"]
+    assert not (tmp_path / "registry/activations").exists()
     summary = run("status")
     assert all(
         summary["stages"][x] == "verified" for x in ("bundle", "training", "replay", "report")

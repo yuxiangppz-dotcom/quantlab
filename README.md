@@ -14,18 +14,26 @@ uv run quantlab ui
 Python >=3.12，推荐 WSL2/Linux。新主线只使用 Qlib 的固定 Alpha158 表达式及保存的
 Ridge/LightGBM 模型，不合并其他完整量化框架。
 
-**完整操作、输入格式和迁移说明：[项目主线手册](docs/project_pipeline_zh.md)。**
+**当前推荐版本是历史中证800主线：[CSI800 操作与验收手册](docs/csi800_project_zh.md)。**
+`project.example.json` 为 v2；旧 v1 项目保持原实验口径。
+中证800按历史生效成分还原，不用今天的800只回填历史；ST不研究、不新买，已有持仓仍记账并尝试退出。
 
 | 任务 | `quantlab pipeline --project 配置文件` 后的命令 |
 |---|---|
 | 检查路径、来源缺项与产物 | `plan` / `status` |
 | TuShare 历史/增量获取，事务恢复 | `sync --execute` |
+| 中证800月度观察资料（不等于历史生效证明） | `sync-index-observations --start 日期 --end 日期 --execute` |
+| 历史股票池/资格、研究协议 | `universe` / `init-study` |
 | Canonical→共享特征及来源契约 | `build` |
 | 研究、真实股数现金回放、基准报告 | `train` / `replay` / `report` |
-| 模型登记与真实时刻启用 | `register` / `activate` |
+| 独立资金/滑点压力测试 | `stress --resume` |
+| 模型登记、模拟准入、真实时刻启用 | `register` / `release` / `activate` |
+| 同协议候选更新（不自动启用） | `refresh --as-of 日期 --parent-model-id ID` |
 | 一次性空仓模拟账户初始化 | `init-account --as-of 日期` |
 | 每日获取→特征→市场适配→账户决策 | `daily --as-of 日期 --sync --execute` |
 | 持续账户状态与暂停 | `account-state` / `account-state --set paused` |
+| 数据/账户健康、成熟信号监控 | `health` / `monitor --as-of 日期` |
+| 隔离备份、自检、数据修订影响 | `backup` / `verify-backup` / `revision-plan` |
 
 本地完成来源核验后使用 project.local.json；示例配置本身不表示数据齐全。
 [本地 Codex 任务](docs/ml_v2_local_completion_prompt_zh.md) 列出真实证据、部署与验收工作。

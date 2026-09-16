@@ -36,7 +36,18 @@ def keyed(frame, sessions):
 def validate_features(frame, names, sessions, config: MLConfig, *, allow_late=False):
     if not names or len(set(names)) != len(names):
         raise ValueError("feature allowlist must be nonempty and unique")
-    reserved = {*KEYS, "eligible", "industry", "feature_available_at", "score"}
+    reserved = {
+        *KEYS,
+        "eligible",
+        "industry",
+        "feature_available_at",
+        "score",
+        "can_open",
+        "must_exit",
+        "soft_exit",
+        "eligibility_reason",
+        "universe_policy_sha256",
+    }
     if any(
         n in reserved or any(k in n.lower() for k in ("future", "label", "target")) for n in names
     ):

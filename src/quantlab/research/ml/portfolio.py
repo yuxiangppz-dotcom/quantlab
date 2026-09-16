@@ -35,6 +35,14 @@ def buffered_target(as_of: date, cross, current, ages, config: MLConfig):
         raise ValueError("duplicate decision instrument")
     if not cross.eligible.map(lambda x: pd.isna(x) or isinstance(x, (bool, np.bool_))).all():
         raise ValueError("eligibility must be boolean or unknown")
+    modern = any(k in cross for k in ("can_open", "must_exit", "soft_exit"))
+    if modern:
+        for column in ("can_open", "must_exit", "soft_exit"):
+            if (
+                column not in cross
+                or not cross[column].map(lambda x: isinstance(x, (bool, np.bool_))).all()
+            ):
+                raise ValueError(f"explicit universe state required:{column}")
     if (
         any(not math.isfinite(w) or w < 0 for w in current.values())
         or sum(current.values()) > 1.000001
@@ -64,7 +72,7 @@ def buffered_target(as_of: date, cross, current, ages, config: MLConfig):
     base = {
         k: (config.max_weight if v > config.max_weight + tolerance else v)
         for k, v in current.items()
-        if bool(lookup.at[k, "eligible"])
+        if (not bool(lookup.at[k, "must_exit"]) if modern else bool(lookup.at[k, "eligible"]))
     }
     for group in {industry(k) for k in base}:
         keys = [k for k in base if industry(k) == group]
@@ -86,9 +94,13 @@ def buffered_target(as_of: date, cross, current, ages, config: MLConfig):
         (
             k
             for k in base
-            if ranks.get(k, 0) > config.exit_rank and ages[k] >= config.min_hold_sessions
+            if (
+                ranks.get(k, 0) > config.exit_rank
+                or (modern and bool(lookup.at[k, "soft_exit"]) and eligible.any())
+            )
+            and ages[k] >= config.min_hold_sessions
         ),
-        key=lambda k: (-ranks[k], k),
+        key=lambda k: (-ranks.get(k, len(cross) + 1), k),
     )[: config.max_replacements]
     for k in exits:
         del desired[k]
@@ -100,6 +112,8 @@ def buffered_target(as_of: date, cross, current, ages, config: MLConfig):
         if slots == 0:
             break
         if code in desired:
+            continue
+        if modern and (not bool(lookup.at[code, "can_open"]) or bool(lookup.at[code, "must_exit"])):
             continue
         group = industry(code)
         room = config.max_industry_weight - sum(

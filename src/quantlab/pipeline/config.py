@@ -35,14 +35,22 @@ def load_project(path):
         "capital_cny",
         "provider_interval",
     }
-    if set(value) != required or value["schema"] != "quantlab_project_v1":
+    version2 = value.get("schema") == "quantlab_project_v2"
+    if version2:
+        required.add("strategy")
+    if set(value) != required or value["schema"] not in {
+        "quantlab_project_v1",
+        "quantlab_project_v2",
+    }:
         raise ValueError("unexpected project configuration fields/schema")
-    for name in PATHS:
+    for name in (*PATHS, *(("strategy",) if version2 else ())):
         if not isinstance(value[name], str) or not value[name].strip():
             raise ValueError(f"missing project path:{name}")
         value[name] = (path.parent / value[name]).resolve()
     if not value["indices"] or value["benchmark"] not in value["indices"]:
         raise ValueError("benchmark must be included in downloaded indices")
+    if version2 and value["benchmark"] != "000906.SH":
+        raise ValueError("CSI800 strategy requires the CSI800 benchmark 000906.SH")
     if type(value["capital_cny"]) is not int or value["capital_cny"] <= 0:
         raise ValueError("capital_cny must be a positive integer")
     bounds = [date.fromisoformat(value[k]) for k in ("start", "test_start", "test_end", "end")]

@@ -57,7 +57,18 @@ def close_market_open(bar, records):
     return True if bar is not None else None
 
 
-def market_day(storage, receipts, sessions, day, instruments, policy, corporate_path, *, hour):
+def market_day(
+    storage,
+    receipts,
+    sessions,
+    day,
+    instruments,
+    policy,
+    corporate_path,
+    *,
+    hour,
+    sparse_scope=False,
+):
     verify_session(storage, receipts, day)
     read_corporate_actions(corporate_path, day, day)
     i = sessions.index(day)
@@ -77,6 +88,11 @@ def market_day(storage, receipts, sessions, day, instruments, policy, corporate_
     cutoff = pd.Timestamp(day).tz_localize("Asia/Shanghai") + pd.Timedelta(hours=hour)
     contexts, marks = [], []
     for code in sorted(instruments):
+        if sparse_scope and code not in bars and code not in limits and code not in suspensions:
+            # Historical context also contains long-removed securities. Do not
+            # fabricate their daily contexts. If a replay actually holds/orders
+            # this name, the quantity scheduler still rejects missing evidence.
+            continue
         policies = [
             p
             for p in policy["policies"]
@@ -133,11 +149,63 @@ def market_day(storage, receipts, sessions, day, instruments, policy, corporate_
         if any(m["instrument_id"] == mark["instrument_id"] for m in marks):
             raise ValueError("valuation override conflicts with observed bar")
         marks.append({k: mark[k] for k in ("instrument_id", "session", "price_fen")})
+    valuation_log = []
+    stale = policy.get("stale_valuation")
+    if stale:
+        max_age = stale.get("max_sessions")
+        known = pd.Timestamp(stale["known_at"])
+        if (
+            stale.get("mode") != "last_raw_close_known_halt"
+            or type(max_age) is not int
+            or not 1 <= max_age <= 20
+            or not stale.get("source_id")
+            or known.tzinfo is None
+            or known > cutoff
+        ):
+            raise ValueError("invalid declared stale valuation policy")
+        marked = {m["instrument_id"] for m in marks}
+        for item in contexts:
+            code = item["instrument_id"]
+            if code in marked or item["market_open"] is not False:
+                continue
+            for age in range(1, max_age + 1):
+                prior = sessions[i - age]
+                previous = history[-age].get(code)
+                if previous is None:
+                    records = [
+                        r
+                        for r in storage.load_suspensions_v1_by_date(prior)
+                        if r.instrument_id == code
+                    ]
+                    if close_market_open(None, records) is not False:
+                        break  # An unexplained missing bar cannot be bridged.
+                    continue
+                events = read_corporate_actions(corporate_path, prior, day)
+                if any(e.instrument_id == code and prior < e.ex_date <= day for e in events):
+                    break  # Carrying a pre-action raw mark would double-count entitlement.
+                marks.append(
+                    {
+                        "instrument_id": code,
+                        "session": str(day),
+                        "price_fen": exact_integer(previous.close, 100),
+                    }
+                )
+                valuation_log.append(
+                    {
+                        "instrument_id": code,
+                        "source_session": str(prior),
+                        "stale_sessions": age,
+                        "policy_source": stale["source_id"],
+                        "tradable_price_created": False,
+                    }
+                )
+                break
     payload = {
         "session": str(day),
         "contexts": contexts,
         "marks": marks,
         "corporate_processing_complete": True,
+        "valuation_provenance": valuation_log,
     }
     decode_market_day(payload)  # Run the kernel's type/rate/date validations now.
     return payload

@@ -1,5 +1,6 @@
 """Default ML workbench: read verified artifacts; never launch training or orders."""
 
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -24,6 +25,19 @@ def render_ml_workbench(root: Path):
             for p in (root / "data/experiments").glob(pattern)
         }
     )
+    configured = os.environ.get("QUANTLAB_PROJECT")
+    if configured:
+        from quantlab.pipeline.config import load_project
+
+        try:
+            project = load_project(Path(configured))
+            st.caption(f"当前项目：{Path(configured).resolve()}；基准：{project['benchmark']}")
+            services = (
+                [project["account"]] if (project["account"] / "service.json").exists() else []
+            )
+        except (ValueError, OSError) as exc:
+            st.error(f"项目配置不可用：{public_error(exc)}")
+            return
     if not services:
         st.info("尚未初始化每日模拟账户。先按 docs/project_pipeline_zh.md 接入本地数据并完成验收。")
         st.code(
@@ -33,7 +47,7 @@ def render_ml_workbench(root: Path):
         )
         st.write("本地交接任务：docs/ml_v2_local_completion_prompt_zh.md")
         return
-    selected = st.selectbox("模拟账户", services, format_func=lambda p: str(p.relative_to(root)))
+    selected = st.selectbox("模拟账户", services, format_func=str)
     try:
         status = inspect_service(selected)
         frames = account_frames(selected)

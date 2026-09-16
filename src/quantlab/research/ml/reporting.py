@@ -137,11 +137,28 @@ def build_report(replay, benchmark_path, output, *, training=None, exposures_pat
         chosen = frame.loc[frame.session.isin(common)].sort_values("session")
         aligned = chosen.merge(benchmark, on="session", how="left", validate="one_to_one")
         metrics = comparison_metrics(aligned.daily_return, aligned.benchmark_return)
+        gross_budget = (
+            json.loads(intent.read_text())
+            .get("inputs", {})
+            .get("config", {})
+            .get("gross_exposure", 1)
+            if intent.exists()
+            else 1
+        )
+        cash_reference = comparison_metrics(
+            aligned.daily_return, gross_budget * aligned.benchmark_return
+        )
         previous = aligned.equity_fen / (1 + aligned.daily_return)
         costs = (aligned.fees_fen + aligned.slippage_fen) / previous
         row = {
             "scenario": name,
             **metrics,
+            "cash_budget_relative_wealth_return": cash_reference["relative_wealth_return"],
+            "cash_budget_reference": {
+                "risky_fraction": gross_budget,
+                "cash_return": 0,
+                "daily_rebalanced_cost_free_diagnostic": True,
+            },
             "first_session": aligned.session.iloc[0],
             "last_session": aligned.session.iloc[-1],
             "excluded_sessions": len(frame) - len(chosen),
@@ -151,15 +168,39 @@ def build_report(replay, benchmark_path, output, *, training=None, exposures_pat
             "same_fills_cost_addback_return": float(np.prod(1 + aligned.daily_return + costs) - 1),
             "cost_addback_is_not_a_frictionless_strategy": True,
             "risk_breach_days": int(aligned.risk_breaches.gt(0).sum()),
+            "mean_gross_exposure": float(aligned.gross_exposure.mean())
+            if "gross_exposure" in aligned
+            else None,
         }
         rows.append(row)
         write_frame(output / f"{name}-daily.parquet", aligned)
         if exposures is not None:
             positions = pd.read_parquet(replay / name / "positions.parquet")
+            style = portfolio_style(positions, frame, exposures, decision_hour=decision_hour)
+            coverage_columns = [c for c in style if c.endswith("_covered_nav_weight")]
+            gross = (
+                frame.set_index("session").gross_exposure
+                if "gross_exposure" in frame
+                else pd.Series(dtype=float)
+            )
+            row["style_unknown_days"] = (
+                sum(
+                    any(float(r[c]) + 1e-6 < gross.get(r["session"], 1) for c in coverage_columns)
+                    for r in style.to_dict("records")
+                )
+                if coverage_columns
+                else len(frame)
+            )
             write_frame(
                 output / f"{name}-style.parquet",
-                portfolio_style(positions, frame, exposures, decision_hour=decision_hour),
+                style,
             )
+        yearly = []
+        for year, part in aligned.groupby(pd.to_datetime(aligned.session).dt.year):
+            yearly.append(
+                {"year": int(year), **comparison_metrics(part.daily_return, part.benchmark_return)}
+            )
+        write_json(output / f"{name}-yearly.json", yearly)
     ic = {}
     if training:
         verify_completed(training)

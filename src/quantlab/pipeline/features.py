@@ -90,7 +90,18 @@ def _build_chunk(
     )
     context = read_range(context_path, start, end, max_bytes=config.max_matrix_bytes)
     required = {*KEYS, "eligible", "industry", "known_at", "source_id", "revision_id"}
-    if set(context) != required or context.duplicated(KEYS).any():
+    policy_columns = {
+        "can_open",
+        "must_exit",
+        "soft_exit",
+        "eligibility_reason",
+        "universe_policy_sha256",
+    }
+    modern = bool(set(context) & policy_columns)
+    if (
+        set(context) != required | (policy_columns if modern else set())
+        or context.duplicated(KEYS).any()
+    ):
         raise ValueError("PIT context requires unique keys and exact documented columns")
     context["trade_date"] = pd.to_datetime(context.trade_date)
     context = context.loc[context.trade_date.between(pd.Timestamp(start), pd.Timestamp(end))].copy()
@@ -138,7 +149,7 @@ def _build_chunk(
             if bar.instrument_id in price_universe:
                 rows.append({**asdict(bar), "adj_factor": factors.get(bar.instrument_id)})
     raw = pd.DataFrame(rows)
-    if raw.empty or not universe.issubset(set(raw.instrument_id)):
+    if raw.empty or (not modern and not universe.issubset(set(raw.instrument_id))):
         raise ValueError("context instrument has no source history")
     raw["trade_date"] = pd.to_datetime(raw.trade_date)
     prices = raw[[*KEYS]].copy()
@@ -209,6 +220,11 @@ def _build_chunk(
                 "adjustment": "OHLC*factor; volume/factor; no price fill",
                 "identity_policy": "dated_code_lifecycles_v1_no_cross_code_stitching",
             }
+            if modern:
+                policies = context.universe_policy_sha256.unique()
+                if len(policies) != 1:
+                    raise ValueError("ambiguous universe policy")
+                feature_contract["universe_policy_sha256"] = policies[0]
             # Check sources again before publishing any ready bundle.
             for path, digest in bindings.items():
                 if sha256(path) != digest:
@@ -217,9 +233,16 @@ def _build_chunk(
                 verify_session(storage, receipts, day)
             stage = Path(scratch) / "bundle"
             stage.mkdir()
-            features[[*KEYS, "eligible", "industry", "feature_available_at", *names]].to_parquet(
-                stage / "features.parquet", index=False
-            )
+            features[
+                [
+                    *KEYS,
+                    "eligible",
+                    "industry",
+                    "feature_available_at",
+                    *sorted(policy_columns if modern else []),
+                    *names,
+                ]
+            ].to_parquet(stage / "features.parquet", index=False)
             prices.to_parquet(stage / "prices.parquet", index=False)
             lineage.to_parquet(stage / "pit_lineage.parquet", index=False)
             write_json(stage / "feature_names.json", names)

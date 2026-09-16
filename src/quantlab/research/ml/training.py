@@ -21,6 +21,19 @@ def _training_rows(frame, mask, config):
     return rows
 
 
+def _validation_diagnostics(valid, predictions):
+    rows = valid[["trade_date", "raw_label"]].copy()
+    rows["score"] = predictions
+    daily = []
+    for _, group in rows.groupby("trade_date"):
+        if group.score.nunique() > 1 and group.raw_label.nunique() > 1:
+            daily.append(float(group.score.rank().corr(group.raw_label.rank())))
+    return {
+        "validation_rank_ic": float(np.mean(daily)) if daily else None,
+        "validation_ic_days": len(daily),
+    }
+
+
 def _ridge(train, valid, test, names, config, folder):
     # All fitted statistics come exclusively from purged training observations.
     raw = train[names].to_numpy(dtype="float64")
@@ -58,7 +71,11 @@ def _ridge(train, valid, test, names, config, folder):
             scale=scale,
             coefficient=coefficient,
         )
-    return prediction, {"best_iteration": None, "fitted_features": len(selected)}
+    return prediction, {
+        "best_iteration": None,
+        "fitted_features": len(selected),
+        **_validation_diagnostics(valid, transform(valid) @ coefficient),
+    }
 
 
 def _lightgbm(train, valid, test, names, config, kind, folder):
@@ -123,7 +140,14 @@ def _lightgbm(train, valid, test, names, config, kind, folder):
         reproduced = restored.predict(test[names].to_numpy(dtype="float32"))
         if not np.allclose(prediction, reproduced, rtol=1e-12, atol=1e-12):
             raise ValueError("saved LightGBM model did not reproduce predictions")
-    return prediction, {"best_iteration": model.best_iteration, "parameters": params}
+    validation_prediction = model.predict(
+        valid[names].to_numpy(dtype="float32"), num_iteration=model.best_iteration
+    )
+    return prediction, {
+        "best_iteration": model.best_iteration,
+        "parameters": params,
+        **_validation_diagnostics(valid, validation_prediction),
+    }
 
 
 def walk_forward(frame, names, sessions, start, end, config: MLConfig, output: Path | None = None):

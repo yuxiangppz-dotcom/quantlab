@@ -323,6 +323,8 @@ class TushareProvider(DataProvider):
                 list_status=status,
                 fields=_SECURITY_FIELDS,
             )
+            if len(frame) >= 6000:
+                raise DataValidationError("stock_basic reached response cap; partition the request")
             frames.append(frame)
         merged = pd.concat(frames, ignore_index=True)
         merged = merged.drop_duplicates()
@@ -383,6 +385,8 @@ class TushareProvider(DataProvider):
 
     def get_stock_st_by_date(self, trade_date: date) -> list[StockSTStatus]:
         frame = self._pro.stock_st(trade_date=format_yyyymmdd(trade_date))
+        if len(frame) >= 1000:
+            raise DataValidationError("stock_st reached response cap; partition the request")
         return [stock_st_from_row(row) for row in frame.to_dict("records")]
 
     def get_suspensions_by_date(self, trade_date: date) -> list[SuspensionRecord]:

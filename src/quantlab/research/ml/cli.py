@@ -146,11 +146,19 @@ def execute_replay(args, manifest, config, sessions):
         RawCloseMark(r["instrument_id"], date.fromisoformat(r["session"]), r["price_fen"])
         for r in raw
     )
+    import pyarrow.parquet as pq
+
+    universe_columns = ["trade_date", "instrument_id", "eligible", "industry"]
+    universe_columns += [
+        k
+        for k in ("can_open", "must_exit", "soft_exit")
+        if k in pq.read_schema(args.bundle / "features.parquet").names
+    ]
     universe = read_range(
         args.bundle / "features.parquet",
         sessions[first - 1],
         args.end,
-        columns=["trade_date", "instrument_id", "eligible", "industry"],
+        columns=universe_columns,
         max_bytes=config.max_matrix_bytes,
     )
 

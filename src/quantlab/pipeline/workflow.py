@@ -14,6 +14,7 @@ from quantlab.data.storage import ParquetStorage
 from quantlab.pipeline.features import build_bundle
 from quantlab.pipeline.ingestion import calendar_days, synchronize, verify_session
 from quantlab.pipeline.market import load_policy, market_day
+from quantlab.pipeline.strategy import load_strategy
 from quantlab.research.alpha158_store import exclusive_job
 from quantlab.research.ml import service
 from quantlab.research.ml.artifacts import complete, verify_completed
@@ -32,8 +33,17 @@ def prepare_market(project, bundle, output, start, end):
     policy = load_policy(project["execution_policy"])
     storage = ParquetStorage(project["canonical"])
     sessions = [date.fromisoformat(d) for d in json.loads((bundle / "calendar.json").read_text())]
-    features = pd.read_parquet(bundle / "features.parquet", columns=["instrument_id"])
+    features = pd.read_parquet(bundle / "features.parquet", columns=["trade_date", "instrument_id"])
+    modern = load_strategy(project) is not None
     universe = set(features.instrument_id)
+    by_day = (
+        {
+            pd.Timestamp(day).date(): set(group.instrument_id)
+            for day, group in features.groupby("trade_date")
+        }
+        if modern
+        else {}
+    )
     days = [d for d in sessions if start <= d <= end]
     config = load_config(project["ml_config"])
     if not days or sessions.index(days[0]) == 0:
@@ -61,10 +71,11 @@ def prepare_market(project, bundle, output, start, end):
                         project["receipts"],
                         sessions,
                         day,
-                        universe,
+                        by_day.get(day, set()) if modern else universe,
                         policy,
                         project["corporate_actions"],
                         hour=config.decision_hour,
+                        sparse_scope=modern,
                     )
                     stream.write(json.dumps(payload) + "\n")
             first = market_day(
@@ -72,10 +83,11 @@ def prepare_market(project, bundle, output, start, end):
                 project["receipts"],
                 sessions,
                 initial,
-                universe,
+                by_day.get(initial, set()) if modern else universe,
                 policy,
                 project["corporate_actions"],
                 hour=config.decision_hour,
+                sparse_scope=modern,
             )
             write_json(stage / "initial_marks.json", first["marks"])
             benchmarks = []
@@ -113,10 +125,13 @@ def build(project, *, start=None, end=None, output=None, forward=False):
     end = end or date.fromisoformat(project["end"])
     output = output or project["workspace"] / "bundle"
     config = load_config(project["ml_config"])
+    context = project["context"]
+    if load_strategy(project):
+        context = universe_inputs(project, start, end) / "context.parquet"
     return build_bundle(
         ParquetStorage(project["canonical"]),
         project["receipts"],
-        project["context"],
+        context,
         project["availability"],
         output,
         start,
@@ -127,10 +142,29 @@ def build(project, *, start=None, end=None, output=None, forward=False):
     )
 
 
+def universe_inputs(project, start=None, end=None):
+    from quantlab.pipeline.universe import compile_universe
+
+    start = start or date.fromisoformat(project["start"])
+    end = end or date.fromisoformat(project["end"])
+    return compile_universe(
+        ParquetStorage(project["canonical"]),
+        project["receipts"],
+        project["availability"],
+        load_strategy(project),
+        project["workspace"] / "universe" / f"{start}_{end}",
+        start,
+        end,
+        hour=load_config(project["ml_config"]).decision_hour,
+        code_changes_path=ROOT / "config/security_code_changes.csv",
+    )
+
+
 def research_stage(project, action, *, resume=False):
     from quantlab.research.ml.cli import dispatch, parser
 
     workspace = project["workspace"]
+    strategy = load_strategy(project)
     common = [
         "--bundle",
         str(workspace / "bundle"),
@@ -144,6 +178,15 @@ def research_stage(project, action, *, resume=False):
     ]
     if action == "train":
         argv = ["train", *common, "--output", str(workspace / "training")]
+        if strategy:
+            binding = json.loads((workspace / "study/strategy.json").read_text())
+            if binding["sha256"] != strategy["strategy_sha256"]:
+                raise ValueError(
+                    "strategy changed after study registration; start a new declared study"
+                )
+            argv += ["--study", str(workspace / "study")]
+            if strategy["study"]["phase"] == "final_holdout":
+                argv += ["--final-holdout"]
     elif action == "replay":
         sessions = json.loads((workspace / "bundle/calendar.json").read_text())
         first = next(d for d in sessions if d >= project["test_start"])
@@ -168,7 +211,12 @@ def research_stage(project, action, *, resume=False):
             "--corporate-actions",
             str(market / "corporate_actions.json"),
             "--capital-cny",
-            str(project["capital_cny"]),
+            *[
+                str(n)
+                for n in (
+                    strategy["capital_scenarios_cny"] if strategy else [project["capital_cny"]]
+                )
+            ],
             "--output",
             str(workspace / "replay"),
         ]
@@ -184,6 +232,8 @@ def research_stage(project, action, *, resume=False):
             "--output",
             str(workspace / "report"),
         ]
+        if strategy:
+            argv += ["--exposures", str(universe_inputs(project) / "exposures.parquet")]
     if resume and action in {"train", "replay"}:
         argv.append("--resume")
     return dispatch(parser().parse_args(argv))
@@ -210,7 +260,12 @@ def daily_inputs(project, asof):
             sessions = [
                 date.fromisoformat(d) for d in json.loads((bundle / "calendar.json").read_text())
             ]
-            universe = set(pd.read_parquet(bundle / "features.parquet").instrument_id)
+            features = pd.read_parquet(bundle / "features.parquet")
+            universe = set(
+                features.loc[features.can_open, "instrument_id"]
+                if "can_open" in features
+                else features.instrument_id
+            )
             # Held names need marks and execution contexts even after universe removal.
             metadata = service.load_service(project["account"])
             state, _, previous = service.account_head(project["account"], metadata)
@@ -277,7 +332,21 @@ def ingest(project, start, end, *, adopt_existing=False):
 
 def status(project):
     result = {"execution_authority": False, "stages": {}, "missing_evidence": []}
-    for key in ("context", "availability", "execution_policy", "corporate_actions"):
+    strategy = load_strategy(project)
+    if strategy:
+        result["strategy"] = {
+            "index": strategy["index"],
+            "policy_sha256": strategy["policy_sha256"],
+            "phase": strategy["study"]["phase"],
+        }
+        for key in ("membership", "industries", "event_coverage"):
+            if not strategy[key].is_file():
+                result["missing_evidence"].append(key)
+    for key in (() if strategy else ("context",)) + (
+        "availability",
+        "execution_policy",
+        "corporate_actions",
+    ):
         if not project[key].is_file():
             result["missing_evidence"].append(key)
     for stage in ("bundle", "training", "market", "replay", "report", "account"):

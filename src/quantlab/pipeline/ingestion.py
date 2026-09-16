@@ -41,6 +41,11 @@ def verify_session(storage, receipts, day):
     for name, file in files.items():
         if not file.is_file() or sha256(file) != receipt["files"][name]:
             raise ValueError(f"canonical partition changed:{day}:{name}")
+    if receipt.get("context_validation") != "scoped_below_provider_cap_v1":
+        from quantlab.data.sync import _validate_context_rows
+
+        _validate_context_rows(storage.load_stock_st_v1_by_date(day), day, "stock_st", 1000)
+        _validate_context_rows(storage.load_suspensions_v1_by_date(day), day, "suspend_d", 5000)
     metadata = Path(receipts) / "metadata" / f"{receipt['metadata_sha256']}.json"
     if sha256(metadata) != receipt["metadata_sha256"]:
         raise ValueError("metadata snapshot changed")
@@ -129,6 +134,12 @@ def synchronize(provider, storage, receipts, start, end, *, indices, adopt_exist
             marker = receipts / "sessions" / f"{day}.json"
             if marker.exists():
                 verify_session(storage, receipts, day)
+                if not set(indices).issubset(
+                    {r.instrument_id for r in storage.load_index_daily_by_date(day)}
+                ):
+                    raise DataValidationError(
+                        "sealed session lacks requested benchmark; use a new data namespace"
+                    )
                 completed.append(str(day))
                 continue
             pending = receipts / "pending" / str(day)
@@ -165,8 +176,11 @@ def synchronize(provider, storage, receipts, start, end, *, indices, adopt_exist
                 if files["suspensions"].exists()
                 else provider.get_suspensions_by_date(day)
             )
-            if any(x.trade_date != day for x in [*st, *suspensions]):
-                raise DataValidationError("context response outside requested date")
+            from quantlab.data.sync import _validate_context_rows
+
+            # Adoption is not a way around provider completeness checks either.
+            _validate_context_rows(st, day, "stock_st", 1000)
+            _validate_context_rows(suspensions, day, "suspend_d", 5000)
             # Storage validates limits/context; stage them away from Canonical first.
             from tempfile import TemporaryDirectory
 
@@ -205,6 +219,7 @@ def synchronize(provider, storage, receipts, start, end, *, indices, adopt_exist
                     "raw_responses": dict(records),
                     "adopted_existing": reused,
                     "historical_publication_certified": False,
+                    "context_validation": "scoped_below_provider_cap_v1",
                 }
                 write_json(ready / "receipt.json", receipt)
                 pending.parent.mkdir(parents=True, exist_ok=True)

@@ -49,6 +49,7 @@ def initialize(
     feature_contract_sha256,
     *,
     max_model_age_days=45,
+    release_strategy_sha256=None,
 ):
     research_output(output)
     sessions = calendar_index(calendar)
@@ -81,6 +82,12 @@ def initialize(
         "created_at": serving.now().isoformat(),
         "execution_authority": False,
     }
+    if release_strategy_sha256 is not None:
+        if len(release_strategy_sha256) != 64 or set(release_strategy_sha256) - set(
+            "0123456789abcdef"
+        ):
+            raise ValueError("invalid paper release strategy fingerprint")
+        payload["release_strategy_sha256"] = release_strategy_sha256
     write_json(output / "service.json", payload)
     checkpoint_write(
         output / "initial.json",
@@ -231,6 +238,12 @@ def _plan_decision(
     elif timely:
         try:
             _, model = serving.selected_model(registry, asof, config.decision_hour)
+            if service.get("release_strategy_sha256"):
+                from quantlab.pipeline.research import verify_release
+
+                verify_release(
+                    registry, model["model_id"], service["release_strategy_sha256"], cutoff=cutoff
+                )
             age = (asof - pd.Timestamp(model["fit"]["fit_asof"]).date()).days
             if age > service["max_model_age_days"]:
                 raise ValueError("active model expired; retrain and explicitly activate")
@@ -265,10 +278,15 @@ def _plan_decision(
             if prediction["model_id"] != model["model_id"]:
                 raise ValueError("active model changed during daily processing")
             scores = pd.read_parquet(signal / "scores.parquet")
-            universe = pd.read_parquet(
-                inputs / "features.parquet",
-                columns=["trade_date", "instrument_id", "eligible", "industry"],
-            )
+            import pyarrow.parquet as pq
+
+            columns = ["trade_date", "instrument_id", "eligible", "industry"]
+            columns += [
+                k
+                for k in ("can_open", "must_exit", "soft_exit")
+                if k in pq.read_schema(inputs / "features.parquet").names
+            ]
+            universe = pd.read_parquet(inputs / "features.parquet", columns=columns)
             plan = plan_orders(
                 state["book"],
                 state["marks"],
@@ -284,6 +302,38 @@ def _plan_decision(
             status = "decision_ready"
         except (ValueError, FileNotFoundError) as exc:
             status = f"decision_blocked:{exc}"
+            # V2 accounts can still reduce known hard risk when a model is
+            # unavailable. This freezes SELL-only orders; it is not a normal
+            # qualified signal, and the scheduler must still report the outage.
+            if service.get("release_strategy_sha256") and state["book"].lots:
+                try:
+                    universe = pd.read_parquet(inputs / "features.parquet")
+                    if not {"can_open", "must_exit", "soft_exit"}.issubset(universe):
+                        raise ValueError("explicit holding eligibility unavailable")
+                    known = pd.to_datetime(universe.feature_available_at, utc=True)
+                    if known.isna().any() or (known > clock).any():
+                        raise ValueError("risk facts unavailable at actual decision time")
+                    empty_scores = pd.DataFrame(
+                        columns=["trade_date", "instrument_id", "score", "fit_asof"]
+                    )
+                    reduction = plan_orders(
+                        state["book"],
+                        state["marks"],
+                        state["corporate_state"],
+                        empty_scores,
+                        universe,
+                        calendar,
+                        calendar[i + 1],
+                        False,
+                        config,
+                    )
+                    if reduction["orders"]:
+                        if any(order.side != "sell" for order in reduction["orders"]):
+                            raise ValueError("risk-only plan attempted new exposure")
+                        plan, industries = reduction, reduction["industries"]
+                        status += ";risk_reduction_only"
+                except (ValueError, FileNotFoundError) as risk_error:
+                    status += f";risk_decision_blocked:{risk_error}"
     return plan, status, prediction, industries
 
 
@@ -525,6 +575,8 @@ def decision_status(root, asof, status):
         "asof": str(asof),
         "status": status,
         "forward_decision": status == "decision_ready" and receipt["forward_eligible"],
+        "forward_risk_reduction": status.endswith(";risk_reduction_only")
+        and receipt["forward_eligible"],
         "published_at": receipt["published_at"],
         "decision_attempts": len(list((root / "decisions" / str(asof)).glob("*"))),
         "execution_authority": False,
