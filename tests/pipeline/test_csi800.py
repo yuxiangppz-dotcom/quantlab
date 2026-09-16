@@ -559,3 +559,39 @@ def test_backup_detects_tampering_and_refuses_recursive_destination(tmp_path):
     (tmp_path / "backup/account/fixture.txt").write_text("tampered")
     with pytest.raises(ValueError):
         verify_backup(tmp_path / "backup")
+
+
+def test_backup_records_uninitialized_account_without_forcing_one(tmp_path):
+    """Research-product backups must not require a paper account to exist."""
+    from quantlab.pipeline.config import PATHS
+    from quantlab.pipeline.operations import backup, verify_backup
+
+    project = json.loads((ROOT / "config/project.example.json").read_text())
+    project.pop("strategy")
+    project["schema"] = "quantlab_project_v1"
+    roots = {"canonical", "raw", "receipts", "workspace", "account", "registry"}
+    for key in PATHS:
+        project[key] = key
+        path = tmp_path / key
+        if key in roots - {"account", "registry"}:
+            path.mkdir()
+            (path / "fixture.txt").write_text("synthetic recovery snapshot")
+        elif key in ("account", "registry"):
+            continue  # intentionally never initialized
+        else:
+            path.write_text("synthetic fixture")
+    source = tmp_path / "project.json"
+    source.write_text(json.dumps(project))
+    assert not (tmp_path / "account").exists()
+    result = backup(source, tmp_path / "backup")
+    assert result["status"] == "complete"
+    assert sorted(result["not_initialized_roots"]) == ["account", "registry"]
+    assert not (tmp_path / "account").exists()
+    recheck = verify_backup(tmp_path / "backup")
+    assert recheck["not_initialized_roots"] == ["account", "registry"]
+
+    # A missing non-optional root still blocks the snapshot.
+    project["workspace"] = "absent_workspace"
+    source.write_text(json.dumps(project))
+    with pytest.raises(ValueError, match="missing"):
+        backup(source, tmp_path / "backup2")
