@@ -357,7 +357,8 @@ def execution_policy_document(
                         "effective_from": era_start.isoformat(),
                         "effective_through": era_end.isoformat(),
                         **{k: v for k, v in rules.items() if k != "source"},
-                        "evidence": rules["source"],
+                        # scenario_id already encodes the rule source; extra keys
+                        # would break the typed kernel decode.
                     },
                     "fees": {
                         "scenario_id": "declared_retail_wan2p5_min5_v1",
@@ -370,11 +371,6 @@ def execution_policy_document(
                         "additional_fee_rate": era.additional_fee_rate,
                         "additional_fee_fixed_fen": None,
                         "adverse_slippage_rate": "0",
-                        "evidence": (
-                            "commission is a declared all-in retail scenario; "
-                            f"transfer fee {era.additional_fee_rate} and sell stamp "
-                            f"{era.sell_stamp_rate} are regulation-sourced rates"
-                        ),
                     },
                 }
             )

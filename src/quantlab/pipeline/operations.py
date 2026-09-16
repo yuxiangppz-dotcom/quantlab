@@ -71,13 +71,20 @@ def backup(project_path, destination):
         raise ValueError("backup destination must be disjoint from every source")
     if destination.exists():
         raise FileExistsError("backup destination already exists")
+    # Research-product backups must not force a paper account into existence:
+    # an uninitialized account/registry is recorded instead of copied.
+    optional = {"account", "registry"}
+    not_initialized = sorted(key for key in optional if not roots[key].exists())
+    for key in not_initialized:
+        del roots[key]
     missing = [key for key, path in roots.items() if not path.exists()]
     if missing:
         raise ValueError(f"backup sources missing:{missing}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     with ExitStack() as stack:
         for key in ("account", "registry", "receipts"):
-            stack.enter_context(exclusive_job(roots[key]))
+            if key in roots:
+                stack.enter_context(exclusive_job(roots[key]))
         temp = Path(stack.enter_context(TemporaryDirectory(dir=destination.parent)))
         stage = temp / "backup"
         stage.mkdir()
@@ -113,6 +120,7 @@ def backup(project_path, destination):
                 "schema": "quantlab_recovery_snapshot_v1",
                 "created_at": datetime.now(UTC).isoformat(),
                 "sources": sources,
+                "not_initialized_roots": not_initialized,
                 "restore_policy": "isolated_restore_then_verify_original_absolute_bindings",
             },
         )
@@ -133,6 +141,7 @@ def verify_backup(path):
         "status": "complete",
         "path": str(path),
         "files": len(manifest["sources"]),
+        "not_initialized_roots": manifest.get("not_initialized_roots", []),
         "restore_drill_completed": False,
     }
 
