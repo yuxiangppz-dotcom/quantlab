@@ -64,6 +64,17 @@ def parser():
             child.add_argument(
                 "--capital-cny", type=int, nargs="+", default=[50000, 200000, 1000000]
             )
+            if command == "baseline":
+                child.add_argument(
+                    "--strategy",
+                    choices=["equal_weight", "momentum_20d"],
+                    default="equal_weight",
+                    help=(
+                        "equal_weight: full entry-eligible pool baseline; "
+                        "momentum_20d: same-holdings transparent factor baseline "
+                        "under the model's exact portfolio rules"
+                    ),
+                )
     register = sub.add_parser(
         "register", help="Register one completed fold/model as a research artifact"
     )
@@ -168,16 +179,28 @@ def execute_replay(args, manifest, config, sessions):
         max_bytes=config.max_matrix_bytes,
     )
 
+    strategy_mode = (
+        "archived_forward_signals"
+        if args.action == "shadow"
+        else "backtest"
+    )
     if args.action == "baseline":
-        from dataclasses import replace
+        if args.strategy == "momentum_20d":
+            from quantlab.research.ml.baselines import momentum_20d_scores
 
-        capacity = max(config.max_positions, universe.instrument_id.nunique())
-        config = replace(
-            config, max_positions=capacity, entry_rank=capacity, exit_rank=capacity + 1
-        )
-        scores = universe[["trade_date", "instrument_id"]].assign(
-            score=float("nan"), model="eligible_equal_weight"
-        )
+            scores = momentum_20d_scores(args.bundle, sessions)
+            strategy_mode = "simple_factor"
+        else:
+            from dataclasses import replace
+
+            capacity = max(config.max_positions, universe.instrument_id.nunique())
+            config = replace(
+                config, max_positions=capacity, entry_rank=capacity, exit_rank=capacity + 1
+            )
+            scores = universe[["trade_date", "instrument_id"]].assign(
+                score=float("nan"), model="eligible_equal_weight"
+            )
+            strategy_mode = "eligible_equal_weight"
 
     def final_check():
         if (
@@ -210,13 +233,7 @@ def execute_replay(args, manifest, config, sessions):
         resume=args.resume,
         binding_extra={"code": identity, "inputs": hashes, **signal_binding},
         final_check=final_check,
-        strategy_mode=(
-            "archived_forward_signals"
-            if args.action == "shadow"
-            else "eligible_equal_weight"
-            if args.action == "baseline"
-            else "backtest"
-        ),
+        strategy_mode=strategy_mode,
     )
 
 

@@ -1,10 +1,40 @@
 """Compare independent accounts on the exact same calendar and capital."""
 
 import json
+from pathlib import Path
 
 import pandas as pd
 
 from quantlab.research.ml.artifacts import verify_completed
+
+
+def momentum_20d_scores(bundle, sessions):
+    """Transparent same-holdings factor baseline scores: 20-session momentum.
+
+    The score is adjusted_close(t) / adjusted_close(t-20) - 1 computed from the
+    sealed bundle prices; the specification is frozen code with no fitting, so
+    ``fit_asof`` conservatively records the prior session (prices themselves
+    are lineage-gated to the decision cutoff by the bundle).
+    """
+    prices = pd.read_parquet(
+        Path(bundle) / "prices.parquet",
+        columns=["trade_date", "instrument_id", "adj_close"],
+    )
+    prices["trade_date"] = pd.to_datetime(prices["trade_date"])
+    prices = prices.sort_values(["instrument_id", "trade_date"], kind="mergesort")
+    momentum = prices.groupby("instrument_id", sort=False)["adj_close"].transform(
+        lambda s: s / s.shift(20) - 1
+    )
+    index = pd.DatetimeIndex(sessions)
+    position = index.get_indexer(prices["trade_date"])
+    if (position < 0).any():
+        raise ValueError("bundle price session outside the sealed calendar")
+    fit_asof = [index[max(i - 1, 0)] for i in position]
+    scores = prices[["trade_date", "instrument_id"]].copy()
+    scores["score"] = momentum.to_numpy()
+    scores["model"] = "momentum_20d"
+    scores["fit_asof"] = fit_asof
+    return scores
 
 
 def compare_pool_baseline(replay, baseline):

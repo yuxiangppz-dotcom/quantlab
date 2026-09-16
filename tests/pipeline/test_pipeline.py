@@ -400,6 +400,19 @@ def engine(raw, sessions, securities, contract, scratch, *, code_changes=()):
     )
 
 
+def test_exact_integer_tolerates_vendor_float_noise_only():
+    """TuShare floats carry sub-fen representation noise; real precision stays rejected."""
+    from quantlab.pipeline.market import exact_integer
+
+    assert exact_integer(263907987.00000003, 100) == 26390798700
+    assert exact_integer("10.01", 100) == 1001
+    assert exact_integer(88912589.0, 100) == 8891258900
+    with pytest.raises(ValueError, match="representable"):
+        exact_integer(88912589.123, 100)
+    with pytest.raises(ValueError, match="representable"):
+        exact_integer(-1)
+
+
 def test_shared_bridge_has_exact_contract_and_rejects_late_source(history, tmp_path):
     storage, receipts, days = history
     args = (storage, receipts, tmp_path / "context.parquet", tmp_path / "availability.parquet")

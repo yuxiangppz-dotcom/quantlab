@@ -179,13 +179,20 @@ def run_scenarios(
         raise ValueError("capital scenarios must be nonempty and unique")
     if any(type(c) is not int or c <= 0 for c in capitals_fen):
         raise ValueError("capital scenarios must be positive integer fen")
-    if strategy_mode not in {"backtest", "archived_forward_signals", "eligible_equal_weight"}:
+    if strategy_mode not in {
+        "backtest",
+        "archived_forward_signals",
+        "eligible_equal_weight",
+        "simple_factor",
+    }:
         raise ValueError("unknown scenario strategy mode")
     expected_models = (
         {"shadow"}
         if strategy_mode == "archived_forward_signals"
         else {"eligible_equal_weight"}
         if strategy_mode == "eligible_equal_weight"
+        else {"momentum_20d"}
+        if strategy_mode == "simple_factor"
         else set(config.models)
     )
     if scores.empty or set(scores.model) != expected_models:
@@ -257,8 +264,7 @@ def run_scenarios(
                             "eligible_equal_weight"
                             if strategy_mode == "eligible_equal_weight"
                             else "buffered_rank"
-                        ),
-                    )
+                        ),                    )
                     schedule = result.schedule
                     ledger, orders, positions = [], [], []
                     previous = capital

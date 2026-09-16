@@ -4,19 +4,27 @@ from __future__ import annotations
 
 import json
 from datetime import date
-from decimal import ROUND_FLOOR, Decimal
+from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
 
 import pandas as pd
 
 from quantlab.pipeline.ingestion import verify_session
 from quantlab.research.ml.io import decode_market_day, read_corporate_actions
 
+# Vendor floats carry sub-fen representation noise (e.g. ...987.00000003 CNY).
+# Anything within 0.01 fen of an integral value after scaling is representation
+# error, not information; genuine finer precision stays rejected.
+EXACT_NOISE_TOLERANCE = Decimal("0.01")
+
 
 def exact_integer(value, scale=1):
     number = Decimal(str(value)) * scale
-    if not number.is_finite() or number < 0 or number != number.to_integral_value():
+    if not number.is_finite() or number < 0:
         raise ValueError("market quantity/price is not representable in declared units")
-    return int(number)
+    rounded = number.to_integral_value(rounding=ROUND_HALF_UP)
+    if abs(number - rounded) > EXACT_NOISE_TOLERANCE:
+        raise ValueError("market quantity/price is not representable in declared units")
+    return int(rounded)
 
 
 def close_market_open(bar, records):
