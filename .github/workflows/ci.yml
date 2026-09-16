@@ -77,4 +77,4 @@ jobs:
       - name: Exercise Qlib and LightGBM adapters
         env:
           QUANTLAB_TEST_OPTIONAL_RESEARCH: "1"
-        run: uv run pytest -q tests/research/test_optional_runtime.py
+        run: uv run pytest -q tests/research/test_optional_runtime.py tests/research/test_ml_v2.py

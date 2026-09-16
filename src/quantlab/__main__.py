@@ -285,6 +285,8 @@ def _parser() -> argparse.ArgumentParser:
     research_choice = research.add_mutually_exclusive_group()
     research_choice.add_argument("--alpha", choices=("momentum_20d",))
     research_choice.add_argument("--config", help="Versioned Daily v1 research config.")
+    ml = sub.add_parser("ml", help="Versioned offline ML training and quantity replay (v2).")
+    ml.add_argument("ml_args", nargs=argparse.REMAINDER)
     portfolio = sub.add_parser("portfolio", help="Import an account or build a reference plan.")
     portfolio_sub = portfolio.add_subparsers(dest="portfolio_action", required=True)
     portfolio_demo = portfolio_sub.add_parser("demo", help="Create/reset the 200k demo account.")
@@ -325,6 +327,10 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "ml":
+        from quantlab.research.ml.cli import main as ml_main
+
+        raise SystemExit(ml_main(sys.argv[2:]))
     args = _parser().parse_args()
     if args.command == "doctor":
         code = _doctor(args.json)

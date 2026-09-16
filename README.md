@@ -16,6 +16,27 @@ Data → Research → Alpha → Portfolio → Execution → Feedback
 The objective is long-term risk-adjusted return, with every research and
 trading step reproducible and free of look-ahead bias.
 
+## Recommended daily ML research workflow
+
+New stock-selection experiments should use **ML v2** (`quantlab ml`): an explicit
+next-session-close label, monthly purged training/validation, Ridge and native
+LightGBM baselines, buffered holdings, and the existing share/cash scenario ledger.
+The older Alpha158 rolling and economic scripts remain frozen historical experiments;
+their idealized adjusted-price curves are not executable stock-account results.
+
+- [Architecture, defaults, inputs and commands](docs/ml_daily_v2_zh.md)
+- [Local data admission and completion prompt](docs/ml_v2_local_completion_prompt_zh.md)
+
+```bash
+uv sync --frozen --extra research
+uv run quantlab ml --help
+```
+
+Cloud validation covers synthetic correctness and regression tests. Real-market
+performance, PIT data completeness and historical fillability require local evidence.
+The new workflow does not change Daily v1, forward-shadow strategy registration,
+account state or live trading authority.
+
 ## Current Status
 
 **Data Foundation**
