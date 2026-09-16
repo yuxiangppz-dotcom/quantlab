@@ -162,7 +162,16 @@ def _preflight(book, batch, previous, following, attempted):
         reason = _missing_reason(context, order)
         # Known suspension blocks this order. It does not create a synthetic mark
         # or override corporate processing; those were independently checked above.
-        if reason is not None and reason != "market_open_false":
+        # Prior-20 capacity gaps are order-level blocks, not day stops: a name
+        # resuming after a confirmed halt legitimately lacks twenty tradable
+        # sessions, and rejecting the single order conservatively carries the
+        # position instead of halting the whole account.
+        order_block_reasons = {
+            "market_open_false",
+            "prior20_amount_fen_unknown",
+            "prior20_coverage_incomplete",
+        }
+        if reason is not None and reason not in order_block_reasons:
             return f"{reason}:{order.instrument_id}"
         if reason is None and order.desired_quantity > context.rules.max_order_quantity:
             raise ValueError("desired quantity exceeds single order maximum")
