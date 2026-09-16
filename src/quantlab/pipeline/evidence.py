@@ -325,6 +325,7 @@ def execution_policy_document(
     commission_rate: str = "0.00025",
     minimum_commission_fen: int = 500,
     participation: str = "0.1",
+    stale_valuation: bool = True,
 ) -> dict:
     """Expand dated fee eras over board groups; one policy covers each day.
 
@@ -374,7 +375,7 @@ def execution_policy_document(
                     },
                 }
             )
-    return {
+    document = {
         "schema": EXECUTION_POLICY_SCHEMA,
         "policies": policies,
         "known_limitations": [
@@ -386,6 +387,23 @@ def execution_policy_document(
             "market-impact calibration.",
         ],
     }
+    if stale_valuation:
+        # Declared research valuation convention, frozen with the strategy:
+        # a CONFIRMED full-session halt with no original price may carry the
+        # most recent raw close for at most 20 sessions; every bridged day
+        # requires halt evidence, and no bridge crosses a corporate event.
+        document["stale_valuation"] = {
+            "mode": "last_raw_close_known_halt",
+            "max_sessions": 20,
+            "source_id": "declared_research_valuation_policy_v1",
+            "known_at": f"{date(2018, 1, 1).isoformat()}T00:00:00+08:00",
+        }
+        document["known_limitations"].append(
+            "stale_valuation bridges confirmed halts for at most 20 sessions "
+            "at the last raw close; longer suspensions block the account "
+            "explicitly, and delisting settlements remain unsupported."
+        )
+    return document
 
 
 # ---------------------------------------------------------------------------
