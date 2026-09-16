@@ -159,3 +159,47 @@ def write_frame(path, frame):
         os.replace(pending, path)
     finally:
         pending.unlink(missing_ok=True)
+
+
+def publish_ready(work, output, asof, clock):
+    """Timestamp AFTER atomic payload publication; a missing receipt is never forward."""
+    import pandas as pd
+
+    from quantlab.research.ml.io import sha256
+
+    complete(work)
+    work.rename(output)
+    published = pd.Timestamp(clock())
+    cutoff = pd.Timestamp(asof).tz_localize("Asia/Shanghai") + pd.Timedelta(hours=16)
+    forward = published <= cutoff and published.tz_convert("Asia/Shanghai").date() == asof
+    receipt = {
+        "asof": str(asof),
+        "published_at": published.isoformat(),
+        "completion_sha256": sha256(output / "completed.json"),
+        "forward_eligible": bool(forward),
+    }
+    atomic_json(output / "published.json", receipt)
+    return receipt
+
+
+def verify_publication(folder, asof, *, require_forward=True):
+    import pandas as pd
+
+    from quantlab.research.ml.io import sha256
+
+    verify_completed(folder)
+    path = folder / "published.json"
+    if not path.exists():
+        raise ValueError("publication receipt missing; not a verified forward artifact")
+    receipt = json.loads(path.read_text())
+    cutoff = pd.Timestamp(asof).tz_localize("Asia/Shanghai") + pd.Timedelta(hours=16)
+    stamp = pd.Timestamp(receipt["published_at"])
+    valid = stamp <= cutoff and stamp.tz_convert("Asia/Shanghai").date() == asof
+    if (
+        receipt["asof"] != str(asof)
+        or receipt["completion_sha256"] != sha256(folder / "completed.json")
+        or receipt["forward_eligible"] != bool(valid)
+        or (require_forward and not valid)
+    ):
+        raise ValueError("publication is not a genuinely archived forward artifact")
+    return receipt

@@ -15,7 +15,14 @@ import numpy as np
 import pandas as pd
 
 from quantlab.research.alpha158_store import exclusive_job
-from quantlab.research.ml.artifacts import complete, fingerprint, verify_completed, write_frame
+from quantlab.research.ml.artifacts import (
+    complete,
+    fingerprint,
+    publish_ready,
+    verify_completed,
+    verify_publication,
+    write_frame,
+)
 from quantlab.research.ml.config import MLConfig
 from quantlab.research.ml.data import calendar_index, validate_features
 from quantlab.research.ml.io import research_output, sha256, write_json
@@ -205,16 +212,21 @@ def predict_day(registry, features_path, calendar_path, asof, output, *, code):
         work.mkdir(parents=True)
         write_frame(work / "scores.parquet", scores)
         write_json(work / "prediction.json", manifest)
-        complete(work)
-        work.rename(output)
-    return manifest
+        publication = publish_ready(work, output, asof, now)
+    return {
+        **manifest,
+        **publication,
+        "mode": "forward_shadow"
+        if publication["forward_eligible"]
+        else "late_recomputation_not_forward",
+    }
 
 
 def archived_signals(root, decision_sessions):
     frames, bindings = [], []
     for day in decision_sessions:
         folder = root / str(day)
-        verify_completed(folder)
+        verify_publication(folder, day)
         meta = json.loads((folder / "prediction.json").read_text())
         cutoff = pd.Timestamp(day).tz_localize("Asia/Shanghai") + pd.Timedelta(hours=16)
         if (

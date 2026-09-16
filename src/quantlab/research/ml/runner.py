@@ -64,6 +64,8 @@ def run_training(
     # JSON roundtrip normalizes tuple/list differences in config.
     binding = json.loads(json.dumps(binding))
     with exclusive_job(output):
+        if (output / "invalidated.json").exists():
+            raise ValueError("run invalidated by input/code change; use a new output directory")
         intent_path = output / "intent.json"
         if intent_path.exists():
             intent = json.loads(intent_path.read_text())
@@ -87,12 +89,18 @@ def run_training(
                     ] != fingerprint(binding):
                         raise ValueError("sealed fold belongs to a different run")
                 else:
+                    if verify_bundle(bundle) != manifest or code_identity(root) != identity:
+                        raise ValueError("input/code/runtime changed before fold")
                     frame = fold_panel(bundle, fold, names, sessions, config)
+                    if verify_bundle(bundle) != manifest:
+                        raise ValueError("input changed while reading fold")
                     # An interrupted work directory is kept for diagnosis, never reused as a model.
                     work = output / ".work" / uuid4().hex
                     scores, fits = walk_forward(
                         frame, names, sessions, fold.test_start, fold.test_end, config, work
                     )
+                    if verify_bundle(bundle) != manifest or code_identity(root) != identity:
+                        raise ValueError("input/code/runtime changed during fold")
                     candidate = work / fold.name
                     write_frame(candidate / "scores.parquet", scores)
                     write_json(candidate / "fits.json", fits)
@@ -122,6 +130,12 @@ def run_training(
             complete(output)
             return summary
         except Exception as exc:
+            try:
+                stable = verify_bundle(bundle) == manifest and code_identity(root) == identity
+            except Exception:
+                stable = False
+            if not stable:
+                write_json(output / "invalidated.json", {"reason": "input/code/runtime changed"})
             write_json(
                 output / "failures" / f"{uuid4().hex}.json",
                 {"type": type(exc).__name__, "reason": str(exc)},
