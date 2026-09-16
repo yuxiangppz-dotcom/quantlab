@@ -25,6 +25,7 @@ The older Alpha158 rolling and economic scripts remain frozen historical experim
 their idealized adjusted-price curves are not executable stock-account results.
 
 - [Architecture, defaults, inputs and commands](docs/ml_daily_v2_zh.md)
+- [Implementation scope and running logic](docs/ml_framework_completion_zh.md)
 - [Local data admission and completion prompt](docs/ml_v2_local_completion_prompt_zh.md)
 
 ```bash
@@ -35,7 +36,11 @@ uv run quantlab ml --help
 Cloud validation covers synthetic correctness and regression tests. Real-market
 performance, PIT data completeness and historical fillability require local evidence.
 The new workflow does not change Daily v1, forward-shadow strategy registration,
-account state or live trading authority.
+account state or live trading authority. Its separate ML registry, immutable daily
+predictions and shadow replay are available through the same CLI. Training resumes
+by sealed month; replay resumes by complete account checkpoint. Corporate-event
+scenarios and common-period benchmark reports are included; historical admission
+remains an explicit local verification task.
 
 ## Current Status
 

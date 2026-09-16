@@ -155,6 +155,16 @@ def walk_forward(frame, names, sessions, start, end, config: MLConfig, output: P
             scores.append(part)
             record = {
                 "feature_names": names,
+                "feature_reference": {
+                    name: {
+                        "mean": float(train[name].mean()) if train[name].notna().any() else None,
+                        "std": float(train[name].std(ddof=0))
+                        if train[name].notna().any()
+                        else None,
+                        "missing_fraction": float(train[name].isna().mean()),
+                    }
+                    for name in names
+                },
                 "fold": fold.name,
                 "model": kind,
                 "train_start": str(fold.train_start.date()),

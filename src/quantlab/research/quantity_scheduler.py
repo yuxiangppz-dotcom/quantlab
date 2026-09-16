@@ -195,6 +195,8 @@ def advance_research_day(
     index: int,
     batch: ResearchDay,
     attempted: set[str],
+    *,
+    buy_cash_budget_fen: int | None = None,
 ) -> DayAdvance:
     """Advance one calendar session: preflight, sells-then-buys, marks, record.
 
@@ -207,14 +209,17 @@ def advance_research_day(
     caller's attempted-id set is updated only when the whole day succeeds.
     """
     _calendar(calendar)
+    if buy_cash_budget_fen is not None and (
+        type(buy_cash_budget_fen) is not int or not 0 <= buy_cash_budget_fen <= book.cash_fen
+    ):
+        raise ValueError("buy cash budget must be nonnegative and prefunded")
     if type(index) is not int or not 1 <= index < len(calendar) - 1:
         raise ValueError("day index requires previous and following calendar padding")
     if batch.session != calendar[index]:
         raise ValueError("batch session does not match the calendar index")
     if book.asof_date != calendar[index - 1]:
         raise ValueError(
-            f"book must sit on the previous session {calendar[index - 1]}, "
-            f"got {book.asof_date}"
+            f"book must sit on the previous session {calendar[index - 1]}, got {book.asof_date}"
         )
     local_attempted = set(attempted)
     reason = _preflight(book, batch, calendar[index - 1], calendar[index + 1], local_attempted)
@@ -231,7 +236,21 @@ def advance_research_day(
     contexts = {x.instrument_id: x for x in batch.contexts}
     attempts = []
     for order in (*sells, *buys):
-        transition = simulate_research_order(working, order, contexts[order.instrument_id])
+        # Optional ML close-auction policy: sales cannot enlarge the pre-funded
+        # buy budget. Legacy callers retain their original sequential cash semantics.
+        reserved = 0
+        executable = working
+        if order.side == "buy" and buy_cash_budget_fen is not None:
+            available = min(working.cash_fen, buy_cash_budget_fen)
+            reserved = working.cash_fen - available
+            executable = replace(working, cash_fen=available)
+        transition = simulate_research_order(executable, order, contexts[order.instrument_id])
+        if order.side == "buy" and buy_cash_budget_fen is not None:
+            buy_cash_budget_fen -= transition.simulated_notional_fen + transition.modeled_fee_fen
+            transition = replace(
+                transition,
+                book=replace(transition.book, cash_fen=transition.book.cash_fen + reserved),
+            )
         working = transition.book
         local_attempted.add(order.order_id)
         attempts.append(ScheduledAttempt(order, transition))

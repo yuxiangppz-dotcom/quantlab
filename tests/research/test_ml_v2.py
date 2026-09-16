@@ -668,3 +668,304 @@ def test_corporate_dividend_receivable_prevents_fake_ex_date_loss():
         result.schedule.records[3].book.cash_fen
         == result.schedule.records[0].book.cash_fen + 800000
     )
+
+
+def training_bundle(tmp_path):
+    from quantlab.research.ml.io import seal_bundle, write_json
+
+    days, panel = synthetic_panel()
+    folder = tmp_path / "bundle"
+    folder.mkdir()
+    panel.drop(columns="adj_close").to_parquet(folder / "features.parquet", index=False)
+    panel[["trade_date", "instrument_id", "adj_close"]].to_parquet(
+        folder / "prices.parquet", index=False
+    )
+    write_json(folder / "calendar.json", days.strftime("%Y-%m-%d").tolist())
+    write_json(folder / "feature_names.json", ["f1", "f2"])
+    seal_bundle(folder, provenance={"synthetic": True})
+    config = tmp_path / "config.json"
+    write_json(config, small_config().payload())
+    return days, panel, folder, config
+
+
+def test_monthly_training_resume_reuses_completed_fold(tmp_path, monkeypatch):
+    from quantlab.research.ml import runner
+
+    days, _, bundle, config = training_bundle(tmp_path)
+    monkeypatch.setattr(runner, "code_identity", lambda root: {"synthetic": True})
+    original = runner.walk_forward
+    calls = []
+
+    def interrupted(*args, **kwargs):
+        calls.append(str(args[3]))
+        if len(calls) == 2:
+            raise RuntimeError("synthetic interruption")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(runner, "walk_forward", interrupted)
+    out = tmp_path / "run"
+    with pytest.raises(RuntimeError, match="interruption"):
+        runner.run_training(bundle, config, out, days[60], days[85], root=tmp_path)
+    monkeypatch.setattr(runner, "walk_forward", original)
+    first_fold = next((out / "models").glob("*/completed.json"))
+    before = first_fold.read_bytes()
+    resumed = runner.run_training(
+        bundle, config, out, days[60], days[85], root=tmp_path, resume=True
+    )
+    assert first_fold.read_bytes() == before
+    fresh = runner.run_training(
+        bundle, config, tmp_path / "fresh", days[60], days[85], root=tmp_path
+    )
+    assert resumed == fresh
+    pd.testing.assert_frame_equal(
+        pd.read_parquet(out / "scores.parquet"),
+        pd.read_parquet(tmp_path / "fresh" / "scores.parquet"),
+    )
+
+
+def test_registered_daily_prediction_matches_backtest_without_labels(tmp_path, monkeypatch):
+    import json
+
+    from quantlab.research.ml import runner, serving
+    from quantlab.research.ml.artifacts import verify_completed
+
+    days, panel, bundle, config = training_bundle(tmp_path)
+    monkeypatch.setattr(runner, "code_identity", lambda root: {"synthetic": True})
+    run = tmp_path / "run"
+    runner.run_training(bundle, config, run, days[60], days[65], root=tmp_path)
+    monkeypatch.setattr(serving, "now", lambda: days[59].tz_localize("UTC").to_pydatetime())
+    registry = tmp_path / "registry"
+    model = serving.register_model(run, str(days[60].to_period("M")), "ridge", registry)
+    serving.activate_model(registry, model["model_id"], days[60].date())
+    daily = tmp_path / "today.parquet"
+    panel.loc[panel.trade_date.eq(days[60])].drop(columns="adj_close").to_parquet(
+        daily, index=False
+    )
+    monkeypatch.setattr(
+        serving,
+        "now",
+        lambda: (
+            days[60].tz_localize("Asia/Shanghai") + pd.Timedelta(hours=15, minutes=45)
+        ).to_pydatetime(),
+    )
+    output = tmp_path / "signals" / str(days[60].date())
+    manifest = serving.predict_day(
+        registry, daily, bundle / "calendar.json", days[60].date(), output, code={"synthetic": True}
+    )
+    assert manifest["forward_eligible"]
+    expected = (
+        pd.read_parquet(run / "scores.parquet")
+        .query("trade_date == @days[60]")
+        .sort_values("instrument_id")
+    )
+    actual = pd.read_parquet(output / "scores.parquet").sort_values("instrument_id")
+    np.testing.assert_allclose(actual.score, expected.score, rtol=0, atol=1e-12)
+    verify_completed(output)
+    archive, _ = serving.archived_signals(tmp_path / "signals", [days[60].date()])
+    assert set(archive.model) == {"shadow"}
+    with pytest.raises(FileExistsError):
+        serving.predict_day(
+            registry,
+            daily,
+            bundle / "calendar.json",
+            days[60].date(),
+            output,
+            code={"synthetic": True},
+        )
+    monkeypatch.setattr(
+        serving,
+        "now",
+        lambda: (days[60].tz_localize("Asia/Shanghai") + pd.Timedelta(hours=17)).to_pydatetime(),
+    )
+    late = tmp_path / "late" / str(days[60].date())
+    serving.predict_day(
+        registry, daily, bundle / "calendar.json", days[60].date(), late, code={"synthetic": True}
+    )
+    assert not json.loads((late / "prediction.json").read_text())["forward_eligible"]
+    with pytest.raises(ValueError, match="genuinely"):
+        serving.archived_signals(tmp_path / "late", [days[60].date()])
+
+
+def test_report_requires_full_common_benchmark_coverage(tmp_path):
+    from quantlab.research.ml.reporting import build_report
+    from quantlab.research.ml.runner import run_scenarios
+
+    days, market, universe, scores, marks, config = replay_fixture()
+    scores["model"] = "ridge"
+    replay = tmp_path / "replay"
+    run_scenarios(
+        scores,
+        universe,
+        days,
+        market,
+        marks,
+        start=days[1],
+        end=days[6],
+        capitals_fen=[1000000, 10000000],
+        config=config,
+        output=replay,
+    )
+    benchmark = tmp_path / "benchmark.parquet"
+    pd.DataFrame(
+        {"session": [str(d) for d in days[1:7]], "benchmark_return": [0.0] * 6}
+    ).to_parquet(benchmark, index=False)
+    result = build_report(replay, benchmark, tmp_path / "report")
+    assert len(result["scenarios"]) == 2
+    assert all(row["sessions"] == 6 for row in result["scenarios"])
+    pd.read_parquet(benchmark).iloc[1:].to_parquet(benchmark, index=False)
+    with pytest.raises(ValueError, match="benchmark missing"):
+        build_report(replay, benchmark, tmp_path / "bad-report")
+
+
+def test_cli_train_replay_report_and_status_end_to_end(tmp_path, monkeypatch, capsys):
+    import json
+    from dataclasses import asdict
+
+    from quantlab.research.ml import cli, runner
+
+    days, panel, bundle, config_path = training_bundle(tmp_path)
+
+    def identity(root):
+        return {"synthetic": True}
+
+    monkeypatch.setattr(runner, "code_identity", identity)
+    monkeypatch.setattr(cli, "code_identity", identity)
+    run = tmp_path / "train"
+    cli.main(
+        [
+            "train",
+            "--bundle",
+            str(bundle),
+            "--config",
+            str(config_path),
+            "--start",
+            str(days[60].date()),
+            "--end",
+            str(days[65].date()),
+            "--output",
+            str(run),
+        ]
+    )
+    _, template, *_ = replay_fixture()
+    original = template[0].contexts[0]
+    market = []
+    for i in range(61, 67):
+        contexts = tuple(
+            replace(
+                original,
+                instrument_id=f"S{n}",
+                execution_date=days[i].date(),
+                next_session=days[i + 1].date(),
+                evidence_date=days[i].date(),
+                prior20_asof=days[i - 1].date(),
+                rules=replace(
+                    original.rules, effective_from=days[0].date(), effective_through=days[-1].date()
+                ),
+                fees=replace(
+                    original.fees, effective_from=days[0].date(), effective_through=days[-1].date()
+                ),
+            )
+            for n in range(6)
+        )
+        market.append(
+            ResearchDay(
+                days[i].date(),
+                (),
+                contexts,
+                tuple(RawCloseMark(f"S{n}", days[i].date(), 1000) for n in range(6)),
+                True,
+            )
+        )
+    market_file = tmp_path / "market.jsonl"
+    market_file.write_text("\n".join(json.dumps(asdict(day), default=str) for day in market) + "\n")
+    marks_file = tmp_path / "marks.json"
+    marks_file.write_text(
+        json.dumps(
+            [
+                {"instrument_id": f"S{n}", "session": str(days[60].date()), "price_fen": 1000}
+                for n in range(6)
+            ]
+        )
+    )
+    corporate = tmp_path / "corporate.json"
+    corporate.write_text(
+        json.dumps(
+            {
+                "coverage": {
+                    "source_id": "synthetic-no-events",
+                    "start": str(days[61].date()),
+                    "end": str(days[66].date()),
+                },
+                "events": [],
+            }
+        )
+    )
+    replay = tmp_path / "replay"
+    command = [
+        "replay",
+        "--bundle",
+        str(bundle),
+        "--config",
+        str(config_path),
+        "--run",
+        str(run),
+        "--market-days",
+        str(market_file),
+        "--initial-marks",
+        str(marks_file),
+        "--corporate-actions",
+        str(corporate),
+        "--start",
+        str(days[61].date()),
+        "--end",
+        str(days[66].date()),
+        "--capital-cny",
+        "100000",
+        "--output",
+        str(replay),
+    ]
+    cli.main(command)
+    cli.main(command + ["--resume"])
+    assert json.loads((replay / "summary.json").read_text())[0]["status"] == "completed_scenario"
+    benchmark = tmp_path / "benchmark.parquet"
+    pd.DataFrame({"session": days[61:67], "benchmark_return": [0.0] * 6}).to_parquet(
+        benchmark, index=False
+    )
+    report = tmp_path / "report"
+    cli.main(
+        [
+            "report",
+            "--replay",
+            str(replay),
+            "--training",
+            str(run),
+            "--benchmark",
+            str(benchmark),
+            "--output",
+            str(report),
+        ]
+    )
+    cli.main(["status", "--path", str(report)])
+    assert "completed_artifacts_verified" in capsys.readouterr().out
+    assert (report / "report.md").exists()
+
+
+def test_close_auction_cash_budget_cannot_spend_same_day_sale_proceeds():
+    from quantlab.research.quantity_kernel import ResearchBook, ResearchLot, ResearchOrder
+    from quantlab.research.quantity_scheduler import advance_research_day
+
+    days, market, *_ = replay_fixture()
+    initial = ResearchBook(days[1], 100000, (ResearchLot("owned", "A", 1000, days[0], days[1]),))
+    batch = replace(
+        market[1],
+        orders=(
+            ResearchOrder("sell", "A", "sell", 1000, days[1]),
+            ResearchOrder("buy", "B", "buy", 1000, days[1]),
+        ),
+    )
+    legacy = advance_research_day(initial, days, 2, batch, set())
+    prefunded = advance_research_day(initial, days, 2, batch, set(), buy_cash_budget_fen=100000)
+    assert legacy.record.attempts[1].transition.simulated_quantity == 1000
+    # Minimum buy plus commission exceeds the original cash; sale proceeds stay reserved.
+    assert prefunded.record.attempts[1].transition.simulated_quantity == 0
+    assert prefunded.record.book.cash_fen == legacy.record.attempts[0].transition.book.cash_fen

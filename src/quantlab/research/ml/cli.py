@@ -1,65 +1,292 @@
-"""Offline CLI. No command downloads data, writes Canonical, or submits orders."""
+"""One offline research CLI: prepare, check, train, replay, report and forward shadow."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from datetime import date
 from pathlib import Path
 
 import pandas as pd
 
+from quantlab.research.ml.artifacts import verify_completed
 from quantlab.research.ml.config import load_config
 from quantlab.research.ml.data import calendar_index, monthly_folds, validate_features
 from quantlab.research.ml.io import (
     read_corporate_actions,
     read_market_days,
     research_output,
+    seal_bundle,
     sha256,
     verify_bundle,
 )
-from quantlab.research.ml.panel import read_range
+from quantlab.research.ml.panel import audit_window, read_range
 from quantlab.research.ml.runner import code_identity, run_scenarios, run_training
 from quantlab.research.quantity_scheduler import RawCloseMark
 
 ROOT = Path(__file__).resolve().parents[4]
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(prog="quantlab ml", description=__doc__)
-    sub = parser.add_subparsers(dest="action", required=True)
-    export = sub.add_parser(
-        "export-history", help="Bridge sealed history plus explicit PIT context."
+def parser():
+    main = argparse.ArgumentParser(prog="quantlab ml", description=__doc__)
+    sub = main.add_subparsers(dest="action", required=True)
+    export = sub.add_parser("export-history", help="Bridge sealed history and explicit PIT context")
+    for name in ("history", "pit-context", "output"):
+        export.add_argument(f"--{name}", type=Path, required=True)
+    prepare = sub.add_parser(
+        "prepare-inputs", help="Copy and seal explicitly supplied research files"
     )
-    export.add_argument("--history", type=Path, required=True)
-    export.add_argument("--pit-context", type=Path, required=True)
-    export.add_argument("--output", type=Path, required=True)
-    for command in ("check", "train", "replay"):
+    for name in ("features", "prices", "calendar", "feature-names", "provenance", "output"):
+        prepare.add_argument(f"--{name}", type=Path, required=True)
+    prepare.add_argument("--lineage", type=Path)
+    prepare.add_argument("--feature-contract", type=Path)
+    for command in ("check", "train", "replay", "shadow"):
         child = sub.add_parser(command)
         child.add_argument("--bundle", type=Path, required=True)
         child.add_argument("--config", type=Path, default=ROOT / "config/ml_daily_v2.json")
         child.add_argument("--start", type=date.fromisoformat, required=True)
         child.add_argument("--end", type=date.fromisoformat, required=True)
+        child.add_argument("--require-lineage", action="store_true")
         if command != "check":
             child.add_argument("--output", type=Path, required=True)
             child.add_argument("--resume", action="store_true")
-        if command == "replay":
-            child.add_argument("--run", type=Path, required=True)
-            child.add_argument("--market-days", type=Path, required=True)
-            child.add_argument("--initial-marks", type=Path, required=True)
-            child.add_argument("--corporate-actions", type=Path, required=True)
+        if command == "train":
+            child.add_argument("--study", type=Path)
+            child.add_argument("--final-holdout", action="store_true")
+        if command in {"replay", "shadow"}:
+            child.add_argument(
+                "--run" if command == "replay" else "--signals", type=Path, required=True
+            )
+            for name in ("market-days", "initial-marks", "corporate-actions"):
+                child.add_argument(f"--{name}", type=Path, required=True)
             child.add_argument(
                 "--capital-cny", type=int, nargs="+", default=[50000, 200000, 1000000]
             )
-    args = parser.parse_args(argv)
+    register = sub.add_parser(
+        "register", help="Register one completed fold/model as a research artifact"
+    )
+    register.add_argument("--run", type=Path, required=True)
+    register.add_argument("--fold", required=True)
+    register.add_argument(
+        "--model", choices=["ridge", "lightgbm", "binary", "lambdarank"], required=True
+    )
+    register.add_argument("--registry", type=Path, required=True)
+    activate = sub.add_parser(
+        "activate", help="Timestamp a model's shadow activation; no broker authority"
+    )
+    activate.add_argument("--registry", type=Path, required=True)
+    activate.add_argument("--model-id", required=True)
+    activate.add_argument("--effective-from", type=date.fromisoformat, required=True)
+    predict = sub.add_parser("predict", help="Predict a daily feature snapshot without any labels")
+    for name in ("registry", "features", "calendar", "output"):
+        predict.add_argument(f"--{name}", type=Path, required=True)
+    predict.add_argument("--as-of", type=date.fromisoformat, required=True)
+    report = sub.add_parser("report")
+    for name in ("replay", "benchmark", "output"):
+        report.add_argument(f"--{name}", type=Path, required=True)
+    report.add_argument("--training", type=Path)
+    report.add_argument("--exposures", type=Path)
+    study = sub.add_parser("init-study")
+    study.add_argument("--output", type=Path, required=True)
+    for name in ("development-end", "holdout-start", "holdout-end"):
+        study.add_argument(f"--{name}", type=date.fromisoformat, required=True)
+    doctor = sub.add_parser("status", help="Verify completion receipts, inputs and registry state")
+    doctor.add_argument("--path", type=Path, required=True)
+    return main
+
+
+def execute_replay(args, manifest, config, sessions):
+    from quantlab.research.ml.serving import archived_signals
+
+    first = sessions.get_loc(pd.Timestamp(args.start))
+    last = sessions.get_loc(pd.Timestamp(args.end))
+    if first < 1 or last >= len(sessions) - 1 or first > last:
+        raise ValueError("replay needs previous-decision and following-session padding")
+    identity = code_identity(ROOT)
+    if args.action == "replay":
+        verify_completed(args.run)
+        intent = json.loads((args.run / "intent.json").read_text())
+        if intent["config_fingerprint"] != config.fingerprint or intent["inputs"] != manifest:
+            raise ValueError("replay inputs/config differ from completed training")
+        scores = pd.read_parquet(args.run / "scores.parquet")
+        signal_binding = {"training_completion_sha256": sha256(args.run / "completed.json")}
+    else:
+        scores, archive = archived_signals(
+            args.signals, [d.date() for d in sessions[first - 1 : last]]
+        )
+        signal_binding = {"forward_archive": archive}
+    hashes = {
+        key: sha256(getattr(args, key))
+        for key in ("market_days", "initial_marks", "corporate_actions")
+    }
+    market_days = read_market_days(args.market_days)
+    corporate = read_corporate_actions(args.corporate_actions, args.start, args.end)
+    raw = json.loads(args.initial_marks.read_text())
+    marks = tuple(
+        RawCloseMark(r["instrument_id"], date.fromisoformat(r["session"]), r["price_fen"])
+        for r in raw
+    )
+    universe = read_range(
+        args.bundle / "features.parquet",
+        sessions[first - 1],
+        args.end,
+        columns=["trade_date", "instrument_id", "eligible", "industry"],
+        max_bytes=config.max_matrix_bytes,
+    )
+
+    def final_check():
+        if (
+            any(sha256(getattr(args, k)) != v for k, v in hashes.items())
+            or verify_bundle(args.bundle) != manifest
+            or code_identity(ROOT) != identity
+        ):
+            raise ValueError("replay inputs/code changed during execution")
+        if args.action == "replay":
+            verify_completed(args.run)
+        else:
+            _, current = archived_signals(
+                args.signals, [d.date() for d in sessions[first - 1 : last]]
+            )
+            if current != archive:
+                raise ValueError("forward archive changed during replay")
+
+    return run_scenarios(
+        scores,
+        universe,
+        tuple(d.date() for d in sessions),
+        market_days,
+        marks,
+        start=args.start,
+        end=args.end,
+        capitals_fen=[c * 100 for c in args.capital_cny],
+        config=config,
+        output=args.output,
+        corporate_actions=corporate,
+        resume=args.resume,
+        binding_extra={"code": identity, "inputs": hashes, **signal_binding},
+        final_check=final_check,
+        strategy_mode="archived_forward_signals" if args.action == "shadow" else "backtest",
+    )
+
+
+def dispatch(args):
     if hasattr(args, "output"):
         research_output(args.output)
     if args.action == "export-history":
         from quantlab.research.ml.history import export_history
 
-        payload = export_history(args.history, args.pit_context, args.output, root=ROOT)
-    elif args.action == "train":
-        payload = run_training(
+        return export_history(args.history, args.pit_context, args.output, root=ROOT)
+    if args.action == "prepare-inputs":
+        if bool(args.lineage) != bool(args.feature_contract):
+            raise ValueError("lineage and feature contract must be supplied together")
+        args.output.mkdir(parents=True, exist_ok=False)
+        files = {
+            "features.parquet": args.features,
+            "prices.parquet": args.prices,
+            "calendar.json": args.calendar,
+            "feature_names.json": args.feature_names,
+        }
+        if args.lineage:
+            files.update(
+                {
+                    "pit_lineage.parquet": args.lineage,
+                    "feature_contract.json": args.feature_contract,
+                }
+            )
+        for name, path in files.items():
+            before = sha256(path)
+            shutil.copyfile(path, args.output / name)
+            if sha256(args.output / name) != before or sha256(path) != before:
+                raise ValueError("input changed during snapshot preparation")
+        return seal_bundle(args.output, provenance=json.loads(args.provenance.read_text()))
+    if args.action == "register":
+        from quantlab.research.ml.serving import register_model
+
+        return register_model(args.run, args.fold, args.model, args.registry)
+    if args.action == "activate":
+        from quantlab.research.ml.serving import activate_model
+
+        return activate_model(args.registry, args.model_id, args.effective_from)
+    if args.action == "predict":
+        from quantlab.research.ml.serving import predict_day
+
+        return predict_day(
+            args.registry,
+            args.features,
+            args.calendar,
+            args.as_of,
+            args.output,
+            code=code_identity(ROOT),
+        )
+    if args.action == "report":
+        from quantlab.research.ml.reporting import build_report
+
+        return build_report(
+            args.replay,
+            args.benchmark,
+            args.output,
+            training=args.training,
+            exposures_path=args.exposures,
+        )
+    if args.action == "init-study":
+        from quantlab.research.ml.study import initialize
+
+        return initialize(args.output, args.development_end, args.holdout_start, args.holdout_end)
+    if args.action == "status":
+        path = args.path
+        if (path / "completed.json").exists():
+            receipt = verify_completed(path)
+            return {
+                "status": "completed_artifacts_verified",
+                "files": len(receipt["artifacts"]),
+                "performance_eligible": False,
+            }
+        if (path / "manifest.json").exists():
+            return {"status": "input_hashes_verified", "manifest": verify_bundle(path)}
+        if (path / "intent.json").exists():
+            return {
+                "status": "incomplete_use_resume_with_identical_inputs",
+                "failures": len(list((path / "failures").glob("*.json"))),
+                "checkpoints": len(list(path.glob("*/sessions/*.json"))),
+            }
+        if (path / "models").exists():
+            models = []
+            for folder in sorted((path / "models").iterdir()):
+                verify_completed(folder)
+                models.append(json.loads((folder / "registration.json").read_text())["model_id"])
+            return {
+                "status": "registry_artifacts_verified",
+                "models": models,
+                "activations": len(list((path / "activations").glob("*.json"))),
+            }
+        raise ValueError("unrecognized or uninitialized research artifact")
+    manifest = verify_bundle(args.bundle)
+    config = load_config(args.config)
+    if args.require_lineage and "pit_lineage.parquet" not in manifest["files"]:
+        raise ValueError("source lineage required but missing")
+    sessions = calendar_index(json.loads((args.bundle / "calendar.json").read_text()))
+    if args.action == "train":
+        if args.final_holdout and not args.study:
+            raise ValueError("final holdout requires a predeclared study")
+        if args.study:
+            from quantlab.research.ml.study import reserve
+
+            reserve(
+                args.study,
+                args.start,
+                args.end,
+                {
+                    "config": config.payload(),
+                    "manifest": manifest,
+                    "code": code_identity(ROOT),
+                    "start": str(args.start),
+                    "end": str(args.end),
+                    "output": str(args.output.resolve()),
+                },
+                final_holdout=args.final_holdout,
+            )
+        return run_training(
             args.bundle,
             args.config,
             args.output,
@@ -68,99 +295,41 @@ def main(argv=None):
             root=ROOT,
             resume=args.resume,
         )
-    else:
-        manifest = verify_bundle(args.bundle)
-        config = load_config(args.config)
-        sessions = calendar_index(json.loads((args.bundle / "calendar.json").read_text()))
-        if args.action == "check":
-            names = json.loads((args.bundle / "feature_names.json").read_text())
-            folds = monthly_folds(sessions, args.start, args.end, config)
-            rows = feature_rows = unknown_rows = 0
-            for month in sessions.to_period("M").unique():
-                days = sessions[sessions.to_period("M") == month]
-                raw = read_range(
-                    args.bundle / "features.parquet",
-                    days[0],
-                    days[-1],
-                    max_bytes=config.max_matrix_bytes,
-                )
-                if raw.empty:
-                    continue
-                frame = validate_features(raw, names, sessions, config)
-                rows += len(frame)
-                feature_rows += int(frame.feature_ok.sum())
-                unknown_rows += int(frame.eligible.isna().sum())
-            payload = {
-                "status": "input_contract_valid_not_data_certification",
-                "rows": rows,
-                "feature_eligible_rows": feature_rows,
-                "unknown_universe_rows": unknown_rows,
-                "folds": len(folds),
-                "fits": len(folds) * len(config.models),
-                "config_fingerprint": config.fingerprint,
-            }
-        else:
-            completed = json.loads((args.run / "completed.json").read_text())
-            for name, digest in completed["artifacts"].items():
-                path = (args.run / name).resolve()
-                if not path.is_relative_to(args.run.resolve()) or sha256(path) != digest:
-                    raise ValueError("training artifact path or fingerprint mismatch")
-            intent = json.loads((args.run / "intent.json").read_text())
-            if intent["config_fingerprint"] != config.fingerprint or intent["inputs"] != manifest:
-                raise ValueError("replay inputs/config differ from the completed training run")
-            market_hash, initial_hash = sha256(args.market_days), sha256(args.initial_marks)
-            market_days = read_market_days(args.market_days)
-            corporate_hash = sha256(args.corporate_actions)
-            corporate_actions = read_corporate_actions(args.corporate_actions, args.start, args.end)
-            raw = json.loads(args.initial_marks.read_text())
-            initial_marks = tuple(
-                RawCloseMark(r["instrument_id"], date.fromisoformat(r["session"]), r["price_fen"])
-                for r in raw
-            )
-            identity = code_identity(ROOT)
-            scores = pd.read_parquet(args.run / "scores.parquet")
-            universe = read_range(
-                args.bundle / "features.parquet",
-                sessions[sessions.get_loc(pd.Timestamp(args.start)) - 1],
-                args.end,
-                columns=["trade_date", "instrument_id", "eligible", "industry"],
-            )
-            binding = {
-                "code": identity,
-                "training_completion_sha256": sha256(args.run / "completed.json"),
-                "market_days_sha256": market_hash,
-                "initial_marks_sha256": initial_hash,
-                "corporate_actions_sha256": corporate_hash,
-                "config_fingerprint": config.fingerprint,
-                "historical_data_certified": False,
-            }
+    if args.action in {"replay", "shadow"}:
+        return execute_replay(args, manifest, config, sessions)
+    names = json.loads((args.bundle / "feature_names.json").read_text())
+    folds = monthly_folds(sessions, args.start, args.end, config)
+    rows = feature_rows = unknown_rows = 0
+    statuses = set()
+    for month in sessions.to_period("M").unique():
+        days = sessions[sessions.to_period("M") == month]
+        raw = read_range(
+            args.bundle / "features.parquet", days[0], days[-1], max_bytes=config.max_matrix_bytes
+        )
+        if raw.empty:
+            continue
+        frame = validate_features(raw, names, sessions, config)
+        statuses.add(audit_window(args.bundle, frame, names, config)["status"])
+        rows += len(frame)
+        feature_rows += int(frame.feature_ok.sum())
+        unknown_rows += int(frame.eligible.isna().sum())
+    if not rows:
+        raise ValueError("empty feature history")
+    return {
+        "status": "input_contract_valid_not_data_certification",
+        "rows": rows,
+        "feature_eligible_rows": feature_rows,
+        "unknown_universe_rows": unknown_rows,
+        "lineage_status": sorted(statuses),
+        "folds": len(folds),
+        "fits": len(folds) * len(config.models),
+        "config_fingerprint": config.fingerprint,
+    }
 
-            def final_check():
-                if (
-                    sha256(args.market_days) != market_hash
-                    or sha256(args.initial_marks) != initial_hash
-                    or sha256(args.corporate_actions) != corporate_hash
-                    or verify_bundle(args.bundle) != manifest
-                    or code_identity(ROOT) != identity
-                ):
-                    raise ValueError("replay inputs/code changed during execution")
 
-            payload = run_scenarios(
-                scores,
-                universe,
-                tuple(d.date() for d in sessions),
-                market_days,
-                initial_marks,
-                start=args.start,
-                end=args.end,
-                capitals_fen=[c * 100 for c in args.capital_cny],
-                config=config,
-                output=args.output,
-                corporate_actions=corporate_actions,
-                resume=args.resume,
-                binding_extra=binding,
-                final_check=final_check,
-            )
+def main(argv=None):
+    args = parser().parse_args(argv)
+    payload = dispatch(args)
     print(json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False))
     return 0
 

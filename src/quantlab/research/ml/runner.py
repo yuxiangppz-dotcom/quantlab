@@ -39,7 +39,7 @@ def run_training(
     from uuid import uuid4
 
     from quantlab.research.alpha158_store import exclusive_job
-    from quantlab.research.ml.artifacts import complete, verify_completed, write_frame
+    from quantlab.research.ml.artifacts import complete, fingerprint, verify_completed, write_frame
     from quantlab.research.ml.data import monthly_folds
     from quantlab.research.ml.panel import fold_panel
 
@@ -82,6 +82,10 @@ def run_training(
                 sealed = output / "models" / fold.name
                 if sealed.exists():
                     verify_completed(sealed)
+                    if json.loads((sealed / "fold_binding.json").read_text())[
+                        "run_binding"
+                    ] != fingerprint(binding):
+                        raise ValueError("sealed fold belongs to a different run")
                 else:
                     frame = fold_panel(bundle, fold, names, sessions, config)
                     # An interrupted work directory is kept for diagnosis, never reused as a model.
@@ -92,6 +96,9 @@ def run_training(
                     candidate = work / fold.name
                     write_frame(candidate / "scores.parquet", scores)
                     write_json(candidate / "fits.json", fits)
+                    write_json(
+                        candidate / "fold_binding.json", {"run_binding": fingerprint(binding)}
+                    )
                     complete(candidate)
                     sealed.parent.mkdir(parents=True, exist_ok=True)
                     candidate.rename(sealed)
@@ -138,6 +145,7 @@ def run_scenarios(
     resume=False,
     binding_extra=None,
     final_check=None,
+    strategy_mode="backtest",
 ):
     """Independently accounted scenarios with input-bound daily checkpoints."""
     from uuid import uuid4
@@ -157,9 +165,13 @@ def run_scenarios(
         raise ValueError("capital scenarios must be nonempty and unique")
     if any(type(c) is not int or c <= 0 for c in capitals_fen):
         raise ValueError("capital scenarios must be positive integer fen")
-    if scores.empty or set(scores.model) != set(config.models):
+    expected_models = (
+        {"shadow"} if strategy_mode == "archived_forward_signals" else set(config.models)
+    )
+    if scores.empty or set(scores.model) != expected_models:
         raise ValueError("score models differ from the frozen configuration")
     inputs = {
+        "strategy_mode": strategy_mode,
         "scores": frame_fingerprint(scores),
         "universe": frame_fingerprint(universe),
         "calendar": fingerprint(calendar),

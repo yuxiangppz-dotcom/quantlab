@@ -212,7 +212,9 @@ def replay_scores(
             evidence.corporate_processing_complete,
         )
         local_attempted = set(attempted)
-        advance = advance_research_day(morning_book, calendar, i, batch, local_attempted)
+        advance = advance_research_day(
+            morning_book, calendar, i, batch, local_attempted, buy_cash_budget_fen=book.cash_fen
+        )
         if advance.status == "stopped":
             return finish(advance.reason, day)
         record = advance.record
@@ -230,6 +232,9 @@ def replay_scores(
         decisions.append(
             {
                 "signal_date": str(decision_day),
+                "model_ids": sorted(daily_scores.model_id.unique().tolist())
+                if "model_id" in daily_scores
+                else [],
                 "execution_date": str(day),
                 "scheduled_rebalance": scheduled,
                 "planned_one_way_turnover": decision.planned_one_way_turnover,

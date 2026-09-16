@@ -16,6 +16,7 @@ from quantlab.research.quantity_kernel import (
 from quantlab.research.quantity_scheduler import RawCloseMark, ResearchDay
 
 BUNDLE_FILES = ("features.parquet", "prices.parquet", "calendar.json", "feature_names.json")
+OPTIONAL_BUNDLE_FILES = ("pit_lineage.parquet", "feature_contract.json")
 
 
 def research_output(path):
@@ -45,7 +46,11 @@ def seal_bundle(folder, *, provenance):
         "schema": "quantlab_ml_inputs_v2",
         "provenance": provenance,
         "historical_data_certified": False,
-        "files": {name: sha256(folder / name) for name in BUNDLE_FILES},
+        "files": {
+            name: sha256(folder / name)
+            for name in (*BUNDLE_FILES, *OPTIONAL_BUNDLE_FILES)
+            if (folder / name).exists()
+        },
     }
     write_json(folder / "manifest.json", payload)
     return payload
@@ -53,11 +58,19 @@ def seal_bundle(folder, *, provenance):
 
 def verify_bundle(folder):
     payload = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
-    if payload.get("schema") != "quantlab_ml_inputs_v2" or set(payload["files"]) != set(
-        BUNDLE_FILES
+    files = set(payload["files"])
+    if (
+        payload.get("schema") != "quantlab_ml_inputs_v2"
+        or not set(BUNDLE_FILES).issubset(files)
+        or files - set((*BUNDLE_FILES, *OPTIONAL_BUNDLE_FILES))
     ):
         raise ValueError("unexpected input bundle schema or files")
-    for name in BUNDLE_FILES:
+    for name in OPTIONAL_BUNDLE_FILES:
+        if (folder / name).exists() != (name in files):
+            raise ValueError("unbound optional input artifact")
+    if ("pit_lineage.parquet" in files) != ("feature_contract.json" in files):
+        raise ValueError("lineage and feature contract must be supplied together")
+    for name in files:
         if sha256(folder / name) != payload["files"][name]:
             raise ValueError(f"input fingerprint changed:{name}")
     return payload
