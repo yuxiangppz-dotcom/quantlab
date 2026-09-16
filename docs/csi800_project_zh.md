@@ -1,7 +1,8 @@
 # 历史中证800项目：操作、语义与验收
 
-本次目标是修正一条完整的个人日频研究及持续模拟主线。代码和合成测试可在无行情的云端验收；
-真实来源的覆盖、策略表现、容量和连续运行仍必须在本地验收。不能把“有测试、有发布按钮”称为已经证明优秀或盈利。
+当前目标是完整的个人日频研究与按需回测；持续模拟是可选阶段。电脑无需每天开机，
+历史交易日可以批量回放。代码和合成测试可在无行情的云端验收；真实来源覆盖、策略表现和容量需本地数据验证。
+只有启用持续模拟后才需要连续运行验收。不能把“有测试、有发布按钮”称为已经证明优秀或盈利。
 
 ## 1. 一份策略，三种不同的集合
 
@@ -98,13 +99,19 @@ uv run quantlab pipeline --project config/project.local.json train --resume
 uv run quantlab pipeline --project config/project.local.json replay --resume
 uv run quantlab pipeline --project config/project.local.json report
 uv run quantlab pipeline --project config/project.local.json stress --resume
+```
+
+以上是按需研究主线；完成报告和压力测试即可结束本次研究。以下仅在准备启用前向模拟时执行：
+
+```bash
 uv run quantlab pipeline --project config/project.local.json register --fold YYYY-MM --model lightgbm
 uv run quantlab pipeline --project config/project.local.json release --model-id 返回的ID
 uv run quantlab pipeline --project config/project.local.json activate --model-id 返回的ID --effective-from 将来或当天日期
 ```
 
 默认 `development_end=2025-12-31`、留出候选区间2026年1月至8月。项目过去看过2023–2026结果，
-因此这个文件**不能把已看过的历史重新变成未见测试集**。本地须如实记录历史暴露，真正新证据来自之后的前向运行。
+因此这个文件**不能把已看过的历史重新变成未见测试集**。本地须如实记录历史暴露。可预先冻结方法，未来开机时批量评估新增未见区间；
+这种历史回放仍不等于当时按时封存信号的前向模拟，不能证明每日运行可靠性。
 `phase=final_holdout` 时，test区间必须落在声明留出期；主入口传入 study，首次留出规格被锁定。
 开发试验不得越过开发截止日。策略、成本矩阵、发布门槛改变应新建研究协议；不能看完测试结果后改门槛来通过。
 
@@ -121,7 +128,7 @@ Ridge的缺失填充、截尾和缩放只在训练段拟合，LightGBM保留缺�
 报告包含同期净收益、基准、相对净值、IC分块置信区间、逐年结果、实际暴露、风险偏离、覆盖与终止原因。
 附加的股票预算×指数收益对照是每日再平衡、现金零利率、无费用的诊断参考，不是另一条可实施策略。
 当前000906为价格指数；组合含明确股息，两者分红口径不同，不能把全部相对收益宣称为alpha。
-同池等权和总收益基准、因子组消融仍需本地接入及实验，详见差距表。
+同池等权已接入独立回放；仍需核验小资金下的实际仓位。总收益基准与因子组消融仍需本地接入及实验。
 
 `register` 只保存候选；`release` 逐项核对匹配的已登记试验、完整情景区间、正向信号证据、
 投资过的账户、风格覆盖与风险偏离。默认门槛252个交易日、回撤不超过25%、相对价格指数收益不低于0；
@@ -129,9 +136,12 @@ Ridge的缺失填充、截尾和缩放只在训练段拟合，LightGBM保留缺�
 所有资金/成本情景要通过；未通过便保留候选与阻断理由，不自动调参补成绩。
 发布产物绑定训练、报告、策略和真实创建时刻；持续账户也核对它，不能借高级 `ml activate` 绕过。
 
-## 4. 每日运行、更新与恢复
+## 4. 可选每日模拟，以及备份与恢复
 
-首次账户与策略/特征契约冻结。换股票池后应新建隔离账户，不能给旧账户直接换标签。
+仅开展研究回测时，跳过账户初始化、daily、health、monitor和定时器部署；仍需保存并验证研究备份。
+不要用daily补跑历史研究，也不要把事后回放伪装成当天已发布的订单。
+
+启用持续模拟时，首次账户与策略/特征契约冻结。换股票池后应新建隔离账户，不能给旧账户直接换标签。
 
 ```bash
 uv run quantlab pipeline --project config/project.local.json init-account --as-of 日期
@@ -182,7 +192,8 @@ revision-plan找出已封存分区的差异和受影响环节；重新取数、�
 它不是一个会擅自覆盖旧数据或修复真实账户现金的命令。
 
 UI可通过 `QUANTLAB_PROJECT=/绝对路径/project.local.json` 读取同一个项目账户路径。
-定时器模板见 `scripts/quantlab_daily_job.py`；本地应确认时区、交易日历、WSL睡眠/启动条件和日志，再部署。
+可选定时器模板见 `scripts/quantlab_daily_job.py`；仅在明确启用自动模拟后确认时区、交易日历、
+WSL睡眠/启动条件和日志，再部署。当前按需研究不安装。
 
 ## 5. 调研差距逐项落地状态
 
