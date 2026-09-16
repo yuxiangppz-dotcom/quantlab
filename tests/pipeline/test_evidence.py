@@ -128,14 +128,26 @@ def test_execution_policy_covers_every_instrument_and_day():
     assert chinext["rules"]["buy_minimum"] == 100
     # Every fee component must be DECLARED (zero where absent); a None field
     # would make the quantity kernel stop with fee_components_unknown.
+    from decimal import Decimal
+
     from quantlab.research.quantity_kernel import ResearchFeeScenario
 
     for policy in policies:
+        raw = dict(policy["fees"])
+        for key in (
+            "commission_rate",
+            "buy_stamp_rate",
+            "sell_stamp_rate",
+            "additional_fee_rate",
+            "adverse_slippage_rate",
+        ):
+            if raw[key] is not None:
+                raw[key] = Decimal(str(raw[key]))
         fees = ResearchFeeScenario(
             **{
-                **policy["fees"],
-                "effective_from": date.fromisoformat(policy["fees"]["effective_from"]),
-                "effective_through": date.fromisoformat(policy["fees"]["effective_through"]),
+                **raw,
+                "effective_from": date.fromisoformat(raw["effective_from"]),
+                "effective_through": date.fromisoformat(raw["effective_through"]),
             }
         )
         assert fees.complete, policy["start"]
