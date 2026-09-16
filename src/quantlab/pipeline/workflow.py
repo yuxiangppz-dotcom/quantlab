@@ -213,8 +213,16 @@ def daily_inputs(project, asof):
             universe = set(pd.read_parquet(bundle / "features.parquet").instrument_id)
             # Held names need marks and execution contexts even after universe removal.
             metadata = service.load_service(project["account"])
-            state, _, _ = service.account_head(project["account"], metadata)
+            state, _, previous = service.account_head(project["account"], metadata)
             universe.update(lot.instrument_id for lot in state["book"].lots)
+            # Yesterday's pending buys still need today's execution evidence even
+            # when the name has already left today's feature universe.
+            if previous:
+                previous, _ = service.resolved_decision(
+                    project["account"], state["book"].asof_date, previous
+                )
+                if previous["plan"]:
+                    universe.update(o.instrument_id for o in previous["plan"]["orders"])
             payload = market_day(
                 storage,
                 project["receipts"],

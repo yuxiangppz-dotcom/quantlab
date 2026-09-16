@@ -376,3 +376,184 @@ def test_standalone_prediction_cli_uses_saved_model_and_code_check(
         == 0
     )
     assert json.loads(capsys.readouterr().out)["forward_eligible"]
+
+
+def refresh_input(folder):
+    manifest = json.loads((folder / "manifest.json").read_text())
+    manifest["files"] = {name: sha256(folder / name) for name in service.INPUT_FILES}
+    (folder / "manifest.json").write_text(json.dumps(manifest))
+
+
+def test_initial_market_subset_drops_unused_quotes_but_still_checks_prices(system):
+    root, _, days, _, inputs, *_ = system
+    folder = inputs[0]
+    frame = pd.read_parquet(folder / "features.parquet")
+    frame.loc[frame.instrument_id.ne("S5")].to_parquet(folder / "features.parquet", index=False)
+    payload = json.loads((folder / "market.json").read_text())
+    payload["marks"] = [row for row in payload["marks"] if row["instrument_id"] != "S5"]
+    (folder / "market.json").write_text(json.dumps(payload))
+    refresh_input(folder)
+    assert advance(system, 0)["forward_decision"]
+    saved = checkpoint_read(root / "sessions" / str(days[60].date()) / "account.json")
+    assert "S5" not in saved["state"]["marks"]
+    assert saved["state"]["book"].cash_fen == 10_000_000
+
+
+def test_initial_conflicting_price_is_not_relaxed(system):
+    folder = system[4][0]
+    payload = json.loads((folder / "market.json").read_text())
+    payload["marks"][0]["price_fen"] += 1
+    (folder / "market.json").write_text(json.dumps(payload))
+    refresh_input(folder)
+    with pytest.raises(ValueError, match="inception market marks differ"):
+        advance(system, 0)
+
+
+def block_model(monkeypatch):
+    original = serving.selected_model
+
+    def unavailable(*args):
+        raise ValueError("synthetic temporary model outage")
+
+    monkeypatch.setattr(serving, "selected_model", unavailable)
+    return original
+
+
+def test_recover_model_before_cutoff_without_rewriting_ledger_and_settle_once(system, monkeypatch):
+    from quantlab.research.ml.service_view import account_frames
+
+    root, _, days, *_ = system
+    original = block_model(monkeypatch)
+    assert "temporary model outage" in advance(system, 0)["status"]
+    ledger = root / "sessions" / str(days[60].date()) / "account.json"
+    original_ledger = ledger.read_bytes()
+    monkeypatch.setattr(serving, "selected_model", original)
+    recovered = advance(system, 0)
+    assert recovered["forward_decision"] and recovered["decision_attempts"] == 1
+    assert advance(system, 0) == recovered
+    assert ledger.read_bytes() == original_ledger
+    assert service.inspect_service(root)["forward_decision"]
+    assert account_frames(root)["targets"].forward.all()
+    advance(system, 1)
+    saved = checkpoint_read(root / "sessions" / str(days[61].date()) / "account.json")
+    assert saved["state"]["book"].lots
+    assert not saved["settlement"].get("decision_missing", False)
+    before = saved["state"]["book"]
+    advance(system, 1)
+    assert (
+        checkpoint_read(root / "sessions" / str(days[61].date()) / "account.json")["state"]["book"]
+        == before
+    )
+
+
+def test_failed_retries_are_audited_and_late_recovery_cannot_trade(system, monkeypatch):
+    original = block_model(monkeypatch)
+    advance(system, 0)
+    assert advance(system, 0)["decision_attempts"] == 1
+    assert advance(system, 0)["decision_attempts"] == 2
+    monkeypatch.setattr(serving, "selected_model", original)
+    assert not advance(system, 0, late=True)["forward_decision"]
+    advance(system, 1)
+    assert service.inspect_service(system[0])["lots"] == 0
+
+
+def test_retry_pause_then_resume_before_deadline(system):
+    service.set_paused(system[0], True)
+    assert advance(system, 0)["status"] == "paused_accounting_only"
+    service.set_paused(system[0], False)
+    assert advance(system, 0)["forward_decision"]
+
+
+@pytest.mark.parametrize("late", [False, True])
+def test_retry_crash_after_rename_keeps_actual_publication_time(system, monkeypatch, late):
+    from quantlab.research.ml import artifacts
+
+    original = block_model(monkeypatch)
+    advance(system, 0)
+    monkeypatch.setattr(serving, "selected_model", original)
+    original_publication = artifacts.record_publication
+
+    def crash(folder, *args):
+        if "decisions" in folder.parts:
+            raise RuntimeError("retry publication crash")
+        return original_publication(folder, *args)
+
+    monkeypatch.setattr(artifacts, "record_publication", crash)
+    with pytest.raises(RuntimeError, match="retry publication crash"):
+        advance(system, 0)
+    monkeypatch.setattr(artifacts, "record_publication", original_publication)
+    assert advance(system, 0, late=late)["forward_decision"] is (not late)
+    advance(system, 1)
+    assert bool(service.inspect_service(system[0])["lots"]) is (not late)
+
+
+def test_recovered_decision_tampering_is_detected_by_next_account_link(system, monkeypatch):
+    original = block_model(monkeypatch)
+    advance(system, 0)
+    monkeypatch.setattr(serving, "selected_model", original)
+    advance(system, 0)
+    advance(system, 1)
+    path = system[0] / "decisions" / str(system[2][60].date()) / "0001" / "published.json"
+    payload = json.loads(path.read_text())
+    payload["published_at"] = (
+        pd.Timestamp(payload["published_at"]) - pd.Timedelta(minutes=1)
+    ).isoformat()
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="settled decision reference changed"):
+        service.inspect_service(system[0])
+
+
+def test_recovery_after_trading_day_does_not_repeat_fills_or_fees(system, monkeypatch):
+    advance(system, 0)
+    original = block_model(monkeypatch)
+    assert "decision_blocked" in advance(system, 1)["status"]
+    root, _, days, *_ = system
+    path = root / "sessions" / str(days[61].date()) / "account.json"
+    before = path.read_bytes()
+    settled = checkpoint_read(path)
+    assert settled["record"].attempts and settled["state"]["book"].lots
+    monkeypatch.setattr(serving, "selected_model", original)
+    assert advance(system, 1)["forward_decision"]
+    assert path.read_bytes() == before
+    assert service.inspect_service(root)["cash_fen"] == settled["state"]["book"].cash_fen
+    advance(system, 2)
+    assert service.inspect_service(root)["sessions"] == 3
+
+
+def test_daily_adapter_keeps_pending_buy_after_feature_universe_removal(
+    system, monkeypatch, tmp_path
+):
+    from quantlab.pipeline import workflow
+
+    advance(system, 0)
+    root, _, days, _, inputs, *_ = system
+    state, _, previous = service.account_head(root, service.load_service(root))
+    pending = {o.instrument_id for o in previous["plan"]["orders"]}
+    assert pending and not state["book"].lots
+    day_features = pd.read_parquet(inputs[1] / "features.parquet")
+    day_features = day_features.loc[~day_features.instrument_id.isin(pending)]
+
+    def build(*args, output, **kwargs):
+        output.mkdir()
+        day_features.to_parquet(output / "features.parquet", index=False)
+        (output / "calendar.json").write_bytes((inputs[1] / "calendar.json").read_bytes())
+
+    def market(*args, **kwargs):
+        assert pending.issubset(args[4])
+        raise RuntimeError("pending scope verified")
+
+    monkeypatch.setattr(workflow, "build", build)
+    monkeypatch.setattr(workflow, "market_day", market)
+    monkeypatch.setattr(workflow, "load_policy", lambda path: {})
+    (tmp_path / "policy.json").write_text("{}")
+    project = {
+        "workspace": tmp_path / "workspace",
+        "canonical": tmp_path / "canonical",
+        "receipts": tmp_path / "receipts",
+        "account": root,
+        "ml_config": tmp_path / "config.json",
+        "execution_policy": tmp_path / "policy.json",
+        "corporate_actions": inputs[1] / "corporate_actions.json",
+    }
+    with pytest.raises(RuntimeError, match="pending scope verified"):
+        workflow.daily_inputs(project, days[61].date())

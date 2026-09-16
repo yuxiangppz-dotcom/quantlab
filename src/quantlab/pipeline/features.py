@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 
 import pandas as pd
 
+from quantlab.data.security_history import load_security_code_changes
 from quantlab.pipeline.ingestion import calendar_days, verify_session
 from quantlab.research.alpha158_native import (
     apply_evidence_mask,
@@ -18,6 +19,7 @@ from quantlab.research.alpha158_native import (
     write_binary_cache,
 )
 from quantlab.research.alpha158_store import exclusive_job
+from quantlab.research.dataset import _build_delist_dates, _build_list_dates
 from quantlab.research.ml.data import validate_features
 from quantlab.research.ml.io import research_output, seal_bundle, sha256, write_json
 from quantlab.research.ml.pit import validate_lineage
@@ -25,15 +27,14 @@ from quantlab.research.ml.pit import validate_lineage
 KEYS = ["trade_date", "instrument_id"]
 
 
-def native_features(raw, sessions, securities, contract, scratch):
+def native_features(raw, sessions, securities, contract, scratch, *, code_changes=()):
     instruments = sorted(raw.instrument_id.unique())
-    identity = {s.instrument_id: s for s in securities}
     mapped, _ = map_inputs(
         raw,
         sessions,
         instruments,
-        {k: identity[k].list_date for k in instruments},
-        {k: identity[k].delist_date for k in instruments},
+        _build_list_dates(securities, code_changes),
+        _build_delist_dates(securities, code_changes),
     )
     cache = Path(scratch) / "qlib"
     write_binary_cache(mapped, cache, sessions)
@@ -68,9 +69,16 @@ def _build_chunk(
     if any(f["future_sessions"] for f in contract["features"]):
         raise ValueError("feature contract contains future dependencies")
     context_path, availability_path = Path(context_path), Path(availability_path)
+    changes_path = root / "config/security_code_changes.csv"
     bindings = {
         str(p): sha256(p)
-        for p in (context_path, availability_path, storage.calendar_path, storage.securities_path)
+        for p in (
+            context_path,
+            availability_path,
+            storage.calendar_path,
+            storage.securities_path,
+            changes_path,
+        )
     }
     import pyarrow.dataset as ds
 
@@ -161,6 +169,7 @@ def _build_chunk(
                 storage.load_securities(),
                 contract,
                 scratch,
+                code_changes=load_security_code_changes(changes_path),
             )
             features = features.merge(context, on=KEYS, how="right", validate="one_to_one")
             features = features.sort_values(KEYS).reset_index(drop=True).copy()
@@ -198,6 +207,7 @@ def _build_chunk(
                 "feature_dependencies": dependencies,
                 "units": {"prices": "CNY", "volume": "shares", "amount": "CNY"},
                 "adjustment": "OHLC*factor; volume/factor; no price fill",
+                "identity_policy": "dated_code_lifecycles_v1_no_cross_code_stitching",
             }
             # Check sources again before publishing any ready bundle.
             for path, digest in bindings.items():
@@ -278,6 +288,7 @@ def build_bundle(
         Path(availability_path),
         storage.calendar_path,
         storage.securities_path,
+        root / "config/security_code_changes.csv",
     )
     bindings = {str(p): sha256(p) for p in paths}
     writers, count = {}, 0

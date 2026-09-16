@@ -15,7 +15,12 @@ from quantlab.research.ml.artifacts import (
 )
 from quantlab.research.ml.io import research_output, sha256, write_json
 from quantlab.research.ml.reporting import comparison_metrics
-from quantlab.research.ml.service import account_head, inspect_service, load_service
+from quantlab.research.ml.service import (
+    account_head,
+    inspect_service,
+    load_service,
+    resolved_decision,
+)
 
 
 def account_frames(root):
@@ -28,7 +33,8 @@ def account_frames(root):
             continue
         saved = checkpoint_read(folder / "account.json")
         book = saved["state"]["book"]
-        published = verify_publication(folder, book.asof_date, require_forward=False)
+        saved, decision_folder = resolved_decision(root, book.asof_date, saved)
+        published = verify_publication(decision_folder, book.asof_date, require_forward=False)
         record, settlement = saved["record"], saved["settlement"]
         if record is not None:
             trades = sum(a.transition.simulated_notional_fen for a in record.attempts)
@@ -126,6 +132,10 @@ def build_service_report(root, benchmark_path, output):
             "source_sessions": {
                 p.parent.name: sha256(p)
                 for p in sorted((root / "sessions").glob("*/completed.json"))
+            },
+            "source_decisions": {
+                p.parent.relative_to(root).as_posix(): sha256(p)
+                for p in sorted((root / "decisions").glob("*/*/completed.json"))
             },
             "benchmark_sha256": before,
             "performance_eligible": False,

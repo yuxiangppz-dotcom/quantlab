@@ -172,6 +172,11 @@ def account_head(root, service):
             raise ValueError("paper account has a missing session")
         if folder.name != str(day) or (previous and day <= state["book"].asof_date):
             raise ValueError("paper account session order mismatch")
+        if saved.get("previous_decision_sha256"):
+            _, decision_folder = resolved_decision(root, state["book"].asof_date, previous)
+            verify_publication(decision_folder, state["book"].asof_date, require_forward=False)
+            if decision_fingerprint(decision_folder) != saved["previous_decision_sha256"]:
+                raise ValueError("settled decision reference changed")
         state, previous = saved["state"], saved
         parent = sha256(folder / "completed.json")
     return state, parent, previous
@@ -209,6 +214,79 @@ def run_day(root, inputs, registry, asof, *, code, verify_code=None):
         raise
 
 
+def _plan_decision(
+    root, inputs, registry, asof, state, calendar, service, industries, *, signal, code, verify_code
+):
+    config = config_from(service["config"])
+    i = calendar.index(asof)
+    first = calendar.index(date.fromisoformat(service["inception"]))
+    plan, status, prediction = None, "account_settled_no_forward_decision", None
+    cutoff = pd.Timestamp(asof).tz_localize("Asia/Shanghai") + pd.Timedelta(
+        hours=config.decision_hour
+    )
+    clock = pd.Timestamp(serving.now())
+    timely = clock.tz_convert("Asia/Shanghai").date() == asof and clock <= cutoff
+    if is_paused(root):
+        status = "paused_accounting_only"
+    elif timely:
+        try:
+            _, model = serving.selected_model(registry, asof, config.decision_hour)
+            age = (asof - pd.Timestamp(model["fit"]["fit_asof"]).date()).days
+            if age > service["max_model_age_days"]:
+                raise ValueError("active model expired; retrain and explicitly activate")
+            if model.get("feature_contract_sha256") != service["feature_contract_sha256"]:
+                raise ValueError("active model feature contract mismatch")
+            if config_from(model["config"]).fingerprint != config.fingerprint:
+                raise ValueError("active model/service policy mismatch")
+            if signal.exists():
+                if not (signal / "published.json").exists():
+                    record_publication(
+                        signal, asof, serving.now, decision_hour=config.decision_hour
+                    )
+                verify_publication(signal, asof)
+                prediction = json.loads((signal / "prediction.json").read_text())
+                if (
+                    prediction["features_sha256"] != sha256(inputs / "features.parquet")
+                    or prediction["model_id"] != model["model_id"]
+                ):
+                    raise ValueError("existing signal differs from today's input/model")
+            else:
+                prediction = serving.predict_day(
+                    registry,
+                    inputs / "features.parquet",
+                    inputs / "calendar.json",
+                    asof,
+                    signal,
+                    code=code,
+                    verify_code=verify_code,
+                    decision_hour=config.decision_hour,
+                )
+            verify_publication(signal, asof)
+            if prediction["model_id"] != model["model_id"]:
+                raise ValueError("active model changed during daily processing")
+            scores = pd.read_parquet(signal / "scores.parquet")
+            universe = pd.read_parquet(
+                inputs / "features.parquet",
+                columns=["trade_date", "instrument_id", "eligible", "industry"],
+            )
+            plan = plan_orders(
+                state["book"],
+                state["marks"],
+                state["corporate_state"],
+                scores,
+                universe,
+                calendar,
+                calendar[i + 1],
+                (i - first) % config.rebalance_sessions == 0,
+                config,
+            )
+            industries = plan["industries"]
+            status = "decision_ready"
+        except (ValueError, FileNotFoundError) as exc:
+            status = f"decision_blocked:{exc}"
+    return plan, status, prediction, industries
+
+
 def _run_day(root, inputs, registry, asof, *, code, verify_code=None):
     service = load_service(root)
     config = config_from(service["config"])
@@ -224,11 +302,20 @@ def _run_day(root, inputs, registry, asof, *, code, verify_code=None):
                 raise ValueError("already committed day differs; never rewrite account history")
             if not (target / "published.json").exists():
                 record_publication(target, asof, serving.now, decision_hour=config.decision_hour)
-            return decision_status(root, asof, saved["status"])
+            return _retry_decision(
+                root,
+                inputs,
+                registry,
+                asof,
+                saved,
+                manifest,
+                calendar,
+                service,
+                code=code,
+                verify_code=verify_code,
+            )
         state, parent, previous = account_head(root, service)
         inception = date.fromisoformat(service["inception"])
-        first = calendar.index(inception)
-        i = calendar.index(asof)
         expected = (
             inception if previous is None else calendar[calendar.index(state["book"].asof_date) + 1]
         )
@@ -249,13 +336,22 @@ def _run_day(root, inputs, registry, asof, *, code, verify_code=None):
             state["corporate_state"], state["book"], events
         )
         record = decision = None
-        if previous is None and state["marks"] != {
-            m.instrument_id: m.price_fen for m in market.marks
-        }:
-            raise ValueError("inception market marks differ from initialized account")
+        if previous is None:
+            marks = {m.instrument_id: m.price_fen for m in market.marks}
+            # Initialization is flat. Unused market-wide quotes are not assets;
+            # the day's scope may be narrower, but overlapping prices must agree.
+            if state["book"].lots or any(
+                price != state["marks"][code]
+                for code, price in marks.items()
+                if code in state["marks"]
+            ):
+                raise ValueError("inception market marks differ from initialized account")
+            state["marks"] = marks
+        previous_decision = None
         if previous:
-            prior = root / "sessions" / str(state["book"].asof_date)
+            previous, prior = resolved_decision(root, state["book"].asof_date, previous)
             receipt = verify_publication(prior, state["book"].asof_date, require_forward=False)
+            previous_decision = decision_fingerprint(prior)
             frozen = previous["plan"]
             # A late/missing decision cannot be recreated after seeing execution prices.
             if frozen is None or not receipt["forward_eligible"]:
@@ -269,73 +365,19 @@ def _run_day(root, inputs, registry, asof, *, code, verify_code=None):
             state, record, decision = settle_plan(
                 state, frozen, market, events, calendar, inception, config
             )
-        plan, status, prediction = None, "account_settled_no_forward_decision", None
-        next_day = calendar[i + 1]
-        industries = previous["industries"] if previous else {}
-        cutoff = pd.Timestamp(asof).tz_localize("Asia/Shanghai") + pd.Timedelta(
-            hours=config.decision_hour
+        plan, status, prediction, industries = _plan_decision(
+            root,
+            inputs,
+            registry,
+            asof,
+            state,
+            calendar,
+            service,
+            previous["industries"] if previous else {},
+            signal=root / "signals" / str(asof),
+            code=code,
+            verify_code=verify_code,
         )
-        clock = pd.Timestamp(serving.now())
-        timely = clock.tz_convert("Asia/Shanghai").date() == asof and clock <= cutoff
-        if is_paused(root):
-            status = "paused_accounting_only"
-        elif timely:
-            try:
-                _, model = serving.selected_model(registry, asof, config.decision_hour)
-                age = (asof - pd.Timestamp(model["fit"]["fit_asof"]).date()).days
-                if age > service["max_model_age_days"]:
-                    raise ValueError("active model expired; retrain and explicitly activate")
-                if model.get("feature_contract_sha256") != service["feature_contract_sha256"]:
-                    raise ValueError("active model feature contract mismatch")
-                if config_from(model["config"]).fingerprint != config.fingerprint:
-                    raise ValueError("active model/service policy mismatch")
-                signal = root / "signals" / str(asof)
-                if signal.exists():
-                    if not (signal / "published.json").exists():
-                        record_publication(
-                            signal, asof, serving.now, decision_hour=config.decision_hour
-                        )
-                    verify_publication(signal, asof)
-                    prediction = json.loads((signal / "prediction.json").read_text())
-                    if (
-                        prediction["features_sha256"] != sha256(inputs / "features.parquet")
-                        or prediction["model_id"] != model["model_id"]
-                    ):
-                        raise ValueError("existing signal differs from today's input/model")
-                else:
-                    prediction = serving.predict_day(
-                        registry,
-                        inputs / "features.parquet",
-                        inputs / "calendar.json",
-                        asof,
-                        signal,
-                        code=code,
-                        verify_code=verify_code,
-                        decision_hour=config.decision_hour,
-                    )
-                verify_publication(signal, asof)
-                if prediction["model_id"] != model["model_id"]:
-                    raise ValueError("active model changed during daily processing")
-                scores = pd.read_parquet(signal / "scores.parquet")
-                universe = pd.read_parquet(
-                    inputs / "features.parquet",
-                    columns=["trade_date", "instrument_id", "eligible", "industry"],
-                )
-                plan = plan_orders(
-                    state["book"],
-                    state["marks"],
-                    state["corporate_state"],
-                    scores,
-                    universe,
-                    calendar,
-                    next_day,
-                    (i - first) % config.rebalance_sessions == 0,
-                    config,
-                )
-                industries = plan["industries"]
-                status = "decision_ready"
-            except (ValueError, FileNotFoundError) as exc:
-                status = f"decision_blocked:{exc}"
         # The account is allowed to settle even when prediction is blocked.
         if read_inputs(inputs, asof, service)[0] != manifest:
             raise ValueError("daily evidence changed during processing")
@@ -362,6 +404,7 @@ def _run_day(root, inputs, registry, asof, *, code, verify_code=None):
                 "decision_hour": config.decision_hour,
                 "inputs": input_hash,
                 "parent": parent,
+                "previous_decision_sha256": previous_decision,
                 "code": code,
                 "calendar": list(calendar),
                 "events": event_map,
@@ -376,13 +419,114 @@ def _run_day(root, inputs, registry, asof, *, code, verify_code=None):
         return decision_status(root, asof, status)
 
 
+def decision_fingerprint(folder):
+    return fingerprint(
+        {
+            "completed": sha256(folder / "completed.json"),
+            "publication": sha256(folder / "published.json"),
+        }
+    )
+
+
+def resolved_decision(root, asof, saved):
+    """Overlay append-only attempts on an immutable ledger, never modify its state."""
+    original = root / "sessions" / str(asof)
+    selected, folder = saved, original
+    parent = None
+    attempts = sorted((root / "decisions" / str(asof)).glob("*"))
+    for number, attempt in enumerate(attempts, 1):
+        if not attempt.is_dir() or attempt.name != f"{number:04d}":
+            raise ValueError("decision attempt sequence mismatch")
+        verify_completed(attempt)
+        payload = checkpoint_read(attempt / "account.json")
+        if (
+            selected["plan"] is not None
+            or payload["account_sha256"] != sha256(original / "completed.json")
+            or payload["inputs"] != saved["inputs"]
+            or payload["code"] != saved["code"]
+            or payload["parent_attempt"] != parent
+            or payload["decision_hour"] != saved["decision_hour"]
+        ):
+            raise ValueError("decision attempt binding mismatch")
+        selected = {**saved, **payload}
+        folder = attempt
+        parent = sha256(attempt / "completed.json")
+    return selected, folder
+
+
+def _retry_decision(
+    root, inputs, registry, asof, saved, manifest, calendar, service, *, code, verify_code
+):
+    selected, folder = resolved_decision(root, asof, saved)
+    config = config_from(service["config"])
+    if not (folder / "published.json").exists():
+        record_publication(folder, asof, serving.now, decision_hour=config.decision_hour)
+    # A final plan is immutable, even if a crash caused its publication to be late.
+    if selected["plan"] is not None:
+        return decision_status(root, asof, saved["status"])
+    head, _, _ = account_head(root, service)
+    clock = pd.Timestamp(serving.now()).tz_convert("Asia/Shanghai")
+    cutoff = pd.Timestamp(asof).tz_localize("Asia/Shanghai") + pd.Timedelta(
+        hours=config.decision_hour
+    )
+    if head["book"].asof_date != asof or clock.date() != asof or clock > cutoff or is_paused(root):
+        return decision_status(root, asof, saved["status"])
+    attempts = root / "decisions" / str(asof)
+    number = len(list(attempts.glob("*"))) + 1
+    signal = root / "retry_signals" / str(asof) / f"{number:04d}"
+    plan, status, prediction, industries = _plan_decision(
+        root,
+        inputs,
+        registry,
+        asof,
+        saved["state"],
+        calendar,
+        service,
+        selected["industries"],
+        signal=signal,
+        code=code,
+        verify_code=verify_code,
+    )
+    if read_inputs(inputs, asof, service)[0] != manifest:
+        raise ValueError("daily evidence changed during decision retry")
+    if verify_code is not None and verify_code() != code:
+        raise ValueError("code/runtime changed during decision retry")
+    work = root / ".work" / uuid4().hex
+    work.mkdir(parents=True)
+    checkpoint_write(
+        work / "account.json",
+        {
+            "plan": plan,
+            "status": status,
+            "industries": industries,
+            "decision_hour": config.decision_hour,
+            "inputs": saved["inputs"],
+            "code": code,
+            "account_sha256": sha256(root / "sessions" / str(asof) / "completed.json"),
+            "parent_attempt": sha256(folder / "completed.json")
+            if folder != root / "sessions" / str(asof)
+            else None,
+            "signal_sha256": sha256(signal / "completed.json") if prediction else None,
+        },
+    )
+    attempts.mkdir(parents=True, exist_ok=True)
+    publish_ready(
+        work, attempts / f"{number:04d}", asof, serving.now, decision_hour=config.decision_hour
+    )
+    return decision_status(root, asof, saved["status"])
+
+
 def decision_status(root, asof, status):
-    receipt = verify_publication(root / "sessions" / str(asof), asof, require_forward=False)
+    saved = checkpoint_read(root / "sessions" / str(asof) / "account.json")
+    selected, folder = resolved_decision(root, asof, saved)
+    receipt = verify_publication(folder, asof, require_forward=False)
+    status = selected["status"]
     return {
         "asof": str(asof),
         "status": status,
         "forward_decision": status == "decision_ready" and receipt["forward_eligible"],
         "published_at": receipt["published_at"],
+        "decision_attempts": len(list((root / "decisions" / str(asof)).glob("*"))),
         "execution_authority": False,
     }
 

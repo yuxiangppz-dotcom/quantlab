@@ -19,6 +19,44 @@ def exact_integer(value, scale=1):
     return int(number)
 
 
+def close_market_open(bar, records):
+    """Interpret suspend_d at the modeled 15:00 close, not as a membership blacklist.
+
+    R means resumption. Explicit S intervals ending before close do not block close.
+    Unordered full-day S + R, unknown types and malformed timing remain unknown.
+    Source: https://tushare.pro/document/2?doc_id=214
+    """
+    import re
+    from datetime import time
+
+    if any(r.suspend_type not in {"S", "R"} for r in records):
+        return None
+    suspensions = [r for r in records if r.suspend_type == "S"]
+    resumed = any(r.suspend_type == "R" for r in records)
+    closing_halt = False
+    for row in suspensions:
+        if not row.suspend_timing or not row.suspend_timing.strip():
+            closing_halt = True
+            continue
+        for interval in re.split(r"[,;，；]", row.suspend_timing):
+            match = re.fullmatch(
+                r"\s*(\d{2}:\d{2}(?::\d{2})?)\s*-\s*(\d{2}:\d{2}(?::\d{2})?)\s*",
+                interval,
+            )
+            if match is None:
+                return None
+            try:
+                start, end = (time.fromisoformat(x) for x in match.groups())
+            except ValueError:
+                return None
+            if start >= end:
+                return None
+            closing_halt |= start <= time(15) <= end
+    if closing_halt:
+        return None if resumed else False
+    return True if bar is not None else None
+
+
 def market_day(storage, receipts, sessions, day, instruments, policy, corporate_path, *, hour):
     verify_session(storage, receipts, day)
     read_corporate_actions(corporate_path, day, day)
@@ -27,7 +65,11 @@ def market_day(storage, receipts, sessions, day, instruments, policy, corporate_
         raise ValueError("market adapter needs 20 prior sessions and one next session")
     bars = {b.instrument_id: b for b in storage.load_daily_bars_by_date(day)}
     limits = {r.instrument_id: r for r in storage.load_daily_price_limits_by_date(day)}
-    suspended = {r.instrument_id for r in storage.load_suspensions_v1_by_date(day)}
+    suspensions = {}
+    for row in storage.load_suspensions_v1_by_date(day):
+        if row.trade_date != day:
+            raise ValueError("suspension evidence date mismatch")
+        suspensions.setdefault(row.instrument_id, []).append(row)
     history = []
     for prior in sessions[i - 20 : i]:
         verify_session(storage, receipts, prior)
@@ -60,7 +102,7 @@ def market_day(storage, receipts, sessions, day, instruments, policy, corporate_
             "next_session": str(sessions[i + 1]),
             "evidence_date": str(day),
             "calendar_verified": True,
-            "market_open": False if code in suspended else (True if bar else None),
+            "market_open": close_market_open(bar, suspensions.get(code, [])),
             "corporate_actions_processed": True,
             "raw_close_fen": exact_integer(bar.close, 100) if bar else None,
             "low_fen": exact_integer(bar.low, 100) if bar else None,

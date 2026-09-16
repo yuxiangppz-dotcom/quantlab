@@ -15,6 +15,7 @@ from quantlab.data.models import (
     DailyPriceLimit,
     IndexDailyBar,
     Security,
+    SuspensionRecord,
     TradingCalendar,
 )
 from quantlab.data.storage import ParquetStorage
@@ -184,7 +185,7 @@ def history(tmp_path, request):
     return storage, receipts, days
 
 
-def engine(raw, sessions, securities, contract, scratch):
+def engine(raw, sessions, securities, contract, scratch, *, code_changes=()):
     frame = raw[["trade_date", "instrument_id"]].copy()
     return pd.concat(
         [frame, pd.DataFrame({f["name"]: np.ones(len(frame)) for f in contract["features"]})],
@@ -198,7 +199,8 @@ def test_shared_bridge_has_exact_contract_and_rejects_late_source(history, tmp_p
     config = MLConfig(decision_hour=18)
     output = tmp_path / "bundle"
     build_bundle(*args, output, days[60].date(), days[-1].date(), config, root=ROOT, engine=engine)
-    verify_bundle(output)
+    manifest = verify_bundle(output)
+    assert str(ROOT / "config/security_code_changes.csv") in manifest["provenance"]["inputs"]
     assert len(pd.read_parquet(output / "features.parquet")) == 30
     with pytest.raises(ValueError, match="cutoff"):
         build_bundle(
@@ -224,7 +226,7 @@ def test_shared_bridge_has_exact_contract_and_rejects_late_source(history, tmp_p
     assert (pd.to_datetime(late.feature_available_at, utc=True).dt.year >= 2026).all()
 
 
-def test_market_adapter_preserves_units_and_missing_policies_block(history, tmp_path):
+def test_market_adapter_preserves_units_and_missing_policies_block(history, tmp_path, monkeypatch):
     storage, receipts, days = history
     corporate = tmp_path / "corporate.json"
     corporate.write_text(
@@ -261,6 +263,15 @@ def test_market_adapter_preserves_units_and_missing_policies_block(history, tmp_
     assert result["contexts"][0]["prior20_amount_fen"] == 10000000
     assert result["contexts"][0]["session_volume_shares"] == 10000
     assert result["contexts"][0]["fees"] is None  # unknown stays unknown, kernel blocks
+    monkeypatch.setattr(
+        storage,
+        "load_suspensions_v1_by_date",
+        lambda day: [SuspensionRecord("000001.SZ", day, "R", None, "synthetic-resumption")],
+    )
+    resumed = market_day(
+        storage, receipts, sessions, sessions[60], {"000001.SZ"}, policy, corporate, hour=18
+    )
+    assert resumed["contexts"][0]["market_open"] is True
     with pytest.raises(ValueError, match="execution policy"):
         market_day(
             storage, receipts, sessions, sessions[60], {"000003.SZ"}, policy, corporate, hour=18
