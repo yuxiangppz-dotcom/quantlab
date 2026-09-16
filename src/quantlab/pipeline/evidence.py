@@ -366,10 +366,10 @@ def execution_policy_document(
                         "effective_through": era_end.isoformat(),
                         "commission_rate": commission_rate,
                         "minimum_commission_fen": minimum_commission_fen,
-                        "buy_stamp_rate": None,
+                        "buy_stamp_rate": "0",
                         "sell_stamp_rate": era.sell_stamp_rate,
                         "additional_fee_rate": era.additional_fee_rate,
-                        "additional_fee_fixed_fen": None,
+                        "additional_fee_fixed_fen": 0,
                         "adverse_slippage_rate": "0",
                     },
                 }

@@ -126,6 +126,19 @@ def test_execution_policy_covers_every_instrument_and_day():
     assert star["rules"]["buy_increment"] == 1
     chinext = next(p for p in policies if "300750.SZ" in p["instruments"])
     assert chinext["rules"]["buy_minimum"] == 100
+    # Every fee component must be DECLARED (zero where absent); a None field
+    # would make the quantity kernel stop with fee_components_unknown.
+    from quantlab.research.quantity_kernel import ResearchFeeScenario
+
+    for policy in policies:
+        fees = ResearchFeeScenario(
+            **{
+                **policy["fees"],
+                "effective_from": date.fromisoformat(policy["fees"]["effective_from"]),
+                "effective_through": date.fromisoformat(policy["fees"]["effective_through"]),
+            }
+        )
+        assert fees.complete, policy["start"]
     with pytest.raises(ValueError, match="board"):
         board_group("832317.BJ")
 
