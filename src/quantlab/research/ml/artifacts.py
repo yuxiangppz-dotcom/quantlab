@@ -163,12 +163,18 @@ def write_frame(path, frame):
 
 def publish_ready(work, output, asof, clock):
     """Timestamp AFTER atomic payload publication; a missing receipt is never forward."""
+    complete(work)
+    work.rename(output)
+    return record_publication(output, asof, clock)
+
+
+def record_publication(output, asof, clock):
+    """Conservative recovery after rename: attest availability NOW, never backdate."""
     import pandas as pd
 
     from quantlab.research.ml.io import sha256
 
-    complete(work)
-    work.rename(output)
+    verify_completed(output)
     published = pd.Timestamp(clock())
     cutoff = pd.Timestamp(asof).tz_localize("Asia/Shanghai") + pd.Timedelta(hours=16)
     forward = published <= cutoff and published.tz_convert("Asia/Shanghai").date() == asof

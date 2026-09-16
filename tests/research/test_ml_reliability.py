@@ -70,3 +70,22 @@ def test_publication_crossing_deadline_is_not_forward(tmp_path, monkeypatch):
     (out / "published.json").unlink()
     with pytest.raises(ValueError, match="missing"):
         verify_publication(out, days[60].date())
+
+
+def test_replay_failed_final_evidence_check_cannot_resume(tmp_path):
+    from test_ml_v2 import replay_fixture
+
+    days, market, universe, scores, marks, config = replay_fixture()
+    scores["model"] = "ridge"
+    output = tmp_path / "replay"
+
+    def changed():
+        raise ValueError("market evidence changed")
+
+    kwargs = dict(
+        start=days[1], end=days[6], capitals_fen=[10_000_000], config=config, output=output
+    )
+    with pytest.raises(ValueError, match="market evidence changed"):
+        runner.run_scenarios(scores, universe, days, market, marks, final_check=changed, **kwargs)
+    with pytest.raises(ValueError, match="invalidated"):
+        runner.run_scenarios(scores, universe, days, market, marks, resume=True, **kwargs)

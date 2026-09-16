@@ -93,6 +93,19 @@ def parser():
         study.add_argument(f"--{name}", type=date.fromisoformat, required=True)
     doctor = sub.add_parser("status", help="Verify completion receipts, inputs and registry state")
     doctor.add_argument("--path", type=Path, required=True)
+    init = sub.add_parser("init-service", help="Initialize an isolated, flat paper account")
+    for name in ("output", "config", "calendar", "initial-marks", "feature-contract"):
+        init.add_argument(f"--{name}", type=Path, required=True)
+    init.add_argument("--as-of", type=date.fromisoformat, required=True)
+    init.add_argument("--capital-cny", type=int, default=200000)
+    init.add_argument("--max-model-age-days", type=int, default=45)
+    daily = sub.add_parser("run-day", help="Settle yesterday's orders and freeze today's decision")
+    for name in ("service", "inputs", "registry"):
+        daily.add_argument(f"--{name}", type=Path, required=True)
+    daily.add_argument("--as-of", type=date.fromisoformat, required=True)
+    state = sub.add_parser("service-state", help="Inspect or pause/resume new paper decisions")
+    state.add_argument("--service", type=Path, required=True)
+    state.add_argument("--set", choices=("paused", "active"))
     return main
 
 
@@ -173,6 +186,32 @@ def execute_replay(args, manifest, config, sessions):
 def dispatch(args):
     if hasattr(args, "output"):
         research_output(args.output)
+    if args.action in {"init-service", "run-day", "service-state"}:
+        from quantlab.research.ml import service
+
+        if args.action == "init-service":
+            raw = json.loads(args.initial_marks.read_text())
+            marks = tuple(
+                RawCloseMark(r["instrument_id"], date.fromisoformat(r["session"]), r["price_fen"])
+                for r in raw
+            )
+            return service.initialize(
+                args.output,
+                load_config(args.config),
+                json.loads(args.calendar.read_text()),
+                marks,
+                args.as_of,
+                args.capital_cny * 100,
+                sha256(args.feature_contract),
+                max_model_age_days=args.max_model_age_days,
+            )
+        if args.action == "run-day":
+            return service.run_day(
+                args.service, args.inputs, args.registry, args.as_of, code=code_identity(ROOT)
+            )
+        if args.set:
+            service.set_paused(args.service, args.set == "paused")
+        return service.inspect_service(args.service)
     if args.action == "export-history":
         from quantlab.research.ml.history import export_history
 
@@ -235,6 +274,12 @@ def dispatch(args):
         return initialize(args.output, args.development_end, args.holdout_start, args.holdout_end)
     if args.action == "status":
         path = args.path
+        if (path / "service.json").exists():
+            from quantlab.research.ml.service import inspect_service
+
+            return inspect_service(path)
+        if (path / "invalidated.json").exists():
+            return {"status": "invalidated_use_new_output", "resume_allowed": False}
         if (path / "completed.json").exists():
             receipt = verify_completed(path)
             return {
@@ -331,6 +376,8 @@ def main(argv=None):
     args = parser().parse_args(argv)
     payload = dispatch(args)
     print(json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False))
+    if args.action == "run-day" and not payload["forward_decision"]:
+        return 2
     return 0
 
 

@@ -79,6 +79,7 @@ def register_model(run, fold, kind, registry):
             "registered_at": now().isoformat(),
             "source_run_sha256": sha256(run / "completed.json"),
             "feature_names": fit["feature_names"],
+            "feature_contract_sha256": intent["inputs"]["files"].get("feature_contract.json"),
             "execution_authority": False,
         }
         write_json(work / "registration.json", registration)

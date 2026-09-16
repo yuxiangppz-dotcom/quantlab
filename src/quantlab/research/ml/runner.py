@@ -206,6 +206,8 @@ def run_scenarios(
     if output.exists() and not resume:
         raise FileExistsError(output)
     with exclusive_job(output):
+        if (output / "invalidated.json").exists():
+            raise ValueError("replay invalidated by input/code change; use a new output directory")
         intent = output / "intent.json"
         if intent.exists():
             if json.loads(intent.read_text())["binding"] != binding:
@@ -345,7 +347,11 @@ def run_scenarios(
                     summaries.append(summary)
             _same_or_write(output / "summary.json", summaries)
             if final_check is not None:
-                final_check()
+                try:
+                    final_check()
+                except Exception:
+                    write_json(output / "invalidated.json", {"reason": "final input check failed"})
+                    raise
             complete(output)
             return summaries
         except Exception as exc:
