@@ -33,10 +33,9 @@ def sha256(path):
 
 
 def write_json(path, payload):
-    # Exclusive create: a rerun cannot silently replace previous evidence.
-    with Path(path).open("x", encoding="utf-8") as stream:
-        json.dump(payload, stream, indent=2, ensure_ascii=False, allow_nan=False)
-        stream.write("\n")
+    from quantlab.research.ml.artifacts import atomic_json
+
+    atomic_json(path, payload)
 
 
 def seal_bundle(folder, *, provenance):
@@ -101,6 +100,58 @@ def decode_market_day(payload):
     return ResearchDay(day, (), tuple(contexts), marks, payload["corporate_processing_complete"])
 
 
+class MarketDayStore:
+    """JSONL offset index; decode one session rather than retaining every context."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self.fingerprint = sha256(self.path)
+        self.offsets = {}
+        with self.path.open("rb") as stream:
+            while True:
+                offset = stream.tell()
+                line = stream.readline()
+                if not line:
+                    break
+                if not line.strip():
+                    continue
+                raw = json.loads(line)
+                day = date.fromisoformat(raw["session"])
+                if day in self.offsets:
+                    raise ValueError("duplicate market day")
+                if raw.get("orders"):
+                    raise ValueError("market evidence must not inject orders")
+                self.offsets[day] = offset
+
+    def get(self, day):
+        offset = self.offsets.get(day)
+        if offset is None:
+            return None
+        with self.path.open("rb") as stream:
+            stream.seek(offset)
+            raw = json.loads(stream.readline())
+        if date.fromisoformat(raw["session"]) != day:
+            raise ValueError("market input changed during indexed reading")
+        return decode_market_day(raw)
+
+
 def read_market_days(path):
-    with Path(path).open(encoding="utf-8") as stream:
-        return tuple(decode_market_day(json.loads(line)) for line in stream if line.strip())
+    return MarketDayStore(path)
+
+
+def read_corporate_actions(path, start, end):
+    from quantlab.research.ml.corporate import decode_event
+
+    payload = json.loads(Path(path).read_text())
+    coverage = payload["coverage"]
+    if (
+        not isinstance(coverage.get("source_id"), str)
+        or not coverage["source_id"].strip()
+        or date.fromisoformat(coverage["start"]) > start
+        or date.fromisoformat(coverage["end"]) < end
+    ):
+        raise ValueError("explicit corporate coverage/source required for the replay interval")
+    events = tuple(decode_event(e) for e in payload["events"])
+    if len({e.event_id for e in events}) != len(events):
+        raise ValueError("duplicate corporate event id")
+    return tuple(e for e in events if start <= e.ex_date <= end)

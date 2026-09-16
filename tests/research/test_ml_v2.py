@@ -580,3 +580,91 @@ def test_admission_does_not_depend_on_execution_day_outcomes():
     blocked = run_fixture(market)
     assert original.decisions[1]["pretrade_deferred"] == blocked.decisions[1]["pretrade_deferred"]
     assert original.decisions[1]["target_weights"] == blocked.decisions[1]["target_weights"]
+
+
+def test_replay_checkpoints_resume_exact_account_and_detect_changed_inputs(tmp_path, monkeypatch):
+    from quantlab.research.ml import artifacts
+    from quantlab.research.ml.runner import run_scenarios
+
+    days, market, universe, scores, marks, config = replay_fixture()
+    scores["model"] = "ridge"
+    kwargs = dict(
+        start=days[1],
+        end=days[6],
+        capitals_fen=[10_000_000],
+        config=config,
+        output=tmp_path / "replay",
+    )
+    original = artifacts.checkpoint_write
+    counter = 0
+
+    def interrupt(path, payload):
+        nonlocal counter
+        original(path, payload)
+        counter += 1
+        if counter == 2:
+            raise RuntimeError("synthetic power loss")
+
+    monkeypatch.setattr(artifacts, "checkpoint_write", interrupt)
+    with pytest.raises(RuntimeError, match="power loss"):
+        run_scenarios(scores, universe, days, market, marks, **kwargs)
+    monkeypatch.setattr(artifacts, "checkpoint_write", original)
+    changed = scores.copy()
+    changed.loc[0, "score"] += 1
+    with pytest.raises(ValueError, match="mismatch"):
+        run_scenarios(changed, universe, days, market, marks, **kwargs, resume=True)
+    resumed = run_scenarios(scores, universe, days, market, marks, **kwargs, resume=True)
+    fresh = run_scenarios(
+        scores, universe, days, market, marks, **{**kwargs, "output": tmp_path / "fresh"}
+    )
+    assert resumed == fresh
+    pd.testing.assert_frame_equal(
+        pd.read_parquet(kwargs["output"] / "ridge-10000000fen" / "positions.parquet"),
+        pd.read_parquet(tmp_path / "fresh" / "ridge-10000000fen" / "positions.parquet"),
+    )
+
+
+def test_corporate_dividend_receivable_prevents_fake_ex_date_loss():
+    from quantlab.research.ml.corporate import CorporateEvent
+
+    days, market, universe, scores, marks, config = replay_fixture()
+    event = CorporateEvent(
+        "cash",
+        "A",
+        "cash_dividend",
+        days[1],
+        days[2],
+        days[4],
+        "synthetic",
+        net_cash_per_share_fen=Decimal(100),
+    )
+    for index in range(1, len(market)):
+        day = market[index]
+        context = replace(day.contexts[0], raw_close_fen=900, low_fen=850)
+        market[index] = replace(
+            day,
+            contexts=(context, *day.contexts[1:]),
+            marks=(replace(day.marks[0], price_fen=900), *day.marks[1:]),
+        )
+    result = replay_scores(
+        scores,
+        universe,
+        days,
+        market,
+        marks,
+        start=days[1],
+        end=days[6],
+        initial_cash_fen=10_000_000,
+        config=replace(config, rebalance_sessions=5),
+        corporate_actions=(event,),
+    )
+    assert result.schedule.status == "completed_scenario"
+    assert result.decisions[1]["receivable_fen"] == 800000
+    assert (
+        result.schedule.records[1].marked_equity_fen == result.schedule.records[0].marked_equity_fen
+    )
+    assert result.decisions[3]["receivable_fen"] == 0
+    assert (
+        result.schedule.records[3].book.cash_fen
+        == result.schedule.records[0].book.cash_fen + 800000
+    )

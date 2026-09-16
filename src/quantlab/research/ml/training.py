@@ -154,6 +154,7 @@ def walk_forward(frame, names, sessions, start, end, config: MLConfig, output: P
             part["fit_asof"] = fold.fit_asof
             scores.append(part)
             record = {
+                "feature_names": names,
                 "fold": fold.name,
                 "model": kind,
                 "train_start": str(fold.train_start.date()),

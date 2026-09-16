@@ -7,12 +7,18 @@ No real-data certification or broker authority is inferred from this adapter.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 import pandas as pd
 
 from quantlab.research.ml.config import MLConfig
+from quantlab.research.ml.corporate import (
+    apply_events,
+    capture_entitlements,
+    new_state,
+    receivable_value,
+)
 from quantlab.research.ml.execution import admit_orders, exposure_report
 from quantlab.research.ml.portfolio import buffered_target
 from quantlab.research.quantity_kernel import ResearchBook, ResearchOrder
@@ -27,6 +33,7 @@ from quantlab.research.quantity_scheduler import (
 class MLReplayResult:
     schedule: ResearchScheduleResult
     decisions: tuple[dict, ...]
+    corporate_state: dict
 
 
 def replay_scores(
@@ -40,6 +47,9 @@ def replay_scores(
     end: date,
     initial_cash_fen: int,
     config: MLConfig,
+    corporate_actions=(),
+    checkpoint_dir=None,
+    binding=None,
 ):
     """market_days includes *every* session, including those without rebalancing.
 
@@ -57,11 +67,18 @@ def replay_scores(
         raise ValueError("replay requires exactly one model and one score per date/instrument")
     if universe.duplicated(["trade_date", "instrument_id"]).any():
         raise ValueError("duplicate PIT universe row")
-    if len({d.session for d in market_days}) != len(market_days):
-        raise ValueError("duplicate market day")
-    if any(day.orders for day in market_days):
-        raise ValueError("market evidence batches must not inject orders")
-    batches = {d.session: d for d in market_days}
+    if hasattr(market_days, "get"):
+        batches = market_days
+    else:
+        if len({d.session for d in market_days}) != len(market_days):
+            raise ValueError("duplicate market day")
+        if any(day.orders for day in market_days):
+            raise ValueError("market evidence batches must not inject orders")
+        batches = {d.session: d for d in market_days}
+    if len({e.event_id for e in corporate_actions}) != len(corporate_actions):
+        raise ValueError("duplicate corporate event id")
+    if any(e.ex_date not in calendar or e.record_date not in calendar for e in corporate_actions):
+        raise ValueError("corporate record/ex date outside complete trading calendar")
     book = ResearchBook(calendar[first - 1], initial_cash_fen)
     if len({m.instrument_id for m in initial_marks}) != len(initial_marks):
         raise ValueError("duplicate initial mark")
@@ -69,6 +86,7 @@ def replay_scores(
         raise ValueError("initial marks must be from the decision session")
     marks = {m.instrument_id: m.price_fen for m in initial_marks}
     records, decisions, attempted = [], [], set()
+    corporate_state = capture_entitlements(new_state(), book, corporate_actions)
     scores, universe = scores.copy(), universe.copy()
     scores["trade_date"] = pd.to_datetime(scores.trade_date)
     universe["trade_date"] = pd.to_datetime(universe.trade_date)
@@ -83,10 +101,33 @@ def replay_scores(
             day,
             reason,
         )
-        return MLReplayResult(schedule, tuple(decisions))
+        return MLReplayResult(schedule, tuple(decisions), corporate_state)
 
+    from quantlab.research.ml.artifacts import checkpoint_read, checkpoint_write
+
+    if checkpoint_dir is not None:
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        if not binding:
+            raise ValueError("checkpoint binding required")
+    checkpoint_gap = False
     for i in range(first, last + 1):
         day, decision_day = calendar[i], calendar[i - 1]
+        checkpoint = checkpoint_dir / f"{day}.json" if checkpoint_dir is not None else None
+        if checkpoint is not None and checkpoint.exists():
+            if checkpoint_gap:
+                raise ValueError("noncontiguous replay checkpoints")
+            saved = checkpoint_read(checkpoint)
+            if saved["binding"] != binding or saved["index"] != i:
+                raise ValueError("checkpoint input binding mismatch")
+            record = saved["record"]
+            if record.session != day or record.book.asof_date != day:
+                raise ValueError("checkpoint date mismatch")
+            book, attempted, marks = record.book, set(saved["attempted"]), saved["marks"]
+            corporate_state = saved["corporate_state"]
+            records.append(record)
+            decisions.append(saved["decision"])
+            continue
+        checkpoint_gap = True
         evidence = batches.get(day)
         if evidence is None:
             return finish("session_batch_missing", day)
@@ -100,6 +141,7 @@ def replay_scores(
             age = i - 1 - calendar.index(lot.acquired_on)
             ages[lot.instrument_id] = min(ages.get(lot.instrument_id, age), age)
         equity = book.cash_fen + sum(q * marks[k] for k, q in quantities.items())
+        equity += receivable_value(corporate_state)
         if equity <= 0:
             return finish("nonpositive_equity", day)
         weights = {k: q * marks[k] / equity for k, q in quantities.items()}
@@ -152,6 +194,16 @@ def replay_scores(
             )
         industries = cross.set_index("instrument_id").industry.to_dict()
         orders, deferred = admit_orders(orders, book, marks, industries, config)
+        # Cancel stale pre-ex-date share/price orders; no guessed exchange adjustment.
+        affected = {e.instrument_id for e in corporate_actions if e.ex_date == day}
+        cancelled = [o.order_id for o in orders if o.instrument_id in affected]
+        orders = tuple(o for o in orders if o.instrument_id not in affected)
+        try:
+            morning_book, next_corporate, movements = apply_events(
+                book, day, corporate_actions, corporate_state, calendar[first - 1]
+            )
+        except ValueError as exc:
+            return finish(str(exc), day)
         batch = ResearchDay(
             day,
             tuple(orders),
@@ -160,14 +212,20 @@ def replay_scores(
             evidence.corporate_processing_complete,
         )
         local_attempted = set(attempted)
-        advance = advance_research_day(book, calendar, i, batch, local_attempted)
+        advance = advance_research_day(morning_book, calendar, i, batch, local_attempted)
         if advance.status == "stopped":
             return finish(advance.reason, day)
         record = advance.record
         assert record is not None
+        receivable = receivable_value(next_corporate)
+        record = replace(record, marked_equity_fen=record.marked_equity_fen + receivable)
         # End-of-day exposure is diagnostic. Never rewrite a completed fill.
         exposure = exposure_report(
-            record.book, {m.instrument_id: m.price_fen for m in evidence.marks}, industries, config
+            record.book,
+            {m.instrument_id: m.price_fen for m in evidence.marks},
+            industries,
+            config,
+            receivable,
         )
         decisions.append(
             {
@@ -179,10 +237,27 @@ def replay_scores(
                 "pretrade_deferred": deferred,
                 "execution_policy": "prior_close_admission_no_same_auction_sale_credit",
                 "realized_exposure": exposure,
+                "corporate_movements": movements,
+                "corporate_cancelled_orders": cancelled,
+                "receivable_fen": receivable,
                 "target_weights": desired,
             }
         )
         book, attempted = record.book, local_attempted
+        corporate_state = capture_entitlements(next_corporate, book, corporate_actions)
         records.append(record)
         marks = {m.instrument_id: m.price_fen for m in evidence.marks}
+        if checkpoint is not None:
+            checkpoint_write(
+                checkpoint,
+                {
+                    "binding": binding,
+                    "index": i,
+                    "record": record,
+                    "attempted": attempted,
+                    "marks": marks,
+                    "corporate_state": corporate_state,
+                    "decision": decisions[-1],
+                },
+            )
     return finish()

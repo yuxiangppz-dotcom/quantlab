@@ -54,3 +54,22 @@ or generated experiment data are included in this change.
 
 Recommendation: review this isolated code change, then complete local evidence admission and
 one preregistered baseline comparison before choosing a model for forward observation.
+
+## Direct follow-up commission (2026-09-16)
+
+The user authorized completion of the data-independent framework after comparing
+Qlib, LEAN/RQAlpha, NautilusTrader, Zipline and vnpy.alpha. No concurrent executor
+was present in this isolated workspace. Starting follow-up HEAD: d80613b.
+
+Completed first correction: causal prior-close admission (no assumed same-auction
+sale credit), diagnostic-only post-fill exposures, score-frozen quantile membership.
+Completed accounting/operations increment: explicit net-cash dividend receivables,
+record-date entitlements, bonus share locks and integral split scenarios; stale
+ex-date orders cancel rather than guessing exchange adjustments. Rights, fractional
+settlement, delisting and historical tax verification remain explicit data/adapter
+boundaries. Date-filtered training, immutable monthly completion, daily full-account
+checkpoints, input-bound resume, atomic JSON and streaming market-day reads are now
+implemented. Frozen legacy schedulers remain unchanged.
+
+Synthetic verification: 31 ML tests passed before the next integration increment.
+No provider calls, canonical writes, live orders or performance certification.
