@@ -8,6 +8,90 @@ import pandas as pd
 from quantlab.research.ml.artifacts import verify_completed
 
 
+def compare_factor_baseline(replay, factor_replay, *, factor="momentum_20d"):
+    """Model vs a same-holdings transparent factor under identical rules.
+
+    Unlike the full-pool baseline, this comparison changes only the score
+    source: positions, buffers, limits, fees, frequency and accounting are the
+    model configuration's own, so the contrast isolates selection rather than
+    capacity or idle cash.
+    """
+    verify_completed(replay)
+    verify_completed(factor_replay)
+    model_intent = json.loads((replay / "intent.json").read_text())["inputs"]
+    factor_intent = json.loads((factor_replay / "intent.json").read_text())["inputs"]
+    if factor_intent["strategy_mode"] != "simple_factor":
+        raise ValueError("expected an independently replayed simple-factor baseline")
+    for key in (
+        "universe",
+        "calendar",
+        "initial_marks",
+        "market",
+        "corporate",
+        "start",
+        "end",
+        "capitals_fen",
+        "config",
+    ):
+        if model_intent[key] != factor_intent[key]:
+            raise ValueError(f"factor baseline input differs:{key}")
+    if factor_intent["extra"]["code"] != model_intent["extra"]["code"]:
+        raise ValueError("factor baseline code/runtime differs")
+    models = json.loads((replay / "summary.json").read_text())
+    factors = {
+        r["capital_fen"]: r
+        for r in json.loads((factor_replay / "summary.json").read_text())
+    }
+    rows = {}
+    for model in models:
+        capital = model["capital_fen"]
+        name = f"{model['model']}-{capital}fen"
+        factor = factors.get(capital)
+        if (
+            not factor
+            or factor["stop_reason"]
+            or model["stop_reason"]
+            or factor["valid_through"] != model_intent["end"]
+            or model["valid_through"] != model_intent["end"]
+        ):
+            rows[name] = {"status": "incomplete_account_not_comparable"}
+            continue
+        left = pd.read_parquet(replay / name / "ledger.parquet").sort_values("session")
+        right = pd.read_parquet(
+            factor_replay / f"momentum_20d-{capital}fen/ledger.parquet"
+        ).sort_values("session")
+        if left.empty or left.session.tolist() != right.session.tolist():
+            rows[name] = {"status": "calendar_mismatch_not_comparable"}
+            continue
+        from quantlab.research.ml.reporting import block_mean_interval, comparison_metrics
+
+        metrics = comparison_metrics(left.daily_return, right.daily_return)
+        block = max(
+            model_intent["config"]["horizon_sessions"] + 1,
+            model_intent["config"]["rebalance_sessions"],
+        )
+        rows[name] = {
+            "status": "compared",
+            **metrics,
+            "factor_mean_gross_exposure": float(right.gross_exposure.mean()),
+            "factor_mean_one_way_turnover": float(right.one_way_turnover.mean()),
+            "factor_fees_fen": int(right.fees_fen.sum()),
+            "daily_return_difference_interval": block_mean_interval(
+                left.daily_return.to_numpy() - right.daily_return.to_numpy(), block
+            ),
+            "selection_alpha_identified": False,
+            "interpretation": (
+                "identical rules and capacity; residual differences still "
+                "include path-dependent fills and turnover timing"
+            ),
+        }
+    return {
+        "scenarios": rows,
+        "factor": "momentum_20d",
+        "same_holdings_same_rules": True,
+    }
+
+
 def momentum_20d_scores(bundle, sessions):
     """Transparent same-holdings factor baseline scores: 20-session momentum.
 

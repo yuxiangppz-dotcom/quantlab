@@ -256,6 +256,9 @@ def research_stage(project, action, *, resume=False):
                 "--study",
                 str(workspace / "study"),
             ]
+            factor = workspace / "factor-baseline-momentum20d"
+            if (factor / "completed.json").exists():
+                argv += ["--factor-replay", str(factor)]
     if resume and action in {"train", "replay", "baseline"}:
         argv.append("--resume")
     return dispatch(parser().parse_args(argv))

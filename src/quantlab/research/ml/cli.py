@@ -101,6 +101,7 @@ def parser():
     report.add_argument("--training", type=Path)
     report.add_argument("--exposures", type=Path)
     report.add_argument("--baseline-replay", type=Path)
+    report.add_argument("--factor-replay", type=Path)
     report.add_argument("--bundle", type=Path)
     report.add_argument("--study", type=Path)
     study = sub.add_parser("init-study")
@@ -333,6 +334,7 @@ def dispatch(args):
             training=args.training,
             exposures_path=args.exposures,
             baseline_replay=args.baseline_replay,
+            factor_replay=args.factor_replay,
             bundle=args.bundle,
             study=args.study,
         )

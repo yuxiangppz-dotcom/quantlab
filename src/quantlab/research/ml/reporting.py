@@ -122,6 +122,7 @@ def _build_report(
     training=None,
     exposures_path=None,
     baseline_replay=None,
+    factor_replay=None,
     bundle=None,
     study=None,
 ):
@@ -172,6 +173,11 @@ def _build_report(
         from quantlab.research.ml.baselines import compare_pool_baseline
 
         baseline_comparison = compare_pool_baseline(replay, baseline_replay)
+    factor_comparison = None
+    if factor_replay:
+        from quantlab.research.ml.baselines import compare_factor_baseline
+
+        factor_comparison = compare_factor_baseline(replay, factor_replay)
     output.mkdir(parents=True, exist_ok=False)
     rows = []
     exposures = pd.read_parquet(exposures_path) if exposures_path else None
@@ -297,6 +303,7 @@ def _build_report(
     result = {
         "schema": "quantlab_ml_report_v1",
         "same_pool_baseline": baseline_comparison,
+        "factor_baseline": factor_comparison,
         "baseline_completion_sha256": sha256(baseline_replay / "completed.json")
         if baseline_replay
         else None,
@@ -355,5 +362,7 @@ def _build_report(
         verify_completed(training)
     if baseline_replay:
         verify_completed(baseline_replay)
+    if factor_replay:
+        verify_completed(factor_replay)
     complete(output)
     return result
