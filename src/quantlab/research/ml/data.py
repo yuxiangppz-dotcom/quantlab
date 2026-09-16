@@ -33,7 +33,7 @@ def keyed(frame, sessions):
     return frame.sort_values(KEYS).reset_index(drop=True)
 
 
-def validate_features(frame, names, sessions, config: MLConfig):
+def validate_features(frame, names, sessions, config: MLConfig, *, allow_late=False):
     if not names or len(set(names)) != len(names):
         raise ValueError("feature allowlist must be nonempty and unique")
     reserved = {*KEYS, "eligible", "industry", "feature_available_at", "score"}
@@ -47,17 +47,19 @@ def validate_features(frame, names, sessions, config: MLConfig):
     frame = keyed(frame, sessions)
     if not frame.eligible.map(lambda x: pd.isna(x) or type(x) in (bool, np.bool_)).all():
         raise ValueError("eligibility must be explicit boolean or unknown")
-    # Decision occurs at 16:00 Asia/Shanghai after the completed daily bar.
+    # Decision uses the frozen Shanghai local cutoff after the completed daily bar.
     if not frame.feature_available_at.map(
         lambda x: pd.notna(x) and pd.Timestamp(x).tzinfo is not None
     ).all():
         raise ValueError("feature availability must be timezone-aware and nonmissing")
     available = pd.to_datetime(frame.feature_available_at, utc=True, errors="coerce")
-    deadline = frame.trade_date.dt.tz_localize("Asia/Shanghai") + pd.Timedelta(hours=16)
-    if available.isna().any() or (available > deadline).any():
+    deadline = frame.trade_date.dt.tz_localize("Asia/Shanghai") + pd.Timedelta(
+        hours=config.decision_hour
+    )
+    if available.isna().any() or (not allow_late and (available > deadline).any()):
         raise ValueError("features missing availability or arriving after decision cutoff")
     values = frame[names].astype("float32").replace([np.inf, -np.inf], np.nan)
-    frame[names] = values
+    frame = pd.concat([frame.drop(columns=names), values], axis=1)
     frame["feature_ok"] = values.notna().mean(axis=1).ge(config.min_feature_fraction)
     frame["eligible"] = frame.eligible.astype("boolean")
     return frame

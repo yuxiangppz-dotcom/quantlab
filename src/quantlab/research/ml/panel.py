@@ -86,4 +86,4 @@ def audit_window(bundle, features, names, config):
         features.trade_date.max(),
         max_bytes=config.max_matrix_bytes,
     )
-    return validate_lineage(features, lineage, dependencies)
+    return validate_lineage(features, lineage, dependencies, decision_hour=config.decision_hour)

@@ -59,7 +59,7 @@ def comparison_metrics(returns, benchmark):
     }
 
 
-def portfolio_style(positions, ledger, exposures):
+def portfolio_style(positions, ledger, exposures, *, decision_hour=16):
     """Report missing exposure coverage; never treat an unknown exposure as zero."""
     required = {"session", "instrument_id", "available_at"}
     if required - set(exposures):
@@ -70,7 +70,9 @@ def portfolio_style(positions, ledger, exposures):
     if x.duplicated(["session", "instrument_id"]).any():
         raise ValueError("duplicate exposure row")
     known = pd.to_datetime(x.available_at, utc=True, errors="raise")
-    cutoff = pd.to_datetime(x.session).dt.tz_localize("Asia/Shanghai") + pd.Timedelta(hours=16)
+    cutoff = pd.to_datetime(x.session).dt.tz_localize("Asia/Shanghai") + pd.Timedelta(
+        hours=decision_hour
+    )
     if known.isna().any() or (known > cutoff).any():
         raise ValueError("style exposure unavailable by session cutoff")
     if positions.empty:
@@ -107,6 +109,12 @@ def build_report(replay, benchmark_path, output, *, training=None, exposures_pat
     if benchmark.session.duplicated().any():
         raise ValueError("duplicate benchmark session")
     summary = json.loads((replay / "summary.json").read_text())
+    intent = replay / "intent.json"
+    decision_hour = (
+        json.loads(intent.read_text()).get("inputs", {}).get("config", {}).get("decision_hour", 16)
+        if intent.exists()
+        else 16
+    )
     ledgers = {}
     for row in summary:
         name = f"{row['model']}-{row['capital_fen']}fen"
@@ -149,7 +157,8 @@ def build_report(replay, benchmark_path, output, *, training=None, exposures_pat
         if exposures is not None:
             positions = pd.read_parquet(replay / name / "positions.parquet")
             write_frame(
-                output / f"{name}-style.parquet", portfolio_style(positions, frame, exposures)
+                output / f"{name}-style.parquet",
+                portfolio_style(positions, frame, exposures, decision_hour=decision_hour),
             )
     ic = {}
     if training:

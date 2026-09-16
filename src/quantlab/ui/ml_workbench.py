@@ -13,7 +13,7 @@ from quantlab.ui.workbench import public_error
 def render_ml_workbench(root: Path):
     st.subheader("日频 ML 主工作流")
     st.write(
-        "历史研究：数据核验 → 滚动训练 → 账户回放 → 基准报告。"
+        "主线：TuShare → 来源校验 → 共享特征 → 滚动训练 → 账户回放 → 基准报告。"
         "每日模拟：结算已封存订单 → 当日预测 → 封存下一日决策。"
     )
     st.caption("原 Daily、旧前瞻观察和阶段实验已归入历史研究；这里展示新 ML 服务。")
@@ -25,10 +25,10 @@ def render_ml_workbench(root: Path):
         }
     )
     if not services:
-        st.info("尚未初始化每日模拟账户。先按 docs/ml_service_zh.md 接入本地数据并完成验收。")
+        st.info("尚未初始化每日模拟账户。先按 docs/project_pipeline_zh.md 接入本地数据并完成验收。")
         st.code(
-            "uv run quantlab ml --help\nuv run quantlab ml init-service --help\n"
-            "uv run quantlab ml run-day --help",
+            "uv run quantlab pipeline --project config/project.example.json plan\n"
+            "uv run quantlab pipeline --help",
             language="bash",
         )
         st.write("本地交接任务：docs/ml_v2_local_completion_prompt_zh.md")

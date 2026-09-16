@@ -6,6 +6,7 @@ import math
 import os
 from collections.abc import Mapping
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -75,6 +76,13 @@ def _to_float(value: Any) -> float:
     return float(value)
 
 
+def _scaled_float(value: Any, scale: str) -> float:
+    """Scale the provider decimal value before returning the existing float schema."""
+    if value is None or pd.isna(value):
+        return float("nan")
+    return float(Decimal(str(value)) * Decimal(scale))
+
+
 def daily_bar_from_row(row: Mapping[str, Any]) -> DailyBar:
     """Map a Tushare ``daily`` row to a :class:`DailyBar`.
 
@@ -89,8 +97,8 @@ def daily_bar_from_row(row: Mapping[str, Any]) -> DailyBar:
         low=_to_float(row["low"]),
         close=_to_float(row["close"]),
         pre_close=_to_float(row["pre_close"]),
-        volume=_to_float(row["vol"]) * 100,
-        amount=_to_float(row["amount"]) * 1000,
+        volume=_scaled_float(row["vol"], "100"),
+        amount=_scaled_float(row["amount"], "1000"),
     )
 
 
@@ -108,8 +116,8 @@ def index_daily_from_row(row: Mapping[str, Any]) -> IndexDailyBar:
         low=_to_float(row.get("low")),
         close=_to_float(row["close"]),
         pre_close=_to_float(row["pre_close"]),
-        volume=_to_float(row.get("vol")) * 100,
-        amount=_to_float(row.get("amount")) * 1000,
+        volume=_scaled_float(row.get("vol"), "100"),
+        amount=_scaled_float(row.get("amount"), "1000"),
     )
 
 
@@ -130,9 +138,9 @@ def daily_basic_from_row(row: Mapping[str, Any]) -> DailyBasic:
     return DailyBasic(
         instrument_id=row["ts_code"],
         trade_date=parse_required_yyyymmdd(row["trade_date"]),
-        turnover_rate=_to_float(row["turnover_rate"]) / 100.0,
-        total_mv=_to_float(row["total_mv"]) * 10000.0,
-        circ_mv=_to_float(row["circ_mv"]) * 10000.0,
+        turnover_rate=_scaled_float(row["turnover_rate"], "0.01"),
+        total_mv=_scaled_float(row["total_mv"], "10000"),
+        circ_mv=_scaled_float(row["circ_mv"], "10000"),
     )
 
 
@@ -294,14 +302,18 @@ def name_change_from_row(row: Mapping[str, Any]) -> NameChangeRecord:
 class TushareProvider(DataProvider):
     """Data provider backed by the Tushare HTTP API."""
 
-    def __init__(self, token: str | None = None) -> None:
+    def __init__(self, token: str | None = None, *, archive=None, interval=0.3, attempts=3) -> None:
         self._token = token or os.environ.get("TUSHARE_TOKEN")
         if not self._token:
             raise RuntimeError(
                 "TUSHARE_TOKEN is not set. Set the Tushare API token via the "
                 "TUSHARE_TOKEN environment variable, e.g. `export TUSHARE_TOKEN=...`."
             )
-        self._pro = ts.pro_api(self._token)
+        from quantlab.data.transport import ObservedClient
+
+        self._pro = ObservedClient(
+            ts.pro_api(self._token), archive=archive, interval=interval, attempts=attempts
+        )
 
     def get_securities(self) -> list[Security]:
         frames = []
@@ -313,7 +325,9 @@ class TushareProvider(DataProvider):
             )
             frames.append(frame)
         merged = pd.concat(frames, ignore_index=True)
-        merged = merged.drop_duplicates(subset=["ts_code"])
+        merged = merged.drop_duplicates()
+        if merged.duplicated("ts_code").any():
+            raise DataValidationError("conflicting stock_basic identity rows")
         return [security_from_row(row) for row in merged.to_dict("records")]
 
     def get_trading_calendar(self, start_date: date, end_date: date) -> list[TradingCalendar]:
@@ -342,10 +356,14 @@ class TushareProvider(DataProvider):
 
     def get_daily_bars_by_date(self, trade_date: date) -> list[DailyBar]:
         frame = self._pro.daily(trade_date=format_yyyymmdd(trade_date))
+        if len(frame) >= 6000:
+            raise DataValidationError("daily reached response cap; partition the request")
         return [daily_bar_from_row(row) for row in frame.to_dict("records")]
 
     def get_adj_factors_by_date(self, trade_date: date) -> list[AdjFactor]:
         frame = self._pro.adj_factor(trade_date=format_yyyymmdd(trade_date))
+        if len(frame) >= 6000:
+            raise DataValidationError("adj_factor reached response cap; partition the request")
         return [adj_factor_from_row(row) for row in frame.to_dict("records")]
 
     def get_daily_basic_by_date(self, trade_date: date) -> list[DailyBasic]:
@@ -353,6 +371,8 @@ class TushareProvider(DataProvider):
             trade_date=format_yyyymmdd(trade_date),
             fields="ts_code,trade_date,turnover_rate,total_mv,circ_mv",
         )
+        if len(frame) >= 6000:
+            raise DataValidationError("daily_basic reached response cap; partition the request")
         return [daily_basic_from_row(row) for row in frame.to_dict("records")]
 
     def get_lifecycle_announcements_by_date(

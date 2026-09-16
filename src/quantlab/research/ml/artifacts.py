@@ -161,14 +161,14 @@ def write_frame(path, frame):
         pending.unlink(missing_ok=True)
 
 
-def publish_ready(work, output, asof, clock):
+def publish_ready(work, output, asof, clock, *, decision_hour=16):
     """Timestamp AFTER atomic payload publication; a missing receipt is never forward."""
     complete(work)
     work.rename(output)
-    return record_publication(output, asof, clock)
+    return record_publication(output, asof, clock, decision_hour)
 
 
-def record_publication(output, asof, clock):
+def record_publication(output, asof, clock, decision_hour=16):
     """Conservative recovery after rename: attest availability NOW, never backdate."""
     import pandas as pd
 
@@ -176,11 +176,12 @@ def record_publication(output, asof, clock):
 
     verify_completed(output)
     published = pd.Timestamp(clock())
-    cutoff = pd.Timestamp(asof).tz_localize("Asia/Shanghai") + pd.Timedelta(hours=16)
+    cutoff = pd.Timestamp(asof).tz_localize("Asia/Shanghai") + pd.Timedelta(hours=decision_hour)
     forward = published <= cutoff and published.tz_convert("Asia/Shanghai").date() == asof
     receipt = {
         "asof": str(asof),
         "published_at": published.isoformat(),
+        "decision_hour": decision_hour,
         "completion_sha256": sha256(output / "completed.json"),
         "forward_eligible": bool(forward),
     }
@@ -198,7 +199,17 @@ def verify_publication(folder, asof, *, require_forward=True):
     if not path.exists():
         raise ValueError("publication receipt missing; not a verified forward artifact")
     receipt = json.loads(path.read_text())
-    cutoff = pd.Timestamp(asof).tz_localize("Asia/Shanghai") + pd.Timedelta(hours=16)
+    decision_hour = receipt.get("decision_hour", 16)
+    if type(decision_hour) is not int or not 15 <= decision_hour <= 23:
+        raise ValueError("invalid publication cutoff")
+    # The cutoff is part of the sealed payload, never controlled by an unsealed receipt.
+    payload = "prediction.json" if (folder / "prediction.json").exists() else "account.json"
+    sealed = json.loads((folder / payload).read_text()) if (folder / payload).exists() else {}
+    if payload == "account.json" and (folder / payload).exists():
+        sealed = checkpoint_read(folder / payload)
+    if decision_hour != sealed.get("decision_hour", 16):
+        raise ValueError("publication cutoff differs from sealed policy")
+    cutoff = pd.Timestamp(asof).tz_localize("Asia/Shanghai") + pd.Timedelta(hours=decision_hour)
     stamp = pd.Timestamp(receipt["published_at"])
     valid = stamp <= cutoff and stamp.tz_convert("Asia/Shanghai").date() == asof
     if (

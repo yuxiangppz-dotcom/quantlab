@@ -22,7 +22,7 @@ uv run quantlab ml init-service --output data/experiments/ml_service \
 
 ## 每日输入
 
-本地适配器为每个交易日准备一个独立目录：
+推荐由 `quantlab pipeline ... daily` 的共享适配器为每个交易日自动准备独立目录；以下是高级输入契约：
 
 - `features.parquet`：恰好当日一份特征，含 trade_date、instrument_id、eligible、industry、
   feature_available_at 和模型特征列。包括所持股票的上下文，不因没有预测而删除持仓证券。
@@ -59,7 +59,7 @@ uv run quantlab ml service-state --service data/experiments/ml_service
 1. 校验输入、历史账户父记录、连续交易日和事件一致性。
 2. 首日确认初始标价；后续每天结算前一日封存的股数订单。共用历史回测的费用、交易约束和公司行动内核。
 3. 用结算后的持仓生成下一交易日决策。保存配置引用、输入快照、模型、股数订单、目标、账户及代码版本。
-4. 完整写入并发布后才记录可用时间。默认截止为上海时间 16:00；超时产物不能成为前向订单。
+4. 完整写入并发布后才记录可用时间。新推荐配置截止为上海时间 18:00（旧配置未声明 decision_hour 时仍为 16:00）；超时产物不能成为前向订单。
 5. 下一日仅消费已封存且按时发布的订单，不重新打分或按新参数重算历史决策。
 
 相同日期相同输入重跑不会重复记账；不同输入不能覆盖完成日。中断前尚未发布的工作目录不参与账本。

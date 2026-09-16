@@ -12,6 +12,7 @@ from pathlib import Path
 @dataclass(frozen=True)
 class MLConfig:
     schema: str = "quantlab_ml_v2"
+    decision_hour: int = 16
     horizon_sessions: int = 10
     execution_lag: int = 1
     price_basis: str = "next_session_adjusted_close"
@@ -52,6 +53,8 @@ class MLConfig:
             raise ValueError("unsupported ML schema")
         if self.execution_lag != 1 or self.price_basis != "next_session_adjusted_close":
             raise ValueError("v2 supports only next-session close, matching quantity scheduler")
+        if type(self.decision_hour) is not int or not 15 <= self.decision_hour <= 23:
+            raise ValueError("decision_hour must be an integer in [15, 23] Shanghai time")
         positive = (
             "horizon_sessions",
             "train_sessions",

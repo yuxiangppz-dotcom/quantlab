@@ -1,34 +1,38 @@
 # QuantLab
 
-个人日频 A 股机器学习研究与模拟账户工具。主线是：**数据契约 → 滚动训练 → 组合与账户回放 → 每日封存决策 → 持续评价**。
+个人日频 A 股机器学习研究与模拟账户工具。主线是：**TuShare → 来源与规范数据 → 共享特征 → 滚动训练 → 组合/账本 → 每日运行与评价**。
 当前支持本地研究和模拟；没有券商交易权限。工程验证、真实数据验收与策略有效性分别记录。
 
 ## 从这里开始
 
 ```bash
-uv sync --frozen --extra research
-uv run quantlab ml --help
+uv sync --frozen --extra research --extra qlib
+uv run quantlab pipeline --project config/project.example.json plan
 uv run quantlab ui
 ```
 
-Python >=3.12，推荐在 WSL2/Linux 下运行。Qlib 仅在复现旧适配器/可选测试时需要：`--extra qlib`；
-新流程直接使用保存的 Ridge/LightGBM 模型，不要求把其他量化框架并入项目。
+Python >=3.12，推荐 WSL2/Linux。新主线只使用 Qlib 的固定 Alpha158 表达式及保存的
+Ridge/LightGBM 模型，不合并其他完整量化框架。
 
-| 你要做什么 | 入口 | 说明 |
-|---|---|---|
-| 接入、检查历史数据 | `ml export-history` / `prepare-inputs` / `check` | 只读来源、PIT 与特征契约 |
-| 做模型实验 | `ml init-study` / `train` | 月度滚动、成熟标签、独立验证、保存模型 |
-| 评价可交易组合 | `ml replay` / `report` | 实际股数、现金、费用与市场约束的模拟 |
-| 启用已核验模型 | `ml register` / `activate` | 记录真实启用时刻，不自动晋级 |
-| 每日运行 | `ml init-service` / `run-day` | 先结算已封存订单，再形成下一日决策 |
-| 观察/暂停/报告 | `ml service-state` / `service-report` | 连续状态、异常、实际持仓与同期基准 |
-| 查看界面 | `quantlab ui` → ML 工作台 | 新流程默认入口；旧页面归入历史研究 |
+**完整操作、输入格式和迁移说明：[项目主线手册](docs/project_pipeline_zh.md)。**
 
-所有命令上表省略了 `quantlab` 前缀。没有本地数据时先阅读
-[本地 Codex 任务](docs/ml_v2_local_completion_prompt_zh.md)，不要制造输入使流程显示完成。
+| 任务 | `quantlab pipeline --project 配置文件` 后的命令 |
+|---|---|
+| 检查路径、来源缺项与产物 | `plan` / `status` |
+| TuShare 历史/增量获取，事务恢复 | `sync --execute` |
+| Canonical→共享特征及来源契约 | `build` |
+| 研究、真实股数现金回放、基准报告 | `train` / `replay` / `report` |
+| 模型登记与真实时刻启用 | `register` / `activate` |
+| 一次性空仓模拟账户初始化 | `init-account --as-of 日期` |
+| 每日获取→特征→市场适配→账户决策 | `daily --as-of 日期 --sync --execute` |
+| 持续账户状态与暂停 | `account-state` / `account-state --set paused` |
+
+本地完成来源核验后使用 project.local.json；示例配置本身不表示数据齐全。
+[本地 Codex 任务](docs/ml_v2_local_completion_prompt_zh.md) 列出真实证据、部署与验收工作。
 
 ## 主流程与边界
 
+- 新配置截止为北京时间 18:00，随模型/账户冻结；晚到数据不倒填成合格前向信号。
 - **历史研究**：`check → train → replay → report`。默认下一交易日收盘开始的 10 日 rank 标签，
   882 日训练 +126 日验证，每月更新；Ridge 对照与 LightGBM，缓冲换仓。
 - **每日模拟**：模型先注册/启用；每天接收一份只读数据快照，结算昨天封存的股数订单，
@@ -45,6 +49,7 @@ Python >=3.12，推荐在 WSL2/Linux 下运行。Qlib 仅在复现旧适配器/�
 
 | 模块 | 职责 |
 |---|---|
+| `pipeline/` | 唯一推荐项目编排：同步、特征、研究、每日输入和状态 |
 | `data/` | 来源、日历、证券历史、Canonical 存储及更新 |
 | `alpha/` 与共享 research 数据工具 | 特征及数据推导，不操作真实账户 |
 | `research/ml/` | 数据契约、训练、诊断、模型登记、统一决策与模拟服务 |
@@ -55,7 +60,7 @@ Python >=3.12，推荐在 WSL2/Linux 下运行。Qlib 仅在复现旧适配器/�
 
 共享基础设施不能因为名称带有旧实验编号就删除。历史研究继续保留原协议和结果；
 [历史入口参考](docs/legacy_readme_reference.md) 仅用于复现。`quantlab daily`、顶层 `shadow`
-仍是旧入口，不会静默改成新 ML 服务。新的日常操作统一使用 `quantlab ml`。
+仍是旧入口，不会静默改成新 ML 服务。新的日常操作统一使用 `quantlab pipeline`；`quantlab ml` 保留为底层/外部数据高级入口。
 
 ## 验证与开发
 
@@ -63,7 +68,7 @@ Python >=3.12，推荐在 WSL2/Linux 下运行。Qlib 仅在复现旧适配器/�
 uv run pytest -q
 uv run ruff check .
 git diff --check
-QUANTLAB_TEST_OPTIONAL_RESEARCH=1 uv run --extra research --extra qlib pytest -q tests/research/test_optional_runtime.py tests/research/test_ml_v2.py tests/research/test_ml_operations.py tests/research/test_ml_reliability.py tests/research/test_ml_service.py
+QUANTLAB_TEST_OPTIONAL_RESEARCH=1 uv run --extra research --extra qlib pytest -q tests/research/test_optional_runtime.py tests/research/test_ml_v2.py tests/research/test_ml_operations.py tests/research/test_ml_reliability.py tests/research/test_ml_service.py tests/pipeline
 ```
 
 开发遵守 [AGENTS.md](AGENTS.md)：保护 PIT 与冻结语义，不伪造缺失事实，不提交本地数据或凭据。

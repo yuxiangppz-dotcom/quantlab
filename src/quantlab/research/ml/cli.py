@@ -81,6 +81,7 @@ def parser():
     predict = sub.add_parser("predict", help="Predict a daily feature snapshot without any labels")
     for name in ("registry", "features", "calendar", "output"):
         predict.add_argument(f"--{name}", type=Path, required=True)
+    predict.add_argument("--decision-hour", type=int, default=16)
     predict.add_argument("--as-of", type=date.fromisoformat, required=True)
     report = sub.add_parser("report")
     for name in ("replay", "benchmark", "output"):
@@ -272,6 +273,7 @@ def dispatch(args):
             args.output,
             code=code_identity(ROOT),
             verify_code=lambda: code_identity(ROOT),
+            decision_hour=args.decision_hour,
         )
     if args.action == "report":
         from quantlab.research.ml.reporting import build_report

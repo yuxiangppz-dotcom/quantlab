@@ -1,0 +1,22 @@
+{
+  "schema": "quantlab_project_v1",
+  "canonical": "../data/canonical",
+  "raw": "../data/provider_observations",
+  "receipts": "../data/ingestion_receipts",
+  "workspace": "../data/experiments/project_daily",
+  "account": "../data/experiments/daily_account",
+  "registry": "../data/model_registry",
+  "ml_config": "ml_daily_v2.json",
+  "context": "../data/evidence/pit_context.parquet",
+  "availability": "../data/evidence/source_availability.parquet",
+  "execution_policy": "../data/evidence/execution_policy.json",
+  "corporate_actions": "../data/evidence/corporate_actions.json",
+  "indices": ["000300.SH", "000905.SH", "000852.SH"],
+  "benchmark": "000300.SH",
+  "start": "2018-01-01",
+  "end": "2026-09-15",
+  "test_start": "2023-01-03",
+  "test_end": "2026-08-31",
+  "capital_cny": 200000,
+  "provider_interval": 0.3
+}

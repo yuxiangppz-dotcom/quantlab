@@ -15,6 +15,7 @@ from quantlab.data.models import DataValidationError
 from quantlab.data.provider import DataProvider
 from quantlab.data.storage import ParquetStorage
 from quantlab.data.sync import (
+    filter_unlisted_placeholders,
     sync_lifecycle_context,
     validate_adj_factors,
     validate_daily_bars,
@@ -64,6 +65,9 @@ def _load_or_fetch_core(
         if storage.daily_basic_exists(trade_date)
         else provider.get_daily_basic_by_date(trade_date)
     )
+    if storage.securities_exists():
+        dates = {x.instrument_id: x.list_date for x in storage.load_securities()}
+        bars, _ = filter_unlisted_placeholders(bars, dates, trade_date)
     validate_daily_bars(bars, trade_date)
     validate_adj_factors(factors, trade_date)
     validate_daily_basic(basics, trade_date)

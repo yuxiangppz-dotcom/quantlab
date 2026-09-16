@@ -48,7 +48,7 @@ def asof_facts(requests, facts, value_columns):
     return pd.DataFrame(rows)
 
 
-def validate_lineage(features, lineage, dependencies):
+def validate_lineage(features, lineage, dependencies, *, decision_hour=16, allow_late=False):
     """Each declared feature dependency must have a known source revision by cutoff.
 
     This validates the supplied receipts, not the truth of vendor publication times.
@@ -69,8 +69,8 @@ def validate_lineage(features, lineage, dependencies):
     panel = features[keys + ["feature_available_at"]].copy()
     panel["trade_date"] = pd.to_datetime(panel.trade_date)
     panel["feature_available_at"] = _aware(panel.feature_available_at, "feature_available_at")
-    cutoff = panel.trade_date.dt.tz_localize("Asia/Shanghai") + pd.Timedelta(hours=16)
-    if (panel.feature_available_at > cutoff).any():
+    cutoff = panel.trade_date.dt.tz_localize("Asia/Shanghai") + pd.Timedelta(hours=decision_hour)
+    if not allow_late and (panel.feature_available_at > cutoff).any():
         raise ValueError("feature receipt after decision cutoff")
     expected = set()
     for name, sources in dependencies.items():

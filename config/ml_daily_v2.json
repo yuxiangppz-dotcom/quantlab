@@ -1,5 +1,6 @@
 {
   "schema": "quantlab_ml_v2",
+  "decision_hour": 18,
   "horizon_sessions": 10,
   "execution_lag": 1,
   "price_basis": "next_session_adjusted_close",

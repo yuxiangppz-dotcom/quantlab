@@ -884,6 +884,8 @@ class ParquetStorage:
         temp_path = Path(temp_name)
         try:
             frame.to_parquet(temp_path, index=False)
+            with temp_path.open("rb") as stream:
+                os.fsync(stream.fileno())
             os.replace(temp_path, path)
         except Exception:
             temp_path.unlink(missing_ok=True)

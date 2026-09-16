@@ -117,8 +117,8 @@ def activate_model(registry, identifier, effective_from):
         return event
 
 
-def selected_model(registry, asof):
-    cutoff = pd.Timestamp(asof).tz_localize("Asia/Shanghai") + pd.Timedelta(hours=16)
+def selected_model(registry, asof, decision_hour=16):
+    cutoff = pd.Timestamp(asof).tz_localize("Asia/Shanghai") + pd.Timedelta(hours=decision_hour)
     events = [json.loads(p.read_text()) for p in sorted((registry / "activations").glob("*.json"))]
     events = [
         e
@@ -136,12 +136,24 @@ def selected_model(registry, asof):
     return folder, registration
 
 
-def predict_day(registry, features_path, calendar_path, asof, output, *, code, verify_code=None):
+def predict_day(
+    registry,
+    features_path,
+    calendar_path,
+    asof,
+    output,
+    *,
+    code,
+    verify_code=None,
+    decision_hour=16,
+):
     research_output(output)
-    folder, registration = selected_model(registry, asof)
+    folder, registration = selected_model(registry, asof, decision_hour)
     payload = dict(registration["config"])
     payload["models"] = tuple(payload["models"])
     config = MLConfig(**payload)
+    if config.decision_hour != decision_hour:
+        raise ValueError("prediction/model cutoff mismatch")
     sessions = calendar_index(json.loads(calendar_path.read_text()))
     source_hash, calendar_hash = sha256(features_path), sha256(calendar_path)
     import pyarrow.parquet as pq
@@ -168,7 +180,9 @@ def predict_day(registry, features_path, calendar_path, asof, output, *, code, v
     scores["fit_asof"] = pd.Timestamp(registration["fit"]["fit_asof"])
     scores["model_id"] = registration["model_id"]
     scores["model"] = registration["kind"]
-    cutoff = pd.Timestamp(asof).tz_localize("Asia/Shanghai") + pd.Timedelta(hours=16)
+    cutoff = pd.Timestamp(asof).tz_localize("Asia/Shanghai") + pd.Timedelta(
+        hours=config.decision_hour
+    )
     end_clock = pd.Timestamp(now())
     forward = end_clock <= cutoff and end_clock.tz_convert("Asia/Shanghai").date() == asof
     reference = registration["fit"].get("feature_reference", {})
@@ -189,6 +203,7 @@ def predict_day(registry, features_path, calendar_path, asof, output, *, code, v
         }
     manifest = {
         "asof": str(asof),
+        "decision_hour": config.decision_hour,
         "model_id": registration["model_id"],
         "model_completion_sha256": sha256(folder / "completed.json"),
         "features_sha256": source_hash,
@@ -215,7 +230,7 @@ def predict_day(registry, features_path, calendar_path, asof, output, *, code, v
         write_json(work / "prediction.json", manifest)
         if verify_code is not None and verify_code() != code:
             raise ValueError("code/runtime changed during prediction")
-        publication = publish_ready(work, output, asof, now)
+        publication = publish_ready(work, output, asof, now, decision_hour=config.decision_hour)
     return {
         **manifest,
         **publication,
@@ -231,7 +246,9 @@ def archived_signals(root, decision_sessions):
         folder = root / str(day)
         verify_publication(folder, day)
         meta = json.loads((folder / "prediction.json").read_text())
-        cutoff = pd.Timestamp(day).tz_localize("Asia/Shanghai") + pd.Timedelta(hours=16)
+        cutoff = pd.Timestamp(day).tz_localize("Asia/Shanghai") + pd.Timedelta(
+            hours=meta.get("decision_hour", 16)
+        )
         if (
             meta["asof"] != str(day)
             or meta.get("forward_eligible") is not True

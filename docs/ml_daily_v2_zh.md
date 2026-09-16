@@ -26,7 +26,7 @@
 
 | 环节 | 默认值 | 原因与边界 |
 |---|---|---|
-| 决策时刻 | t 日北京时间 16:00 | 特征可用时刻必须带时区且不晚于此时 |
+| 决策时刻 | t 日北京时间 18:00（配置 decision_hour） | 特征可用时刻必须带时区且不晚于此时 |
 | 执行口径 | t+1 收盘 | 对齐已有 quantity scheduler；没有混入开盘成交假设 |
 | 标签 | adjusted_close(t+11) / adjusted_close(t+1) - 1 | 持有跨度 10 个市场交易日；缺端点留空、不滑到下一有效价格 |
 | 学习目标 | 每日横截面 rank，均值归零 | 降低极端收益和市场共同分量影响；原始评估收益不截尾 |
@@ -68,7 +68,7 @@ Top20 名单变化单独命名 `top20_membership_change_not_turnover`，不能�
 | `feature_names.json` | 特征名称 allowlist 数组，顺序固定 |
 
 `eligible` 只能是 true / false / unknown。历史未上市、退市边界、ST、流动性、上市天数等
-应由本地 PIT 适配器产出，不能用今天的股票池追溯历史。行业也必须是当时有效的分类。
+新主线由 pipeline 共享适配器生成特征；PIT 资格与行业证据须从真实来源提供，不能用今天的股票池追溯历史。行业也必须是当时有效的分类。
 未知的非持仓标的不新买；已持仓标的的资格或行业证据缺失，不能自动当作已卖出。
 
 导出已存在的封存历史：
@@ -267,7 +267,7 @@ uv run quantlab ml predict --registry data/experiments/ml_registry \
 ```
 
 每日文件必须恰好一个交易日，复用训练时的特征顺序和预处理，不读取标签，不现场重新拟合。
-北京时间 16:00 前产生且模型/特征当时已可用的当日信号才标为 forward_eligible。
+冻结的 decision_hour 截止前产生且模型/特征当时已可用的当日信号才标为 forward_eligible；新配置为 18:00，旧配置默认 16:00。高级 `ml predict` 命令使用新配置时显式传 `--decision-hour 18`。
 截止后补算标为 late_recomputation_not_forward。每天信号封存且不覆盖，监测特征缺失、
 训练分布均值漂移和预测覆盖；漂移提示仅作调查线索，不自动调仓或换模型。
 

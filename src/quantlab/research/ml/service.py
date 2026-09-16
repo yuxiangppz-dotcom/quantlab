@@ -223,7 +223,7 @@ def _run_day(root, inputs, registry, asof, *, code, verify_code=None):
             if saved["inputs"] != input_hash or saved["code"] != code:
                 raise ValueError("already committed day differs; never rewrite account history")
             if not (target / "published.json").exists():
-                record_publication(target, asof, serving.now)
+                record_publication(target, asof, serving.now, decision_hour=config.decision_hour)
             return decision_status(root, asof, saved["status"])
         state, parent, previous = account_head(root, service)
         inception = date.fromisoformat(service["inception"])
@@ -272,14 +272,16 @@ def _run_day(root, inputs, registry, asof, *, code, verify_code=None):
         plan, status, prediction = None, "account_settled_no_forward_decision", None
         next_day = calendar[i + 1]
         industries = previous["industries"] if previous else {}
-        cutoff = pd.Timestamp(asof).tz_localize("Asia/Shanghai") + pd.Timedelta(hours=16)
+        cutoff = pd.Timestamp(asof).tz_localize("Asia/Shanghai") + pd.Timedelta(
+            hours=config.decision_hour
+        )
         clock = pd.Timestamp(serving.now())
         timely = clock.tz_convert("Asia/Shanghai").date() == asof and clock <= cutoff
         if is_paused(root):
             status = "paused_accounting_only"
         elif timely:
             try:
-                _, model = serving.selected_model(registry, asof)
+                _, model = serving.selected_model(registry, asof, config.decision_hour)
                 age = (asof - pd.Timestamp(model["fit"]["fit_asof"]).date()).days
                 if age > service["max_model_age_days"]:
                     raise ValueError("active model expired; retrain and explicitly activate")
@@ -290,7 +292,9 @@ def _run_day(root, inputs, registry, asof, *, code, verify_code=None):
                 signal = root / "signals" / str(asof)
                 if signal.exists():
                     if not (signal / "published.json").exists():
-                        record_publication(signal, asof, serving.now)
+                        record_publication(
+                            signal, asof, serving.now, decision_hour=config.decision_hour
+                        )
                     verify_publication(signal, asof)
                     prediction = json.loads((signal / "prediction.json").read_text())
                     if (
@@ -307,6 +311,7 @@ def _run_day(root, inputs, registry, asof, *, code, verify_code=None):
                         signal,
                         code=code,
                         verify_code=verify_code,
+                        decision_hour=config.decision_hour,
                     )
                 verify_publication(signal, asof)
                 if prediction["model_id"] != model["model_id"]:
@@ -354,6 +359,7 @@ def _run_day(root, inputs, registry, asof, *, code, verify_code=None):
                 "plan": plan,
                 "industries": industries,
                 "status": status,
+                "decision_hour": config.decision_hour,
                 "inputs": input_hash,
                 "parent": parent,
                 "code": code,
@@ -366,7 +372,7 @@ def _run_day(root, inputs, registry, asof, *, code, verify_code=None):
             },
         )
         target.parent.mkdir(parents=True, exist_ok=True)
-        publish_ready(work, target, asof, serving.now)
+        publish_ready(work, target, asof, serving.now, decision_hour=config.decision_hour)
         return decision_status(root, asof, status)
 
 
@@ -401,7 +407,12 @@ def inspect_service(root):
     sessions = (
         previous["calendar"] if previous else [date.fromisoformat(d) for d in service["calendar"]]
     )
-    due = [d for d in sessions if d < clock.date() or (d == clock.date() and clock.hour >= 16)]
+    due = [
+        d
+        for d in sessions
+        if d < clock.date()
+        or (d == clock.date() and clock.hour >= service["config"].get("decision_hour", 16))
+    ]
     result["expected_session"] = str(due[-1]) if due else None
     result["stale"] = bool(due and state["book"].asof_date < due[-1])
     result["calendar_expired"] = sessions[-1] < clock.date()

@@ -327,6 +327,10 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "pipeline":
+        from quantlab.pipeline.cli import main as pipeline_main
+
+        raise SystemExit(pipeline_main(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "ml":
         from quantlab.research.ml.cli import main as ml_main
 
