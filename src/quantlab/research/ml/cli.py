@@ -1,4 +1,4 @@
-"""One offline research CLI: prepare, check, train, replay, report and forward shadow."""
+"""Unified ML research and daily paper accounts; no broker execution authority."""
 
 from __future__ import annotations
 
@@ -106,6 +106,11 @@ def parser():
     state = sub.add_parser("service-state", help="Inspect or pause/resume new paper decisions")
     state.add_argument("--service", type=Path, required=True)
     state.add_argument("--set", choices=("paused", "active"))
+    service_report = sub.add_parser(
+        "service-report", help="Report settled daily account vs benchmark"
+    )
+    for name in ("service", "benchmark", "output"):
+        service_report.add_argument(f"--{name}", type=Path, required=True)
     return main
 
 
@@ -186,6 +191,10 @@ def execute_replay(args, manifest, config, sessions):
 def dispatch(args):
     if hasattr(args, "output"):
         research_output(args.output)
+    if args.action == "service-report":
+        from quantlab.research.ml.service_view import build_service_report
+
+        return build_service_report(args.service, args.benchmark, args.output)
     if args.action in {"init-service", "run-day", "service-state"}:
         from quantlab.research.ml import service
 
@@ -207,7 +216,12 @@ def dispatch(args):
             )
         if args.action == "run-day":
             return service.run_day(
-                args.service, args.inputs, args.registry, args.as_of, code=code_identity(ROOT)
+                args.service,
+                args.inputs,
+                args.registry,
+                args.as_of,
+                code=code_identity(ROOT),
+                verify_code=lambda: code_identity(ROOT),
             )
         if args.set:
             service.set_paused(args.service, args.set == "paused")
@@ -257,6 +271,7 @@ def dispatch(args):
             args.as_of,
             args.output,
             code=code_identity(ROOT),
+            verify_code=lambda: code_identity(ROOT),
         )
     if args.action == "report":
         from quantlab.research.ml.reporting import build_report

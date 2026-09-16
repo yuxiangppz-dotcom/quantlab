@@ -100,3 +100,45 @@ docs/ml_daily_v2_zh.md, and docs/ml_v2_local_completion_prompt_zh.md. Remaining 
 work is evidence binding, special-event/tax adapters justified by actual sources,
 real-data accounting checks, model/cost/capacity experiments and forward observation.
 No provider calls, canonical writes, broker orders or performance claims were made.
+
+## Repository consolidation commission (2026-09-16)
+
+Starting HEAD: 6b3ad53e73ca10c534195f0bb4b1bb0b0d79fbcf. The user directly requested
+implementation, integration, self-review and updates until the data-independent
+framework is clear and operationally coherent. The isolated checkout was clean;
+no other task executor or agent-loop state was writing it.
+
+Implemented and pushed corrections:
+- 31a13c3: detect input changes around each fold; invalidate affected runs; use
+  actual post-publication timestamps instead of pre-write calculation time.
+- 1d19ece (full SHA 1d19ece476c9455589fbf2f4dd2cfad99a739886): share pure decision
+  and settlement operations between historical replay and incremental paper accounts;
+  freeze daily orders with inputs, model, policy, account and code references.
+
+Consolidation adds the default ML workbench, grouped historical UI, a concise README
+with preserved legacy reference, paper-service reporting, freshness/failure visibility,
+and an updated local Codex completion prompt. Frozen experimental protocols and real
+personal account semantics are preserved. The shared dependency functions in old
+Alpha158/round2 modules are deliberately retained rather than deleted by filename.
+
+Self-review found and corrected additional boundaries: failed replay final checks
+invalidate resume; recovery after publication records the retry time conservatively;
+market evidence cannot inject orders; active model changes are detected; daily source
+snapshots and runtime identity are checked before account publication; missing forward
+decisions remain visible in the ledger and report. CLI prediction and daily execution
+have saved-model integration tests, as does the UI with an actual synthetic account.
+
+Verification at consolidation:
+- Initial unfiltered full locked optional-runtime run: 3575 passed, one known cloud
+  local-UI PID-ownership startup failure. Existing process safety checks unchanged.
+- Final focused tests: 60 passed (ML, service, reliability, corporate operations and UI).
+- Full optional-runtime regression: 3578 passed, one known cloud test deselected.
+  The final CLI change then passed the focused 60-test gate. GitHub CI retains
+  the unfiltered full gate on the delivered commit.
+- Ruff and git diff --check passed. Tests use synthetic data, not claimed market facts.
+
+Local acceptance still required: source/units/PIT audit, dated fees and rules, corporate
+and delisting/tax adapters justified by actual evidence, actual account reconciliation,
+resource/capacity/cost evaluation, daily input adapter, WSL scheduling/alerts/backup,
+and genuine elapsed forward observation. No provider calls, Canonical writes, broker
+orders, live promotion, or performance certification were performed.

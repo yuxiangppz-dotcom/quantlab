@@ -136,7 +136,7 @@ def selected_model(registry, asof):
     return folder, registration
 
 
-def predict_day(registry, features_path, calendar_path, asof, output, *, code):
+def predict_day(registry, features_path, calendar_path, asof, output, *, code, verify_code=None):
     research_output(output)
     folder, registration = selected_model(registry, asof)
     payload = dict(registration["config"])
@@ -213,6 +213,8 @@ def predict_day(registry, features_path, calendar_path, asof, output, *, code):
         work.mkdir(parents=True)
         write_frame(work / "scores.parquet", scores)
         write_json(work / "prediction.json", manifest)
+        if verify_code is not None and verify_code() != code:
+            raise ValueError("code/runtime changed during prediction")
         publication = publish_ready(work, output, asof, now)
     return {
         **manifest,

@@ -240,3 +240,139 @@ def test_pause_preserves_settlement_and_prevents_new_decisions(system):
     assert result["status"] == "paused_accounting_only"
     assert not result["forward_decision"]
     assert service.inspect_service(system[0])["lots"] > 0
+
+
+def test_service_report_requires_complete_benchmark_and_retains_missing_decisions(system, tmp_path):
+    from quantlab.research.ml.service_view import build_service_report
+
+    advance(system, 0, late=True)
+    advance(system, 1)
+    root, _, days, *_ = system
+    benchmark = tmp_path / "benchmark.parquet"
+    pd.DataFrame({"session": [str(days[62].date())], "benchmark_return": [0.0]}).to_parquet(
+        benchmark
+    )
+    with pytest.raises(ValueError, match="missing settled"):
+        build_service_report(root, benchmark, tmp_path / "report")
+    pd.DataFrame({"session": [str(days[61].date())], "benchmark_return": [0.0]}).to_parquet(
+        benchmark
+    )
+    result = build_service_report(root, benchmark, tmp_path / "report")
+    assert result["missing_decision_days"] == 1
+    assert result["metrics"]["net_return"] == 0
+
+
+def test_service_cli_status_and_run_day_exit_codes(system, monkeypatch, capsys):
+    from quantlab.research.ml import cli
+
+    root, registry, days, _, inputs, clock, *_ = system
+    monkeypatch.setattr(cli, "code_identity", lambda root: {"synthetic": True})
+    clock[0] = days[60].tz_localize("Asia/Shanghai") + pd.Timedelta(hours=17)
+    assert (
+        cli.main(
+            [
+                "run-day",
+                "--service",
+                str(root),
+                "--registry",
+                str(registry),
+                "--inputs",
+                str(inputs[0]),
+                "--as-of",
+                str(days[60].date()),
+            ]
+        )
+        == 2
+    )
+    capsys.readouterr()
+    assert cli.main(["status", "--path", str(root)]) == 0
+    assert json.loads(capsys.readouterr().out)["schema"] == "quantlab_paper_service_v1"
+
+
+def test_stale_account_and_failed_run_are_visible(system):
+    advance(system, 0)
+    with pytest.raises(ValueError, match="noncontiguous"):
+        advance(system, 2, late=True)
+    status = service.inspect_service(system[0])
+    assert status["stale"]
+    assert "noncontiguous" in status["latest_failure"]["reason"]
+
+
+def test_service_rejects_injected_orders_in_market_evidence(system):
+    folder = system[4][0]
+    path = folder / "market.json"
+    raw = json.loads(path.read_text())
+    raw["orders"] = [{"order_id": "injected"}]
+    path.write_text(json.dumps(raw))
+    manifest = json.loads((folder / "manifest.json").read_text())
+    manifest["files"]["market.json"] = sha256(path)
+    (folder / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="inject orders"):
+        advance(system, 0)
+
+
+def test_service_code_change_prevents_account_commit(system):
+    root, registry, days, _, inputs, clock, *_ = system
+    clock[0] = days[60].tz_localize("Asia/Shanghai") + pd.Timedelta(hours=15, minutes=45)
+    with pytest.raises(ValueError, match="code/runtime changed"):
+        service.run_day(
+            root,
+            inputs[0],
+            registry,
+            days[60].date(),
+            code={"synthetic": True},
+            verify_code=lambda: {"different": True},
+        )
+    assert not (root / "sessions" / str(days[60].date())).exists()
+
+
+def test_ml_workbench_renders_committed_account(system, tmp_path):
+    from streamlit.testing.v1 import AppTest
+
+    advance(system, 0)
+    advance(system, 1)
+    ui_root = tmp_path / "ui-root"
+    experiments = ui_root / "data/experiments"
+    experiments.mkdir(parents=True)
+    (experiments / "paper").symlink_to(system[0], target_is_directory=True)
+
+    def screen(path):
+        from pathlib import Path
+
+        from quantlab.ui.ml_workbench import render_ml_workbench
+
+        render_ml_workbench(Path(path))
+
+    app = AppTest.from_function(screen, args=(str(ui_root),)).run(timeout=30)
+    assert not app.exception
+    assert app.metric[0].label == "账户截止日"
+    assert len(app.dataframe) == 4
+
+
+def test_standalone_prediction_cli_uses_saved_model_and_code_check(
+    system, monkeypatch, capsys, tmp_path
+):
+    from quantlab.research.ml import cli
+
+    _, registry, days, _, inputs, clock, *_ = system
+    monkeypatch.setattr(cli, "code_identity", lambda root: {"synthetic": True})
+    clock[0] = days[60].tz_localize("Asia/Shanghai") + pd.Timedelta(hours=15, minutes=45)
+    assert (
+        cli.main(
+            [
+                "predict",
+                "--registry",
+                str(registry),
+                "--features",
+                str(inputs[0] / "features.parquet"),
+                "--calendar",
+                str(inputs[0] / "calendar.json"),
+                "--as-of",
+                str(days[60].date()),
+                "--output",
+                str(tmp_path / "standalone"),
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["forward_eligible"]

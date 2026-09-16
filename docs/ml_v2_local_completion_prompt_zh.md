@@ -1,7 +1,7 @@
 # 回到本地后交给 Codex 的完整任务
 
-下面整段可直接复制。云端已完成无行情依赖的主流程，继续工作应以本地真实证据接入和验收为重点。
-详细接口、命令和假设见 `docs/ml_daily_v2_zh.md`。不要重复实现云端已有的恢复、模型服务或公司行动内核。
+下面整段可直接复制。云端已实现并以合成数据验证主流程；本地需验证真实输入和持续运行。
+详细接口、命令和假设见 `docs/ml_daily_v2_zh.md`。复用已有恢复、模型服务和公司行动内核；发现真实缺陷仍需修复并写回归测试。
 
 ---
 
@@ -9,7 +9,7 @@
 请持续完成能完成的本地工作，每个阶段自己 review、验证后提交；不要只写计划，不要围绕历史 -98%
 曲线调参，也不要引入多套量化框架重写项目。
 
-先阅读 AGENTS.md、README 的 Recommended daily ML research workflow、
+先阅读 AGENTS.md、README、docs/quantlab_architecture_zh.md、docs/ml_service_zh.md、
 docs/ml_daily_v2_zh.md、docs/ml_framework_completion_zh.md、config/ml_daily_v2.json，
 以及 src/quantlab/research/ml/、quantity_kernel.py、quantity_scheduler.py。
 
@@ -28,7 +28,7 @@ docs/ml_daily_v2_zh.md、docs/ml_framework_completion_zh.md、config/ml_daily_v2
 
 **一、环境与已有数据盘点**
 
-1. `uv sync --frozen --extra research --extra qlib`，运行 `uv run quantlab ml --help`。
+1. `uv sync --frozen --extra research`（仅旧 Qlib 复现/可选测试再加 `--extra qlib`），运行 `uv run quantlab ml --help`。
 2. 查找本地已有 daily、adj_factor、trade_cal、security_history、daily_basic、historical universe、
    ST/停复牌/涨跌停、行业、公司行动、基准指数，以及已封存 Alpha158 history 的 inventory/receipts。
    不假定目录位置或宣称数据齐全。审计日期范围、唯一键、单位、漏日、证券身份变更、退市记录。
@@ -100,27 +100,38 @@ docs/ml_daily_v2_zh.md、docs/ml_framework_completion_zh.md、config/ml_daily_v2
 8. 按年份/市场阶段补充稳定性分析，记录尝试总数。若比较新目标，只预登记少量对照，
    例如 binary 或 LambdaRank；不要同时搜索所有窗口、因子、种子和参数。
 
-**五、开始真实逐日前向观察**
+**五、接通真实每日模拟服务**
 
-1. 基线通过工程与真实样本核验后，`register` 注册明确 fold/model，再 `activate` 指定生效交易日。
-   注册和启用记录是真实时刻，不回填成历史日期；这只授予研究/模拟用途，不授予券商权限。
-2. 每日生成单个交易日的特征快照，使用 `predict`，无需标签、无需每日重训。
-   从已有模型复用列顺序与预处理，信号输出到 ml_signals/YYYY-MM-DD 且永不覆盖。
-3. 北京时间16:00前模型/数据已可用且信号已生成，才是 forward_eligible；错过截止可以复算，
-   但 late_recomputation 不得进入前向收益统计。不要修改系统时间或元数据来通过这个检查。
-4. 随后收到真实市场证据后，以 `shadow --signals ...` 使用原始封存信号做账户回放。
-   每日新证据使用新的截止日期输出快照；相同输入的中断才用 resume。
-5. 观察特征缺失、预测覆盖、分布漂移、模型年龄、换手/成本、现金和约束触发。
-   模型更换需显式激活，不以单一IC阈值自动晋级。可配置本地定时任务，但不要在真实数据
-   未通过验收时启用无人值守自动循环；先做一次人工可检查的完整日运行。
-6. 旧 Daily/UI 入口不会自动使用新 ML；明确告诉我统一 CLI 的使用方式，避免误跑旧流程。
+1. 使用 `docs/ml_service_zh.md` 已实现的 init-service/run-day/service-state/service-report。
+   不用旧顶层 shadow；`ml shadow` 只用于封存分数的情景对照，不冒充当时已封存的组合决策。
+2. 编写本地只读日快照适配器，产出 features/calendar/market/corporate_actions 及 manifest。
+   与历史训练共用特征公式、顺序、单位和可用时间处理；契约 SHA256 必须匹配注册模型与服务。
+   保留所持股票的标价与历史上下文，已知公司行动从登记日追踪到到账日。
+   每日输入约定详见操作手册，数据来源/available_at 不得为了满足16:00门槛而伪造。
+3. 真实样本核验后注册模型、显式 activate。从当前真实日期初始化模拟账户；不导入真实账户资金。
+   先人工执行一个完整日任务并核验订单/实际持仓/现金/应收/费用，再启用定时任务。
+4. 在用户的 WSL2 上创建本地 systemd user timer 或适合其环境的计划任务。先探测系统支持，
+   不假定路径、不写死用户名、不把 token 写入脚本。用户已授权本任务安装这些仅模拟用途的本地定时任务；
+   缺数据时保留为 disabled 并说明原因。建议交易日15:45开始预检/适配，16:00前完成决策发布；
+   实际供应商到达时间不满足时保持阻断，不倒填时间。
+5. 调度顺序：交易日判断 → 源数据已有覆盖/新鲜度核验 → 构建日快照 → 模型有效期检查 → run-day → 状态核验。
+   run-day 返回2表示没有合格前向决策，非零失败都要写日志并明确报警。仅用本地日志/桌面通知，
+   不擅自向他人发送消息。WSL/电脑休眠或关机不会保证任务运行，要记录 missed sessions 并按序补记。
+6. 每月准备新模型（复用 train，不日更重训），验证后显式注册启用；45自然日默认年龄上限不静默放宽。
+   模型更新任务失败不继续无限使用旧模型。不得按单一IC门槛自动晋级。
+7. 验证连续至少5个真实交易日后交付运行日志；若当前时间不足，只报告已实际观察天数和剩余观察计划，
+   不伪造未来记录。验证重跑不重复记账、漏日补跑不补造订单、暂停仍处理此前订单及估值、缺费用不提交账户。
+8. UI 首页 ML 工作台应展示新账户，旧实验在历史研究。核对服务新鲜度、现金、实际持仓、
+   封存目标、成交/拒单、费用和风险；执行 service-report，基准缺日必须拒绝，不删掉坏日。
+9. 将研究产物、模型注册库、日账户和原始凭据纳入本地增量备份，演练一次从备份恢复后校验。
+   禁止删除唯一来源或覆盖已完成日；失效训练/回放使用新输出路径，原失败证据保留。
 
 **六、验证、提交与最终交付**
 
 - 必须运行 `uv run pytest -q`、`uv run ruff check .`、`git diff --check`。
 - 还需运行可选运行时：
   `QUANTLAB_TEST_OPTIONAL_RESEARCH=1 uv run --extra research --extra qlib pytest -q
-  tests/research/test_optional_runtime.py tests/research/test_ml_v2.py tests/research/test_ml_operations.py`。
+  tests/research/test_optional_runtime.py tests/research/test_ml_v2.py tests/research/test_ml_operations.py tests/research/test_ml_reliability.py tests/research/test_ml_service.py`。
 - 云端曾有一项 local UI 进程归属测试因 PID namespace 不兼容失败，GitHub环境曾正常；
   本地要重新运行，不沿用云端排除项，也不削弱进程归属保护来求通过。
 - 至少做一次真实数据小区间完整流程和一次中断恢复一致性核对，再扩大历史/股票池。
@@ -134,4 +145,4 @@ docs/ml_daily_v2_zh.md、docs/ml_framework_completion_zh.md、config/ml_daily_v2
 ---
 
 本地专属事项：真实数据盘点和来源绑定、未知历史规则/税费/特殊事件适配、真实训练与容量实验、
-以及从现在开始积累的前向记录。缺数据不能靠云端代码或测试数量代替。
+WSL 定时任务/备份落地，以及从现在开始积累的前向记录。缺数据不能靠云端代码或测试数量代替。

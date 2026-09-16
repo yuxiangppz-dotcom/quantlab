@@ -128,7 +128,10 @@ def read_inputs(folder, asof, service):
         or sessions.get_loc(pd.Timestamp(asof)) >= len(sessions) - 1
     ):
         raise ValueError("daily input needs current and next trading session")
-    market = decode_market_day(json.loads((folder / "market.json").read_text()))
+    raw_market = json.loads((folder / "market.json").read_text())
+    if raw_market.get("orders"):
+        raise ValueError("daily market evidence must not inject orders")
+    market = decode_market_day(raw_market)
     if market.session != asof:
         raise ValueError("daily market evidence is from another session")
     actions = json.loads((folder / "corporate_actions.json").read_text())
@@ -175,6 +178,7 @@ def account_head(root, service):
 
 
 def set_paused(root, paused):
+    research_output(root)
     load_service(root)
     with exclusive_job(root):
         event = {"paused": bool(paused), "recorded_at": serving.now().isoformat()}
@@ -187,7 +191,25 @@ def is_paused(root):
     return max(events, key=lambda e: e["recorded_at"])["paused"] if events else False
 
 
-def run_day(root, inputs, registry, asof, *, code):
+def run_day(root, inputs, registry, asof, *, code, verify_code=None):
+    research_output(root)
+    load_service(root)
+    try:
+        return _run_day(root, inputs, registry, asof, code=code, verify_code=verify_code)
+    except Exception as exc:
+        write_json(
+            root / "failures" / f"{uuid4().hex}.json",
+            {
+                "asof": str(asof),
+                "recorded_at": serving.now().isoformat(),
+                "type": type(exc).__name__,
+                "reason": str(exc),
+            },
+        )
+        raise
+
+
+def _run_day(root, inputs, registry, asof, *, code, verify_code=None):
     service = load_service(root)
     config = config_from(service["config"])
     with exclusive_job(root):
@@ -284,6 +306,7 @@ def run_day(root, inputs, registry, asof, *, code):
                         asof,
                         signal,
                         code=code,
+                        verify_code=verify_code,
                     )
                 verify_publication(signal, asof)
                 if prediction["model_id"] != model["model_id"]:
@@ -320,6 +343,8 @@ def run_day(root, inputs, registry, asof, *, code):
             shutil.copyfile(inputs / name, work / name)
         if read_inputs(work, asof, service)[0] != manifest:
             raise ValueError("daily evidence changed during snapshot copy")
+        if verify_code is not None and verify_code() != code:
+            raise ValueError("code/runtime changed during daily processing")
         checkpoint_write(
             work / "account.json",
             {
@@ -372,4 +397,20 @@ def inspect_service(root):
         result.update(decision_status(root, state["book"].asof_date, previous["status"]))
     else:
         result.update(status="initialized_awaiting_first_decision", forward_decision=False)
+    clock = pd.Timestamp(serving.now()).tz_convert("Asia/Shanghai")
+    sessions = (
+        previous["calendar"] if previous else [date.fromisoformat(d) for d in service["calendar"]]
+    )
+    due = [d for d in sessions if d < clock.date() or (d == clock.date() and clock.hour >= 16)]
+    result["expected_session"] = str(due[-1]) if due else None
+    result["stale"] = bool(due and state["book"].asof_date < due[-1])
+    result["calendar_expired"] = sessions[-1] < clock.date()
+    failures = [json.loads(p.read_text()) for p in (root / "failures").glob("*.json")]
+    if failures:
+        latest = max(failures, key=lambda e: e["recorded_at"])
+        # Retain the audit history; only surface unresolved failures as current alerts.
+        if previous is None or pd.Timestamp(latest["recorded_at"]) > pd.Timestamp(
+            result["published_at"]
+        ):
+            result["latest_failure"] = latest
     return result

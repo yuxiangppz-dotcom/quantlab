@@ -86,3 +86,14 @@ uv run quantlab ml service-state --service data/experiments/ml_service --set act
 
 数据适配及 WSL 定时任务见 `ml_v2_local_completion_prompt_zh.md`。云端没有真实市场输入；合成测试验证的是
 时序、会计与恢复机制。日频下一收盘撮合仍是研究假设，信号分数不是预期收益，模拟成交不是成交回报。
+
+## 每日账户报告
+
+```bash
+uv run quantlab ml service-report --service data/experiments/ml_service \
+  --benchmark /path/benchmark.parquet --output data/experiments/ml_service_report_YYYYMMDD
+```
+
+benchmark 两列为 session、benchmark_return；必须覆盖全部已结算日。报告保留无有效决策的交易日，
+输出账户净值、基准比较、换手、费用、持仓、成交/拒单和风险偏离。停止日不被伪装成完整区间。
+UI 默认 ML 工作台展示相同账户；service-state 包含新鲜度和最近未解决失败，日志也须保留。

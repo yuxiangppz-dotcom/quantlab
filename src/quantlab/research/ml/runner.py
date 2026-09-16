@@ -355,6 +355,11 @@ def run_scenarios(
             complete(output)
             return summaries
         except Exception as exc:
+            if final_check is not None and not (output / "invalidated.json").exists():
+                try:
+                    final_check()
+                except Exception:
+                    write_json(output / "invalidated.json", {"reason": "input check after failure"})
             write_json(
                 output / "failures" / f"{uuid4().hex}.json",
                 {"type": type(exc).__name__, "reason": str(exc)},
