@@ -419,6 +419,7 @@ def test_limit_sentinel_marks_an_absent_gate_not_a_price():
 
     assert declared_limit(999999.999) is None
     assert declared_limit("999999.999") is None
+    assert declared_limit("99999.999") is None
     assert declared_limit(10.01) == 10.01
     assert declared_limit(None) is None
 

@@ -16,9 +16,9 @@ from quantlab.research.ml.io import decode_market_day, read_corporate_actions
 # error, not information; genuine finer precision stays rejected.
 EXACT_NOISE_TOLERANCE = Decimal("0.01")
 # stk_limit marks securities without a price limit (new listings, restructuring
-# resumptions) with a 999999.999 placeholder; that is "no gate applies", not a
-# price. Source: https://tushare.pro/document/2?doc_id=181
-NO_PRICE_LIMIT_SENTINEL = Decimal("999999.999")
+# resumptions) with placeholder values; those are "no gate applies", not prices.
+# Source: https://tushare.pro/document/2?doc_id=181
+NO_PRICE_LIMIT_SENTINELS = (Decimal("999999.999"), Decimal("99999.999"))
 
 
 def exact_integer(value, scale=1):
@@ -32,10 +32,11 @@ def exact_integer(value, scale=1):
 
 
 def declared_limit(value):
-    """Translate the vendor's no-limit placeholder into an absent gate."""
+    """Translate the vendor's no-limit placeholders into an absent gate."""
     if value is None:
         return None
-    if abs(Decimal(str(value)) - NO_PRICE_LIMIT_SENTINEL) <= Decimal("0.001"):
+    raw = Decimal(str(value))
+    if any(abs(raw - sentinel) <= Decimal("0.001") for sentinel in NO_PRICE_LIMIT_SENTINELS):
         return None
     return value
 
