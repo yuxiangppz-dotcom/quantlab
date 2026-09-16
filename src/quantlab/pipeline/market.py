@@ -15,6 +15,10 @@ from quantlab.research.ml.io import decode_market_day, read_corporate_actions
 # Anything within 0.01 fen of an integral value after scaling is representation
 # error, not information; genuine finer precision stays rejected.
 EXACT_NOISE_TOLERANCE = Decimal("0.01")
+# stk_limit marks securities without a price limit (new listings, restructuring
+# resumptions) with a 999999.999 placeholder; that is "no gate applies", not a
+# price. Source: https://tushare.pro/document/2?doc_id=181
+NO_PRICE_LIMIT_SENTINEL = Decimal("999999.999")
 
 
 def exact_integer(value, scale=1):
@@ -25,6 +29,15 @@ def exact_integer(value, scale=1):
     if abs(number - rounded) > EXACT_NOISE_TOLERANCE:
         raise ValueError("market quantity/price is not representable in declared units")
     return int(rounded)
+
+
+def declared_limit(value):
+    """Translate the vendor's no-limit placeholder into an absent gate."""
+    if value is None:
+        return None
+    if abs(Decimal(str(value)) - NO_PRICE_LIMIT_SENTINEL) <= Decimal("0.001"):
+        return None
+    return value
 
 
 def close_market_open(bar, records):
@@ -131,8 +144,12 @@ def market_day(
             "raw_close_fen": exact_integer(bar.close, 100) if bar else None,
             "low_fen": exact_integer(bar.low, 100) if bar else None,
             "high_fen": exact_integer(bar.high, 100) if bar else None,
-            "down_limit_fen": exact_integer(limit.down_limit, 100) if limit else None,
-            "up_limit_fen": exact_integer(limit.up_limit, 100) if limit else None,
+            "down_limit_fen": exact_integer(declared_limit(limit.down_limit), 100)
+            if limit and declared_limit(limit.down_limit) is not None
+            else None,
+            "up_limit_fen": exact_integer(declared_limit(limit.up_limit), 100)
+            if limit and declared_limit(limit.up_limit) is not None
+            else None,
             "prior20_amount_fen": average,
             "prior20_asof": str(sessions[i - 1]),
             "prior20_sessions": len(amounts),

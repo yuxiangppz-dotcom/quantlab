@@ -413,6 +413,16 @@ def test_exact_integer_tolerates_vendor_float_noise_only():
         exact_integer(-1)
 
 
+def test_limit_sentinel_marks_an_absent_gate_not_a_price():
+    """stk_limit's 999999.999 placeholder means no price limit applies."""
+    from quantlab.pipeline.market import declared_limit
+
+    assert declared_limit(999999.999) is None
+    assert declared_limit("999999.999") is None
+    assert declared_limit(10.01) == 10.01
+    assert declared_limit(None) is None
+
+
 def test_shared_bridge_has_exact_contract_and_rejects_late_source(history, tmp_path):
     storage, receipts, days = history
     args = (storage, receipts, tmp_path / "context.parquet", tmp_path / "availability.parquet")
