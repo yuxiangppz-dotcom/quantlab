@@ -106,6 +106,34 @@ def test_fee_eras_cover_the_research_interval_with_sourced_boundaries():
     assert all(e.known_at <= e.start for e in eras)
 
 
+def test_user_declared_commission_is_wan0p86_with_expected_values():
+    """万0.86 = 0.0086% = 0.000086 (a prior draft used 0.00086, ten times too large).
+
+    Hand expectations: CNY 100,000 -> 8.60 yuan commission; CNY 20,000 -> the
+    CNY 5 stock minimum. Stamp and transfer fees are separate and excluded.
+    """
+    from decimal import ROUND_HALF_UP
+
+    codes = ["600000.SH", "000001.SZ"]
+    document = execution_policy_document(
+        codes,
+        fee_eras(date(2018, 1, 1), date(2026, 9, 18)),
+        start=date(2018, 1, 1),
+        end=date(2026, 9, 18),
+    )
+    for policy in document["policies"]:
+        fees = policy["fees"]
+        assert fees["commission_rate"] == "0.000086", fees
+        assert fees["minimum_commission_fen"] == 500
+        assert fees["scenario_id"] == "user_declared_wan0p86_stock_min5_v1"
+    rate = Decimal("0.000086")
+    for notional_fen, expected in ((10_000_000, 860), (2_000_000, 500)):
+        commission = max(Decimal(notional_fen) * rate, Decimal(500)).to_integral_value(
+            rounding=ROUND_HALF_UP
+        )
+        assert commission == expected
+
+
 def test_execution_policy_covers_every_instrument_and_day():
     codes = [f"600{n:03}.SH" for n in range(10)] + ["000001.SZ", "300750.SZ", "688981.SH"]
     document = execution_policy_document(

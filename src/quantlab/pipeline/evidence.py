@@ -313,18 +313,21 @@ def execution_policy_document(
     *,
     start: date,
     end: date,
-    commission_rate: str = "0.00086",
+    commission_rate: str = "0.000086",
     minimum_commission_fen: int = 500,
     participation: str = "0.1",
     stale_valuation: bool = True,
 ) -> dict:
     """Expand dated fee eras over board groups; one policy covers each day.
 
-    The commission is the OPERATOR-VERIFIED brokerage schedule (0.086% all-in
-    including exchange/regulatory surcharges, stock minimum CNY 5, declared
-    2026-09-18; ETF minimum CNY 0.1 is recorded but this strategy trades only
-    CSI800 stocks). Stamps and the transfer fee are separate sourced rates;
-    if the broker's 万0.86 excludes regulatory surcharges, the modeled cost
+    The commission is a USER-DECLARED schedule (万0.86 = 0.0086% = 0.000086,
+    all-in assumed including exchange/regulatory surcharges, stock minimum
+    CNY 5; declared 2026-09-18; ETF minimum CNY 0.1 is recorded but this
+    strategy trades only CSI800 stocks). It is NOT verified against a
+    brokerage fee table, and applying a 2026 declaration to a historical
+    replay makes it a DECLARED HISTORICAL FEE SCENARIO, not the actually
+    applicable historical rate. Stamps and the transfer fee are separate
+    sourced rates; if 万0.86 excludes regulatory surcharges the modeled cost
     understates by about 0.0054% per side.
     """
     policies = []
@@ -344,7 +347,7 @@ def execution_policy_document(
                     "end": era_end.isoformat(),
                     "known_at": f"{era.known_at.isoformat()}T00:00:00+08:00",
                     "source_id": (
-                        f"operator_brokerage_2026-09-18_v1|{era.transfer_fee_source}|{era.stamp_source}"
+                        f"user_declared_fee_scenario_2026-09-18_v1|{era.transfer_fee_source}|{era.stamp_source}"
                     ),
                     "participation": participation,
                     "rules": {
@@ -356,7 +359,7 @@ def execution_policy_document(
                         # would break the typed kernel decode.
                     },
                     "fees": {
-                        "scenario_id": "operator_brokerage_wan0p86_stock_min5_v1",
+                        "scenario_id": "user_declared_wan0p86_stock_min5_v1",
                         "effective_from": era_start.isoformat(),
                         "effective_through": era_end.isoformat(),
                         "commission_rate": commission_rate,
@@ -373,10 +376,13 @@ def execution_policy_document(
         "schema": EXECUTION_POLICY_SCHEMA,
         "policies": policies,
         "known_limitations": [
-            "commission 0.086% (stock minimum CNY 5) is the operator's stated "
-            "brokerage schedule, declared 2026-09-18, assumed all-in of "
-            "exchange/regulatory surcharges; ETF minimum CNY 0.1 is recorded "
-            "but this strategy trades only CSI800 stocks.",
+            "commission 0.0086% (万0.86 = 0.000086, stock minimum CNY 5) is a "
+            "USER-DECLARED schedule, not verified against a brokerage fee "
+            "table; used in a historical replay it is a declared historical "
+            "fee scenario, not the actually applicable historical rate. The "
+            "all-in-of-surcharges assumption is unconfirmed (if excluded, "
+            "costs understate ~0.0054% per side). ETF minimum CNY 0.1 is "
+            "recorded but this strategy trades only CSI800 stocks.",
             "adverse_slippage_rate is zero at base; stress scenarios replace it "
             "with explicit per-side slippage assumptions.",
             "participation 0.1 is a conservative research cap, not a measured "
