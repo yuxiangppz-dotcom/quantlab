@@ -35,7 +35,7 @@ import hashlib  # noqa: E402
 import json  # noqa: E402
 import sys  # noqa: E402
 import time  # noqa: E402
-from datetime import UTC, date, datetime, timedelta  # noqa: E402
+from datetime import UTC, date, datetime  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 import pandas as pd  # noqa: E402
@@ -652,8 +652,6 @@ def main() -> None:
     target = project["canonical"].parent / EVIDENCE / outputs[args.command]
     if target.exists():
         raise SystemExit(f"evidence already exists; use a new namespace:{target}")
-    if args.command == "industries" and not args.fetch:
-        raise SystemExit("industries requires provider requests; explicit --fetch required")
     if args.command == "membership":
         cmd_membership(project)
     elif args.command == "availability":

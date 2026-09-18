@@ -308,7 +308,9 @@ def test_industry_intervals_tile_stints_and_report_disagreements():
     assert intervals[1]["start"] == "2021-12-13"
     assert intervals[1]["end"] == "2026-09-10"
     assert intervals[0]["industry"].startswith("SW:")
-    assert issues == []
+    # A recorded exit earlier than the next assignment is bridged, and every
+    # bridged day is disclosed instead of silently adopted.
+    assert any("bridged_vacancy:2021-12-10:2021-12-12:bank" in i for i in issues)
 
 
 def test_merge_industry_sources_fills_gaps_without_overlap():

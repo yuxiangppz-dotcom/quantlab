@@ -161,13 +161,16 @@ def _build_report(
             ledgers[name] = frame
     if not ledgers:
         raise ValueError("no completed sessions to compare")
-    common = set.intersection(*(set(f.session) for f in ledgers.values()))
-    if not common:
-        raise ValueError("scenarios have no common completed interval")
-    # No dropping missing benchmark days: that would erase strategy losses.
-    missing = common - set(benchmark.session)
-    if missing:
-        raise ValueError(f"benchmark missing common sessions:{sorted(missing)[:3]}")
+    summary_by_name = {
+        f"{row['model']}-{row['capital_fen']}fen": row for row in summary
+    }
+    # Each scenario reports its OWN completed path; the benchmark is matched
+    # to that window. No dropping missing benchmark days: that would erase
+    # strategy losses.
+    for name, frame in ledgers.items():
+        missing = set(frame.session) - set(benchmark.session)
+        if missing:
+            raise ValueError(f"benchmark missing {name} sessions:{sorted(missing)[:3]}")
     baseline_comparison = None
     if baseline_replay:
         from quantlab.research.ml.baselines import compare_pool_baseline
@@ -182,13 +185,12 @@ def _build_report(
     rows = []
     exposures = pd.read_parquet(exposures_path) if exposures_path else None
     for name, frame in ledgers.items():
-        chosen = frame.loc[frame.session.isin(common)].sort_values("session")
+        chosen = frame.sort_values("session")
         aligned = chosen.merge(benchmark, on="session", how="left", validate="one_to_one")
         metrics = comparison_metrics(aligned.daily_return, aligned.benchmark_return)
         gross_budget = (
             json.loads(intent.read_text())
-            .get("inputs", {})
-            .get("config", {})
+            .get("inputs", {}).get("config", {})
             .get("gross_exposure", 1)
             if intent.exists()
             else 1
@@ -198,9 +200,27 @@ def _build_report(
         )
         previous = aligned.equity_fen / (1 + aligned.daily_return)
         costs = (aligned.fees_fen + aligned.slippage_fen) / previous
+        status = summary_by_name.get(name, {})
+        mean_gross = (
+            float(aligned.gross_exposure.mean()) if "gross_exposure" in aligned else None
+        )
+        if mean_gross is None:
+            position_class = "unknown"
+        elif mean_gross <= 1e-9:
+            position_class = "pure_cash"
+        elif mean_gross < 0.5 * gross_budget:
+            position_class = "low_position"
+        else:
+            position_class = "invested"
         row = {
             "scenario": name,
             **metrics,
+            "sessions": len(chosen),
+            "excluded_sessions": 0,
+            "stop_reason": status.get("stop_reason"),
+            "valid_through": status.get("valid_through"),
+            "position_class": position_class,
+            "mean_gross_exposure": mean_gross,
             "cash_budget_relative_wealth_return": cash_reference["relative_wealth_return"],
             "cash_budget_reference": {
                 "risky_fraction": gross_budget,
@@ -209,16 +229,12 @@ def _build_report(
             },
             "first_session": aligned.session.iloc[0],
             "last_session": aligned.session.iloc[-1],
-            "excluded_sessions": len(frame) - len(chosen),
             "mean_one_way_turnover": float(aligned.one_way_turnover.mean()),
             "fees_fen": int(aligned.fees_fen.sum()),
             "slippage_fen": int(aligned.slippage_fen.sum()),
             "same_fills_cost_addback_return": float(np.prod(1 + aligned.daily_return + costs) - 1),
             "cost_addback_is_not_a_frictionless_strategy": True,
             "risk_breach_days": int(aligned.risk_breaches.gt(0).sum()),
-            "mean_gross_exposure": float(aligned.gross_exposure.mean())
-            if "gross_exposure" in aligned
-            else None,
         }
         rows.append(row)
         write_frame(output / f"{name}-daily.parquet", aligned)
@@ -249,6 +265,42 @@ def _build_report(
                 {"year": int(year), **comparison_metrics(part.daily_return, part.benchmark_return)}
             )
         write_json(output / f"{name}-yearly.json", yearly)
+    # Common-prefix diagnostics are SECONDARY: they compare scenarios only
+    # over the intersection of their completed paths and never replace a
+    # preregistered full-window comparison. Truncated scenarios keep their
+    # failed suffix visible in their own rows above.
+    complete_scenarios = [
+        name
+        for name in ledgers
+        if summary_by_name.get(name, {}).get("stop_reason") is None
+    ]
+    common_prefix = None
+    if len(complete_scenarios) >= 2:
+        common = set.intersection(
+            *(set(ledgers[name].session) for name in complete_scenarios)
+        )
+        if common:
+            common_prefix = {
+                "sessions": len(common),
+                "note": (
+                    "intersection of complete scenarios only; a preregistered "
+                    "full-window comparison requires every scenario to finish"
+                ),
+                "scenarios": {},
+            }
+            for name in complete_scenarios:
+                chosen = ledgers[name].loc[ledgers[name].session.isin(common)].sort_values(
+                    "session"
+                )
+                aligned = chosen.merge(
+                    benchmark, on="session", how="left", validate="one_to_one"
+                )
+                common_prefix["scenarios"][name] = {
+                    **comparison_metrics(aligned.daily_return, aligned.benchmark_return),
+                    "mean_gross_exposure": float(aligned.gross_exposure.mean())
+                    if "gross_exposure" in aligned
+                    else None,
+                }
     ic = {}
     if training:
         verify_completed(training)
@@ -314,6 +366,7 @@ def _build_report(
         "benchmark_metadata_sha256": metadata_hash,
         "dividend_comparability_verified": False,
         "scenarios": rows,
+        "common_prefix_diagnostics": common_prefix,
         "signal_uncertainty": ic,
         "scenario_statuses": summary,
         "benchmark_sha256": benchmark_hash,
@@ -327,23 +380,30 @@ def _build_report(
         "# QuantLab 同期研究报告",
         "",
         "以下为已声明输入下的情景结果，不代表历史数据已认证或未来收益。",
+        "每个情景使用自身完整完成路径；基准与该区间匹配。",
         "",
-        "| 情景 | 净收益 | 基准收益 | 相对净值收益 | 平均单边换手 | 风险偏离天数 |",
-        "|---|---:|---:|---:|---:|---:|",
+        "| 情景 | 状态 | 交易日数 | 区间 | 仓位 | 净收益 | 基准收益 | "
+        "相对净值收益 | 平均单边换手 | 风险偏离 |",
+        "|---|---|---:|---|---|---:|---:|---:|---:|---:|",
     ]
     for r in rows:
+        window = f"{r['first_session']}~{r['last_session']}"
         lines.append(
-            f"| {r['scenario']} | {r['net_return']:.2%} | {r['benchmark_return']:.2%} | "
-            f"{r['relative_wealth_return']:.2%} | {r['mean_one_way_turnover']:.2%} | "
-            f"{r['risk_breach_days']} |"
+            f"| {r['scenario']} | {r.get('stop_reason') or 'completed'} | {r.get('sessions')} "
+            f"| {window} | {r.get('position_class')} | {r['net_return']:.2%} "
+            f"| {r['benchmark_return']:.2%} | {r['relative_wealth_return']:.2%} "
+            f"| {r['mean_one_way_turnover']:.2%} | {r['risk_breach_days']} |"
         )
     lines.extend(
         [
             "",
             "成本加回仅解释同一成交路径的成本，不是重新运行的零成本策略。",
-            "不同情景只比较共同完成区间；停止原因及区间外天数见 report.json。",
+            "停止情景保留部分区间结果并单独列出停止原因；共同前缀诊断见",
+            "common_prefix_diagnostics（仅完整情景交集，非预登记全区间比较）。",
+            "纯现金/低仓位情景不能作为选股 alpha 证据。",
             "容量需结合资金规模、参与率、拒单及部分成交共同判断。",
-            "指数收益口径见 benchmark_metadata；价格指数不含股息再投资。",
+            "指数收益口径见 benchmark_metadata；价格指数不含股息再投资，",
+            "与含股息组合之差不能直接称为 alpha。",
             "同池等权比较见 same_pool_baseline；手数、最小交易额可能使小资金大量闲置。",
             "研究选择统计见 selection_diagnostics；DSR 假设不等于已验证的独立试验数。",
             "多期限 IC：signal-decay.parquet；"
