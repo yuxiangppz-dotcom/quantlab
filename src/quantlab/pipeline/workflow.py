@@ -50,6 +50,20 @@ def prepare_market(project, bundle, output, start, end):
         raise ValueError("market interval needs prior initialization session")
     initial = sessions[sessions.index(days[0]) - 1]
     with exclusive_job(output.parent):
+        import hashlib
+
+        from quantlab.research.ml.runner import code_identity
+
+        receipts_digest = hashlib.sha256(
+            json.dumps(
+                sorted(
+                    (p.name, sha256(p))
+                    for p in sorted(
+                        (Path(project["receipts"]) / "sessions").glob("*.json")
+                    )
+                )
+            ).encode()
+        ).hexdigest()
         if output.exists():
             verify_completed(output)
             expected = {
@@ -57,6 +71,8 @@ def prepare_market(project, bundle, output, start, end):
                 "bundle": manifest,
                 "start": str(start),
                 "end": str(end),
+                "receipts": receipts_digest,
+                "code": code_identity(ROOT),
             }
             if json.loads((output / "intent.json").read_text()) != expected:
                 raise ValueError("market input changed; choose a new workspace")
@@ -125,7 +141,14 @@ def prepare_market(project, bundle, output, start, end):
                 raise ValueError("feature bundle changed during preparation")
             write_json(
                 stage / "intent.json",
-                {"sources": sources, "bundle": manifest, "start": str(start), "end": str(end)},
+                {
+                    "sources": sources,
+                    "bundle": manifest,
+                    "start": str(start),
+                    "end": str(end),
+                    "receipts": receipts_digest,
+                    "code": code_identity(ROOT),
+                },
             )
             complete(stage)
             stage.rename(output)

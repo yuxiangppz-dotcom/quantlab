@@ -530,6 +530,8 @@ def test_market_adapter_preserves_units_and_missing_policies_block(history, tmp_
                     "source_id": "synthetic",
                     "start": str(days[0].date()),
                     "end": str(days[-1].date()),
+                    "unresolved": [],
+                    "unresolved_instruments": [],
                 },
                 "events": [],
             }
@@ -713,6 +715,8 @@ def test_project_data_train_replay_report_and_account_chain(history, tmp_path, m
             "source_id": "synthetic",
             "start": str(days[0].date()),
             "end": str(days[-1].date()),
+            "unresolved": [],
+            "unresolved_instruments": [],
         },
         "events": [],
     }
@@ -912,3 +916,39 @@ def test_project_data_train_replay_report_and_account_chain(history, tmp_path, m
     assert not result["forward_decision"]  # A historical catch-up must not fabricate a live signal.
     run("daily", "--as-of", str(days[118].date()))
     assert service.inspect_service(tmp_path / "account")["sessions"] == 2
+
+    # Cache-binding counterexample: a stale market artifact (e.g. one whose
+    # recorded receipt digest no longer matches the sealed session receipts)
+    # must be rejected, not silently reused.
+    market_intent = json.loads(
+        (tmp_path / "workspace" / "market" / "intent.json").read_text()
+    )
+    assert {"receipts", "code"} <= set(market_intent)
+    assert market_intent["code"] == {"synthetic": True}
+    assert len(market_intent["receipts"]) == 64
+    proj2 = dict(project)
+    for key in ("canonical", "raw", "receipts", "workspace", "corporate_actions"):
+        proj2[key] = str((tmp_path / project[key]).resolve())
+    proj2["execution_policy"] = str((tmp_path / "policy.json").resolve())
+    proj2["ml_config"] = str((tmp_path / "ml.json").resolve())
+    import pathlib as _pl
+    ws2 = _pl.Path(proj2["workspace"])
+    sessions2 = [
+        date.fromisoformat(d) for d in json.loads((ws2 / "bundle/calendar.json").read_text())
+    ]
+    first2 = next(d for d in sessions2 if d >= date.fromisoformat(proj2["test_start"]))
+    # Simulate a session receipt changing after the market artifact completed:
+    # the recorded receipts digest no longer matches, so reuse must fail.
+    receipt2 = sorted((_pl.Path(str(proj2["receipts"])) / "sessions").glob("*.json"))[-1]
+    receipt2.write_text(receipt2.read_text() + "\n")
+    with pytest.raises(ValueError, match="market input changed"):
+        workflow.prepare_market(
+            proj2,
+            ws2 / "bundle",
+            ws2 / "market",
+            sessions2[sessions2.index(first2) + 1],
+            date.fromisoformat(proj2["test_end"]),
+        )
+
+    assert service.inspect_service(tmp_path / "account")["sessions"] == 2
+

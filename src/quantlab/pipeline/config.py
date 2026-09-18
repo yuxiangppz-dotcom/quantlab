@@ -22,7 +22,8 @@ PATHS = (
 
 def load_project(path):
     path = Path(path).resolve()
-    value = json.loads(path.read_text())
+    from pathlib import Path as _P
+    value = json.loads(_P(path).read_text())
     required = {
         "schema",
         *PATHS,

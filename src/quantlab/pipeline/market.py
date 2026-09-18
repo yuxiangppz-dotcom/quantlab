@@ -97,16 +97,25 @@ def market_day(
     # Unresolved corporate events (detected distributions with missing net
     # rates, listing dates or pay dates) block the session for the affected
     # instruments instead of letting a silently wrong ledger pass.
-    coverage = json.loads(Path(corporate_path).read_text()).get("coverage", {})
+    coverage = json.loads(Path(corporate_path).read_text()).get("coverage")
+    if not isinstance(coverage, dict) or "unresolved" not in coverage:
+        raise ValueError(
+            "corporate coverage missing the canonical unresolved section; "
+            "regenerate with the current evidence builder"
+        )
     for record in coverage.get("unresolved", []):
-        if (
-            record.get("instrument_id") in instruments
-            and date.fromisoformat(str(record.get("ex_date"))) == day
-        ):
+        code = record.get("instrument_id")
+        ex = record.get("ex_date")
+        if code in instruments and (ex is None or date.fromisoformat(str(ex)) == day):
             raise ValueError(
                 "corporate_event_unresolved:"
-                f"{record.get('instrument_id')}:{record.get('ex_date')}:"
-                f"{record.get('reason')}"
+                f"{code}:{ex}:{record.get('reason')}"
+            )
+    for record in coverage.get("unresolved_instruments", []):
+        if record.get("instrument_id") in instruments:
+            raise ValueError(
+                "corporate_event_unresolved_instrument:"
+                f"{record.get('instrument_id')}:{record.get('reason')}"
             )
     i = sessions.index(day)
     if i < 20 or i + 1 >= len(sessions):
@@ -253,7 +262,7 @@ def market_day(
 
 
 def load_policy(path):
-    policy = json.loads(path.read_text())
+    policy = json.loads(Path(path).read_text())
     if policy.get("schema") != "quantlab_execution_evidence_v1" or not policy.get("policies"):
         raise ValueError("explicit dated fees, quantity rules, participation and sources required")
     return policy

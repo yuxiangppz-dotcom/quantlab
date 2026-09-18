@@ -101,7 +101,13 @@ def _load_observations(project) -> list[tuple[date, frozenset[str]], ]:
 
 def _calendar(project) -> list[date]:
     storage = ParquetStorage(project["canonical"])
-    return sorted({row.trade_date for row in storage.load_trading_calendar()})
+    return sorted(
+        {
+            row.trade_date
+            for row in storage.load_trading_calendar()
+            if getattr(row, "is_open", True)
+        }
+    )
 
 
 def _member_codes(observations) -> tuple[list[str], list[date]]:
@@ -285,7 +291,9 @@ def _sw_cache(project, codes: list[str]) -> tuple[pd.DataFrame, dict]:
     return table, names
 
 
-def _bak_basic_fills(project, codes: list[str], fetch: bool) -> list[dict]:
+def _bak_basic_fills(
+    project, codes: list[str], fetch: bool, sessions: set
+) -> list[dict]:
     """Daily vendor industry snapshots fill gaps the SW stint table leaves.
 
     bak_basic keeps per-date snapshots, so a gap-day industry label is an
@@ -295,19 +303,26 @@ def _bak_basic_fills(project, codes: list[str], fetch: bool) -> list[dict]:
     """
     raw = project["canonical"].parent / EVIDENCE / "raw" / "bak_basic"
     raw.mkdir(parents=True, exist_ok=True)
-    from quantlab.data.tushare_provider import TushareProvider
-
-    provider = TushareProvider(
-        archive=project["canonical"].parent / EVIDENCE / "raw" / "provider_archive",
-        interval=0.35,
-    )
-    client = provider._pro
+    provider = None
+    client = None
     fills: list[dict] = []
+    observed_sessions = sorted(set(sessions))
     for number, code in enumerate(codes):
         path = raw / f"{code}.parquet"
         if not path.exists():
             if not fetch:
                 continue
+            if provider is None:
+                from quantlab.data.tushare_provider import TushareProvider
+
+                provider = TushareProvider(
+                    archive=project["canonical"].parent
+                    / EVIDENCE
+                    / "raw"
+                    / "provider_archive",
+                    interval=0.35,
+                )
+                client = provider._pro
             try:
                 frame = client.bak_basic(
                     ts_code=code,
@@ -325,38 +340,39 @@ def _bak_basic_fills(project, codes: list[str], fetch: bool) -> list[dict]:
         frame = frame[frame.industry.ne("") & frame.industry.ne("nan")]
         if frame.empty:
             continue
-        streak_start = None
-        streak_label = None
-        streak_last = None
+        streak_state = {"start": None, "label": None, "last": None}
+
+        def _close(code=code, state=streak_state):
+            if state["label"] is not None:
+                fills.append(
+                    {
+                        "instrument_id": code,
+                        "start": state["start"].isoformat(),
+                        "end": state["last"].isoformat(),
+                        "known_at": f'{state["start"].isoformat()}T00:00:00+08:00',
+                        "source_id": "tushare_bak_basic_daily_snapshot",
+                        "revision_id": "bak_basic_v1",
+                        "industry": f'bak_basic:{state["label"]}',
+                    }
+                )
+
         for _, row in frame.iterrows():
             day = row["trade_date"].date()
-            if row["industry"] != streak_label:
-                if streak_label is not None:
-                    fills.append(
-                        {
-                            "instrument_id": code,
-                            "start": streak_start.isoformat(),
-                            "end": streak_last.isoformat(),
-                            "known_at": f"{streak_start.isoformat()}T00:00:00+08:00",
-                            "source_id": "tushare_bak_basic_daily_snapshot",
-                            "revision_id": "bak_basic_v1",
-                            "industry": f"bak_basic:{streak_label}",
-                        }
-                    )
-                streak_start, streak_label = day, row["industry"]
-            streak_last = day
-        if streak_label is not None:
-            fills.append(
-                {
-                    "instrument_id": code,
-                    "start": streak_start.isoformat(),
-                    "end": streak_last.isoformat(),
-                    "known_at": f"{streak_start.isoformat()}T00:00:00+08:00",
-                    "source_id": "tushare_bak_basic_daily_snapshot",
-                    "revision_id": "bak_basic_v1",
-                    "industry": f"bak_basic:{streak_label}",
-                }
-            )
+            if streak_state["last"] is not None:
+                missed = [
+                    s
+                    for s in observed_sessions
+                    if streak_state["last"] < s < day
+                ]
+                if missed and row["industry"] == streak_state["label"]:
+                    # Trading sessions without an observation are unknown;
+                    # never stitch across them.
+                    _close(code=code, state=streak_state)
+            if row["industry"] != streak_state["label"]:
+                _close(code=code, state=streak_state)
+                streak_state["start"], streak_state["label"] = day, row["industry"]
+            streak_state["last"] = day
+        _close(code=code, state=streak_state)
         if number % 25 == 0:
             print(f"bak_basic progress: {number}/{len(codes)}")
     return fills
@@ -375,7 +391,7 @@ def cmd_industries(project, fetch: bool) -> None:
     # needs a sourced industry; the merge keeps SW stints primary and uses
     # snapshots only where SW has no coverage, so whole-range fills cannot
     # override better evidence.
-    fills = _bak_basic_fills(project, codes, fetch)
+    fills = _bak_basic_fills(project, codes, fetch, set(_calendar(project)))
     intervals, merge_issues = merge_industry_sources(intervals, fills, end=end)
     issues = issues + merge_issues
     document = {"intervals": intervals}
@@ -585,15 +601,19 @@ def cmd_corporate_actions(project, fetch: bool) -> None:
         skipped.extend(code_skipped)
         for record in code_unresolved:
             unresolved.append({"instrument_id": code, **record})
+    unresolved_instruments = [
+        {"instrument_id": code, "reason": reason} for code, reason in sorted(errors.items())
+    ]
     document = {
         "coverage": corporate_coverage(
             codes,
             start=cache_start,
             end=end,
             source_id="tushare_dividend_observation",
+            unresolved=unresolved,
+            unresolved_instruments=unresolved_instruments,
         ),
         "events": events,
-        "unresolved": unresolved,
     }
     out = project["canonical"].parent / EVIDENCE / "corporate_actions.json"
     out.parent.mkdir(parents=True, exist_ok=True)

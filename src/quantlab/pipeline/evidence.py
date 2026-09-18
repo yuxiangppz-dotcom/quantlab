@@ -11,6 +11,7 @@ artifact records the limitation instead of inventing completeness.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
@@ -454,7 +455,7 @@ def industry_intervals(
                 nxt = ordered[number + 1]["in_date"].date()
                 stop = nxt - timedelta(days=1)
                 if out is not None:
-                    if out < stop:
+                    if out <= nxt - timedelta(days=2):
                         issues.append(
                             f"{code}:{taxonomy} overlap clipped to next assignment:{start}"
                         )
@@ -477,7 +478,7 @@ def industry_intervals(
             )
             if out is not None and number + 1 < len(ordered):
                 nxt = ordered[number + 1]["in_date"].date()
-                if (nxt - out).days > 0:
+                if (nxt - out).days > 1:
                     issues.append(
                         f"{code}:{taxonomy} vacancy_unknown:"
                         f"{out.isoformat()}:"
@@ -604,92 +605,114 @@ def corporate_events(
     start: date,
     end: date,
     source_id: str,
-) -> tuple[list[dict], list[str]]:
+) -> tuple[list[dict], list[str], list[dict]]:
     """Supported corporate events from one instrument's dividend observations.
 
     Vendor field semantics (TuShare dividend documentation): ``cash_div`` is
-    the per-share AFTER-TAX amount the holder receives and ``cash_div_tax`` is
-    the PRE-TAX equivalent; the net rate therefore comes from ``cash_div``.
-    A row carrying both cash and a share ratio yields BOTH events. Bonus and
-    conversion shares settle on the vendor's ``div_listdate`` (the shares'
-    listing date); without one the share event is skipped rather than dated
-    with the cash pay date. Rights issues, merger consideration, delisting
-    settlements and the holding-period differential dividend tax charged at
-    disposal are not implemented and must surface as explicit blocks.
+    the per-share AFTER-TAX amount the holder receives and ``cash_div_tax``
+    is the pre-tax equivalent; the net rate therefore comes from
+    ``cash_div``. The cash leg and the share leg are judged independently:
+    a row can yield two events, one event plus one unresolved record, or
+    unresolved records only. Unresolved records carry every locatable
+    identifier (``ex_date``/``record_date`` may be None when the vendor row
+    itself lacks them) so downstream blocking can work per-day when the date
+    is known and per-instrument when it is not. Exact duplicates are
+    dropped; conflicting duplicates become unresolved. Rights issues,
+    merger consideration, delisting settlements and the holding-period
+    differential dividend tax charged at disposal are not implemented.
     """
     events: list[dict] = []
     skipped: list[str] = []
     unresolved: list[dict] = []
-    seen: set[tuple] = set()
+    seen: dict[tuple, str] = {}
+
+    def _unresolved(kind, ex_iso, record_iso, reason):
+        unresolved.append(
+            {
+                "instrument_id": instrument_id,
+                "ex_date": ex_iso,
+                "record_date": record_iso,
+                "kind": kind,
+                "reason": reason,
+            }
+        )
+
     for row in rows.to_dict("records"):
         ex = row.get("ex_date")
         record = row.get("record_date")
         pay = row.get("pay_date")
+        listing = row.get("div_listdate")
+        cash = row.get("cash_div")
+        cash_pre = row.get("cash_div_tax")
+        stk = row.get("stk_div")
+        share_ratio = Decimal(str(stk)) if pd.notna(stk) else Decimal(0)
+        ex_iso = None if pd.isna(ex) else str(ex)
+        record_iso = None if pd.isna(record) else str(record)
+        ex_date = record_date = None
         if pd.isna(ex):
+            _unresolved("unknown", None, record_iso, "missing_ex_date")
             skipped.append(f"{instrument_id}:missing ex_date:{ex}")
             continue
         try:
             ex_date = pd.Timestamp(ex).date()
+            ex_iso = ex_date.isoformat()
         except Exception:
+            _unresolved("unknown", None, record_iso, "invalid_ex_date")
             skipped.append(f"{instrument_id}:invalid ex_date:{ex}")
             continue
         if not (start <= ex_date <= end):
             continue
         if pd.isna(record):
+            _unresolved("unknown", ex_iso, None, "missing_record_date")
             skipped.append(f"{instrument_id}:missing record date:{ex_date}")
             continue
         try:
             record_date = pd.Timestamp(record).date()
+            record_iso = record_date.isoformat()
         except Exception:
+            _unresolved("unknown", ex_iso, None, "invalid_record_date")
             skipped.append(f"{instrument_id}:bad record date:{record}")
             continue
         key = (ex_date, record_date)
+        fingerprint = json.dumps(
+            [str(cash), str(cash_pre), str(stk), str(pay), str(listing)],
+            sort_keys=True,
+        )
         if key in seen:
-            skipped.append(f"{instrument_id}:duplicate ex_date {ex_date}")
+            if seen[key] == fingerprint:
+                skipped.append(f"{instrument_id}:exact duplicate ex_date {ex_date}")
+            else:
+                _unresolved("conflicting", ex_iso, record_iso, "conflicting_duplicate")
+                skipped.append(f"{instrument_id}:conflicting duplicate ex_date {ex_date}")
             continue
-        seen.add(key)
+        seen[key] = fingerprint
         if record_date >= ex_date:
+            _unresolved("unknown", ex_iso, record_iso, "invalid_record_ex_chronology")
             skipped.append(f"{instrument_id}:invalid record/ex chronology:{ex_date}")
             continue
-        cash = row.get("cash_div")
-        cash_pre = row.get("cash_div_tax")
         net = None
         if pd.notna(cash):
             net = Decimal(str(cash))
         elif pd.notna(cash_pre):
+            _unresolved("cash_dividend", ex_iso, record_iso, "after_tax_cash_missing_pretax_only")
             skipped.append(
                 f"{instrument_id}:after-tax cash_div missing; the pre-tax "
                 f"cash_div_tax value is not used as net:{ex_date}"
             )
-        stk = row.get("stk_div")
-        share_ratio = Decimal(str(stk)) if pd.notna(stk) else Decimal(0)
-        settlement = None
-        listing = row.get("div_listdate")
-        if pd.notna(listing):
-            try:
-                settlement = pd.Timestamp(listing).date()
-            except Exception:
-                settlement = None
         if net is not None and net > 0:
             if pd.isna(pay):
+                _unresolved("cash_dividend", ex_iso, record_iso, "missing_pay_date")
                 skipped.append(f"{instrument_id}:cash event without pay_date:{ex_date}")
-                unresolved.append(
-                    {
-                        "instrument_id": instrument_id,
-                        "ex_date": ex_date.isoformat(),
-                        "record_date": record_date.isoformat(),
-                        "kind": "cash_dividend",
-                        "reason": "missing_pay_date",
-                    }
-                )
             else:
                 try:
                     cash_settlement = pd.Timestamp(pay).date()
                 except Exception:
                     cash_settlement = None
                 if cash_settlement is None:
+                    _unresolved("cash_dividend", ex_iso, record_iso, "invalid_pay_date")
                     skipped.append(f"{instrument_id}:bad pay_date:{pay}")
                 elif cash_settlement < ex_date:
+                    _unresolved("cash_dividend", ex_iso, record_iso, "pay_before_ex")
                     skipped.append(f"{instrument_id}:cash settlement before ex:{ex_date}")
                 else:
                     events.append(
@@ -706,31 +729,21 @@ def corporate_events(
                     )
         if share_ratio > 0:
             numerator, denominator = _exact_fraction(share_ratio)
-            if settlement is None:
+            if pd.isna(listing):
+                _unresolved("bonus_shares", ex_iso, record_iso, "missing_div_listdate")
                 skipped.append(
                     f"{instrument_id}:share event without div_listdate:{ex_date}"
                 )
-                unresolved.append(
-                    {
-                        "instrument_id": instrument_id,
-                        "ex_date": ex_date.isoformat(),
-                        "record_date": record_date.isoformat(),
-                        "kind": "bonus_shares",
-                        "reason": "missing_div_listdate",
-                    }
-                )
                 continue
-            if settlement < ex_date:
+            try:
+                listing_date = pd.Timestamp(listing).date()
+            except Exception:
+                _unresolved("bonus_shares", ex_iso, record_iso, "invalid_div_listdate")
+                skipped.append(f"{instrument_id}:bad div_listdate:{listing}")
+                continue
+            if listing_date < ex_date:
+                _unresolved("bonus_shares", ex_iso, record_iso, "listing_before_ex")
                 skipped.append(f"{instrument_id}:share listing before ex:{ex_date}")
-                unresolved.append(
-                    {
-                        "instrument_id": instrument_id,
-                        "ex_date": ex_date.isoformat(),
-                        "record_date": record_date.isoformat(),
-                        "kind": "bonus_shares",
-                        "reason": "listing_before_ex",
-                    }
-                )
                 continue
             events.append(
                 {
@@ -739,36 +752,37 @@ def corporate_events(
                     "kind": "bonus_shares",
                     "record_date": record_date.isoformat(),
                     "ex_date": ex_date.isoformat(),
-                    "settlement_date": settlement.isoformat(),
+                    "settlement_date": listing_date.isoformat(),
                     "source_id": source_id,
                     "share_numerator": numerator,
                     "share_denominator": denominator,
                 }
             )
-            continue
         if (net is None or net <= 0) and share_ratio <= 0:
             skipped.append(f"{instrument_id}:no supported distribution:{ex_date}")
-            if pd.notna(cash_pre) and pd.isna(cash):
-                unresolved.append(
-                    {
-                        "instrument_id": instrument_id,
-                        "ex_date": ex_date.isoformat(),
-                        "record_date": None if pd.isna(record) else str(record),
-                        "kind": "cash_dividend",
-                        "reason": "after_tax_cash_missing_pretax_only",
-                    }
-                )
     return events, skipped, unresolved
 
 
 def corporate_coverage(
-    instrument_ids: list[str], *, start: date, end: date, source_id: str
+    instrument_ids: list[str],
+    *,
+    start: date,
+    end: date,
+    source_id: str,
+    unresolved: list[dict] | None = None,
+    unresolved_instruments: list[dict] | None = None,
 ) -> dict:
     return {
         "source_id": source_id,
         "start": start.isoformat(),
         "end": end.isoformat(),
         "instruments": len(set(instrument_ids)),
+        # Canonical location of detected-but-unusable distributions and
+        # instruments whose dividend data could not be obtained at all.
+        # market_day rejects sessions/instruments listed here; a missing
+        # section is rejected as an unknown-coverage document.
+        "unresolved": list(unresolved or []),
+        "unresolved_instruments": list(unresolved_instruments or []),
         "semantics": (
             "cash dividends carry the vendor AFTER-TAX per-share amount "
             "(cash_div; cash_div_tax is the pre-tax equivalent and is not used "

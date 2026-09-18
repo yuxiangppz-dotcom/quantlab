@@ -6,7 +6,6 @@ import hashlib
 import json
 import math
 from dataclasses import asdict, dataclass
-from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -119,8 +118,10 @@ class MLConfig:
         return hashlib.sha256(json.dumps(self.payload(), sort_keys=True).encode()).hexdigest()
 
 
-def load_config(path: Path) -> MLConfig:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+def load_config(path) -> MLConfig:
+    from pathlib import Path as _Path
+
+    payload = json.loads(_Path(path).read_text(encoding="utf-8"))
     if "models" in payload:
         payload["models"] = tuple(payload["models"])
     return MLConfig(**payload)

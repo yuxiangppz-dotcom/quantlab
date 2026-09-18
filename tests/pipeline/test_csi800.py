@@ -280,6 +280,8 @@ def test_retired_unheld_market_scope_does_not_create_prices(history, tmp_path):
                 "source_id": "test",
                 "start": str(days[0].date()),
                 "end": str(days[-1].date()),
+                "unresolved": [],
+                "unresolved_instruments": [],
             },
             "events": [],
         },
@@ -377,7 +379,13 @@ def test_known_halt_carry_is_only_a_mark_and_action_requires_explicit_valuation(
         },
     }
     corporate = {
-        "coverage": {"source_id": "test", "start": "2024-01-01", "end": "2025-01-01"},
+        "coverage": {
+            "source_id": "test",
+            "start": "2024-01-01",
+            "end": "2025-01-01",
+            "unresolved": [],
+            "unresolved_instruments": [],
+        },
         "events": [],
     }
     path = tmp_path / "corporate.json"
