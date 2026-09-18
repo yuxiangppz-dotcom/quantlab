@@ -590,11 +590,15 @@ def corporate_events(
 ) -> tuple[list[dict], list[str]]:
     """Supported corporate events from one instrument's dividend observations.
 
-    Only implemented distributions (rows already filtered to implementation
-    stage) become events: cash dividends with an explicit per-share NET rate
-    and integer bonus/conversion share ratios. Rights issues, merger
-    consideration and delisting settlements are not expressible here and stay
-    out; the caller's reconciliation reports them if they occur.
+    Vendor field semantics (TuShare dividend documentation): ``cash_div`` is
+    the per-share AFTER-TAX amount the holder receives and ``cash_div_tax`` is
+    the PRE-TAX equivalent; the net rate therefore comes from ``cash_div``.
+    A row carrying both cash and a share ratio yields BOTH events. Bonus and
+    conversion shares settle on the vendor's ``div_listdate`` (the shares'
+    listing date); without one the share event is skipped rather than dated
+    with the cash pay date. Rights issues, merger consideration, delisting
+    settlements and the holding-period differential dividend tax charged at
+    disposal are not implemented and must surface as explicit blocks.
     """
     events: list[dict] = []
     skipped: list[str] = []
@@ -613,52 +617,76 @@ def corporate_events(
             continue
         if not (start <= ex_date <= end):
             continue
-        if pd.isna(record) or pd.isna(pay):
-            skipped.append(f"{instrument_id}:missing record/pay dates:{ex_date}")
+        if pd.isna(record):
+            skipped.append(f"{instrument_id}:missing record date:{ex_date}")
             continue
         try:
             record_date = pd.Timestamp(record).date()
-            settlement = pd.Timestamp(pay).date()
         except Exception:
-            skipped.append(f"{instrument_id}:bad dates:{record}/{pay}")
+            skipped.append(f"{instrument_id}:bad record date:{record}")
             continue
         key = (ex_date, record_date)
         if key in seen:
             skipped.append(f"{instrument_id}:duplicate ex_date {ex_date}")
             continue
         seen.add(key)
-        if record_date is None or record_date >= ex_date:
+        if record_date >= ex_date:
             skipped.append(f"{instrument_id}:invalid record/ex chronology:{ex_date}")
             continue
         cash = row.get("cash_div")
-        cash_net = row.get("cash_div_tax")
-        rate = None
-        if pd.notna(cash_net):
-            rate = Decimal(str(cash_net))
-        elif pd.notna(cash):
-            rate = Decimal(str(cash))
-            skipped.append(f"{instrument_id}:net rate missing, gross used:{ex_date}")
+        cash_pre = row.get("cash_div_tax")
+        net = None
+        if pd.notna(cash):
+            net = Decimal(str(cash))
+        elif pd.notna(cash_pre):
+            skipped.append(
+                f"{instrument_id}:after-tax cash_div missing; the pre-tax "
+                f"cash_div_tax value is not used as net:{ex_date}"
+            )
         stk = row.get("stk_div")
         share_ratio = Decimal(str(stk)) if pd.notna(stk) else Decimal(0)
-        if rate is not None and rate > 0 and share_ratio == 0:
-            if settlement is None:
+        settlement = None
+        listing = row.get("div_listdate")
+        if pd.notna(listing):
+            try:
+                settlement = pd.Timestamp(listing).date()
+            except Exception:
+                settlement = None
+        if net is not None and net > 0:
+            if pd.isna(pay):
                 skipped.append(f"{instrument_id}:cash event without pay_date:{ex_date}")
-                continue
-            events.append(
-                {
-                    "event_id": f"div:{instrument_id}:{ex_date.isoformat()}",
-                    "instrument_id": instrument_id,
-                    "kind": "cash_dividend",
-                    "record_date": record_date.isoformat(),
-                    "ex_date": ex_date.isoformat(),
-                    "settlement_date": settlement.isoformat(),
-                    "source_id": source_id,
-                    "net_cash_per_share_fen": str(rate * 100),
-                }
-            )
-            continue
+            else:
+                try:
+                    cash_settlement = pd.Timestamp(pay).date()
+                except Exception:
+                    cash_settlement = None
+                if cash_settlement is None:
+                    skipped.append(f"{instrument_id}:bad pay_date:{pay}")
+                elif cash_settlement < ex_date:
+                    skipped.append(f"{instrument_id}:cash settlement before ex:{ex_date}")
+                else:
+                    events.append(
+                        {
+                            "event_id": f"div:{instrument_id}:{ex_date.isoformat()}",
+                            "instrument_id": instrument_id,
+                            "kind": "cash_dividend",
+                            "record_date": record_date.isoformat(),
+                            "ex_date": ex_date.isoformat(),
+                            "settlement_date": cash_settlement.isoformat(),
+                            "source_id": source_id,
+                            "net_cash_per_share_fen": str(net * 100),
+                        }
+                    )
         if share_ratio > 0:
             numerator, denominator = _exact_fraction(share_ratio)
+            if settlement is None:
+                skipped.append(
+                    f"{instrument_id}:share event without div_listdate:{ex_date}"
+                )
+                continue
+            if settlement < ex_date:
+                skipped.append(f"{instrument_id}:share listing before ex:{ex_date}")
+                continue
             events.append(
                 {
                     "event_id": f"shr:{instrument_id}:{ex_date.isoformat()}",
@@ -666,14 +694,15 @@ def corporate_events(
                     "kind": "bonus_shares",
                     "record_date": record_date.isoformat(),
                     "ex_date": ex_date.isoformat(),
-                    "settlement_date": (settlement or ex_date).isoformat(),
+                    "settlement_date": settlement.isoformat(),
                     "source_id": source_id,
                     "share_numerator": numerator,
                     "share_denominator": denominator,
                 }
             )
             continue
-        skipped.append(f"{instrument_id}:no supported distribution:{ex_date}")
+        if (net is None or net <= 0) and share_ratio <= 0:
+            skipped.append(f"{instrument_id}:no supported distribution:{ex_date}")
     return events, skipped
 
 
@@ -686,11 +715,16 @@ def corporate_coverage(
         "end": end.isoformat(),
         "instruments": len(set(instrument_ids)),
         "semantics": (
-            "cash dividends carry the vendor NET per-share rate; bonus and "
-            "conversion share events use the integer distribution ratio with "
-            "holder-level truncation of fractional entitlement (CSDC practice); "
-            "rights issues, merger consideration and delisting settlements are "
-            "unsupported kinds and must surface as explicit blocks."
+            "cash dividends carry the vendor AFTER-TAX per-share amount "
+            "(cash_div; cash_div_tax is the pre-tax equivalent and is not used "
+            "as the net rate); bonus and conversion share events use the "
+            "integer distribution ratio and settle on the vendor listing date "
+            "(div_listdate); fractional entitlements follow a DECLARED "
+            "holder-level truncation scenario, not a reproduced depository "
+            "allocation. The holding-period differential dividend tax charged "
+            "at disposal is unimplemented and unquantified. Rights issues, "
+            "merger consideration and delisting settlements are unsupported "
+            "kinds and must surface as explicit blocks."
         ),
         "unsupported_kinds_watchlist": ["rights_issue", "merger_exchange", "delisting_settlement"],
     }

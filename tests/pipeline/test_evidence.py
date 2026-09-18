@@ -187,12 +187,18 @@ def test_execution_policy_covers_every_instrument_and_day():
 
 
 def test_corporate_events_extract_cash_and_share_ratios():
+    """cash_div is the after-tax net; cash_div_tax is pre-tax and never net.
+
+    A combined cash+share row yields BOTH events; share events settle on the
+    vendor listing date (div_listdate), not the cash pay date.
+    """
     rows = pd.DataFrame(
         [
             {
                 "ex_date": "2023-06-20",
                 "record_date": "2023-06-19",
                 "pay_date": "2023-06-20",
+                "div_listdate": None,
                 "cash_div": 0.96,
                 "cash_div_tax": 0.96,
                 "stk_div": 0.0,
@@ -201,6 +207,7 @@ def test_corporate_events_extract_cash_and_share_ratios():
                 "ex_date": "2022-06-20",
                 "record_date": "2022-06-17",
                 "pay_date": "2022-06-20",
+                "div_listdate": "2022-06-21",
                 "cash_div": 1.0,
                 "cash_div_tax": 0.9,
                 "stk_div": 0.5,
@@ -209,14 +216,25 @@ def test_corporate_events_extract_cash_and_share_ratios():
                 "ex_date": "2022-06-20",
                 "record_date": "2022-06-17",
                 "pay_date": "2022-06-20",
+                "div_listdate": "2022-06-21",
                 "cash_div": 1.0,
                 "cash_div_tax": 0.9,
                 "stk_div": 0.5,
             },
             {
                 "ex_date": "2021-06-20",
-                "record_date": "2021-06-25",
+                "record_date": "2021-06-17",
                 "pay_date": "2021-06-26",
+                "div_listdate": None,
+                "cash_div": None,
+                "cash_div_tax": 1.0,
+                "stk_div": 0.0,
+            },
+            {
+                "ex_date": "2021-08-20",
+                "record_date": "2021-08-25",
+                "pay_date": "2021-08-26",
+                "div_listdate": None,
                 "cash_div": 1.0,
                 "cash_div_tax": 1.0,
                 "stk_div": 0.0,
@@ -230,10 +248,39 @@ def test_corporate_events_extract_cash_and_share_ratios():
     assert kinds == {"cash_dividend", "bonus_shares"}
     cash = next(e for e in events if e["kind"] == "cash_dividend")
     assert Decimal(cash["net_cash_per_share_fen"]) == Decimal("96")
+    combined_cash = next(
+        e
+        for e in events
+        if e["kind"] == "cash_dividend" and e["ex_date"] == "2022-06-20"
+    )
+    assert combined_cash["settlement_date"] == "2022-06-20"
     share = next(e for e in events if e["kind"] == "bonus_shares")
     assert (share["share_numerator"], share["share_denominator"]) == (1, 2)
+    assert share["settlement_date"] == "2022-06-21"
     assert any("duplicate" in item for item in skipped)
     assert any("chronology" in item for item in skipped)
+    assert any("pre-tax" in item for item in skipped)
+
+
+def test_corporate_share_event_without_listing_date_is_skipped():
+    rows = pd.DataFrame(
+        [
+            {
+                "ex_date": "2022-06-20",
+                "record_date": "2022-06-17",
+                "pay_date": "2022-06-20",
+                "div_listdate": None,
+                "cash_div": None,
+                "cash_div_tax": None,
+                "stk_div": 0.5,
+            }
+        ]
+    )
+    events, skipped = corporate_events(
+        rows, "000001.SZ", start=date(2021, 1, 1), end=date(2024, 1, 1), source_id="s"
+    )
+    assert events == []
+    assert any("without div_listdate" in item for item in skipped)
 
 
 def test_industry_intervals_tile_stints_and_report_disagreements():
