@@ -951,4 +951,3 @@ def test_project_data_train_replay_report_and_account_chain(history, tmp_path, m
         )
 
     assert service.inspect_service(tmp_path / "account")["sessions"] == 2
-
