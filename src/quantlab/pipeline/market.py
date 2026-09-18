@@ -17,7 +17,7 @@ from quantlab.research.ml.io import decode_market_day, read_corporate_actions
 EXACT_NOISE_TOLERANCE = Decimal("0.01")
 # stk_limit marks securities without a price limit (new listings, restructuring
 # resumptions) with placeholder values; those are "no gate applies", not prices.
-# Source: https://tushare.pro/document/2?doc_id=181
+# Source: https://tushare.pro/document/2?doc_id=183
 NO_PRICE_LIMIT_SENTINELS = (Decimal("999999.999"), Decimal("99999.999"))
 
 
