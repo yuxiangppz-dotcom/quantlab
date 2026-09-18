@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import date
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
+from pathlib import Path
 
 import pandas as pd
 
@@ -93,6 +94,20 @@ def market_day(
 ):
     verify_session(storage, receipts, day)
     read_corporate_actions(corporate_path, day, day)
+    # Unresolved corporate events (detected distributions with missing net
+    # rates, listing dates or pay dates) block the session for the affected
+    # instruments instead of letting a silently wrong ledger pass.
+    coverage = json.loads(Path(corporate_path).read_text()).get("coverage", {})
+    for record in coverage.get("unresolved", []):
+        if (
+            record.get("instrument_id") in instruments
+            and date.fromisoformat(str(record.get("ex_date"))) == day
+        ):
+            raise ValueError(
+                "corporate_event_unresolved:"
+                f"{record.get('instrument_id')}:{record.get('ex_date')}:"
+                f"{record.get('reason')}"
+            )
     i = sessions.index(day)
     if i < 20 or i + 1 >= len(sessions):
         raise ValueError("market adapter needs 20 prior sessions and one next session")

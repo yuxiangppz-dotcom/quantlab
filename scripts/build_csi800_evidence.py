@@ -570,6 +570,7 @@ def cmd_corporate_actions(project, fetch: bool) -> None:
     frames, errors = _dividend_cache(project, codes, fetch)
     events: list[dict] = []
     skipped: list[str] = []
+    unresolved: list[dict] = []
     for code in codes:
         frame = frames.get(code)
         if frame is None:
@@ -577,11 +578,13 @@ def cmd_corporate_actions(project, fetch: bool) -> None:
         implemented = frame[frame.get("div_proc", pd.Series(dtype=str)).astype(str).eq("实施")]
         if implemented.empty:
             continue
-        code_events, code_skipped = corporate_events(
+        code_events, code_skipped, code_unresolved = corporate_events(
             implemented, code, start=cache_start, end=end, source_id="tushare_dividend_observation"
         )
         events.extend(code_events)
         skipped.extend(code_skipped)
+        for record in code_unresolved:
+            unresolved.append({"instrument_id": code, **record})
     document = {
         "coverage": corporate_coverage(
             codes,
@@ -590,10 +593,23 @@ def cmd_corporate_actions(project, fetch: bool) -> None:
             source_id="tushare_dividend_observation",
         ),
         "events": events,
+        "unresolved": unresolved,
     }
     out = project["canonical"].parent / EVIDENCE / "corporate_actions.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(document, ensure_ascii=False, indent=2))
+    issues_path = out.parent / "corporate_actions_issues.json"
+    issues_path.write_text(
+        json.dumps(
+            {
+                "schema": "quantlab_corporate_unresolved_v1",
+                "unresolved": unresolved,
+                "skipped": skipped,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     _write_receipt(
         project,
         "corporate_actions",
@@ -605,7 +621,10 @@ def cmd_corporate_actions(project, fetch: bool) -> None:
             "events": len(events),
             "cash_dividend_events": sum(1 for e in events if e["kind"] == "cash_dividend"),
             "share_events": sum(1 for e in events if e["kind"] == "bonus_shares"),
-            "skipped_sample": skipped[:40],
+            "unresolved_events": len(unresolved),
+            "issues_file": str(
+                project["canonical"].parent / EVIDENCE / "corporate_actions_issues.json"
+            ),
             "limitations": [
                 "cash_dividend uses the vendor per-share post-withholding rate; "
                 "the holding-period differential dividend tax charged at disposal "

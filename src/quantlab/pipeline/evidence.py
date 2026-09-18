@@ -419,12 +419,16 @@ def industry_intervals(
     end: date,
     taxonomy: str,
 ) -> tuple[list[dict], list[str]]:
-    """Chronological industry intervals per code from a membership compilation.
+    """Industry intervals per code from vendor SW membership stints.
 
-    Rows carry ``con_code/in_date/out_date/l1_name``. Each stint becomes an
-    inclusive interval ending the day before the next stint starts; the last
-    stint extends to ``end``. Gaps and overlaps inside a code's history are
-    reported (never silently bridged with today's classification).
+    Boundary semantics (conservative; the vendor does not document
+    inclusivity): a stint covers [in_date, out_date) — ``in_date`` is the
+    first covered day, and a recorded ``out_date`` ends the stint (covered
+    days end at ``out_date - 1``). An open stint (no ``out_date``) extends
+    to ``end``. After a recorded exit the industry is UNKNOWN until the next
+    recorded assignment starts; vacuums are disclosed, never bridged with the
+    outgoing or incoming label. Overlapping stints for one code are clipped
+    to the next assignment and disclosed.
     """
     rows = rows.copy()
     rows["con_code"] = rows.con_code.astype(str).str.strip()
@@ -443,27 +447,22 @@ def industry_intervals(
         ordered = list(stint.to_dict("records"))
         for number, row in enumerate(ordered):
             start = row["in_date"].date()
+            out = None
+            if row["out_date"] is not pd.NaT and pd.notna(row["out_date"]):
+                out = row["out_date"].date()
             if number + 1 < len(ordered):
                 nxt = ordered[number + 1]["in_date"].date()
                 stop = nxt - timedelta(days=1)
-                if row["out_date"] is not pd.NaT and pd.notna(row["out_date"]):
-                    out = row["out_date"].date()
-                    if out < stop - timedelta(days=45) or out > stop + timedelta(days=45):
-                        issues.append(f"{code}:{taxonomy} out_date/in_date disagree:{start}")
+                if out is not None:
                     if out < stop:
-                        # The vendor marks an earlier exit than the next
-                        # assignment; the stint is bridged to the next stint
-                        # and every bridged day is disclosed here. A stock
-                        # always has some industry; the bridged label is the
-                        # outgoing one, not a verified classification.
                         issues.append(
-                            f"{code}:bridged_vacancy:{out.isoformat()}:"
-                            f"{stop.isoformat()}:{row['l1_name']}"
+                            f"{code}:{taxonomy} overlap clipped to next assignment:{start}"
                         )
+                    stop = min(stop, out - timedelta(days=1))
             else:
-                stop = end
+                stop = out - timedelta(days=1) if out else end
             if start > stop:
-                issues.append(f"{code}:reversed interval:{start}")
+                issues.append(f"{code}:reversed or empty interval:{start}")
                 continue
             intervals.append(
                 {
@@ -476,6 +475,14 @@ def industry_intervals(
                     "industry": f"{taxonomy}:{row['l1_name']}",
                 }
             )
+            if out is not None and number + 1 < len(ordered):
+                nxt = ordered[number + 1]["in_date"].date()
+                if (nxt - out).days > 0:
+                    issues.append(
+                        f"{code}:{taxonomy} vacancy_unknown:"
+                        f"{out.isoformat()}:"
+                        f"{(nxt - timedelta(days=1)).isoformat()}"
+                    )
     return intervals, issues
 
 
@@ -612,6 +619,7 @@ def corporate_events(
     """
     events: list[dict] = []
     skipped: list[str] = []
+    unresolved: list[dict] = []
     seen: set[tuple] = set()
     for row in rows.to_dict("records"):
         ex = row.get("ex_date")
@@ -665,6 +673,15 @@ def corporate_events(
         if net is not None and net > 0:
             if pd.isna(pay):
                 skipped.append(f"{instrument_id}:cash event without pay_date:{ex_date}")
+                unresolved.append(
+                    {
+                        "instrument_id": instrument_id,
+                        "ex_date": ex_date.isoformat(),
+                        "record_date": record_date.isoformat(),
+                        "kind": "cash_dividend",
+                        "reason": "missing_pay_date",
+                    }
+                )
             else:
                 try:
                     cash_settlement = pd.Timestamp(pay).date()
@@ -693,9 +710,27 @@ def corporate_events(
                 skipped.append(
                     f"{instrument_id}:share event without div_listdate:{ex_date}"
                 )
+                unresolved.append(
+                    {
+                        "instrument_id": instrument_id,
+                        "ex_date": ex_date.isoformat(),
+                        "record_date": record_date.isoformat(),
+                        "kind": "bonus_shares",
+                        "reason": "missing_div_listdate",
+                    }
+                )
                 continue
             if settlement < ex_date:
                 skipped.append(f"{instrument_id}:share listing before ex:{ex_date}")
+                unresolved.append(
+                    {
+                        "instrument_id": instrument_id,
+                        "ex_date": ex_date.isoformat(),
+                        "record_date": record_date.isoformat(),
+                        "kind": "bonus_shares",
+                        "reason": "listing_before_ex",
+                    }
+                )
                 continue
             events.append(
                 {
@@ -713,7 +748,17 @@ def corporate_events(
             continue
         if (net is None or net <= 0) and share_ratio <= 0:
             skipped.append(f"{instrument_id}:no supported distribution:{ex_date}")
-    return events, skipped
+            if pd.notna(cash_pre) and pd.isna(cash):
+                unresolved.append(
+                    {
+                        "instrument_id": instrument_id,
+                        "ex_date": ex_date.isoformat(),
+                        "record_date": None if pd.isna(record) else str(record),
+                        "kind": "cash_dividend",
+                        "reason": "after_tax_cash_missing_pretax_only",
+                    }
+                )
+    return events, skipped, unresolved
 
 
 def corporate_coverage(

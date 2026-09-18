@@ -241,7 +241,7 @@ def test_corporate_events_extract_cash_and_share_ratios():
             },
         ]
     )
-    events, skipped = corporate_events(
+    events, skipped, unresolved = corporate_events(
         rows, "000001.SZ", start=date(2021, 1, 1), end=date(2024, 1, 1), source_id="s"
     )
     kinds = {e["kind"] for e in events}
@@ -260,6 +260,8 @@ def test_corporate_events_extract_cash_and_share_ratios():
     assert any("duplicate" in item for item in skipped)
     assert any("chronology" in item for item in skipped)
     assert any("pre-tax" in item for item in skipped)
+    pretax = [u for u in unresolved if u["reason"] == "after_tax_cash_missing_pretax_only"]
+    assert pretax and pretax[0]["ex_date"] == "2021-06-20"
 
 
 def test_corporate_share_event_without_listing_date_is_skipped():
@@ -276,14 +278,20 @@ def test_corporate_share_event_without_listing_date_is_skipped():
             }
         ]
     )
-    events, skipped = corporate_events(
+    events, skipped, unresolved = corporate_events(
         rows, "000001.SZ", start=date(2021, 1, 1), end=date(2024, 1, 1), source_id="s"
     )
     assert events == []
     assert any("without div_listdate" in item for item in skipped)
 
 
-def test_industry_intervals_tile_stints_and_report_disagreements():
+def test_industry_intervals_respect_recorded_exits():
+    """Stints cover [in_date, out_date): a recorded exit ends coverage.
+
+    The days between a recorded exit and the next assignment stay UNKNOWN
+    (disclosed, never bridged with either label), and an open stint runs to
+    the project end.
+    """
     rows = pd.DataFrame(
         [
             {
@@ -304,13 +312,52 @@ def test_industry_intervals_tile_stints_and_report_disagreements():
         rows, {"000001.SZ"}, end=date(2026, 9, 10), taxonomy="SW"
     )
     assert len(intervals) == 2
-    assert intervals[0]["end"] == "2021-12-12"
+    assert intervals[0]["end"] == "2021-12-09"
     assert intervals[1]["start"] == "2021-12-13"
     assert intervals[1]["end"] == "2026-09-10"
-    assert intervals[0]["industry"].startswith("SW:")
-    # A recorded exit earlier than the next assignment is bridged, and every
-    # bridged day is disclosed instead of silently adopted.
-    assert any("bridged_vacancy:2021-12-10:2021-12-12:bank" in i for i in issues)
+    assert any("vacancy_unknown:2021-12-10:2021-12-12" in i for i in issues)
+    # A recorded exit on the final stint also ends coverage instead of
+    # extending to the project end.
+    rows_closed = pd.DataFrame(
+        [
+            {
+                "con_code": "000001.SZ",
+                "in_date": "20180101",
+                "out_date": "20201231",
+                "l1_name": "bank",
+            }
+        ]
+    )
+    closed, _ = industry_intervals(
+        rows_closed, {"000001.SZ"}, end=date(2026, 9, 10), taxonomy="SW"
+    )
+    assert closed[0]["end"] == "2020-12-30"
+
+
+def test_snapshot_intervals_break_on_observation_gaps():
+    """Discontinuous daily observations are never stitched into one interval."""
+    rows = pd.DataFrame(
+        [
+            {
+                "con_code": "688088.SH",
+                "in_date": "20230601",
+                "out_date": "20230609",
+                "l1_name": "software",
+            },
+            {
+                "con_code": "688088.SH",
+                "in_date": "20230925",
+                "out_date": None,
+                "l1_name": "software",
+            },
+        ]
+    )
+    intervals, issues = industry_intervals(
+        rows, {"688088.SH"}, end=date(2026, 9, 10), taxonomy="SW"
+    )
+    assert len(intervals) == 2
+    assert intervals[0]["end"] == "2023-06-08"
+    assert intervals[1]["start"] == "2023-09-25"
 
 
 def test_merge_industry_sources_fills_gaps_without_overlap():

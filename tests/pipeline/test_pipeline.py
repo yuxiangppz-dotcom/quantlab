@@ -424,6 +424,69 @@ def test_limit_sentinel_marks_an_absent_gate_not_a_price():
     assert declared_limit(None) is None
 
 
+def test_unresolved_corporate_event_blocks_market_day_through_artifact(history, tmp_path):
+    """A detected-but-unusable distribution blocks the affected session.
+
+    The block goes through the written corporate_actions artifact and the real
+    market_day path: the session cannot be prepared for the affected
+    instrument while the unknown stands.
+    """
+    storage, receipts, days = history
+    corporate = tmp_path / "corporate.json"
+    corporate.write_text(
+        json.dumps(
+            {
+                "coverage": {
+                    "source_id": "synthetic",
+                    "start": str(days[0].date()),
+                    "end": str(days[-1].date()),
+                    "unresolved": [
+                        {
+                            "instrument_id": "000001.SZ",
+                            "ex_date": str(days[60].date()),
+                            "record_date": str(days[59].date()),
+                            "kind": "cash_dividend",
+                            "reason": "after_tax_cash_missing_pretax_only",
+                        }
+                    ],
+                },
+                "events": [],
+            }
+        )
+    )
+    policy = {
+        "policies": [
+            {
+                "instruments": ["000001.SZ", "000002.SZ"],
+                "start": "2024-01-01",
+                "end": "2024-12-31",
+                "known_at": "2024-01-01T00:00:00+08:00",
+                "source_id": "synthetic",
+                "participation": "0.01",
+                "rules": None,
+                "fees": None,
+            }
+        ]
+    }
+    sessions = [d.date() for d in days]
+    with pytest.raises(ValueError, match="corporate_event_unresolved:000001.SZ"):
+        market_day(
+            storage,
+            receipts,
+            sessions,
+            sessions[60],
+            {"000001.SZ"},
+            policy,
+            corporate,
+            hour=18,
+        )
+    # An unaffected instrument on the same session is not blocked.
+    result = market_day(
+        storage, receipts, sessions, sessions[60], {"000002.SZ"}, policy, corporate, hour=18
+    )
+    assert result["contexts"][0]["instrument_id"] == "000002.SZ"
+
+
 def test_shared_bridge_has_exact_contract_and_rejects_late_source(history, tmp_path):
     storage, receipts, days = history
     args = (storage, receipts, tmp_path / "context.parquet", tmp_path / "availability.parquet")
