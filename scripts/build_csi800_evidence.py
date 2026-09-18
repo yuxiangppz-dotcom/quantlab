@@ -285,24 +285,13 @@ def _sw_cache(project, codes: list[str]) -> tuple[pd.DataFrame, dict]:
     return table, names
 
 
-def _gap_bounds(days: set) -> list[tuple[date, date]]:
-    """Collapse a set of member-gap days into inclusive contiguous bounds."""
-    bounds = []
-    for day in sorted(days):
-        if bounds and (day - bounds[-1][1]).days == 1:
-            bounds[-1] = (bounds[-1][0], day)
-        else:
-            bounds.append((day, day))
-    return bounds
-
-
-def _bak_basic_fills(project, codes: list[str], member_days: dict[str, set], end) -> list[dict]:
+def _bak_basic_fills(project, codes: list[str], fetch: bool) -> list[dict]:
     """Daily vendor industry snapshots fill gaps the SW stint table leaves.
 
     bak_basic keeps per-date snapshots, so a gap-day industry label is an
-    actually observed value, not a backfilled classification. Stints are
-    built from consecutive identical observations and stay clipped to the
-    member-day gaps they fill.
+    actually observed value, not a backfilled classification. Stints cover
+    the whole observed range (including days after a name left the index but
+    while it may still be held); the merge clips them against SW coverage.
     """
     raw = project["canonical"].parent / EVIDENCE / "raw" / "bak_basic"
     raw.mkdir(parents=True, exist_ok=True)
@@ -315,11 +304,10 @@ def _bak_basic_fills(project, codes: list[str], member_days: dict[str, set], end
     client = provider._pro
     fills: list[dict] = []
     for number, code in enumerate(codes):
-        days = sorted(member_days.get(code, ()))
-        if not days:
-            continue
         path = raw / f"{code}.parquet"
         if not path.exists():
+            if not fetch:
+                continue
             try:
                 frame = client.bak_basic(
                     ts_code=code,
@@ -382,40 +370,13 @@ def cmd_industries(project, fetch: bool) -> None:
     intervals, issues = industry_intervals(
         table, set(codes), end=end, taxonomy="SW"
     )
-    # Find member days with no industry interval; fill those from the daily
-    # snapshot source, then merge with the SW stints taking precedence.
-    membership = json.loads(
-        (project["canonical"].parent / EVIDENCE / "csi800_membership.json").read_text()
-    )
-    by_code: dict[str, list[tuple[date, date]]] = {}
-    for row in intervals:
-        by_code.setdefault(row["instrument_id"], []).append(
-            (date.fromisoformat(row["start"]), date.fromisoformat(row["end"]))
-        )
-    member_days: dict[str, set] = {}
-    for snap in membership["snapshots"]:
-        start = max(date.fromisoformat(snap["start"]), date(2018, 1, 1))
-        stop = min(
-            date.fromisoformat(snap["end"]) if snap["end"] != "9999-12-31" else end, end
-        )
-        day = start
-        while day <= stop:
-            for code in snap["members"]:
-                if not any(a <= day <= b for a, b in by_code.get(code, [])):
-                    member_days.setdefault(code, set()).add(day)
-            day += timedelta(days=1)
-    gap_codes = sorted(member_days)
-    print(f"member-day industry gaps on {len(gap_codes)} codes; fetching snapshots")
-    fills = _bak_basic_fills(project, gap_codes, member_days, end)
-    clipped = []
-    for row in fills:
-        code = row["instrument_id"]
-        for gap_start, gap_stop in _gap_bounds(member_days.get(code, set())):
-            a = max(date.fromisoformat(row["start"]), gap_start)
-            b = min(date.fromisoformat(row["end"]), gap_stop)
-            if a <= b:
-                clipped.append({**row, "start": a.isoformat(), "end": b.isoformat()})
-    intervals, merge_issues = merge_industry_sources(intervals, clipped, end=end)
+    # Fill from the daily snapshot source for EVERY code with cached or
+    # fetchable snapshots. A name that left the index but remains held still
+    # needs a sourced industry; the merge keeps SW stints primary and uses
+    # snapshots only where SW has no coverage, so whole-range fills cannot
+    # override better evidence.
+    fills = _bak_basic_fills(project, codes, fetch)
+    intervals, merge_issues = merge_industry_sources(intervals, fills, end=end)
     issues = issues + merge_issues
     document = {"intervals": intervals}
     out = project["canonical"].parent / EVIDENCE / "industry_intervals.json"
@@ -434,15 +395,19 @@ def cmd_industries(project, fetch: bool) -> None:
                 "membership history (in/out dates); a stint is labeled with the "
                 "taxonomy active at its in_date (SW2014 names before the "
                 "2021-12-13 relabeling, SW2021 names after).",
-                "Member days the SW stint table does not cover (mostly STAR "
-                "names between listing and the vendor's earliest retained "
-                "stint) are filled from the vendor's per-date snapshot archive "
-                "and labeled 'bak_basic:...' so the two sources stay "
-                "distinguishable.",
+                "Days the SW stint table does not cover (mostly STAR names "
+                "between listing and the vendor's earliest retained stint, and "
+                "any period after a name left the index) are filled from the "
+                "vendor's per-date snapshot archive and labeled 'bak_basic:...' "
+                "so the two sources stay distinguishable.",
                 "known_at equals the membership effective date; contemporaneous "
                 "publication timestamps are not independently certified.",
                 "Codes with no covering interval on a member day surface as an "
                 "explicit universe compilation block, never a defaulted label.",
+                "Industry constraint consistency caveat: labels mix SW2014, "
+                "SW2021 and bak_basic taxonomies, so a max-industry-weight cap "
+                "groups by literal label string and is NOT a fully consistent "
+                "single-taxonomy classification across the whole window.",
             ],
         },
     )

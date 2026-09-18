@@ -450,6 +450,16 @@ def industry_intervals(
                     out = row["out_date"].date()
                     if out < stop - timedelta(days=45) or out > stop + timedelta(days=45):
                         issues.append(f"{code}:{taxonomy} out_date/in_date disagree:{start}")
+                    if out < stop:
+                        # The vendor marks an earlier exit than the next
+                        # assignment; the stint is bridged to the next stint
+                        # and every bridged day is disclosed here. A stock
+                        # always has some industry; the bridged label is the
+                        # outgoing one, not a verified classification.
+                        issues.append(
+                            f"{code}:bridged_vacancy:{out.isoformat()}:"
+                            f"{stop.isoformat()}:{row['l1_name']}"
+                        )
             else:
                 stop = end
             if start > stop:
