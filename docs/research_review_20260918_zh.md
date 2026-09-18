@@ -18,3 +18,9 @@ PR #189/#190 均 OPEN，#190 包含 #189。开始前检查 WSL 进程及桌面�
 | 已证实展示问题 | 总报告截取所有模型共同完成的108日，Ridge完整726日收益未在主表出现，交接将108日+2.32%/2.91%误配给726日。 | `research/ml/reporting.py:164-185`；`data/experiments/csi800_v2/report/report.md` 与 `replay/summary.json` |
 
 以上是证据盘点，不是策略收益认证。后续更新将记录修复、实际运行与阻断。
+
+第一组已修复：观察资料不再自动转换为已认证成员，ST抽验不再提升全量完整性，
+覆盖区间不跨未观测日期，旧推断证据拒绝新准入，universe恢复绑定编译器代码，
+成员revision使用稳定SHA256，证据CLI拒绝覆盖旧产物，industry请求必须显式`--fetch`。
+自审确认无Canonical改写。针对性36通过；全仓3666通过、11跳过；Ruff和diff检查通过。
+日志：`data/research_review_20260918/logs/evidence-{targeted,pytest,ruff}.txt`。
