@@ -55,42 +55,34 @@ def membership_changes(
     observations: list[tuple[date, frozenset[str]]],
     calendar: list[date],
 ) -> tuple[list[tuple[date, date, str, frozenset[str]]], list[MembershipChange]]:
-    """Convert monthly weight observations into effective-interval snapshots.
+    """Summarize observations, never infer effective membership from month ends.
 
-    Consecutive identical observations extend the current interval. A member
-    change is dated to the published semiannual effective date when the later
-    observation is the June or December month end and the scheduled date falls
-    between the two observations; anything else stays observation-bounded and
-    is reported for case-by-case review instead of being silently dated.
+    Even in June/December a change may include extraordinary adjustments.
+    Neither a calendar rule nor an unchanged pair proves intervening identity.
+    The intervals below describe observations only and cannot enter a PIT universe.
     """
     if not observations:
         raise ValueError("no index observations")
     observations = sorted(observations, key=lambda item: item[0])
+    if len({d for d, _ in observations}) != len(observations):
+        raise ValueError("duplicate membership observation date")
     intervals: list[tuple[date, date, str, frozenset[str]]] = []
     changes: list[MembershipChange] = []
     current_start, current_members, current_basis = observations[0][0], observations[0][1], (
         "first_observation"
     )
+    previous_date = observations[0][0]
     for observed_date, members in observations[1:]:
         if members == current_members:
+            previous_date = observed_date
             continue
-        scheduled = scheduled_effective(calendar, observed_date.year, observed_date.month)
-        if (
-            scheduled is not None
-            and current_start < scheduled <= observed_date
-            and current_start < scheduled
-        ):
-            effective, basis = scheduled, "scheduled_semiannual_effective"
-        else:
-            effective, basis = observed_date, "observation_bounded"
-        if scheduled is not None and basis == "observation_bounded":
-            basis = "observation_bounded_within_scheduled_month"
+        effective, basis = observed_date, "observation_bounded"
         intervals.append(
             (current_start, effective - timedelta(days=1), current_basis, current_members)
         )
         changes.append(
             MembershipChange(
-                previous_date=intervals[-1][0],
+                previous_date=previous_date,
                 observed_date=observed_date,
                 effective=effective,
                 dating_basis=basis,
@@ -99,7 +91,8 @@ def membership_changes(
             )
         )
         current_start, current_members, current_basis = effective, members, basis
-    intervals.append((current_start, date.max, current_basis, current_members))
+        previous_date = observed_date
+    intervals.append((current_start, observations[-1][0], current_basis, current_members))
     return intervals, changes
 
 
@@ -120,10 +113,11 @@ def membership_document(
             {
                 "start": start.isoformat(),
                 "end": end.isoformat() if end != date.max else "9999-12-31",
-                "known_at": f"{start.isoformat()}T00:00:00+08:00",
+                "known_at": None,
                 "source_id": "csi_index_weight_monthly_observation",
                 "revision_id": revision_id,
-                "complete": True,
+                "complete": False,
+                "historical_publication_certified": False,
                 "members": sorted(members),
                 "dating_basis": basis,
             }
@@ -142,15 +136,12 @@ def membership_document(
     return {
         "schema": MEMBERSHIP_SCHEMA,
         "index": INDEX,
-        "semantics": "published_effective_intervals",
+        "semantics": "monthly_observations_not_effective_membership",
         "snapshots": snapshots,
         "known_limitations": [
-            "known_at is the effective date of each interval; official sample "
-            "adjustment announcements precede it by about two weeks, so this is "
-            "a conservative publication bound, not the announcement timestamp.",
-            "observation_bounded intervals cover extraordinary adjustments whose "
-            "exact effective date was not established from monthly observations; "
-            "membership may lag reality by up to one month inside such intervals.",
+            "Monthly observations do not establish effective or publication dates. "
+            "Official constituent identities and announcement/effective dates are required "
+            "for each regular and extraordinary adjustment before PIT admission.",
             "Interval membership before the first monthly observation is unknown "
             "and intentionally not reconstructed.",
         ],
@@ -322,16 +313,19 @@ def execution_policy_document(
     *,
     start: date,
     end: date,
-    commission_rate: str = "0.00025",
+    commission_rate: str = "0.00086",
     minimum_commission_fen: int = 500,
     participation: str = "0.1",
     stale_valuation: bool = True,
 ) -> dict:
     """Expand dated fee eras over board groups; one policy covers each day.
 
-    The commission rate is a DECLARED retail scenario (0.025% all-in including
-    exchange/regulatory surcharges, minimum CNY 5) pending the operator's real
-    brokerage schedule; stamps and the transfer fee are separate sourced rates.
+    The commission is the OPERATOR-VERIFIED brokerage schedule (0.086% all-in
+    including exchange/regulatory surcharges, stock minimum CNY 5, declared
+    2026-09-18; ETF minimum CNY 0.1 is recorded but this strategy trades only
+    CSI800 stocks). Stamps and the transfer fee are separate sourced rates;
+    if the broker's 万0.86 excludes regulatory surcharges, the modeled cost
+    understates by about 0.0054% per side.
     """
     policies = []
     grouped: dict[str, list[str]] = {}
@@ -350,7 +344,7 @@ def execution_policy_document(
                     "end": era_end.isoformat(),
                     "known_at": f"{era.known_at.isoformat()}T00:00:00+08:00",
                     "source_id": (
-                        f"declared_fee_scenario_v1|{era.transfer_fee_source}|{era.stamp_source}"
+                        f"operator_brokerage_2026-09-18_v1|{era.transfer_fee_source}|{era.stamp_source}"
                     ),
                     "participation": participation,
                     "rules": {
@@ -362,7 +356,7 @@ def execution_policy_document(
                         # would break the typed kernel decode.
                     },
                     "fees": {
-                        "scenario_id": "declared_retail_wan2p5_min5_v1",
+                        "scenario_id": "operator_brokerage_wan0p86_stock_min5_v1",
                         "effective_from": era_start.isoformat(),
                         "effective_through": era_end.isoformat(),
                         "commission_rate": commission_rate,
@@ -379,8 +373,10 @@ def execution_policy_document(
         "schema": EXECUTION_POLICY_SCHEMA,
         "policies": policies,
         "known_limitations": [
-            "commission_rate/minimum_commission_fen are declared research "
-            "scenarios, not the operator's verified brokerage schedule.",
+            "commission 0.086% (stock minimum CNY 5) is the operator's stated "
+            "brokerage schedule, declared 2026-09-18, assumed all-in of "
+            "exchange/regulatory surcharges; ETF minimum CNY 0.1 is recorded "
+            "but this strategy trades only CSI800 stocks.",
             "adverse_slippage_rate is zero at base; stress scenarios replace it "
             "with explicit per-side slippage assumptions.",
             "participation 0.1 is a conservative research cap, not a measured "
@@ -541,7 +537,7 @@ def coverage_intervals(
     revision_id: str,
     complete: bool,
 ) -> list[dict]:
-    """Contiguous ST-coverage intervals over sealed sessions.
+    """Contiguous calendar-day coverage, without bridging unobserved sessions.
 
     ``complete`` must reflect an independent verification result, not a wish:
     an empty ST response is never proof that no stock was designated ST.
@@ -552,7 +548,7 @@ def coverage_intervals(
     bounds = []
     run_start = previous = sessions[0]
     for day in sessions[1:]:
-        if (day - previous).days > 14:
+        if (day - previous).days != 1:
             bounds.append((run_start, previous))
             run_start = day
         previous = day

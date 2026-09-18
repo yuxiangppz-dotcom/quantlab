@@ -54,10 +54,11 @@ def test_membership_changes_detect_scheduled_and_extraordinary():
         (date(2024, 6, 30), members_b),
     ]
     intervals, changes = membership_changes(observations_june, calendar)
-    assert changes[0].dating_basis == "scheduled_semiannual_effective"
-    assert changes[0].effective == date(2024, 6, 17)
-    assert intervals[0][1] == date(2024, 6, 16)
-    assert intervals[1][0] == date(2024, 6, 17)
+    assert changes[0].dating_basis == "observation_bounded"
+    assert changes[0].effective == date(2024, 6, 30)
+    assert intervals[0][1] == date(2024, 6, 29)
+    assert intervals[1][0] == date(2024, 6, 30)
+    assert intervals[-1][1] == date(2024, 6, 30)
     for previous, nxt in zip(intervals, intervals[1:], strict=False):
         assert nxt[0] > previous[1]
 
@@ -69,7 +70,9 @@ def test_membership_document_enforces_snapshot_size_and_observations():
         intervals, observation_dates=[date(2024, 1, 31)], revision_id="r1"
     )
     assert document["schema"] == "quantlab_index_membership_v1"
-    assert document["snapshots"][0]["complete"] is True
+    assert document["snapshots"][0]["complete"] is False
+    assert document["snapshots"][0]["known_at"] is None
+    assert document["semantics"] != "published_effective_intervals"
     short = frozenset(f"{n:06}.SZ" for n in range(799))
     with pytest.raises(ValueError, match="800"):
         membership_document(
@@ -271,4 +274,7 @@ def test_coverage_intervals_keep_explicit_completeness():
     assert coverage[0]["end"] == "2024-01-05"
     assert coverage[0]["complete"] is False
     holed = [date(2024, 1, 2), date(2024, 1, 3), date(2024, 2, 20), date(2024, 2, 21)]
+    assert len(coverage_intervals(holed, source_id="s", revision_id="r", complete=True)) == 2
+    # A missing weekday must not acquire coverage merely because the gap is short.
+    holed = [date(2024, 1, 2), date(2024, 1, 4)]
     assert len(coverage_intervals(holed, source_id="s", revision_id="r", complete=True)) == 2

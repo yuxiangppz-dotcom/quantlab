@@ -57,6 +57,7 @@ def compile_universe(
     paths += [availability_path, storage.calendar_path, storage.securities_path, code_changes_path]
     sources = {str(p): sha256(p) for p in paths}
     intent = {
+        "compiler_sha256": sha256(Path(__file__)),
         "sources": sources,
         "policy": strategy["policy_sha256"],
         "start": str(start),
@@ -83,6 +84,8 @@ def compile_universe(
             raise ValueError("certified historical CSI800 effective membership required")
         snapshots = membership["snapshots"]
         for row in snapshots:
+            if row.get("source_id") == "csi_index_weight_monthly_observation":
+                raise ValueError("monthly observations cannot certify effective CSI800 membership")
             members = row["members"]
             if (
                 row.get("complete") is not True
@@ -98,6 +101,11 @@ def compile_universe(
         coverage = json.loads(strategy["event_coverage"].read_text())
         if coverage.get("schema") != "quantlab_event_coverage_v1":
             raise ValueError("explicit event coverage certification required")
+        if any(
+            r.get("source_id") == "tushare_stock_st_daily_sealed"
+            for r in coverage["stock_st"]
+        ):
+            raise ValueError("sealed ST partitions and samples do not certify coverage")
         calendar = storage.load_trading_calendar()
         # Use the stored calendar, including listing-age and feature warmup history.
         all_days = sorted({c.trade_date for c in calendar})

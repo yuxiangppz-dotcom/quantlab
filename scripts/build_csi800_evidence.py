@@ -31,6 +31,7 @@ for _name in (
     os.environ.setdefault(_name, "2")
 
 import argparse  # noqa: E402
+import hashlib  # noqa: E402
 import json  # noqa: E402
 import sys  # noqa: E402
 import time  # noqa: E402
@@ -117,7 +118,9 @@ def cmd_membership(project) -> None:
     calendar = _calendar(project)
     intervals, changes = membership_changes(observations, calendar)
     observation_dates = [day for day, _ in observations]
-    revision = str(abs(hash(tuple(sorted((str(d), tuple(sorted(m))) for d, m in observations)))) )
+    revision = hashlib.sha256(
+        json.dumps([(str(d), sorted(m)) for d, m in sorted(observations)]).encode()
+    ).hexdigest()
     document = membership_document(
         intervals,
         observation_dates=observation_dates,
@@ -474,7 +477,8 @@ def cmd_event_coverage(project, fetch: bool) -> None:
             if was != now:
                 st_flips.setdefault(code, []).append((day, now))
         previous_st = {code: True for code in current}
-    complete = bool(days)
+    # File integrity and a convenience sample do not prove absence of missing ST events.
+    complete = False
     samples: list[dict] = []
     if fetch and st_flips:
         from quantlab.data.tushare_provider import TushareProvider
@@ -517,7 +521,7 @@ def cmd_event_coverage(project, fetch: bool) -> None:
                 )
             time.sleep(0.05)
         rate = matched / max(1, sum(1 for s in samples if "flip" in s))
-        complete = bool(days) and rate >= 0.7
+        print(f"ST sample agreement (diagnostic only): {rate:.6f}")
     revision = f"sealed_sessions_{len(days)}"
     coverage = coverage_intervals(
         days,
@@ -538,12 +542,11 @@ def cmd_event_coverage(project, fetch: bool) -> None:
             "interval_count": len(coverage),
             "complete": complete,
             "sample_size": sum(1 for s in samples if "flip" in s),
-            "samples": samples[:40],
+            "samples": samples,
             "limitations": [
-                "An empty ST response is never treated as a day without ST "
-                "designations; coverage asserts the sealed daily source, and "
-                "complete=true additionally requires the name-change sampling "
-                "check recorded in this receipt.",
+                "Neither nonempty sealed partitions nor name-change samples establish "
+                "exhaustive daily ST coverage. complete remains false pending a dated "
+                "source reconciliation including empty, missing and truncated responses.",
                 "Vendor ST coverage depth before the first sealed session is "
                 "unknown and intentionally not certified.",
             ],
@@ -672,6 +675,20 @@ def main() -> None:
         child.add_argument("--fetch", action="store_true")
     args = parser.parse_args()
     project = load_project(args.project)
+    # Evidence is immutable. A re-run must target a new isolated namespace.
+    outputs = {
+        "membership": "csi800_membership.json",
+        "availability": "source_availability.parquet",
+        "execution-policy": "execution_policy.json",
+        "industries": "industry_intervals.json",
+        "event-coverage": "event_coverage.json",
+        "corporate-actions": "corporate_actions.json",
+    }
+    target = project["canonical"].parent / EVIDENCE / outputs[args.command]
+    if target.exists():
+        raise SystemExit(f"evidence already exists; use a new namespace:{target}")
+    if args.command == "industries" and not args.fetch:
+        raise SystemExit("industries requires provider requests; explicit --fetch required")
     if args.command == "membership":
         cmd_membership(project)
     elif args.command == "availability":

@@ -184,6 +184,36 @@ def test_membership_is_historical_and_removed_holdings_remain(universe_history, 
     assert compile_fixture(tmp_path, universe_history) == output
 
 
+@pytest.mark.parametrize("kind", ["members", "events"])
+def test_legacy_inferred_certificates_are_rejected(universe_history, tmp_path, kind):
+    path = tmp_path / f"{kind}.json"
+    document = json.loads(path.read_text())
+    key = "snapshots" if kind == "members" else "stock_st"
+    source = (
+        "csi_index_weight_monthly_observation"
+        if kind == "members" else "tushare_stock_st_daily_sealed"
+    )
+    for row in document[key]:
+        row["source_id"] = source
+    path.write_text(json.dumps(document))
+    with pytest.raises(ValueError, match="cannot certify|do not certify"):
+        compile_fixture(tmp_path, universe_history)
+    assert not (tmp_path / "universe").exists()
+
+
+def test_universe_resume_binds_compiler(universe_history, tmp_path, monkeypatch):
+    from quantlab.pipeline import universe
+
+    compile_fixture(tmp_path, universe_history)
+    original = universe.sha256
+    monkeypatch.setattr(
+        universe, "sha256",
+        lambda p: "changed" if str(p) == universe.__file__ else original(p),
+    )
+    with pytest.raises(ValueError, match="evidence changed"):
+        compile_fixture(tmp_path, universe_history)
+
+
 @pytest.mark.parametrize("problem", ["late", "incomplete", "unknown_st", "overlap", "monthly"])
 def test_unproven_universe_cannot_be_published(universe_history, tmp_path, problem):
     path = tmp_path / "members.json"
