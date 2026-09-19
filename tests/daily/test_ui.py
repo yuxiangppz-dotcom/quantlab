@@ -17,6 +17,10 @@ def test_all_seven_local_ui_pages_render_without_exception() -> None:
         "账户与参考计划",
         "资金流水与估值",
     ):
-        app.sidebar.radio[0].set_value(page)
+        if page in {"账户与参考计划", "资金流水与估值"}:
+            app.sidebar.radio[0].set_value(page)
+        else:
+            app.sidebar.radio[0].set_value("历史研究").run(timeout=30)
+            app.sidebar.selectbox[0].set_value(page)
         app.run(timeout=30)
         assert not app.exception

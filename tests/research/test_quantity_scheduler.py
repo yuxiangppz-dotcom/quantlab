@@ -242,7 +242,6 @@ def test_preflight_of_later_buy_prevents_earlier_sale_when_context_unknown():
         ({"down_limit_fen": None}, "down_limit_fen_unknown"),
         ({"raw_close_fen": None}, "raw_close_fen_unknown"),
         ({"session_amount_fen": None}, "session_amount_fen_unknown"),
-        ({"prior20_sessions": 19}, "prior20_coverage_incomplete"),
     ],
 )
 def test_necessary_unknowns_stop_path(changes, reason):
@@ -262,6 +261,21 @@ def test_known_suspension_preserves_marked_position_without_assuming_trade():
     assert result.records[-1].attempts[0].transition.reason == "market_open_false"
     assert result.book.lots == result.records[0].book.lots
     assert result.records[-1].marked_equity_fen == 199500
+
+
+def test_prior20_capacity_gap_blocks_the_order_but_not_the_day():
+    """A name resuming after a confirmed halt lacks twenty tradable sessions.
+
+    The single order is blocked (position carried, nothing invented); the
+    account and the other orders continue.
+    """
+    second = batch(
+        2, (order(2, side="sell"),), (context(2, prior20_sessions=19),), (marked(2),)
+    )
+    result = run((buy_first(), second))
+    assert result.status == "completed_scenario"
+    assert result.records[-1].attempts[0].transition.reason == "prior20_coverage_incomplete"
+    assert result.book.lots == result.records[0].book.lots
 
 
 def test_suspension_does_not_hide_unknown_corporate_processing():
