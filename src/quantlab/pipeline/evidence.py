@@ -605,7 +605,8 @@ def corporate_events(
     identifier (``ex_date``/``record_date`` may be None when the vendor row
     itself lacks them) so downstream blocking can work per-day when the date
     is known and per-instrument when it is not. Exact duplicates are
-    dropped; conflicting duplicates become unresolved. Rights issues,
+    dropped; conflicting duplicates invalidate all candidate legs in their
+    distribution group and become unresolved. Rights issues,
     merger consideration, delisting settlements and the holding-period
     differential dividend tax charged at disposal are not implemented.
     """
@@ -670,6 +671,14 @@ def corporate_events(
             if seen[key] == fingerprint:
                 skipped.append(f"{instrument_id}:exact duplicate ex_date {ex_date}")
             else:
+                # A later conflicting row invalidates the entire distribution,
+                # including any cash/share legs emitted from the first row.
+                # Keeping that first candidate would make artifact consumers
+                # depend on vendor row order despite unresolved coverage.
+                events[:] = [
+                    event for event in events
+                    if (event["ex_date"], event["record_date"]) != (ex_iso, record_iso)
+                ]
                 _unresolved("conflicting", ex_iso, record_iso, "conflicting_duplicate")
                 skipped.append(f"{instrument_id}:conflicting duplicate ex_date {ex_date}")
             continue

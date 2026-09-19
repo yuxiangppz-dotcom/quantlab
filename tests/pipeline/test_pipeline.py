@@ -424,9 +424,9 @@ def test_limit_sentinel_marks_an_absent_gate_not_a_price():
     assert declared_limit(None) is None
 
 
-@pytest.mark.parametrize("missing_cache", [False, True])
+@pytest.mark.parametrize("missing_cache,conflict", [(False, False), (True, False), (False, True)])
 def test_unresolved_corporate_event_blocks_market_day_through_artifact(
-    history, tmp_path, evidence_builder, missing_cache,
+    history, tmp_path, evidence_builder, missing_cache, conflict,
 ):
     """Cached raw rows -> real generator -> file -> real market_day."""
     storage, receipts, days = history
@@ -442,9 +442,14 @@ def test_unresolved_corporate_event_blocks_market_day_through_artifact(
     cache.mkdir(parents=True)
     pd.DataFrame({"div_proc": ["预案"]}).to_parquet(cache / "000002.SZ.parquet")
     if not missing_cache:
-        pd.DataFrame([dict(div_proc="实施", ex_date=str(days[60].date()),
+        row = dict(div_proc="实施", ex_date=str(days[60].date()),
             record_date=str(days[59].date()), pay_date=None, div_listdate=None,
-            cash_div=1.0, cash_div_tax=1.0, stk_div=0.0)]).to_parquet(cache / "000001.SZ.parquet")
+            cash_div=1.0, cash_div_tax=1.0, stk_div=0.0)
+        if conflict:
+            row.update(pay_date=str(days[60].date()),
+                       div_listdate=str(days[61].date()), stk_div=0.5)
+        raw_rows = [row, dict(row, cash_div=0.4)] if conflict else [row]
+        pd.DataFrame(raw_rows).to_parquet(cache / "000001.SZ.parquet")
     evidence_builder.cmd_corporate_actions(project, fetch=False)
     corporate = project["evidence_output"] / "corporate_actions.json"
     coverage = json.loads(corporate.read_text())["coverage"]
@@ -452,7 +457,9 @@ def test_unresolved_corporate_event_blocks_market_day_through_artifact(
         assert coverage["unresolved_instruments"] == [
             {"instrument_id": "000001.SZ", "reason": "cache_missing"}]
     else:
-        assert coverage["unresolved"][0]["reason"] == "missing_pay_date"
+        assert coverage["unresolved"][0]["reason"] == (
+            "conflicting_duplicate" if conflict else "missing_pay_date")
+    assert json.loads(corporate.read_text())["events"] == []
     policy = {
         "policies": [
             {

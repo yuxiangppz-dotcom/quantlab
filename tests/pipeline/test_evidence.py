@@ -471,3 +471,26 @@ def test_snapshot_null_label_cannot_become_industry_none_string(tmp_path, eviden
     assert [(r["start"], r["end"], r["industry"]) for r in merged] == [
         ("2023-06-01", "2023-06-01", "bak_basic:bank"),
         ("2023-06-05", "2023-06-05", "bak_basic:bank")]
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_conflicting_distribution_removes_all_candidate_legs(reverse):
+    # A combined first row must not survive a disagreement in either leg.
+    # Repeating the first row after the conflict must not resurrect it.
+    row = dict(ex_date="2023-06-20", record_date="2023-06-19",
+               pay_date="2023-06-20", div_listdate="2023-06-21",
+               cash_div=1.0, cash_div_tax=1.0, stk_div=0.5)
+    conflict = dict(row, cash_div=0.4)
+    other = dict(row, ex_date="2023-07-20", record_date="2023-07-19",
+                 pay_date="2023-07-20", div_listdate="2023-07-21")
+    rows = [row, conflict, row, other]
+    if reverse:
+        rows.reverse()
+    events, _, unresolved = corporate_events(
+        pd.DataFrame(rows), "000001.SZ", start=date(2023, 1, 1),
+        end=date(2023, 12, 31), source_id="synthetic",
+    )
+    assert {(e["ex_date"], e["kind"]) for e in events} == {
+        ("2023-07-20", "cash_dividend"), ("2023-07-20", "bonus_shares")}
+    assert any(u["reason"] == "conflicting_duplicate" and
+               u["ex_date"] == "2023-06-20" for u in unresolved)
