@@ -67,3 +67,10 @@ L1 分类归档校验响应哈希；receipt 记录缓存、日历、观察文件
 build→train→market/replay→report。当前只完成前两步和合成路径验证；
 禁止为得到完整曲线跳过 universe 的成员认证阻断。市场缓存回归测试分别验证
 相同输入可复用、代码 identity 改变拒绝复用、会话回执改变拒绝复用。
+
+## Public-source supplement (2026-09-19)
+
+See [the source intake and remaining gates](csi800_public_evidence_intake_20260919_zh.md).
+The isolated fact register is not an executable evidence bundle and must not bypass
+membership, ST, industry or corporate-action gates. The 300114→302132 mapping now
+has an issuer-announcement source; its mapping and effective date are unchanged.
