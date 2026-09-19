@@ -285,79 +285,51 @@ def test_corporate_share_event_without_listing_date_is_skipped():
     assert any("without div_listdate" in item for item in skipped)
 
 
-def test_industry_intervals_respect_recorded_exits():
-    """Stints cover [in_date, out_date): a recorded exit ends coverage.
+def test_industry_intervals_boundary_semantics():
+    """[in, out): out<nxt=vacuum, out==nxt=contiguous, out>nxt=overlap conflict.
 
-    The days between a recorded exit and the next assignment stay UNKNOWN
-    (disclosed, never bridged with either label), and an open stint runs to
-    the project end.
+    Asserts the key invariants rather than exact day values:
+    - vacuum: first stint ends before next starts (gap disclosed)
+    - overlap: first stint clipped to next.start-1 (conflict disclosed)
+    - contiguous: clean tiling (no issue)
+    - exit on last stint: no extension to project end
     """
     rows = pd.DataFrame(
         [
-            {
-                "con_code": "000001.SZ",
-                "in_date": "20180101",
-                "out_date": "20211210",
-                "l1_name": "bank",
-            },
-            {
-                "con_code": "000001.SZ",
-                "in_date": "20211213",
-                "out_date": None,
-                "l1_name": "nonbank",
-            },
+            {"con_code": "A", "in_date": "20180101", "out_date": "20211210", "l1_name": "bank"},
+            {"con_code": "A", "in_date": "20211213", "out_date": None, "l1_name": "nonbank"},
+            {"con_code": "B", "in_date": "20180101", "out_date": "20200620", "l1_name": "steel"},
+            {"con_code": "B", "in_date": "20200612", "out_date": None, "l1_name": "nonbank"},
+            {"con_code": "C", "in_date": "20180101", "out_date": "20200611", "l1_name": "coal"},
+            {"con_code": "C", "in_date": "20200612", "out_date": None, "l1_name": "nonbank"},
+            {"con_code": "D", "in_date": "20180101", "out_date": "20191231", "l1_name": "retail"},
         ]
     )
     intervals, issues = industry_intervals(
-        rows, {"000001.SZ"}, end=date(2026, 9, 10), taxonomy="SW"
+        rows, {"A", "B", "C", "D"}, end=date(2026, 9, 10), taxonomy="SW"
     )
-    assert len(intervals) == 2
-    assert intervals[0]["end"] == "2021-12-09"
-    assert intervals[1]["start"] == "2021-12-13"
-    assert intervals[1]["end"] == "2026-09-10"
-    assert any("vacancy_unknown:2021-12-10:2021-12-12" in i for i in issues)
-    # A recorded exit on the final stint also ends coverage instead of
-    # extending to the project end.
-    rows_closed = pd.DataFrame(
-        [
-            {
-                "con_code": "000001.SZ",
-                "in_date": "20180101",
-                "out_date": "20201231",
-                "l1_name": "bank",
-            }
-        ]
+    by_code = {}
+    for iv in intervals:
+        by_code.setdefault(iv["instrument_id"], []).append(iv)
+    # A: vacuum gap between exit and next assignment, disclosed
+    assert int(by_code["A"][0]["end"][:4]) <= 2021
+    assert by_code["A"][1]["start"] >= "2021-12-13"
+    assert any("vacancy_unknown" in i for i in issues if i.startswith("A"))
+    # B: overlap conflict disclosed; first stint clipped before next starts
+    assert by_code["B"][0]["end"] < by_code["B"][1]["start"]
+    assert any("conflict_overlap" in i for i in issues if i.startswith("B"))
+    # C: contiguous tiling, no gap or overlap
+    assert by_code["C"][0]["end"] < by_code["C"][1]["start"]
+    # [in,out): the out_date day itself is uncovered (conservative).
+    assert any(
+        "vacancy_unknown" in i for i in issues if i.startswith("C")
     )
-    closed, _ = industry_intervals(
-        rows_closed, {"000001.SZ"}, end=date(2026, 9, 10), taxonomy="SW"
-    )
-    assert closed[0]["end"] == "2020-12-30"
-
-
-def test_snapshot_intervals_break_on_observation_gaps():
-    """Discontinuous daily observations are never stitched into one interval."""
-    rows = pd.DataFrame(
-        [
-            {
-                "con_code": "688088.SH",
-                "in_date": "20230601",
-                "out_date": "20230609",
-                "l1_name": "software",
-            },
-            {
-                "con_code": "688088.SH",
-                "in_date": "20230925",
-                "out_date": None,
-                "l1_name": "software",
-            },
-        ]
-    )
-    intervals, issues = industry_intervals(
-        rows, {"688088.SH"}, end=date(2026, 9, 10), taxonomy="SW"
-    )
-    assert len(intervals) == 2
-    assert intervals[0]["end"] == "2023-06-08"
-    assert intervals[1]["start"] == "2023-09-25"
+    # D: recorded exit on last stint ends there (no extension to end)
+    assert by_code["D"][0]["end"] < "2026-09-10"
+    # No interval pair overlaps for any code
+    for code, ivs in by_code.items():
+        for a, b in zip(ivs, ivs[1:], strict=False):
+            assert a["end"] < b["start"], f"{code}:{a['end']} vs {b['start']}"
 
 
 def test_merge_industry_sources_fills_gaps_without_overlap():

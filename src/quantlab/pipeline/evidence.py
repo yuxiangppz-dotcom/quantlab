@@ -453,13 +453,33 @@ def industry_intervals(
                 out = row["out_date"].date()
             if number + 1 < len(ordered):
                 nxt = ordered[number + 1]["in_date"].date()
-                stop = nxt - timedelta(days=1)
                 if out is not None:
-                    if out <= nxt - timedelta(days=2):
+                    if out < nxt:
+                        # Vacuum: the recorded exit is before the next
+                        # assignment; the gap stays unknown and disclosed.
                         issues.append(
-                            f"{code}:{taxonomy} overlap clipped to next assignment:{start}"
+                            f"{code}:{taxonomy} vacancy_unknown:"
+                            f"{out.isoformat()}:"
+                            f"{(nxt - timedelta(days=1)).isoformat()}"
                         )
-                    stop = min(stop, out - timedelta(days=1))
+                        stop = out - timedelta(days=1)
+                    elif out > nxt:
+                        # Conflict: stints overlap; the outgoing label cannot
+                        # be silently replaced by the incoming one. Keep the
+                        # outgoing label only up to the next assignment and
+                        # disclose the conflict for the overlapping days.
+                        stop = nxt - timedelta(days=1)
+                        issues.append(
+                            f"{code}:{taxonomy} conflict_overlap:"
+                            f"{nxt.isoformat()}:"
+                            f"{out.isoformat()}:"
+                            f"{row['l1_name']}"
+                        )
+                    else:
+                        # Contiguous: out == nxt, no gap, no overlap.
+                        stop = out - timedelta(days=1)
+                else:
+                    stop = nxt - timedelta(days=1)
             else:
                 stop = out - timedelta(days=1) if out else end
             if start > stop:
@@ -476,14 +496,6 @@ def industry_intervals(
                     "industry": f"{taxonomy}:{row['l1_name']}",
                 }
             )
-            if out is not None and number + 1 < len(ordered):
-                nxt = ordered[number + 1]["in_date"].date()
-                if (nxt - out).days > 1:
-                    issues.append(
-                        f"{code}:{taxonomy} vacancy_unknown:"
-                        f"{out.isoformat()}:"
-                        f"{(nxt - timedelta(days=1)).isoformat()}"
-                    )
     return intervals, issues
 
 

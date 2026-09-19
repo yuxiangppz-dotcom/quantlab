@@ -359,15 +359,22 @@ def _bak_basic_fills(
         for _, row in frame.iterrows():
             day = row["trade_date"].date()
             if streak_state["last"] is not None:
+                # A gap means at least one open trading session between two
+                # consecutive observations; those days are unknown. Calendar
+                # coverage insufficiency (empty sessions set) must NOT be
+                # treated as "no missing trading days".
                 missed = [
                     s
                     for s in observed_sessions
                     if streak_state["last"] < s < day
-                ]
+                ] if observed_sessions else None
                 if missed and row["industry"] == streak_state["label"]:
-                    # Trading sessions without an observation are unknown;
-                    # never stitch across them.
                     _close(code=code, state=streak_state)
+                    # Reset start so the next interval begins at the new
+                    # observation, not at the old streak's first day.
+                    streak_state["start"] = day
+                    streak_state["last"] = day
+                    continue
             if row["industry"] != streak_state["label"]:
                 _close(code=code, state=streak_state)
                 streak_state["start"], streak_state["label"] = day, row["industry"]
