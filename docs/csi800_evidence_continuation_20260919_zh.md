@@ -172,3 +172,33 @@ URL以隔离元数据核验为准，不以公告落款日替换网站公开日�
 日志在 `corporate-missing-dates/pytest.log`，增量文件清单在
 `continuation-manifest-corporate-missing-dates.json`。起点d37f7ed的PR #190两项CI
 （quality、research-runtime）已成功；本组提交的CI应另行查询，不混用旧结果。
+
+
+## 隔离重建与真实准入复核（起点 ca3568b）
+
+发现证据脚本的 membership、availability、execution-policy、event-coverage
+四个命令没有统一使用隔离输出目录，容易让操作者继续引用默认目录中的旧口径产物。
+现所有六个子命令均接受 `--output-dir`，产物与回执一起进入该目录；
+现有文件或回执仍拒绝覆盖。四项实际 CLI 路径测试验证默认文件不变、
+回执绑定新产物哈希、重复执行拒绝覆盖；不改变任何认证门槛。
+
+本地真实离线重建位置：
+`/home/administrator/quantlab_evidence_continuation_20260919/admission-audit/rebuilt`。
+成员28个观察区间仍为 `monthly_observations_not_effective_membership`；
+ST2354个会话仍未获得完整覆盖认证。未调用供应商、未写 canonical。
+`universe-rebuilt-inputs.json` 记录真实 `universe_inputs` 调用及输入哈希：
+正确拒绝 `certified historical CSI800 effective membership required`。
+原成员、行业、ST三个默认文件的哈希全部保持不变。
+该检查在成员准入阶段停止，不代表下游行业或ST已经通过。
+
+全仓3691 passed、11 skipped、56 warnings，94.77秒，日志为
+`admission-audit/pytest.log`；针对 evidence 的31项测试通过。
+生产配置未切换，未训练或回放。重建命令示例：
+
+```sh
+uv run python scripts/build_csi800_evidence.py --project config/project.local.json membership --output-dir /absolute/new-evidence-dir
+uv run python scripts/build_csi800_evidence.py --project config/project.local.json event-coverage --output-dir /absolute/new-evidence-dir
+```
+
+新目录仅隔离产物，不构成PIT认证；成员回执现有 inputs 字段仍是路径，
+不能声称已逐个绑定原始文件哈希。本次审计单独绑定了准入所读产物的哈希。

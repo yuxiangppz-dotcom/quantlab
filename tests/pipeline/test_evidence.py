@@ -494,3 +494,63 @@ def test_conflicting_distribution_removes_all_candidate_legs(reverse):
         ("2023-07-20", "cash_dividend"), ("2023-07-20", "bonus_shares")}
     assert any(u["reason"] == "conflicting_duplicate" and
                u["ex_date"] == "2023-06-20" for u in unresolved)
+
+
+@pytest.mark.parametrize("command,filename", [
+    ("membership", "csi800_membership.json"),
+    ("availability", "source_availability.parquet"),
+    ("execution-policy", "execution_policy.json"),
+    ("event-coverage", "event_coverage.json"),
+])
+def test_all_evidence_cli_outputs_are_isolated(
+    tmp_path, evidence_builder, monkeypatch, command, filename,
+):
+    import hashlib
+    import json
+    import sys
+
+    day = date(2024, 1, 2)
+    project = {"canonical": tmp_path / "canonical", "raw": tmp_path / "raw",
+               "receipts": tmp_path / "ingestion", "start": str(day), "end": str(day)}
+    (project["raw"] / "csi800_weights").mkdir(parents=True)
+    sessions = project["receipts"] / "sessions"
+    sessions.mkdir(parents=True)
+    (sessions / f"{day}.json").write_text("{}")
+    original = tmp_path / "evidence" / filename
+    original.parent.mkdir()
+    original.write_bytes(b"old evidence must remain unchanged")
+    output = tmp_path / "isolated"
+    members = frozenset(f"{i:06d}.SZ" for i in range(800))
+    monkeypatch.setattr(evidence_builder, "load_project", lambda _: project)
+    monkeypatch.setattr(evidence_builder, "_load_observations", lambda _: [(day, members)])
+    monkeypatch.setattr(evidence_builder, "_calendar", lambda _: [day])
+    monkeypatch.setattr(evidence_builder, "verify_session", lambda *a: None)
+
+    class Storage:
+        def __init__(self, *args):
+            pass
+
+        def load_stock_st_v1_by_date(self, day):
+            return []
+
+    monkeypatch.setattr(evidence_builder, "ParquetStorage", Storage)
+    monkeypatch.setattr(sys, "argv", ["builder", "--project", "unused", command,
+                                     "--output-dir", str(output)])
+    evidence_builder.main()
+    artifact = output / filename
+    assert artifact.is_file()
+    assert original.read_bytes() == b"old evidence must remain unchanged"
+    receipt_name = "membership" if command == "membership" else artifact.stem
+    receipt = json.loads((output / "receipts" / f"{receipt_name}.json").read_text())
+    assert receipt["artifact"] == str(artifact)
+    assert receipt["artifact_sha256"] == hashlib.sha256(artifact.read_bytes()).hexdigest()
+    if command == "membership":
+        document = json.loads(artifact.read_text())
+        assert document["semantics"] == "monthly_observations_not_effective_membership"
+        assert document["snapshots"][0]["complete"] is False
+    if command == "event-coverage":
+        assert json.loads(artifact.read_text())["stock_st"][0]["complete"] is False
+    before = artifact.read_bytes()
+    with pytest.raises(SystemExit, match="evidence already exists"):
+        evidence_builder.main()
+    assert artifact.read_bytes() == before

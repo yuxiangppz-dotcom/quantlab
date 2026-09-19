@@ -138,7 +138,7 @@ def cmd_membership(project) -> None:
         observation_dates=observation_dates,
         revision_id=revision,
     )
-    out = project["canonical"].parent / EVIDENCE / "csi800_membership.json"
+    out = _output_root(project) / "csi800_membership.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(document, ensure_ascii=False, indent=2))
     scheduled = [c for c in changes if c.dating_basis == "scheduled_semiannual_effective"]
@@ -193,7 +193,7 @@ def cmd_availability(project) -> None:
         verify_session(storage, project["receipts"], day)
         sessions.append((day, path.name))
     frame = availability_frame(sessions)
-    out = project["canonical"].parent / EVIDENCE / "source_availability.parquet"
+    out = _output_root(project) / "source_availability.parquet"
     out.parent.mkdir(parents=True, exist_ok=True)
     frame.to_parquet(out, index=False)
     _write_receipt(
@@ -223,7 +223,7 @@ def cmd_execution_policy(project) -> None:
     document = execution_policy_document(
         codes, fee_eras(start, end), start=start, end=end
     )
-    out = project["canonical"].parent / EVIDENCE / "execution_policy.json"
+    out = _output_root(project) / "execution_policy.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(document, ensure_ascii=False, indent=2))
     _write_receipt(
@@ -577,7 +577,7 @@ def cmd_event_coverage(project, fetch: bool) -> None:
         complete=complete,
     )
     document = {"schema": "quantlab_event_coverage_v1", "stock_st": coverage}
-    out = project["canonical"].parent / EVIDENCE / "event_coverage.json"
+    out = _output_root(project) / "event_coverage.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(document, ensure_ascii=False, indent=2))
     _write_receipt(
@@ -741,16 +741,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", type=Path, required=True)
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("membership", "availability", "execution-policy"):
-        sub.add_parser(name)
-    for name in ("industries", "event-coverage", "corporate-actions"):
+    for name in (
+        "membership", "availability", "execution-policy", "industries",
+        "event-coverage", "corporate-actions",
+    ):
         child = sub.add_parser(name)
-        child.add_argument("--fetch", action="store_true")
-        if name in {"industries", "corporate-actions"}:
-            child.add_argument(
-                "--output-dir", type=Path,
-                help="New evidence namespace; reuse existing input caches",
-            )
+        if name in {"industries", "event-coverage", "corporate-actions"}:
+            child.add_argument("--fetch", action="store_true")
+        child.add_argument(
+            "--output-dir", type=Path,
+            help="New evidence namespace; reuse existing input caches",
+        )
     args = parser.parse_args()
     project = load_project(args.project)
     if getattr(args, "output_dir", None) is not None:
