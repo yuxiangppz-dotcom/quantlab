@@ -413,6 +413,48 @@ def execution_policy_document(
 # Industry intervals from vendor SW membership compilations.
 
 
+def _resolve_industry_overlaps(rows: list[dict], *, end: date) -> tuple[list[dict], list[str]]:
+    """Split at every boundary; conflicting evidence occupies an UNKNOWN span.
+
+    Unknown spans remain primary coverage, so a fallback cannot erase them.
+    This handles nested and open-ended stints, not just adjacent pairs.
+    """
+    by_code: dict[str, list[dict]] = {}
+    for row in rows:
+        start = date.fromisoformat(row["start"])
+        stop = min(date.fromisoformat(row["end"]), end)
+        if start <= stop:
+            by_code.setdefault(row["instrument_id"], []).append(
+                {**row, "end": stop.isoformat()}
+            )
+    result, issues = [], []
+    for code, spans in sorted(by_code.items()):
+        points = sorted({
+            day
+            for row in spans
+            for day in (date.fromisoformat(row["start"]),
+                        date.fromisoformat(row["end"]) + timedelta(days=1))
+        })
+        for start, right in zip(points, points[1:], strict=False):
+            stop = right - timedelta(days=1)
+            active = [r for r in spans if r["start"] <= str(start) <= r["end"]]
+            if not active:
+                continue
+            # Stable selection among compatible records, using the latest
+            # declared availability; this does not certify historical publication.
+            base = max(active, key=lambda r: (r.get("known_at", ""), json.dumps(r, sort_keys=True)))
+            row = {**base, "start": str(start), "end": str(stop)}
+            labels = {r.get("industry") for r in active}
+            if len(labels) != 1 or None in labels or "" in labels:
+                row.update(industry=None, unknown_reason="conflicting_or_unknown_industry")
+                row["conflicting_evidence"] = sorted(
+                    active, key=lambda r: json.dumps(r, sort_keys=True)
+                )
+                issues.append(f"{code}:conflict_overlap_or_unknown:{start}:{stop}")
+            result.append(row)
+    return result, issues
+
+
 def industry_intervals(
     rows: pd.DataFrame,
     codes: set[str],
@@ -420,149 +462,83 @@ def industry_intervals(
     end: date,
     taxonomy: str,
 ) -> tuple[list[dict], list[str]]:
-    """Industry intervals per code from vendor SW membership stints.
+    """Apply the declared [in_date, out_date) convention, without resolving conflicts.
 
-    Boundary semantics (conservative; the vendor does not document
-    inclusivity): a stint covers [in_date, out_date) — ``in_date`` is the
-    first covered day, and a recorded ``out_date`` ends the stint (covered
-    days end at ``out_date - 1``). An open stint (no ``out_date``) extends
-    to ``end``. After a recorded exit the industry is UNKNOWN until the next
-    recorded assignment starts; vacuums are disclosed, never bridged with the
-    outgoing or incoming label. Overlapping stints for one code are clipped
-    to the next assignment and disclosed.
+    The vendor's boundary/publication semantics are not independently certified.
+    Recorded exits leave gaps; disagreeing active stints produce explicit UNKNOWN
+    intervals. A missing exit is open-ended, not an inferred exit at the next row.
     """
-    rows = rows.copy()
-    rows["con_code"] = rows.con_code.astype(str).str.strip()
-    rows["in_date"] = pd.to_datetime(rows.in_date, format="%Y%m%d", errors="coerce")
-    rows["out_date"] = pd.to_datetime(rows.out_date, format="%Y%m%d", errors="coerce")
-    rows["l1_name"] = rows.l1_name.astype(str).str.strip()
     intervals, issues = [], []
+    for raw in rows.to_dict("records"):
+        code = str(raw["con_code"]).strip()
+        if code not in codes:
+            continue
+        start_ts = pd.to_datetime(raw["in_date"], format="%Y%m%d", errors="coerce")
+        out_raw = raw["out_date"]
+        missing_out = pd.isna(out_raw) or str(out_raw).strip() == ""
+        out_ts = pd.to_datetime(out_raw, format="%Y%m%d", errors="coerce")
+        if pd.isna(start_ts) or (not missing_out and pd.isna(out_ts)):
+            raise ValueError(f"{code}:invalid industry boundary")
+        start = start_ts.date()
+        if missing_out and start > end:
+            continue
+        stop = end if missing_out else out_ts.date() - timedelta(days=1)
+        if not missing_out and out_ts.date() == start:
+            issues.append(f"{code}:{taxonomy} empty_half_open_interval:{start}")
+            continue
+        if stop < start:
+            raise ValueError(f"{code}:reversed industry interval:{start}")
+        label = raw["l1_name"]
+        label = (None if pd.isna(label) or not str(label).strip()
+                 else f"{taxonomy}:{str(label).strip()}")
+        intervals.append({
+            "instrument_id": code, "start": str(start), "end": str(stop),
+            "known_at": f"{start}T00:00:00+08:00",
+            "source_id": f"tushare_sw_member_{taxonomy}_compilation",
+            "revision_id": taxonomy, "industry": label,
+        })
+    resolved, conflicts = _resolve_industry_overlaps(intervals, end=end)
+    issues.extend(conflicts)
     for code in sorted(codes):
-        stint = rows[rows.con_code == code].sort_values("in_date")
-        if stint.empty:
+        spans = [r for r in resolved if r["instrument_id"] == code]
+        if not spans:
             issues.append(f"{code}:no {taxonomy} membership row")
-            continue
-        if stint.in_date.isna().any():
-            issues.append(f"{code}:invalid in_date")
-            continue
-        ordered = list(stint.to_dict("records"))
-        for number, row in enumerate(ordered):
-            start = row["in_date"].date()
-            out = None
-            if row["out_date"] is not pd.NaT and pd.notna(row["out_date"]):
-                out = row["out_date"].date()
-            if number + 1 < len(ordered):
-                nxt = ordered[number + 1]["in_date"].date()
-                if out is not None:
-                    if out < nxt:
-                        # Vacuum: the recorded exit is before the next
-                        # assignment; the gap stays unknown and disclosed.
-                        issues.append(
-                            f"{code}:{taxonomy} vacancy_unknown:"
-                            f"{out.isoformat()}:"
-                            f"{(nxt - timedelta(days=1)).isoformat()}"
-                        )
-                        stop = out - timedelta(days=1)
-                    elif out > nxt:
-                        # Conflict: stints overlap; the outgoing label cannot
-                        # be silently replaced by the incoming one. Keep the
-                        # outgoing label only up to the next assignment and
-                        # disclose the conflict for the overlapping days.
-                        stop = nxt - timedelta(days=1)
-                        issues.append(
-                            f"{code}:{taxonomy} conflict_overlap:"
-                            f"{nxt.isoformat()}:"
-                            f"{out.isoformat()}:"
-                            f"{row['l1_name']}"
-                        )
-                    else:
-                        # Contiguous: out == nxt, no gap, no overlap.
-                        stop = out - timedelta(days=1)
-                else:
-                    stop = nxt - timedelta(days=1)
-            else:
-                stop = out - timedelta(days=1) if out else end
-            if start > stop:
-                issues.append(f"{code}:reversed or empty interval:{start}")
-                continue
-            intervals.append(
-                {
-                    "instrument_id": code,
-                    "start": start.isoformat(),
-                    "end": stop.isoformat(),
-                    "known_at": f"{start.isoformat()}T00:00:00+08:00",
-                    "source_id": f"tushare_sw_member_{taxonomy}_compilation",
-                    "revision_id": taxonomy,
-                    "industry": f"{taxonomy}:{row['l1_name']}",
-                }
-            )
-    return intervals, issues
-
-
-# ---------------------------------------------------------------------------
-# ST event coverage from sealed daily status partitions.
+        for left, right in zip(spans, spans[1:], strict=False):
+            gap = date.fromisoformat(left["end"]) + timedelta(days=1)
+            if str(gap) < right["start"]:
+                stop = date.fromisoformat(right["start"]) - timedelta(days=1)
+                issues.append(f"{code}:{taxonomy} vacancy_unknown:{gap}:{stop}")
+    return resolved, issues
 
 
 def merge_industry_sources(
-    primary: list[dict],
-    fallback: list[dict],
-    *,
-    end: date,
+    primary: list[dict], fallback: list[dict], *, end: date,
 ) -> tuple[list[dict], list[str]]:
-    """Tile one continuous interval set per code; the fallback only fills gaps.
-
-    Within a code, primary intervals win wherever they exist. Fallback rows are
-    clipped into the calendar gaps between primary intervals; a fallback row
-    that overlaps primary coverage is truncated, never allowed to conflict.
-    """
+    """Fallback fills uncovered spans, never primary UNKNOWN/conflicting spans."""
+    primary, issues = _resolve_industry_overlaps(primary, end=end)
+    fallback, fallback_issues = _resolve_industry_overlaps(fallback, end=end)
+    issues.extend(fallback_issues)
+    merged = list(primary)
     by_code: dict[str, list[dict]] = {}
     for row in primary:
         by_code.setdefault(row["instrument_id"], []).append(row)
-    fallback_by_code: dict[str, list[dict]] = {}
-    for row in fallback:
-        fallback_by_code.setdefault(row["instrument_id"], []).append(row)
-    merged: list[dict] = []
-    issues: list[str] = []
-    for code in sorted(set(by_code) | set(fallback_by_code)):
-        rows = sorted(by_code.get(code, []), key=lambda r: r["start"])
-        # Primary rows must not overlap each other.
-        for previous, nxt in zip(rows, rows[1:], strict=False):
-            if nxt["start"] <= previous["end"]:
-                issues.append(f"{code}:primary industry intervals overlap:{nxt['start']}")
-        fills = sorted(fallback_by_code.get(code, []), key=lambda r: r["start"])
-        stops = []
-        cursor: date | None = None
-        for row in rows:
-            start = date.fromisoformat(row["start"])
-            stop = date.fromisoformat(row["end"])
-            if fills and (cursor is None or (start - cursor).days > 1):
-                left = cursor + timedelta(days=1) if cursor is not None else date(1, 1, 1)
-                merged.extend(_clip_fills(fills, left, start - timedelta(days=1)))
-            merged.append(row)
-            cursor = max(stop, cursor) if cursor else stop
-            stops.append((start, stop))
-        if fills and cursor is not None and cursor < end:
-            merged.extend(_clip_fills(fills, cursor + timedelta(days=1), end))
-        if not rows and fills:
-            merged.extend(fills)
-        code_rows = sorted(
-            [r for r in merged if r["instrument_id"] == code], key=lambda r: r["start"]
-        )
-        for previous, nxt in zip(code_rows, code_rows[1:], strict=False):
-            if nxt["start"] <= previous["end"]:
-                issues.append(f"{code}:merged industry intervals overlap:{nxt['start']}")
-    return merged, issues
-
-
-def _clip_fills(fills: list[dict], start: date, stop: date) -> list[dict]:
-    clipped = []
-    for row in fills:
-        fill_start = max(date.fromisoformat(row["start"]), start)
-        fill_stop = min(date.fromisoformat(row["end"]), stop)
-        if fill_start > fill_stop:
-            continue
-        clipped.append({**row, "start": fill_start.isoformat(), "end": fill_stop.isoformat()})
-    return clipped
+    for fill in fallback:
+        pieces = [fill]
+        for row in by_code.get(fill["instrument_id"], []):
+            remaining = []
+            for piece in pieces:
+                if row["end"] < piece["start"] or row["start"] > piece["end"]:
+                    remaining.append(piece)
+                    continue
+                if piece["start"] < row["start"]:
+                    boundary = date.fromisoformat(row["start"]) - timedelta(days=1)
+                    remaining.append({**piece, "end": str(boundary)})
+                if piece["end"] > row["end"]:
+                    boundary = date.fromisoformat(row["end"]) + timedelta(days=1)
+                    remaining.append({**piece, "start": str(boundary)})
+            pieces = remaining
+        merged.extend(pieces)
+    return sorted(merged, key=lambda r: (r["instrument_id"], r["start"])), issues
 
 
 def coverage_intervals(

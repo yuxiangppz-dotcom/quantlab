@@ -285,51 +285,83 @@ def test_corporate_share_event_without_listing_date_is_skipped():
     assert any("without div_listdate" in item for item in skipped)
 
 
-def test_industry_intervals_boundary_semantics():
-    """[in, out): out<nxt=vacuum, out==nxt=contiguous, out>nxt=overlap conflict.
+@pytest.mark.parametrize(
+    "exit_day,expected,issue",
+    [
+        ("20200605", [("2020-06-01", "2020-06-04", "SW:old"),
+                      ("2020-06-12", "2020-06-30", "SW:new")], "vacancy_unknown"),
+        ("20200612", [("2020-06-01", "2020-06-11", "SW:old"),
+                      ("2020-06-12", "2020-06-30", "SW:new")], None),
+        ("20200620", [("2020-06-01", "2020-06-11", "SW:old"),
+                      ("2020-06-12", "2020-06-19", None),
+                      ("2020-06-20", "2020-06-30", "SW:new")], "conflict_overlap"),
+        ("20200611", [("2020-06-01", "2020-06-10", "SW:old"),
+                      ("2020-06-12", "2020-06-30", "SW:new")], "vacancy_unknown"),
+    ],
+)
+def test_industry_intervals_boundary_semantics(exit_day, expected, issue):
+    rows = pd.DataFrame([
+        dict(con_code="A", in_date="20200601", out_date=exit_day, l1_name="old"),
+        dict(con_code="A", in_date="20200612", out_date=None, l1_name="new"),
+    ])
+    intervals, issues = industry_intervals(rows, {"A"}, end=date(2020, 6, 30), taxonomy="SW")
+    assert [(r["start"], r["end"], r["industry"]) for r in intervals] == expected
+    assert bool(issues) == (issue is not None)
+    if issue:
+        assert all(issue in item for item in issues)
 
-    Asserts the key invariants rather than exact day values:
-    - vacuum: first stint ends before next starts (gap disclosed)
-    - overlap: first stint clipped to next.start-1 (conflict disclosed)
-    - contiguous: clean tiling (no issue)
-    - exit on last stint: no extension to project end
-    """
-    rows = pd.DataFrame(
-        [
-            {"con_code": "A", "in_date": "20180101", "out_date": "20211210", "l1_name": "bank"},
-            {"con_code": "A", "in_date": "20211213", "out_date": None, "l1_name": "nonbank"},
-            {"con_code": "B", "in_date": "20180101", "out_date": "20200620", "l1_name": "steel"},
-            {"con_code": "B", "in_date": "20200612", "out_date": None, "l1_name": "nonbank"},
-            {"con_code": "C", "in_date": "20180101", "out_date": "20200611", "l1_name": "coal"},
-            {"con_code": "C", "in_date": "20200612", "out_date": None, "l1_name": "nonbank"},
-            {"con_code": "D", "in_date": "20180101", "out_date": "20191231", "l1_name": "retail"},
-        ]
-    )
-    intervals, issues = industry_intervals(
-        rows, {"A", "B", "C", "D"}, end=date(2026, 9, 10), taxonomy="SW"
-    )
-    by_code = {}
-    for iv in intervals:
-        by_code.setdefault(iv["instrument_id"], []).append(iv)
-    # A: vacuum gap between exit and next assignment, disclosed
-    assert int(by_code["A"][0]["end"][:4]) <= 2021
-    assert by_code["A"][1]["start"] >= "2021-12-13"
-    assert any("vacancy_unknown" in i for i in issues if i.startswith("A"))
-    # B: overlap conflict disclosed; first stint clipped before next starts
-    assert by_code["B"][0]["end"] < by_code["B"][1]["start"]
-    assert any("conflict_overlap" in i for i in issues if i.startswith("B"))
-    # C: contiguous tiling, no gap or overlap
-    assert by_code["C"][0]["end"] < by_code["C"][1]["start"]
-    # [in,out): the out_date day itself is uncovered (conservative).
-    assert any(
-        "vacancy_unknown" in i for i in issues if i.startswith("C")
-    )
-    # D: recorded exit on last stint ends there (no extension to end)
-    assert by_code["D"][0]["end"] < "2026-09-10"
-    # No interval pair overlaps for any code
-    for code, ivs in by_code.items():
-        for a, b in zip(ivs, ivs[1:], strict=False):
-            assert a["end"] < b["start"], f"{code}:{a['end']} vs {b['start']}"
+
+def test_nested_and_open_conflicts_survive_fallback_and_order():
+    rows = pd.DataFrame([
+        dict(con_code="A", in_date="20200601", out_date=None, l1_name="old"),
+        dict(con_code="A", in_date="20200605", out_date="20200620", l1_name="new"),
+        dict(con_code="A", in_date="20200608", out_date="20200610", l1_name="third"),
+    ])
+    end = date(2020, 6, 30)
+    primary, _ = industry_intervals(rows, {"A"}, end=end, taxonomy="SW")
+    reverse, _ = industry_intervals(rows.iloc[::-1], {"A"}, end=end, taxonomy="SW")
+    assert primary == reverse
+    fallback = [dict(instrument_id="A", start="2020-06-01", end=str(end), industry="fallback")]
+    merged, _ = merge_industry_sources(primary, fallback, end=end)
+    for day in pd.date_range("2020-06-01", str(end)):
+        active = [r for r in merged if r["start"] <= str(day.date()) <= r["end"]]
+        assert len(active) == 1
+        assert active[0]["industry"] == (None if 5 <= day.day <= 19 else "SW:old")
+        if 5 <= day.day <= 19:
+            assert active[0]["conflicting_evidence"]
+    same = rows.iloc[:2].copy()
+    same["l1_name"] = "old"
+    known, issues = industry_intervals(same, {"A"}, end=end, taxonomy="SW")
+    assert not issues
+    assert all(r["industry"] == "SW:old" for r in known)
+
+
+@pytest.mark.parametrize("calendar", [{}, {date(2023, 6, 1): True},
+    {date(2023, 6, 1): True, date(2023, 6, 2): True, date(2023, 9, 25): True}])
+def test_real_snapshot_builder_never_bridges_unknown_sessions(tmp_path, evidence_builder, calendar):
+    project = {"canonical": tmp_path / "canonical"}
+    raw = tmp_path / "evidence/raw/bak_basic"
+    raw.mkdir(parents=True)
+    pd.DataFrame({"trade_date": ["20230601", "20230925"],
+                  "industry": ["software", "software"]}).to_parquet(raw / "A.parquet")
+    fills = evidence_builder._bak_basic_fills(project, ["A"], False, calendar)
+    merged, _ = merge_industry_sources([], fills, end=date(2023, 9, 30))
+    assert [(r["start"], r["end"]) for r in merged] == [
+        ("2023-06-01", "2023-06-01"), ("2023-09-25", "2023-09-25")]
+
+
+def test_snapshot_explicit_holiday_bridge_and_duplicate_conflict(tmp_path, evidence_builder):
+    project = {"canonical": tmp_path / "canonical"}
+    raw = tmp_path / "evidence/raw/bak_basic"
+    raw.mkdir(parents=True)
+    pd.DataFrame({"trade_date": ["20230602", "20230605", "20230605"],
+                  "industry": ["software", "software", "bank"]}).to_parquet(raw / "A.parquet")
+    fills = evidence_builder._bak_basic_fills(project, ["A"], False,
+        {date(2023, 6, 3): False, date(2023, 6, 4): False})
+    merged, _ = merge_industry_sources([], fills, end=date(2023, 6, 30))
+    assert [(r["start"], r["end"], r["industry"]) for r in merged] == [
+        ("2023-06-02", "2023-06-04", "bak_basic:software"),
+        ("2023-06-05", "2023-06-05", None)]
 
 
 def test_merge_industry_sources_fills_gaps_without_overlap():
@@ -374,3 +406,68 @@ def test_coverage_intervals_keep_explicit_completeness():
     # A missing weekday must not acquire coverage merely because the gap is short.
     holed = [date(2024, 1, 2), date(2024, 1, 4)]
     assert len(coverage_intervals(holed, source_id="s", revision_id="r", complete=True)) == 2
+
+
+def test_empty_industry_stint_and_invalid_exit_are_not_open_coverage():
+    rows = pd.DataFrame([dict(con_code="A", in_date="20200601", out_date="20200601", l1_name="x")])
+    intervals, issues = industry_intervals(rows, {"A"}, end=date(2020, 6, 30), taxonomy="SW")
+    assert not intervals
+    assert any("empty_half_open_interval" in item for item in issues)
+    rows["out_date"] = "bad-date"
+    with pytest.raises(ValueError, match="invalid industry boundary"):
+        industry_intervals(rows, {"A"}, end=date(2020, 6, 30), taxonomy="SW")
+
+
+def test_offline_classification_cache_missing_or_changed_blocks(
+    tmp_path, evidence_builder, cached_classifications, monkeypatch,
+):
+    from quantlab.data import tushare_provider
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("offline evidence compilation attempted a provider request")
+
+    monkeypatch.setattr(tushare_provider, "TushareProvider", forbidden)
+    project = {"canonical": tmp_path / "canonical"}
+    with pytest.raises(ValueError, match="cached L1 classification missing"):
+        evidence_builder._sw_cache(project, ["A"], False)
+    folder = cached_classifications(tmp_path)
+    path = folder / "SW2021.json"
+    path.write_text(path.read_text().replace('"bank"', '"changed"'))
+    with pytest.raises(ValueError, match="archive hash mismatch"):
+        evidence_builder._sw_cache(project, ["A"], False)
+
+
+def test_isolated_cli_refuses_existing_evidence(tmp_path, evidence_builder, monkeypatch):
+    import sys
+
+    output = tmp_path / "new-evidence"
+    output.mkdir()
+    artifact = output / "industry_intervals.json"
+    artifact.write_text("old immutable evidence")
+    monkeypatch.setattr(
+        evidence_builder, "load_project", lambda p: {"canonical": tmp_path / "canonical"}
+    )
+    monkeypatch.setattr(sys, "argv", ["builder", "--project", "unused.json", "industries",
+                                     "--output-dir", str(output)])
+    with pytest.raises(SystemExit, match="evidence already exists"):
+        evidence_builder.main()
+    assert artifact.read_text() == "old immutable evidence"
+
+
+def test_future_open_stint_does_not_break_historical_compilation():
+    rows = pd.DataFrame([dict(con_code="A", in_date="20260101", out_date=None, l1_name="bank")])
+    intervals, _ = industry_intervals(rows, {"A"}, end=date(2025, 12, 31), taxonomy="SW")
+    assert intervals == []
+
+
+def test_snapshot_null_label_cannot_become_industry_none_string(tmp_path, evidence_builder):
+    raw = tmp_path / "evidence/raw/bak_basic"
+    raw.mkdir(parents=True)
+    pd.DataFrame({"trade_date": ["20230601", "20230602", "20230605"],
+                  "industry": ["bank", None, "bank"]}).to_parquet(raw / "A.parquet")
+    fills = evidence_builder._bak_basic_fills({"canonical": tmp_path / "canonical"}, ["A"],
+        False, {date(2023, 6, 2): True, date(2023, 6, 3): False, date(2023, 6, 4): False})
+    merged, _ = merge_industry_sources([], fills, end=date(2023, 6, 30))
+    assert [(r["start"], r["end"], r["industry"]) for r in merged] == [
+        ("2023-06-01", "2023-06-01", "bak_basic:bank"),
+        ("2023-06-05", "2023-06-05", "bak_basic:bank")]

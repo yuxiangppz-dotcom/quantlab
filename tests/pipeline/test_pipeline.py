@@ -424,36 +424,35 @@ def test_limit_sentinel_marks_an_absent_gate_not_a_price():
     assert declared_limit(None) is None
 
 
-def test_unresolved_corporate_event_blocks_market_day_through_artifact(history, tmp_path):
-    """A detected-but-unusable distribution blocks the affected session.
-
-    The block goes through the written corporate_actions artifact and the real
-    market_day path: the session cannot be prepared for the affected
-    instrument while the unknown stands.
-    """
+@pytest.mark.parametrize("missing_cache", [False, True])
+def test_unresolved_corporate_event_blocks_market_day_through_artifact(
+    history, tmp_path, evidence_builder, missing_cache,
+):
+    """Cached raw rows -> real generator -> file -> real market_day."""
     storage, receipts, days = history
-    corporate = tmp_path / "corporate.json"
-    corporate.write_text(
-        json.dumps(
-            {
-                "coverage": {
-                    "source_id": "synthetic",
-                    "start": str(days[0].date()),
-                    "end": str(days[-1].date()),
-                    "unresolved": [
-                        {
-                            "instrument_id": "000001.SZ",
-                            "ex_date": str(days[60].date()),
-                            "record_date": str(days[59].date()),
-                            "kind": "cash_dividend",
-                            "reason": "after_tax_cash_missing_pretax_only",
-                        }
-                    ],
-                },
-                "events": [],
-            }
-        )
-    )
+    project = {"canonical": tmp_path / "canonical", "raw": tmp_path / "raw",
+               "start": str(days[0].date()), "end": str(days[-1].date()),
+               "evidence_output": tmp_path / "generated"}
+    obs = project["raw"] / "csi800_weights/2024-01-02"
+    obs.mkdir(parents=True)
+    pd.DataFrame({"trade_date": ["20240102", "20240102"],
+                  "con_code": ["000001.SZ", "000002.SZ"]}).to_parquet(obs / "weights.parquet")
+    (obs / "observation.json").write_text(json.dumps({"raw_responses": []}))
+    cache = tmp_path / "evidence/raw/dividends"
+    cache.mkdir(parents=True)
+    pd.DataFrame({"div_proc": ["预案"]}).to_parquet(cache / "000002.SZ.parquet")
+    if not missing_cache:
+        pd.DataFrame([dict(div_proc="实施", ex_date=str(days[60].date()),
+            record_date=str(days[59].date()), pay_date=None, div_listdate=None,
+            cash_div=1.0, cash_div_tax=1.0, stk_div=0.0)]).to_parquet(cache / "000001.SZ.parquet")
+    evidence_builder.cmd_corporate_actions(project, fetch=False)
+    corporate = project["evidence_output"] / "corporate_actions.json"
+    coverage = json.loads(corporate.read_text())["coverage"]
+    if missing_cache:
+        assert coverage["unresolved_instruments"] == [
+            {"instrument_id": "000001.SZ", "reason": "cache_missing"}]
+    else:
+        assert coverage["unresolved"][0]["reason"] == "missing_pay_date"
     policy = {
         "policies": [
             {
@@ -469,7 +468,7 @@ def test_unresolved_corporate_event_blocks_market_day_through_artifact(history, 
         ]
     }
     sessions = [d.date() for d in days]
-    with pytest.raises(ValueError, match="corporate_event_unresolved:000001.SZ"):
+    with pytest.raises(ValueError, match="corporate_event_unresolved.*:000001.SZ"):
         market_day(
             storage,
             receipts,
@@ -937,6 +936,14 @@ def test_project_data_train_replay_report_and_account_chain(history, tmp_path, m
         date.fromisoformat(d) for d in json.loads((ws2 / "bundle/calendar.json").read_text())
     ]
     first2 = next(d for d in sessions2 if d >= date.fromisoformat(proj2["test_start"]))
+    reuse_args = (proj2, ws2 / "bundle", ws2 / "market",
+                  sessions2[sessions2.index(first2) + 1], date.fromisoformat(proj2["test_end"]))
+    assert workflow.prepare_market(*reuse_args) == ws2 / "market"
+    with monkeypatch.context() as patch:
+        patch.setattr(runner, "code_identity", lambda root: {"synthetic": "changed"})
+        with pytest.raises(ValueError, match="market input changed"):
+            workflow.prepare_market(*reuse_args)
+    assert workflow.prepare_market(*reuse_args) == ws2 / "market"
     # Simulate a session receipt changing after the market artifact completed:
     # the recorded receipts digest no longer matches, so reuse must fail.
     receipt2 = sorted((_pl.Path(str(proj2["receipts"])) / "sessions").glob("*.json"))[-1]

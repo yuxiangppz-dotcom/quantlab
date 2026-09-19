@@ -10,17 +10,18 @@
 | universe（compile_universe） | membership/industries/event_coverage 的 sha256、availability、calendar、securities、code_changes、每个会话回执哈希 | 行业/成员/ST/可得性任一变化 → 该 universe 输出 resume 失败，需新目录重建 |
 | bundle（build） | context（universe 输出的 context.parquet）、availability、calendar、securities、code_changes + 各会话回执 | universe 重建 → 旧 bundle 不自动更新；需新 bundle 目录全量重建 |
 | training | bundle manifest、config、代码 identity、study 绑定 | bundle 重建 → **必须重训**（industry 进入 features.parquet 的 context 列，属于训练输入） |
-| market（prepare_market） | execution_policy 与 corporate_actions 的 sha256、bundle manifest、每会话回执验证、benchmark 会话 | 费用政策/公司行动/行业（经由 bundle）任一变化 → market 失效重建 |
+| market（prepare_market） | execution_policy 与 corporate_actions 的 sha256、bundle manifest、会话回执聚合摘要、代码 identity、benchmark 会话 | 费用政策/公司行动/行业（经由 bundle）任一变化 → market 失效重建 |
 | replay | training 输出（scores/completed 哈希）、market 三件、capital、config、代码 identity | 以上任一变化 → replay 失效重放 |
 | report | replay、benchmark、training、exposures、baseline/momentum/replay 产物哈希 | 任一上游变化 → report 失效重出 |
 
 结论示例：
 - 仅费用政策变化：market→replay→report 重跑；**universe/bundle/training 无需重跑**
-  （不绑定 execution_policy）。
+  （不绑定 execution_policy）。如果同时改代码，代码 identity 也会变化，不能以
+  “仅改费率”为由绕过训练等阶段各自的 identity 检查。
 - 行业或成员证据变化：universe→bundle→**重训**→market→replay→report 全链重建。
 - 688088 路径实例：2023-06 的旧 bundle 中其行业为空（当时缺口未补）；新行业
-  文件不会自动进入旧 bundle。修复后的证据在**新 universe 快照**中为其提供
-  bak_basic 快照区间；新实验必须使用新快照，不得复用旧 bundle。
+  文件不会自动进入旧 bundle。离线重建存在该日期的 bak_basic 快照区间，
+  但成员认证仍阻断新 universe，不能称新 universe 已产生；新实验不能复用旧 bundle。
 
 历史成员与 ST 证据的准入阻断（未解决，保持阻断）：
 - 成员：半年度规则的通用生效日不能证明具体某月名单即为生效日名单；需要
@@ -30,3 +31,39 @@
   翻转与独立历史来源交叉核验尚未完成；105 个抽验不构成全集认证。
 - 可得时间：known_at 为声明界；历史公开时间/供应商修订时间/本次下载时间
   三者未分离认证；`historical_publication_certified` 保持 false。
+
+
+## 2026-09-19 接手修复后的证据重建
+
+此次范围是行业缺口/冲突和真实生成路径验证，未完成成员、ST、税务或退市补证。
+行业按声明的 `[in_date, out_date)` 约定转换；退出日包含性及历史公开时间仍未认证。
+入退同日为空区间，只记 issue、不产生覆盖；无效日期或倒序边界拒绝生成。
+未来才开始的开区间不影响此前窗口；空快照标签不能字符串化为确定行业。
+不同标签同时有效时生成 `industry: null` 并保留冲突记录；未知区间不会被
+bak_basic 后备来源覆盖。缺少观测的开市日、日历本身缺日期都不能拼接；
+只有两交易所明确一致的休市日可以连接两端同标签观测。合成测试已经通过
+真实缓存→生成器→产物→universe 编译器验证冲突阻断。
+
+以下命令只读取已有缓存，不请求供应商，不替换当前配置引用的旧证据。
+将 `NEW_EVIDENCE_DIR` 替换成未使用的绝对目录（两个命令可以共用该目录）：
+
+```bash
+uv run python scripts/build_csi800_evidence.py --project config/project.local.json industries --output-dir NEW_EVIDENCE_DIR
+uv run python scripts/build_csi800_evidence.py --project config/project.local.json corporate-actions --output-dir NEW_EVIDENCE_DIR
+```
+
+缺少 SW/L1 分类缓存会阻断，不能隐式联网；`--fetch` 才启用现有供应商请求路径。
+L1 分类归档校验响应哈希；receipt 记录缓存、日历、观察文件及转换代码的哈希，
+并明确 `historical_publication_certified=false`。哈希证明绑定的本地输入未变，
+不能证明供应商历史完整或当时已公开。所有行业 issue 完整保留，不再截取前60条。
+
+最终离线重建有4106个行业区间，其中106个未知区间、涉及66只证券。
+公司行动12555个事件、42条 unresolved（14 missing_ex_date、26 conflicting_duplicate、
+2 missing_div_listdate）；这不是“两条 missing_pay_date”。2条缺股份上市日分别为
+002309.SZ / 2024-12-24、300116.SZ / 2020-04-01。记录数量不等于受影响证券数。
+这些缺口未解除，不将旧运行收益重新纳入验收。
+
+顺序仍是：保全旧证据→隔离离线重建→补齐成员/ST等准入证据→新目录 universe→
+build→train→market/replay→report。当前只完成前两步和合成路径验证；
+禁止为得到完整曲线跳过 universe 的成员认证阻断。市场缓存回归测试分别验证
+相同输入可复用、代码 identity 改变拒绝复用、会话回执改变拒绝复用。

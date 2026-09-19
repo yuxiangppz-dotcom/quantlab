@@ -633,3 +633,46 @@ def test_backup_records_uninitialized_account_without_forcing_one(tmp_path):
     source.write_text(json.dumps(project))
     with pytest.raises(ValueError, match="missing"):
         backup(source, tmp_path / "backup2")
+
+
+def test_conflicting_industry_stints_block_compiler_after_fallback(
+    universe_history, tmp_path, evidence_builder, cached_classifications, monkeypatch,
+):
+    from quantlab.data import tushare_provider
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("offline evidence compilation attempted a provider request")
+
+    monkeypatch.setattr(tushare_provider, "TushareProvider", forbidden)
+    cached_classifications(tmp_path)
+    project = {"canonical": tmp_path / "canonical", "raw": tmp_path / "raw",
+               "end": "2024-01-04", "evidence_output": tmp_path / "compiled"}
+    obs = project["raw"] / "csi800_weights/2024-01-02"
+    obs.mkdir(parents=True)
+    pd.DataFrame({"trade_date": ["20240102"], "con_code": ["000001.SZ"]}).to_parquet(
+        obs / "weights.parquet")
+    (obs / "observation.json").write_text(json.dumps({"raw_responses": []}))
+    raw = tmp_path / "evidence/raw"
+    (raw / "sw").mkdir()
+    (raw / "bak_basic").mkdir()
+    pd.DataFrame([
+        dict(con_code="000001.SZ", index_code="801780.SI", in_date="20240102", out_date="20240104"),
+        dict(con_code="000001.SZ", index_code="801750.SI", in_date="20240103", out_date=None),
+    ]).to_parquet(raw / "sw/000001.SZ.parquet")
+    pd.DataFrame({"trade_date": ["20240102", "20240103", "20240104"],
+                  "industry": ["fallback"] * 3}).to_parquet(raw / "bak_basic/000001.SZ.parquet")
+    evidence_builder.cmd_industries(project, fetch=False)
+    artifact = project["evidence_output"] / "industry_intervals.json"
+    merged = json.loads(artifact.read_text())["intervals"]
+    conflict = next(r for r in merged if r["start"] == "2024-01-03")
+    assert conflict["industry"] is None
+    assert conflict["end"] == "2024-01-03"
+    path = tmp_path / "industry.json"
+    payload = json.loads(path.read_text())
+    payload["intervals"] = [
+        r for r in payload["intervals"] if r["instrument_id"] != "000001.SZ"
+    ] + merged
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="unknown industry:000001.SZ"):
+        compile_fixture(tmp_path, universe_history)
+    assert not (tmp_path / "universe/completed.json").exists()

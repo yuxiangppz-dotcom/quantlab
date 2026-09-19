@@ -35,7 +35,7 @@ import hashlib  # noqa: E402
 import json  # noqa: E402
 import sys  # noqa: E402
 import time  # noqa: E402
-from datetime import UTC, date, datetime  # noqa: E402
+from datetime import UTC, date, datetime, timedelta  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 import pandas as pd  # noqa: E402
@@ -60,7 +60,6 @@ from quantlab.pipeline.evidence import (  # noqa: E402
 from quantlab.pipeline.ingestion import verify_session  # noqa: E402
 
 EVIDENCE = "evidence"
-RECEIPTS = "evidence/receipts"
 
 
 def _as_date(value) -> date:
@@ -71,10 +70,17 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _output_root(project) -> Path:
+    return Path(project.get("evidence_output", project["canonical"].parent / EVIDENCE))
+
+
 def _write_receipt(project, name: str, payload: dict) -> None:
-    out = project["canonical"].parent / RECEIPTS
+    out = _output_root(project) / "receipts"
     out.mkdir(parents=True, exist_ok=True)
     payload = {"receipt": name, "recorded_at": _now(), **payload}
+    if "artifact" in payload:
+        artifact_bytes = Path(payload["artifact"]).read_bytes()
+        payload["artifact_sha256"] = hashlib.sha256(artifact_bytes).hexdigest()
     (out / f"{name}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2))
     print(f"receipt: {out / (name + '.json')}")
 
@@ -237,7 +243,7 @@ def cmd_execution_policy(project) -> None:
     print(f"execution policies: {len(document['policies'])} -> {out}")
 
 
-def _sw_cache(project, codes: list[str]) -> tuple[pd.DataFrame, dict]:
+def _sw_cache(project, codes: list[str], fetch: bool = False) -> tuple[pd.DataFrame, dict]:
     """Per-stock SW membership history with L1 name resolution.
 
     index_member(ts_code=...) is the only shape that returns the complete
@@ -247,16 +253,37 @@ def _sw_cache(project, codes: list[str]) -> tuple[pd.DataFrame, dict]:
     """
     raw = project["canonical"].parent / EVIDENCE / "raw" / "sw"
     raw.mkdir(parents=True, exist_ok=True)
-    from quantlab.data.tushare_provider import TushareProvider
+    archive = project["canonical"].parent / EVIDENCE / "raw" / "provider_archive"
+    client = None
+    if fetch:
+        from quantlab.data.tushare_provider import TushareProvider
 
-    provider = TushareProvider(
-        archive=project["canonical"].parent / EVIDENCE / "raw" / "provider_archive",
-        interval=0.35,
-    )
-    client = provider._pro
+        client = TushareProvider(archive=archive, interval=0.35)._pro
     names = {}
     for taxonomy in ("SW2021", "SW2014"):
-        classify = client.index_classify(level="L1", src=taxonomy)
+        if client is not None:
+            classify = client.index_classify(level="L1", src=taxonomy)
+        else:
+            candidates = []
+            for path in sorted((archive / "index_classify").glob("*.json")):
+                item = json.loads(path.read_text())
+                if item.get("parameters") != {"level": "L1", "src": taxonomy}:
+                    continue
+                response = item["response"]
+                digest = hashlib.sha256(json.dumps(
+                    response, ensure_ascii=False, separators=(",", ":")
+                ).encode()).hexdigest()
+                if digest != item["response_sha256"]:
+                    raise ValueError(f"classification archive hash mismatch:{path}")
+                if item["row_count"] != len(response["data"]):
+                    raise ValueError(f"classification archive row count mismatch:{path}")
+                candidates.append((item["observed_at"], str(path), response))
+            if not candidates:
+                raise ValueError(
+                    f"cached L1 classification missing:{taxonomy}; no request without --fetch"
+                )
+            response = max(candidates)[2]
+            classify = pd.DataFrame(response["data"], columns=response["columns"])
         for _, row in classify.iterrows():
             code = str(row["index_code"]).strip()
             names.setdefault(code, {})[taxonomy] = str(row["industry_name"]).strip()
@@ -267,6 +294,8 @@ def _sw_cache(project, codes: list[str]) -> tuple[pd.DataFrame, dict]:
     for number, code in enumerate(codes):
         path = raw / f"{code}.parquet"
         if not path.exists():
+            if client is None:
+                raise ValueError(f"SW cache missing:{code}; no request without --fetch")
             member = client.index_member(ts_code=code)
             member.to_parquet(path, index=False)
             time.sleep(0.05)
@@ -285,14 +314,28 @@ def _sw_cache(project, codes: list[str]) -> tuple[pd.DataFrame, dict]:
         row["l1_name"] = labels
         frames.append(row)
         if number % 100 == 0:
-            print(f"sw fetch progress: {number}/{len(codes)}")
+            print(f"sw cache progress: {number}/{len(codes)}")
     table = pd.concat(frames, ignore_index=True)
     table = table.drop_duplicates(subset=["con_code", "in_date", "out_date", "index_code"])
     return table, names
 
 
+def _snapshot_calendar(project) -> dict[date, bool]:
+    """Only dates explicitly agreeing across both exchanges certify a closure."""
+    rows = ParquetStorage(project["canonical"]).load_trading_calendar()
+    by_day: dict[date, dict[str, set[bool]]] = {}
+    for row in rows:
+        by_day.setdefault(row.trade_date, {}).setdefault(row.exchange, set()).add(row.is_open)
+    return {
+        day: next(iter(exchanges["SSE"]))
+        for day, exchanges in by_day.items()
+        if exchanges.get("SSE") == exchanges.get("SZSE")
+        and len(exchanges.get("SSE", set())) == 1
+    }
+
+
 def _bak_basic_fills(
-    project, codes: list[str], fetch: bool, sessions: set
+    project, codes: list[str], fetch: bool, calendar: dict[date, bool]
 ) -> list[dict]:
     """Daily vendor industry snapshots fill gaps the SW stint table leaves.
 
@@ -306,7 +349,6 @@ def _bak_basic_fills(
     provider = None
     client = None
     fills: list[dict] = []
-    observed_sessions = sorted(set(sessions))
     for number, code in enumerate(codes):
         path = raw / f"{code}.parquet"
         if not path.exists():
@@ -335,7 +377,7 @@ def _bak_basic_fills(
             time.sleep(0.05)
         frame = pd.read_parquet(path)
         frame["trade_date"] = pd.to_datetime(frame.trade_date, format="%Y%m%d", errors="coerce")
-        frame["industry"] = frame.industry.astype(str).str.strip()
+        frame["industry"] = frame.industry.fillna("").astype(str).str.strip()
         frame = frame.dropna(subset=["trade_date"]).sort_values("trade_date")
         frame = frame[frame.industry.ne("") & frame.industry.ne("nan")]
         if frame.empty:
@@ -359,22 +401,18 @@ def _bak_basic_fills(
         for _, row in frame.iterrows():
             day = row["trade_date"].date()
             if streak_state["last"] is not None:
-                # A gap means at least one open trading session between two
-                # consecutive observations; those days are unknown. Calendar
-                # coverage insufficiency (empty sessions set) must NOT be
-                # treated as "no missing trading days".
-                missed = [
-                    s
-                    for s in observed_sessions
-                    if streak_state["last"] < s < day
-                ] if observed_sessions else None
-                if missed and row["industry"] == streak_state["label"]:
+                # Every intervening calendar date needs explicit closed-day
+                # evidence. An absent date is UNKNOWN, never a holiday.
+                cursor = streak_state["last"] + timedelta(days=1)
+                gap = False
+                while cursor < day:
+                    if calendar.get(cursor) is not False:
+                        gap = True
+                        break
+                    cursor += timedelta(days=1)
+                if gap:
                     _close(code=code, state=streak_state)
-                    # Reset start so the next interval begins at the new
-                    # observation, not at the old streak's first day.
-                    streak_state["start"] = day
-                    streak_state["last"] = day
-                    continue
+                    streak_state = {"start": None, "label": None, "last": None}
             if row["industry"] != streak_state["label"]:
                 _close(code=code, state=streak_state)
                 streak_state["start"], streak_state["label"] = day, row["industry"]
@@ -385,11 +423,26 @@ def _bak_basic_fills(
     return fills
 
 
+def _evidence_input_hashes(project, codes, *, corporate: bool) -> dict[str, str]:
+    """Bind the local source snapshots used in this compilation, not PIT certify them."""
+    raw = project["canonical"].parent / EVIDENCE / "raw"
+    folders = ["dividends"] if corporate else ["sw", "bak_basic"]
+    paths = [raw / folder / f"{code}.parquet" for folder in folders for code in codes]
+    paths.extend((project["raw"] / "csi800_weights").glob("*/*.parquet"))
+    paths.extend((project["raw"] / "csi800_weights").glob("*/observation.json"))
+    if not corporate:
+        paths.extend((raw / "provider_archive/index_classify").glob("*.json"))
+        paths.append(ParquetStorage(project["canonical"]).calendar_path)
+    paths.extend([Path(__file__), ROOT / "src/quantlab/pipeline/evidence.py"])
+    return {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(set(paths)) if p.exists()}
+
+
 def cmd_industries(project, fetch: bool) -> None:
     observations = _load_observations(project)
     codes, _ = _member_codes(observations)
     end = _as_date(project["end"])
-    table, _names = _sw_cache(project, codes)
+    table, _names = _sw_cache(project, codes, fetch)
     intervals, issues = industry_intervals(
         table, set(codes), end=end, taxonomy="SW"
     )
@@ -398,11 +451,11 @@ def cmd_industries(project, fetch: bool) -> None:
     # needs a sourced industry; the merge keeps SW stints primary and uses
     # snapshots only where SW has no coverage, so whole-range fills cannot
     # override better evidence.
-    fills = _bak_basic_fills(project, codes, fetch, set(_calendar(project)))
+    fills = _bak_basic_fills(project, codes, fetch, _snapshot_calendar(project))
     intervals, merge_issues = merge_industry_sources(intervals, fills, end=end)
     issues = issues + merge_issues
     document = {"intervals": intervals}
-    out = project["canonical"].parent / EVIDENCE / "industry_intervals.json"
+    out = _output_root(project) / "industry_intervals.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(document, ensure_ascii=False, indent=2))
     _write_receipt(
@@ -412,12 +465,18 @@ def cmd_industries(project, fetch: bool) -> None:
             "artifact": str(out),
             "codes": len(codes),
             "intervals": len(intervals),
-            "issues": issues[:60],
+            "inputs": _evidence_input_hashes(project, codes, corporate=False),
+            "end": str(end),
+            "historical_publication_certified": False,
+            "issues": issues,
             "limitations": [
                 "Industry labels come from the vendor's per-instrument SW "
                 "membership history (in/out dates); a stint is labeled with the "
                 "taxonomy active at its in_date (SW2014 names before the "
                 "2021-12-13 relabeling, SW2021 names after).",
+                "Conflicting primary labels remain industry=null and cannot be "
+                "replaced by fallback. Snapshot gaps require explicit closed-day "
+                "calendar evidence to bridge; absent calendar dates remain unknown.",
                 "Days the SW stint table does not cover (mostly STAR names "
                 "between listing and the vendor's earliest retained stint, and "
                 "any period after a name left the index) are filled from the "
@@ -622,7 +681,7 @@ def cmd_corporate_actions(project, fetch: bool) -> None:
         ),
         "events": events,
     }
-    out = project["canonical"].parent / EVIDENCE / "corporate_actions.json"
+    out = _output_root(project) / "corporate_actions.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(document, ensure_ascii=False, indent=2))
     issues_path = out.parent / "corporate_actions_issues.json"
@@ -644,13 +703,16 @@ def cmd_corporate_actions(project, fetch: bool) -> None:
             "artifact": str(out),
             "codes": len(codes),
             "cached_frames": len(frames),
+            "inputs": _evidence_input_hashes(project, codes, corporate=True),
+            "start": str(cache_start), "end": str(end),
+            "historical_publication_certified": False,
             "fetch_errors": errors,
             "events": len(events),
             "cash_dividend_events": sum(1 for e in events if e["kind"] == "cash_dividend"),
             "share_events": sum(1 for e in events if e["kind"] == "bonus_shares"),
             "unresolved_events": len(unresolved),
             "issues_file": str(
-                project["canonical"].parent / EVIDENCE / "corporate_actions_issues.json"
+                _output_root(project) / "corporate_actions_issues.json"
             ),
             "limitations": [
                 "cash_dividend uses the vendor per-share post-withholding rate; "
@@ -684,8 +746,15 @@ def main() -> None:
     for name in ("industries", "event-coverage", "corporate-actions"):
         child = sub.add_parser(name)
         child.add_argument("--fetch", action="store_true")
+        if name in {"industries", "corporate-actions"}:
+            child.add_argument(
+                "--output-dir", type=Path,
+                help="New evidence namespace; reuse existing input caches",
+            )
     args = parser.parse_args()
     project = load_project(args.project)
+    if getattr(args, "output_dir", None) is not None:
+        project["evidence_output"] = args.output_dir.resolve()
     # Evidence is immutable. A re-run must target a new isolated namespace.
     outputs = {
         "membership": "csi800_membership.json",
@@ -695,9 +764,14 @@ def main() -> None:
         "event-coverage": "event_coverage.json",
         "corporate-actions": "corporate_actions.json",
     }
-    target = project["canonical"].parent / EVIDENCE / outputs[args.command]
-    if target.exists():
-        raise SystemExit(f"evidence already exists; use a new namespace:{target}")
+    target = _output_root(project) / outputs[args.command]
+    targets = [target, target.parent / "receipts" / (("membership" if args.command == "membership"
+                                              else target.stem) + ".json")]
+    if args.command == "corporate-actions":
+        targets.append(target.parent / "corporate_actions_issues.json")
+    for path in targets:
+        if path.exists():
+            raise SystemExit(f"evidence already exists; use a new namespace:{path}")
     if args.command == "membership":
         cmd_membership(project)
     elif args.command == "availability":
