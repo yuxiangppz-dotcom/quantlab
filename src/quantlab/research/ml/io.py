@@ -167,4 +167,17 @@ def read_corporate_actions(path, start, end):
     events = tuple(decode_event(e) for e in payload["events"])
     if len({e.event_id for e in events}) != len(events):
         raise ValueError("duplicate corporate event id")
+    # A legacy artifact could carry an executable first vendor row even after
+    # its distribution group was flagged as a conflicting duplicate. Check the
+    # entire artifact, including events outside this particular read window.
+    conflicts = set()
+    for item in coverage.get("unresolved", []):
+        if item.get("reason") != "conflicting_duplicate":
+            continue
+        key = (item.get("instrument_id"), item.get("ex_date"), item.get("record_date"))
+        if not all(key):
+            raise ValueError("incomplete conflicting corporate group identity")
+        conflicts.add(key)
+    if any((e.instrument_id, str(e.ex_date), str(e.record_date)) in conflicts for e in events):
+        raise ValueError("conflicting corporate event remains executable; rebuild evidence")
     return tuple(e for e in events if start <= e.ex_date <= end)

@@ -513,6 +513,37 @@ def test_conflicting_distribution_with_parsed_timestamp_dates_cannot_emit_event(
     assert all(item["record_date"] == "2022-12-21" for item in unresolved)
 
 
+def test_corporate_reader_rejects_event_in_unresolved_conflict_group(tmp_path):
+    import json
+
+    from quantlab.research.ml.io import read_corporate_actions
+
+    artifact = tmp_path / "corporate_actions.json"
+    event = {
+        "event_id": "shr:002122.SZ:2022-12-22",
+        "instrument_id": "002122.SZ",
+        "kind": "bonus_shares",
+        "record_date": "2022-12-21",
+        "ex_date": "2022-12-22",
+        "settlement_date": "2022-12-22",
+        "source_id": "vendor",
+        "share_numerator": 157,
+        "share_denominator": 250,
+    }
+    coverage = {
+        "source_id": "vendor", "start": "2022-01-01", "end": "2022-12-31",
+        "unresolved": [{
+            "instrument_id": "002122.SZ", "ex_date": "2022-12-22",
+            "record_date": "2022-12-21", "reason": "conflicting_duplicate",
+        }],
+    }
+    artifact.write_text(json.dumps({"coverage": coverage, "events": [event]}))
+    with pytest.raises(ValueError, match="conflicting corporate event remains executable"):
+        read_corporate_actions(artifact, date(2022, 12, 22), date(2022, 12, 22))
+    artifact.write_text(json.dumps({"coverage": coverage, "events": []}))
+    assert read_corporate_actions(artifact, date(2022, 12, 22), date(2022, 12, 22)) == ()
+
+
 @pytest.mark.parametrize("command,filename", [
     ("membership", "csi800_membership.json"),
     ("availability", "source_availability.parquet"),
