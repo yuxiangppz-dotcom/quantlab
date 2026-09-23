@@ -573,6 +573,36 @@ def test_membership_observation_uses_code_valid_on_observation_day(
         evidence_builder._load_observations({"raw": tmp_path / "raw"})
 
 
+def test_corporate_builder_excludes_successor_rows_before_code_change(
+    tmp_path, evidence_builder, monkeypatch,
+):
+    import json
+
+    day_before, day_after = date(2023, 6, 6), date(2025, 6, 17)
+    codes = frozenset({"300114.SZ", "302132.SZ"})
+    monkeypatch.setattr(evidence_builder, "_load_observations", lambda _: [(day_before, codes)])
+    rows = pd.DataFrame([
+        {"div_proc": "实施", "ex_date": str(day),
+         "record_date": str(day - pd.Timedelta(days=1)),
+         "pay_date": str(day), "div_listdate": None, "cash_div": 0.1,
+         "cash_div_tax": 0.1, "stk_div": 0.0}
+        for day in (day_before, day_after)
+    ])
+    monkeypatch.setattr(evidence_builder, "_dividend_cache", lambda *args: (
+        {code: rows for code in codes}, {},
+    ))
+    project = {
+        "canonical": tmp_path / "canonical", "raw": tmp_path / "raw",
+        "start": "2023-01-01", "end": "2026-12-31",
+        "evidence_output": tmp_path / "output",
+    }
+    evidence_builder.cmd_corporate_actions(project, fetch=False)
+    artifact = json.loads((tmp_path / "output/corporate_actions.json").read_text())
+    assert {(e["instrument_id"], e["ex_date"]) for e in artifact["events"]} == {
+        ("300114.SZ", str(day_before)), ("302132.SZ", str(day_after)),
+    }
+
+
 @pytest.mark.parametrize("command,filename", [
     ("membership", "csi800_membership.json"),
     ("availability", "source_availability.parquet"),

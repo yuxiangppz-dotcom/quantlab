@@ -45,6 +45,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from quantlab.data.security_history import (  # noqa: E402
     code_at_observation_date,
+    code_validity_interval,
     load_security_code_changes,
 )
 from quantlab.data.storage import ParquetStorage  # noqa: E402
@@ -164,6 +165,10 @@ def cmd_membership(project) -> None:
             },
             "code_changes_sha256": hashlib.sha256(
                 (ROOT / "config/security_code_changes.csv").read_bytes()
+            ).hexdigest(),
+            "builder_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            "security_history_sha256": hashlib.sha256(
+                (ROOT / "src/quantlab/data/security_history.py").read_bytes()
             ).hexdigest(),
             "intervals": len(intervals),
             "scheduled_changes": len(scheduled),
@@ -454,7 +459,10 @@ def _evidence_input_hashes(project, codes, *, corporate: bool) -> dict[str, str]
     if not corporate:
         paths.extend((raw / "provider_archive/index_classify").glob("*.json"))
         paths.append(ParquetStorage(project["canonical"]).calendar_path)
-    paths.extend([Path(__file__), ROOT / "src/quantlab/pipeline/evidence.py"])
+    paths.extend([
+        Path(__file__), ROOT / "src/quantlab/pipeline/evidence.py",
+        ROOT / "src/quantlab/data/security_history.py",
+    ])
     paths.append(ROOT / "config/security_code_changes.csv")
     return {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted(set(paths)) if p.exists()}
@@ -476,6 +484,15 @@ def cmd_industries(project, fetch: bool) -> None:
     fills = _bak_basic_fills(project, codes, fetch, _snapshot_calendar(project))
     intervals, merge_issues = merge_industry_sources(intervals, fills, end=end)
     issues = issues + merge_issues
+    changes = load_security_code_changes(ROOT / "config/security_code_changes.csv")
+    dated_intervals = []
+    for row in intervals:
+        valid_start, valid_end = code_validity_interval(row["instrument_id"], changes)
+        start_day = max(date.fromisoformat(row["start"]), valid_start)
+        end_day = min(date.fromisoformat(row["end"]), valid_end)
+        if start_day <= end_day:
+            dated_intervals.append({**row, "start": str(start_day), "end": str(end_day)})
+    intervals = dated_intervals
     document = {"intervals": intervals}
     out = _output_root(project) / "industry_intervals.json"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -675,6 +692,7 @@ def cmd_corporate_actions(project, fetch: bool) -> None:
     events: list[dict] = []
     skipped: list[str] = []
     unresolved: list[dict] = []
+    changes = load_security_code_changes(ROOT / "config/security_code_changes.csv")
     for code in codes:
         frame = frames.get(code)
         if frame is None:
@@ -685,9 +703,17 @@ def cmd_corporate_actions(project, fetch: bool) -> None:
         code_events, code_skipped, code_unresolved = corporate_events(
             implemented, code, start=cache_start, end=end, source_id="tushare_dividend_observation"
         )
-        events.extend(code_events)
+        valid_start, valid_end = code_validity_interval(code, changes)
+        events.extend(
+            event for event in code_events
+            if valid_start <= date.fromisoformat(event["ex_date"]) <= valid_end
+        )
         skipped.extend(code_skipped)
         for record in code_unresolved:
+            if record.get("ex_date") and not (
+                valid_start <= date.fromisoformat(record["ex_date"]) <= valid_end
+            ):
+                continue
             unresolved.append({"instrument_id": code, **record})
     unresolved_instruments = [
         {"instrument_id": code, "reason": reason} for code, reason in sorted(errors.items())
