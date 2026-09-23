@@ -61,3 +61,17 @@ def load_security_code_changes(path: str | Path) -> list[SecurityCodeChange]:
             )
         )
     return changes
+
+
+def code_at_observation_date(
+    instrument_id: str, observed: date, changes: list[SecurityCodeChange]
+) -> str:
+    """Undo a vendor's retrospective successor code before its effective date."""
+    for change in changes:
+        if instrument_id == change.new_instrument_id and observed < change.effective_date:
+            if observed < change.original_list_date:
+                raise DataValidationError(
+                    f"code predates original listing:{instrument_id}:{observed}"
+                )
+            return change.old_instrument_id
+    return instrument_id

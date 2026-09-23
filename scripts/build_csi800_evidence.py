@@ -43,6 +43,10 @@ import pandas as pd  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from quantlab.data.security_history import (  # noqa: E402
+    code_at_observation_date,
+    load_security_code_changes,
+)
 from quantlab.data.storage import ParquetStorage  # noqa: E402
 from quantlab.pipeline.config import load_project  # noqa: E402
 from quantlab.pipeline.evidence import (  # noqa: E402
@@ -93,6 +97,7 @@ def _load_observations(project) -> list[tuple[date, frozenset[str]], ]:
             "no index observations; run sync-index-observations --execute first"
         )
     observations = []
+    changes = load_security_code_changes(ROOT / "config/security_code_changes.csv")
     for folder in folders:
         frame = pd.read_parquet(folder / "weights.parquet")
         receipt = json.loads((folder / "observation.json").read_text())
@@ -101,7 +106,11 @@ def _load_observations(project) -> list[tuple[date, frozenset[str]], ]:
                 raise SystemExit(f"archived raw response missing:{path}")
         stamp = pd.to_datetime(frame.trade_date, format="%Y%m%d").dt.date
         for day, group in frame.assign(_d=stamp).groupby("_d"):
-            observations.append((day, frozenset(group.con_code)))
+            raw_codes = list(group.con_code)
+            codes = frozenset(code_at_observation_date(c, day, changes) for c in raw_codes)
+            if len(codes) != len(raw_codes):
+                raise ValueError(f"code-history normalization collapsed observation:{day}")
+            observations.append((day, codes))
     return observations
 
 
@@ -149,9 +158,13 @@ def cmd_membership(project) -> None:
         {
             "artifact": str(out),
             "inputs": {
-                str(p): str(p)
-                for p in sorted((project["raw"] / "csi800_weights").iterdir())
+                str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in sorted((project["raw"] / "csi800_weights").glob("*/*"))
+                if p.is_file()
             },
+            "code_changes_sha256": hashlib.sha256(
+                (ROOT / "config/security_code_changes.csv").read_bytes()
+            ).hexdigest(),
             "intervals": len(intervals),
             "scheduled_changes": len(scheduled),
             "observation_bounded_changes": [
@@ -168,6 +181,11 @@ def cmd_membership(project) -> None:
             ],
             "first_observation": str(observation_dates[0]),
             "limitations": document["known_limitations"],
+            "code_identity_note": (
+                "Successor codes observed before their dated effective date are mapped "
+                "to the predecessor; original observations remain unchanged. "
+                "This does not certify membership timing."
+            ),
         },
     )
     print(
@@ -238,6 +256,9 @@ def cmd_execution_policy(project) -> None:
                 for e in fee_eras(start, end)
             ],
             "limitations": document["known_limitations"],
+            "code_changes_sha256": hashlib.sha256(
+                (ROOT / "config/security_code_changes.csv").read_bytes()
+            ).hexdigest(),
         },
     )
     print(f"execution policies: {len(document['policies'])} -> {out}")
@@ -434,6 +455,7 @@ def _evidence_input_hashes(project, codes, *, corporate: bool) -> dict[str, str]
         paths.extend((raw / "provider_archive/index_classify").glob("*.json"))
         paths.append(ParquetStorage(project["canonical"]).calendar_path)
     paths.extend([Path(__file__), ROOT / "src/quantlab/pipeline/evidence.py"])
+    paths.append(ROOT / "config/security_code_changes.csv")
     return {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted(set(paths)) if p.exists()}
 

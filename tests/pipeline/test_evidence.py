@@ -544,6 +544,35 @@ def test_corporate_reader_rejects_event_in_unresolved_conflict_group(tmp_path):
     assert read_corporate_actions(artifact, date(2022, 12, 22), date(2022, 12, 22)) == ()
 
 
+def test_membership_observation_uses_code_valid_on_observation_day(
+    tmp_path, evidence_builder,
+):
+    import json
+
+    root = tmp_path / "raw" / "csi800_weights"
+    folder = root / "sample"
+    folder.mkdir(parents=True)
+    pd.DataFrame({
+        "trade_date": ["20231229", "20250228"],
+        "con_code": ["302132.SZ", "302132.SZ"],
+    }).to_parquet(folder / "weights.parquet", index=False)
+    (folder / "observation.json").write_text(json.dumps({"raw_responses": []}))
+    observations = evidence_builder._load_observations({"raw": tmp_path / "raw"})
+    assert observations == [
+        (date(2023, 12, 29), frozenset({"300114.SZ"})),
+        (date(2025, 2, 28), frozenset({"302132.SZ"})),
+    ]
+    assert pd.read_parquet(folder / "weights.parquet").con_code.tolist() == [
+        "302132.SZ", "302132.SZ",
+    ]
+    pd.DataFrame({
+        "trade_date": ["20231229", "20231229"],
+        "con_code": ["300114.SZ", "302132.SZ"],
+    }).to_parquet(folder / "weights.parquet", index=False)
+    with pytest.raises(ValueError, match="collapsed observation"):
+        evidence_builder._load_observations({"raw": tmp_path / "raw"})
+
+
 @pytest.mark.parametrize("command,filename", [
     ("membership", "csi800_membership.json"),
     ("availability", "source_availability.parquet"),
