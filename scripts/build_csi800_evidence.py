@@ -417,7 +417,9 @@ def _bak_basic_fills(
                         "instrument_id": code,
                         "start": state["start"].isoformat(),
                         "end": state["last"].isoformat(),
-                        "known_at": f'{state["start"].isoformat()}T00:00:00+08:00',
+                        # A retrospective snapshot trade_date is not a
+                        # contemporaneous publication timestamp.
+                        "known_at": None,
                         "source_id": "tushare_bak_basic_daily_snapshot",
                         "revision_id": "bak_basic_v1",
                         "industry": f'bak_basic:{state["label"]}',
@@ -521,8 +523,9 @@ def cmd_industries(project, fetch: bool) -> None:
                 "any period after a name left the index) are filled from the "
                 "vendor's per-date snapshot archive and labeled 'bak_basic:...' "
                 "so the two sources stay distinguishable.",
-                "known_at equals the membership effective date; contemporaneous "
-                "publication timestamps are not independently certified.",
+                "SW in_date and bak_basic trade_date are classification/observation "
+                "dates, not certified historical publication times; known_at is "
+                "null until a contemporaneous source establishes availability.",
                 "Codes with no covering interval on a member day surface as an "
                 "explicit universe compilation block, never a defaulted label.",
                 "Industry constraint consistency caveat: labels mix SW2014, "

@@ -671,7 +671,7 @@ def test_conflicting_industry_stints_block_compiler_after_fallback(
     payload = json.loads(path.read_text())
     payload["intervals"] = [
         r for r in payload["intervals"] if r["instrument_id"] != "000001.SZ"
-    ] + merged
+    ] + [{**row, "known_at": "2024-01-02T00:00:00+08:00"} for row in merged]
     path.write_text(json.dumps(payload))
     with pytest.raises(ValueError, match="unknown industry:000001.SZ"):
         compile_fixture(tmp_path, universe_history)

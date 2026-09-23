@@ -440,9 +440,12 @@ def _resolve_industry_overlaps(rows: list[dict], *, end: date) -> tuple[list[dic
             active = [r for r in spans if r["start"] <= str(start) <= r["end"]]
             if not active:
                 continue
-            # Stable selection among compatible records, using the latest
-            # declared availability; this does not certify historical publication.
-            base = max(active, key=lambda r: (r.get("known_at", ""), json.dumps(r, sort_keys=True)))
+            # Stable selection among compatible records; a missing historical
+            # publication time is not treated as an earlier certified value.
+            base = max(
+                active,
+                key=lambda r: (r.get("known_at") or "", json.dumps(r, sort_keys=True)),
+            )
             row = {**base, "start": str(start), "end": str(stop)}
             labels = {r.get("industry") for r in active}
             if len(labels) != 1 or None in labels or "" in labels:
@@ -493,7 +496,9 @@ def industry_intervals(
                  else f"{taxonomy}:{str(label).strip()}")
         intervals.append({
             "instrument_id": code, "start": str(start), "end": str(stop),
-            "known_at": f"{start}T00:00:00+08:00",
+            # in_date is the vendor's classification boundary, not evidence
+            # that this historical revision was public at that instant.
+            "known_at": None,
             "source_id": f"tushare_sw_member_{taxonomy}_compilation",
             "revision_id": taxonomy, "industry": label,
         })
@@ -553,6 +558,7 @@ def coverage_intervals(
 
     ``complete`` must reflect an independent verification result, not a wish:
     an empty ST response is never proof that no stock was designated ST.
+    It never establishes historical publication time by itself.
     """
     if not sessions:
         raise ValueError("no sealed sessions for event coverage")
@@ -567,12 +573,13 @@ def coverage_intervals(
     bounds.append((run_start, previous))
     coverage = []
     for start, stop in bounds:
-        known = start
         coverage.append(
             {
                 "start": start.isoformat(),
                 "end": stop.isoformat(),
-                "known_at": f"{known.isoformat()}T00:00:00+08:00",
+                # Completeness of sessions does not establish when their
+                # historical status was published.
+                "known_at": None,
                 "source_id": source_id,
                 "revision_id": revision_id,
                 "complete": complete,

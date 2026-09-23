@@ -34,6 +34,8 @@ def available_row(rows, day, hour, *, label):
         raise ValueError(f"missing/overlapping {label}:{day}")
     row = selected[0]
     cutoff = pd.Timestamp(day).tz_localize("Asia/Shanghai") + pd.Timedelta(hours=hour)
+    if row.get("known_at") is None:
+        raise ValueError(f"unavailable {label}:{day}:historical publication unknown")
     known = pd.Timestamp(row["known_at"])
     if (
         not row.get("source_id")

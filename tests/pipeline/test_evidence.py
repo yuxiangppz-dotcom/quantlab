@@ -306,6 +306,7 @@ def test_industry_intervals_boundary_semantics(exit_day, expected, issue):
     ])
     intervals, issues = industry_intervals(rows, {"A"}, end=date(2020, 6, 30), taxonomy="SW")
     assert [(r["start"], r["end"], r["industry"]) for r in intervals] == expected
+    assert all(r["known_at"] is None for r in intervals)
     assert bool(issues) == (issue is not None)
     if issue:
         assert all(issue in item for item in issues)
@@ -348,6 +349,19 @@ def test_real_snapshot_builder_never_bridges_unknown_sessions(tmp_path, evidence
     merged, _ = merge_industry_sources([], fills, end=date(2023, 9, 30))
     assert [(r["start"], r["end"]) for r in merged] == [
         ("2023-06-01", "2023-06-01"), ("2023-09-25", "2023-09-25")]
+    assert all(r["known_at"] is None for r in merged)
+
+
+def test_uncertified_industry_timestamp_is_unavailable():
+    from quantlab.pipeline.universe import available_row
+
+    row = {
+        "start": "2023-06-01", "end": "2023-06-30", "known_at": None,
+        "source_id": "tushare_sw_member_SW_compilation", "revision_id": "SW",
+        "industry": "SW:bank",
+    }
+    with pytest.raises(ValueError, match="historical publication unknown"):
+        available_row([row], date(2023, 6, 15), 17, label="industry:A")
 
 
 def test_snapshot_explicit_holiday_bridge_and_duplicate_conflict(tmp_path, evidence_builder):
@@ -401,8 +415,11 @@ def test_coverage_intervals_keep_explicit_completeness():
     assert coverage[0]["start"] == "2024-01-02"
     assert coverage[0]["end"] == "2024-01-05"
     assert coverage[0]["complete"] is False
+    assert coverage[0]["known_at"] is None
     holed = [date(2024, 1, 2), date(2024, 1, 3), date(2024, 2, 20), date(2024, 2, 21)]
-    assert len(coverage_intervals(holed, source_id="s", revision_id="r", complete=True)) == 2
+    complete_rows = coverage_intervals(holed, source_id="s", revision_id="r", complete=True)
+    assert len(complete_rows) == 2
+    assert all(row["known_at"] is None for row in complete_rows)
     # A missing weekday must not acquire coverage merely because the gap is short.
     holed = [date(2024, 1, 2), date(2024, 1, 4)]
     assert len(coverage_intervals(holed, source_id="s", revision_id="r", complete=True)) == 2
