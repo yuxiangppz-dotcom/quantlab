@@ -496,6 +496,23 @@ def test_conflicting_distribution_removes_all_candidate_legs(reverse):
                u["ex_date"] == "2023-06-20" for u in unresolved)
 
 
+def test_conflicting_distribution_with_parsed_timestamp_dates_cannot_emit_event():
+    # Cached dividend parquet dates are Timestamp, unlike the string dates in
+    # the synthetic test above. They must use the same normalized group key.
+    first = dict(ex_date=pd.Timestamp("2022-12-22"),
+                 record_date=pd.Timestamp("2022-12-21"),
+                 pay_date=pd.NaT, div_listdate=pd.Timestamp("2022-12-22"),
+                 cash_div=0, cash_div_tax=0, stk_div=0.628)
+    second = dict(first, stk_div=0.62)
+    events, _, unresolved = corporate_events(
+        pd.DataFrame([first, second]), "002122.SZ", start=date(2022, 1, 1),
+        end=date(2022, 12, 31), source_id="synthetic",
+    )
+    assert events == []
+    assert any(item["reason"] == "conflicting_duplicate" for item in unresolved)
+    assert all(item["record_date"] == "2022-12-21" for item in unresolved)
+
+
 @pytest.mark.parametrize("command,filename", [
     ("membership", "csi800_membership.json"),
     ("availability", "source_availability.parquet"),
