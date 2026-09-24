@@ -2,11 +2,9 @@
 
 No provider/tax inference. Cash rates are DECLARED net scenarios; the
 applicable holding-period differential dividend tax charged at disposal is a
-separate, unimplemented cost. Share distributions apply a DECLARED settlement
-scenario: the holder's entitlement is rounded down to whole shares and the
-fractional remainder is discarded and recorded — actual tail-share
-allocation depends on the issuer's implementation announcement and the
-depository's distribution, which this scenario does not reproduce. Rights
+separate, unimplemented cost. Share distributions are applied only when the
+account-level entitlement is an exact whole share. Fractional entitlements
+require the issuer/depository's tail-share allocation and stop replay. Rights
 issues, mergers and delisting settlements require an explicit adapter and
 stop here instead of silently inventing a settlement.
 """
@@ -128,17 +126,8 @@ def apply_events(book, day, events, state, inception):
         elif event.kind == "bonus_shares":
             count, remainder = divmod(entitled * event.share_numerator, event.share_denominator)
             if remainder:
-                # DECLARED scenario: the holder's entitlement is truncated to
-                # whole shares. Actual tail-share allocation follows the
-                # issuer's implementation announcement and the depository's
-                # precise distribution and is not reproduced per account.
-                movements.append(
-                    {
-                        "event_id": event.event_id,
-                        "kind": "bonus_shares_fraction_discarded",
-                        "entitled": entitled,
-                        "discarded_numerator": remainder,
-                    }
+                raise ValueError(
+                    f"fractional bonus shares require explicit settlement:{event.event_id}"
                 )
             if count:
                 lot = ResearchLot(

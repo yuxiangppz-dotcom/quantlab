@@ -19,6 +19,8 @@
   （不绑定 execution_policy）。如果同时改代码，代码 identity 也会变化，不能以
   “仅改费率”为由绕过训练等阶段各自的 identity 检查。
 - 行业或成员证据变化：universe→bundle→**重训**→market→replay→report 全链重建。
+- 公司行动证据变化：market→replay→report 全链重建；不得在旧 market
+  或 replay 上替换 JSON 后继续 resume。
 - 688088 路径实例：2023-06 的旧 bundle 中其行业为空（当时缺口未补）；新行业
   文件不会自动进入旧 bundle。离线重建存在该日期的 bak_basic 快照区间，
   但成员认证仍阻断新 universe，不能称新 universe 已产生；新实验不能复用旧 bundle。
@@ -87,6 +89,22 @@ L1 分类归档校验响应哈希；receipt 记录缓存、日历、观察文件
 build→train→market/replay→report。当前只完成前两步和合成路径验证；
 禁止为得到完整曲线跳过 universe 的成员认证阻断。市场缓存回归测试分别验证
 相同输入可复用、代码 identity 改变拒绝复用、会话回执改变拒绝复用。
+
+## 2026-09-23 四笔转增股来源校正
+
+`scripts/reconcile_csi800_share_conversions.py` 只合并发行人实施公告已核对、
+且供应商多个“实施”行仅在空现金与零现金表示上不同的四笔普通资本公积转增：
+000528.SZ/2018-10-26、000939.SZ/2017-06-20、688516.SH/2022-11-22、
+688516.SH/2023-11-17。输入为当前代码生命周期修正后的公司行动文件、
+`reviewed-v4/reviewed_facts.json`、四份发行人 PDF 及其来源元数据、原始
+dividend parquet。脚本逐笔比对比例、登记日、除权日、股份上市日、现金腿及
+PDF SHA256，产出新文件与回执；旧文件不覆盖。其余现金分红合并、特殊受益人、
+税费与缺日期事件保持 unresolved。新文件从 12528 事件/42 unresolved 变为
+12532 事件/38 unresolved。
+
+股份到账只在账户权益数乘以转增比例为整数时执行。尾股如何按小数尾数与
+登记结算规则分配，无法仅凭单个账户重现；遇到非整数权益即阻断回放，
+不再向下取整并丢弃。此修复不认证成员/ST/行业输入，不会使 universe 自动放行。
 
 ## Public-source supplement (2026-09-19)
 
