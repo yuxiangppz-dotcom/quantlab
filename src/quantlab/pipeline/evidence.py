@@ -424,17 +424,19 @@ def _resolve_industry_overlaps(rows: list[dict], *, end: date) -> tuple[list[dic
         start = date.fromisoformat(row["start"])
         stop = min(date.fromisoformat(row["end"]), end)
         if start <= stop:
-            by_code.setdefault(row["instrument_id"], []).append(
-                {**row, "end": stop.isoformat()}
-            )
+            by_code.setdefault(row["instrument_id"], []).append({**row, "end": stop.isoformat()})
     result, issues = [], []
     for code, spans in sorted(by_code.items()):
-        points = sorted({
-            day
-            for row in spans
-            for day in (date.fromisoformat(row["start"]),
-                        date.fromisoformat(row["end"]) + timedelta(days=1))
-        })
+        points = sorted(
+            {
+                day
+                for row in spans
+                for day in (
+                    date.fromisoformat(row["start"]),
+                    date.fromisoformat(row["end"]) + timedelta(days=1),
+                )
+            }
+        )
         for start, right in zip(points, points[1:], strict=False):
             stop = right - timedelta(days=1)
             active = [r for r in spans if r["start"] <= str(start) <= r["end"]]
@@ -449,11 +451,22 @@ def _resolve_industry_overlaps(rows: list[dict], *, end: date) -> tuple[list[dic
             row = {**base, "start": str(start), "end": str(stop)}
             labels = {r.get("industry") for r in active}
             if len(labels) != 1 or None in labels or "" in labels:
-                row.update(industry=None, unknown_reason="conflicting_or_unknown_industry")
+                missing_single_label = (
+                    len(active) == 1
+                    and labels in ({None}, {""})
+                    and active[0].get("unknown_reason") != "conflicting_industry_evidence"
+                )
+                reason = (
+                    "missing_industry_label"
+                    if missing_single_label
+                    else "conflicting_industry_evidence"
+                )
+                row.update(industry=None, unknown_reason=reason)
                 row["conflicting_evidence"] = sorted(
                     active, key=lambda r: json.dumps(r, sort_keys=True)
                 )
-                issues.append(f"{code}:conflict_overlap_or_unknown:{start}:{stop}")
+                issue = "missing_label" if missing_single_label else "conflict_overlap"
+                issues.append(f"{code}:{issue}:{start}:{stop}")
             result.append(row)
     return result, issues
 
@@ -517,15 +530,20 @@ def industry_intervals(
 
 
 def merge_industry_sources(
-    primary: list[dict], fallback: list[dict], *, end: date,
+    primary: list[dict],
+    fallback: list[dict],
+    *,
+    end: date,
 ) -> tuple[list[dict], list[str]]:
-    """Fallback fills uncovered spans, never primary UNKNOWN/conflicting spans."""
+    """Fill uncovered or unlabeled stints; preserve genuine primary conflicts."""
     primary, issues = _resolve_industry_overlaps(primary, end=end)
     fallback, fallback_issues = _resolve_industry_overlaps(fallback, end=end)
     issues.extend(fallback_issues)
-    merged = list(primary)
+    unlabeled = [r for r in primary if r.get("unknown_reason") == "missing_industry_label"]
+    protected = [r for r in primary if r.get("unknown_reason") != "missing_industry_label"]
+    merged = list(protected)
     by_code: dict[str, list[dict]] = {}
-    for row in primary:
+    for row in protected:
         by_code.setdefault(row["instrument_id"], []).append(row)
     for fill in fallback:
         pieces = [fill]
@@ -541,6 +559,30 @@ def merge_industry_sources(
                 if piece["end"] > row["end"]:
                     boundary = date.fromisoformat(row["end"]) + timedelta(days=1)
                     remaining.append({**piece, "start": str(boundary)})
+            pieces = remaining
+        merged.extend(pieces)
+    # A single SW stint with no label is missing information, not a conflict.
+    # Dated snapshots may supply only their observed spans; the unobserved
+    # remainder stays UNKNOWN and no snapshot crosses a primary conflict.
+    by_code = {}
+    for row in merged:
+        by_code.setdefault(row["instrument_id"], []).append(row)
+    for row in unlabeled:
+        pieces = [row]
+        for fill in by_code.get(row["instrument_id"], []):
+            remaining = []
+            for piece in pieces:
+                if fill["end"] < piece["start"] or fill["start"] > piece["end"]:
+                    remaining.append(piece)
+                    continue
+                if piece["start"] < fill["start"]:
+                    remaining.append(
+                        {**piece, "end": str(date.fromisoformat(fill["start"]) - timedelta(days=1))}
+                    )
+                if piece["end"] > fill["end"]:
+                    remaining.append(
+                        {**piece, "start": str(date.fromisoformat(fill["end"]) + timedelta(days=1))}
+                    )
             pieces = remaining
         merged.extend(pieces)
     return sorted(merged, key=lambda r: (r["instrument_id"], r["start"])), issues

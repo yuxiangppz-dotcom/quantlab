@@ -406,6 +406,56 @@ def test_merge_industry_sources_fills_gaps_without_overlap():
         assert nxt["start"] > previous["end"]
 
 
+def test_dated_snapshot_fills_missing_primary_label_only_on_observed_days():
+    source = pd.DataFrame(
+        [
+            dict(con_code="A", in_date="20230601", out_date=None, l1_name=None),
+        ]
+    )
+    primary, _ = industry_intervals(source, {"A"}, end=date(2023, 6, 5), taxonomy="SW")
+    fallback = [
+        {
+            "instrument_id": "A",
+            "start": "2023-06-02",
+            "end": "2023-06-04",
+            "industry": "snapshot:coal",
+            "known_at": None,
+            "source_id": "dated-snapshot",
+            "revision_id": "one",
+        },
+    ]
+    merged, _ = merge_industry_sources(primary, fallback, end=date(2023, 6, 5))
+    assert [(r["start"], r["end"], r["industry"]) for r in merged] == [
+        ("2023-06-01", "2023-06-01", None),
+        ("2023-06-02", "2023-06-04", "snapshot:coal"),
+        ("2023-06-05", "2023-06-05", None),
+    ]
+    assert all(r["known_at"] is None for r in merged)
+
+
+def test_sw2021_retrospective_stints_do_not_relabel_prelaunch_dates(evidence_builder):
+    raw = pd.DataFrame(
+        [
+            dict(index_code="801020.SI", con_code="A", in_date="20100101", out_date=None),
+            dict(index_code="801950.SI", con_code="A", in_date="19991230", out_date=None),
+            dict(index_code="801030.SI", con_code="B", in_date="20100101", out_date=None),
+        ]
+    )
+    names = {
+        "801020.SI": {"SW2014": "采掘"},
+        "801950.SI": {"SW2021": "煤炭"},
+        "801030.SI": {"SW2014": "化工", "SW2021": "基础化工"},
+    }
+    translated = evidence_builder._versioned_sw_stints(raw, names, pd.Timestamp("2021-12-13"))
+    assert sorted(translated[translated.con_code == "A"].l1_name) == ["煤炭", "采掘"]
+    a = translated[translated.con_code == "A"].set_index("l1_name")
+    assert a.loc["采掘", "out_date"] == "20211213"
+    assert a.loc["煤炭", "in_date"] == "20211213"
+    b = translated[translated.con_code == "B"].set_index("l1_name")
+    assert b.loc["化工", "out_date"] == "20211213"
+    assert b.loc["基础化工", "in_date"] == "20211213"
+
+
 def test_coverage_intervals_keep_explicit_completeness():
     sessions = [date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 4), date(2024, 1, 5)]
     coverage = coverage_intervals(

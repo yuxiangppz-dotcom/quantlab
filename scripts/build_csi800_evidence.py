@@ -313,8 +313,8 @@ def _sw_cache(project, codes: list[str], fetch: bool = False) -> tuple[pd.DataFr
         for _, row in classify.iterrows():
             code = str(row["index_code"]).strip()
             names.setdefault(code, {})[taxonomy] = str(row["industry_name"]).strip()
-    # SW2021 launch renamed the shared code set; a stint's label follows the
-    # taxonomy active at its in_date.
+    # SW2021-only stints are retrospectively dated before the version existed.
+    # Clip each taxonomy at its launch boundary, splitting shared codes there.
     boundary = pd.Timestamp("2021-12-13")
     frames = []
     for number, code in enumerate(codes):
@@ -332,18 +332,45 @@ def _sw_cache(project, codes: list[str], fetch: bool = False) -> tuple[pd.DataFr
         row = row[row.index_code.isin(names)]
         if row.empty:
             continue
-        labels = []
-        for _, r in row.iterrows():
-            per_taxonomy = names[r["index_code"]]
-            taxonomy = "SW2014" if pd.to_datetime(str(r["in_date"])) < boundary else "SW2021"
-            labels.append(per_taxonomy.get(taxonomy, list(per_taxonomy.values())[0]))
-        row["l1_name"] = labels
-        frames.append(row)
+        frames.append(_versioned_sw_stints(row, names, boundary))
         if number % 100 == 0:
             print(f"sw cache progress: {number}/{len(codes)}")
     table = pd.concat(frames, ignore_index=True)
     table = table.drop_duplicates(subset=["con_code", "in_date", "out_date", "index_code"])
     return table, names
+
+
+def _versioned_sw_stints(
+    rows: pd.DataFrame, names: dict[str, dict[str, str]], boundary: pd.Timestamp
+) -> pd.DataFrame:
+    """Translate one raw stint only within the valid SW taxonomy era."""
+    translated = []
+    for raw in rows.to_dict("records"):
+        code = raw["index_code"]
+        start = pd.to_datetime(str(raw["in_date"]), format="%Y%m%d", errors="raise")
+        out = raw["out_date"]
+        stop = (
+            None
+            if pd.isna(out) or str(out).strip() == ""
+            else pd.to_datetime(str(out), format="%Y%m%d", errors="raise")
+        )
+        for taxonomy in ("SW2014", "SW2021"):
+            label = names[code].get(taxonomy)
+            if label is None:
+                continue
+            left = max(start, boundary) if taxonomy == "SW2021" else start
+            right = boundary if taxonomy == "SW2014" and (stop is None or stop > boundary) else stop
+            if right is not None and left >= right:
+                continue
+            translated.append(
+                {
+                    **raw,
+                    "in_date": left.strftime("%Y%m%d"),
+                    "out_date": None if right is None else right.strftime("%Y%m%d"),
+                    "l1_name": label,
+                }
+            )
+    return pd.DataFrame(translated, columns=[*rows.columns, "l1_name"])
 
 
 def _snapshot_calendar(project) -> dict[date, bool]:
@@ -512,11 +539,12 @@ def cmd_industries(project, fetch: bool) -> None:
             "issues": issues,
             "limitations": [
                 "Industry labels come from the vendor's per-instrument SW "
-                "membership history (in/out dates); a stint is labeled with the "
-                "taxonomy active at its in_date (SW2014 names before the "
-                "2021-12-13 relabeling, SW2021 names after).",
+                "membership history (in/out dates); rows are clipped to the "
+                "SW2014 era before 2021-12-13 or the SW2021 era after it. "
+                "Retrospective SW2021 in_date is not an old-era publication date.",
                 "Conflicting primary labels remain industry=null and cannot be "
-                "replaced by fallback. Snapshot gaps require explicit closed-day "
+                "replaced by fallback. A single unlabeled stint may use an "
+                "observed dated snapshot. Snapshot gaps require explicit closed-day "
                 "calendar evidence to bridge; absent calendar dates remain unknown.",
                 "Days the SW stint table does not cover (mostly STAR names "
                 "between listing and the vendor's earliest retained stint, and "
