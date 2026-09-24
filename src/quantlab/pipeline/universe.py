@@ -103,11 +103,18 @@ def compile_universe(
         coverage = json.loads(strategy["event_coverage"].read_text())
         if coverage.get("schema") != "quantlab_event_coverage_v1":
             raise ValueError("explicit event coverage certification required")
-        if any(
-            r.get("source_id") == "tushare_stock_st_daily_sealed"
-            for r in coverage["stock_st"]
-        ):
+        if any(r.get("source_id") == "tushare_stock_st_daily_sealed" for r in coverage["stock_st"]):
             raise ValueError("sealed ST partitions and samples do not certify coverage")
+        st_additions = {}
+        for correction in coverage.get("stock_st_additions", []):
+            day = date.fromisoformat(correction["trade_date"])
+            if (
+                not correction["instrument_id"].endswith((".SH", ".SZ"))
+                or not correction.get("source_ids")
+                or not correction.get("reason")
+            ):
+                raise ValueError(f"invalid ST correction:{correction}")
+            st_additions.setdefault(day, set()).add(correction["instrument_id"])
         calendar = storage.load_trading_calendar()
         # Use the stored calendar, including listing-age and feature warmup history.
         all_days = sorted({c.trade_date for c in calendar})
@@ -184,6 +191,10 @@ def compile_universe(
                 if event.get("complete") is not True:
                     raise ValueError(f"ST history unknown:{day}")
                 st = {r.instrument_id for r in storage.load_stock_st_v1_by_date(day)}
+                # Preserve immutable vendor and Canonical evidence.  Explicitly
+                # sourced false negatives are additive; an unproven deletion can
+                # never make an ST name eligible for a new position.
+                st.update(st_additions.get(day, ()))
                 if len(st) >= 1000:
                     raise ValueError("ST response reaches provider limit")
                 members = set(member["members"])

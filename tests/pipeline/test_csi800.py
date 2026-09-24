@@ -184,6 +184,31 @@ def test_membership_is_historical_and_removed_holdings_remain(universe_history, 
     assert compile_fixture(tmp_path, universe_history) == output
 
 
+def test_sourced_st_false_negative_overlay_blocks_new_buy_without_erasing_source(
+    universe_history, tmp_path
+):
+    path = tmp_path / "events.json"
+    coverage = json.loads(path.read_text())
+    coverage["stock_st_additions"] = [
+        {
+            "trade_date": "2024-01-03",
+            "instrument_id": "000003.SZ",
+            "source_ids": ["issuer-announcement", "independent-name-history"],
+            "reason": "vendor response omitted risk-warning name",
+        }
+    ]
+    path.write_text(json.dumps(coverage))
+    output = compile_fixture(tmp_path, universe_history, name="universe_st_overlay")
+    context = pd.read_parquet(output / "context.parquet").set_index(["trade_date", "instrument_id"])
+    assert context.loc[("2024-01-03", "000003.SZ"), "must_exit"]
+    assert not context.loc[("2024-01-03", "000003.SZ"), "can_open"]
+    assert not context.loc[("2024-01-04", "000003.SZ"), "must_exit"]
+    assert not any(
+        row.instrument_id == "000003.SZ"
+        for row in universe_history[0].load_stock_st_v1_by_date(date(2024, 1, 3))
+    )
+
+
 @pytest.mark.parametrize("kind", ["members", "events"])
 def test_legacy_inferred_certificates_are_rejected(universe_history, tmp_path, kind):
     path = tmp_path / f"{kind}.json"
@@ -191,7 +216,8 @@ def test_legacy_inferred_certificates_are_rejected(universe_history, tmp_path, k
     key = "snapshots" if kind == "members" else "stock_st"
     source = (
         "csi_index_weight_monthly_observation"
-        if kind == "members" else "tushare_stock_st_daily_sealed"
+        if kind == "members"
+        else "tushare_stock_st_daily_sealed"
     )
     for row in document[key]:
         row["source_id"] = source
@@ -207,7 +233,8 @@ def test_universe_resume_binds_compiler(universe_history, tmp_path, monkeypatch)
     compile_fixture(tmp_path, universe_history)
     original = universe.sha256
     monkeypatch.setattr(
-        universe, "sha256",
+        universe,
+        "sha256",
         lambda p: "changed" if str(p) == universe.__file__ else original(p),
     )
     with pytest.raises(ValueError, match="evidence changed"):
@@ -636,7 +663,11 @@ def test_backup_records_uninitialized_account_without_forcing_one(tmp_path):
 
 
 def test_conflicting_industry_stints_block_compiler_after_fallback(
-    universe_history, tmp_path, evidence_builder, cached_classifications, monkeypatch,
+    universe_history,
+    tmp_path,
+    evidence_builder,
+    cached_classifications,
+    monkeypatch,
 ):
     from quantlab.data import tushare_provider
 
@@ -645,22 +676,35 @@ def test_conflicting_industry_stints_block_compiler_after_fallback(
 
     monkeypatch.setattr(tushare_provider, "TushareProvider", forbidden)
     cached_classifications(tmp_path)
-    project = {"canonical": tmp_path / "canonical", "raw": tmp_path / "raw",
-               "end": "2024-01-04", "evidence_output": tmp_path / "compiled"}
+    project = {
+        "canonical": tmp_path / "canonical",
+        "raw": tmp_path / "raw",
+        "end": "2024-01-04",
+        "evidence_output": tmp_path / "compiled",
+    }
     obs = project["raw"] / "csi800_weights/2024-01-02"
     obs.mkdir(parents=True)
     pd.DataFrame({"trade_date": ["20240102"], "con_code": ["000001.SZ"]}).to_parquet(
-        obs / "weights.parquet")
+        obs / "weights.parquet"
+    )
     (obs / "observation.json").write_text(json.dumps({"raw_responses": []}))
     raw = tmp_path / "evidence/raw"
     (raw / "sw").mkdir()
     (raw / "bak_basic").mkdir()
-    pd.DataFrame([
-        dict(con_code="000001.SZ", index_code="801780.SI", in_date="20240102", out_date="20240104"),
-        dict(con_code="000001.SZ", index_code="801750.SI", in_date="20240103", out_date=None),
-    ]).to_parquet(raw / "sw/000001.SZ.parquet")
-    pd.DataFrame({"trade_date": ["20240102", "20240103", "20240104"],
-                  "industry": ["fallback"] * 3}).to_parquet(raw / "bak_basic/000001.SZ.parquet")
+    pd.DataFrame(
+        [
+            dict(
+                con_code="000001.SZ",
+                index_code="801780.SI",
+                in_date="20240102",
+                out_date="20240104",
+            ),
+            dict(con_code="000001.SZ", index_code="801750.SI", in_date="20240103", out_date=None),
+        ]
+    ).to_parquet(raw / "sw/000001.SZ.parquet")
+    pd.DataFrame(
+        {"trade_date": ["20240102", "20240103", "20240104"], "industry": ["fallback"] * 3}
+    ).to_parquet(raw / "bak_basic/000001.SZ.parquet")
     evidence_builder.cmd_industries(project, fetch=False)
     artifact = project["evidence_output"] / "industry_intervals.json"
     merged = json.loads(artifact.read_text())["intervals"]
