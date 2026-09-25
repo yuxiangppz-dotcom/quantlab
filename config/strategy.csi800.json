@@ -1,0 +1,32 @@
+{
+  "schema": "quantlab_csi800_strategy_v1",
+  "index": "000906.SH",
+  "min_listing_sessions": 120,
+  "liquidity_window": 20,
+  "min_median_amount_cny": 20000000,
+  "membership_exit": "buffered",
+  "membership": "../data/evidence/csi800_membership.json",
+  "industries": "../data/evidence/industry_intervals.json",
+  "event_coverage": "../data/evidence/event_coverage.json",
+  "study": {
+    "development_end": "2025-12-31",
+    "holdout_start": "2026-01-01",
+    "holdout_end": "2026-08-31",
+    "phase": "development"
+  },
+  "capital_scenarios_cny": [
+    50000,
+    200000,
+    1000000
+  ],
+  "slippage_bps": [
+    5,
+    10,
+    20
+  ],
+  "release": {
+    "min_sessions": 252,
+    "max_drawdown": 0.25,
+    "min_relative_return": 0.0
+  }
+}

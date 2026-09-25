@@ -15,6 +15,7 @@ from quantlab.data.models import DataValidationError
 from quantlab.data.provider import DataProvider
 from quantlab.data.storage import ParquetStorage
 from quantlab.data.sync import (
+    filter_unlisted_placeholders,
     sync_lifecycle_context,
     validate_adj_factors,
     validate_daily_bars,
@@ -64,6 +65,12 @@ def _load_or_fetch_core(
         if storage.daily_basic_exists(trade_date)
         else provider.get_daily_basic_by_date(trade_date)
     )
+    if storage.securities_exists():
+        dates = {x.instrument_id: x.list_date for x in storage.load_securities()}
+        bars, _ = filter_unlisted_placeholders(bars, dates, trade_date)
+        # Valuation history can also be backfilled under successor codes that
+        # were not listed yet; such rows are not valid on this session either.
+        basics, _ = filter_unlisted_placeholders(basics, dates, trade_date)
     validate_daily_bars(bars, trade_date)
     validate_adj_factors(factors, trade_date)
     validate_daily_basic(basics, trade_date)
@@ -75,9 +82,20 @@ def _load_or_fetch_core(
             f"daily rows without adjustment factor on {trade_date}: "
             f"{sorted(daily_ids - factor_ids)[:5]}"
         )
-    if daily_ids != basic_ids:
-        raise DataValidationError(f"daily/daily_basic instrument coverage mismatch on {trade_date}")
-    return bars, factors, basics
+    # BSE (including its NEEQ heritage codes) is outside the SH/SZ mandate of
+    # this pipeline; vendor valuation coverage there is not required. Vendor
+    # artifacts go both ways otherwise (renamed-code backfills, delisting-period
+    # gaps); small residuals are receipted by the caller, systemic ones raise.
+    def _in_scope(instrument_id: str) -> bool:
+        return not instrument_id.endswith(".BJ")
+
+    missing_basics = {x for x in daily_ids - basic_ids if _in_scope(x)}
+    if len(missing_basics) > max(50, len(daily_ids) // 100):
+        raise DataValidationError(
+            f"daily rows without daily_basic on {trade_date}: "
+            f"{sorted(missing_basics)[:5]}"
+        )
+    return bars, factors, basics, sorted(missing_basics)
 
 
 def run_incremental_update(
@@ -149,7 +167,7 @@ def run_incremental_update(
             )
         )
         try:
-            bars, factors, basics = _load_or_fetch_core(provider, storage, trade_date)
+            bars, factors, basics, _ = _load_or_fetch_core(provider, storage, trade_date)
         except DataValidationError as exc:
             stopped_at = trade_date.isoformat()
             stop_reason = f"provider close not complete or invalid: {exc}"

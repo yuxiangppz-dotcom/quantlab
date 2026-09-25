@@ -3,7 +3,7 @@ from datetime import date
 import pytest
 
 from quantlab.data.models import DataValidationError, Security, SecurityCodeChange
-from quantlab.data.security_history import load_security_code_changes
+from quantlab.data.security_history import code_validity_interval, load_security_code_changes
 from quantlab.research.dataset import _build_delist_dates, _build_list_dates
 
 
@@ -57,6 +57,13 @@ def _change() -> SecurityCodeChange:
         old_name="深赤湾Ａ",
         original_list_date=date(1993, 5, 5),
     )
+
+
+def test_code_validity_interval_clips_predecessor_and_successor():
+    change = _change()
+    assert code_validity_interval(change.old_instrument_id, [change])[1] == date(2018, 12, 25)
+    assert code_validity_interval(change.new_instrument_id, [change])[0] == date(2018, 12, 26)
+    assert code_validity_interval("600519.SH", [change]) == (date.min, date.max)
 
 
 def test_old_code_valid_before_effective() -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -61,3 +61,32 @@ def load_security_code_changes(path: str | Path) -> list[SecurityCodeChange]:
             )
         )
     return changes
+
+
+def code_at_observation_date(
+    instrument_id: str, observed: date, changes: list[SecurityCodeChange]
+) -> str:
+    """Undo a vendor's retrospective successor code before its effective date."""
+    for change in changes:
+        if instrument_id == change.new_instrument_id and observed < change.effective_date:
+            if observed < change.original_list_date:
+                raise DataValidationError(
+                    f"code predates original listing:{instrument_id}:{observed}"
+                )
+            return change.old_instrument_id
+    return instrument_id
+
+
+def code_validity_interval(
+    instrument_id: str, changes: list[SecurityCodeChange]
+) -> tuple[date, date]:
+    """Dates on which a historical code, rather than its issuer, is valid."""
+    start, end = date.min, date.max
+    for change in changes:
+        if instrument_id == change.new_instrument_id:
+            start = max(start, change.effective_date)
+        if instrument_id == change.old_instrument_id:
+            end = min(end, change.effective_date - timedelta(days=1))
+    if start > end:
+        raise DataValidationError(f"inconsistent code validity:{instrument_id}")
+    return start, end
