@@ -33,6 +33,7 @@ def reconcile(
         "603555.SH": ("conflicting_duplicate", 2, "20210610"),
         "002122.SZ": ("conflicting_duplicate", 2, "20221222"),
         "002157.SZ": ("conflicting_duplicate", 2, "20231208"),
+        "000155.SZ": ("missing_ex_date", 2, None),
     }
     for fact in facts["facts"]:
         if fact["status"] != "issuer_verified_no_ordinary_holder_entitlement":
@@ -44,6 +45,8 @@ def reconcile(
             raise ValueError(f"unreviewed nonholder conversion:{code}:{ex_date}")
         if fact["ordinary_holder_share_ratio"] != "0":
             raise ValueError(f"nonzero holder entitlement:{code}:{ex_date}")
+        if fact.get("publication_date") and fact["publication_date"] >= record_date:
+            raise ValueError(f"issuer source not public by record date:{code}:{ex_date}")
         expected_reason, expected_rows, listing_date = reviewed[code]
         matching_issues = [
             issue
@@ -56,7 +59,12 @@ def reconcile(
         if len(matching_issues) != 1:
             raise ValueError(f"expected one reviewed corporate issue:{code}:{ex_date}")
         if any(
-            event["instrument_id"] == code and event["ex_date"] == ex_date
+            event["instrument_id"] == code
+            and (
+                event["ex_date"] == ex_date
+                if ex_date is not None
+                else event["record_date"] == record_date
+            )
             for event in events
         ):
             raise ValueError(f"event already exists:{code}:{ex_date}")
@@ -67,11 +75,18 @@ def reconcile(
         if digest(raw_path) != fact["vendor_rows_sha256"]:
             raise ValueError(f"vendor rows changed:{code}:{ex_date}")
         raw = pd.read_parquet(raw_path)
-        matching_rows = raw[
-            raw["div_proc"].eq("实施")
-            & raw["record_date"].eq(record_date.replace("-", ""))
-            & raw["ex_date"].eq(ex_date.replace("-", ""))
-        ]
+        raw_record = raw["div_proc"].eq("实施") & raw["record_date"].eq(
+            record_date.replace("-", "")
+        )
+        matching_rows = raw[raw_record]
+        if ex_date is not None:
+            matching_rows = matching_rows[
+                matching_rows["ex_date"].eq(ex_date.replace("-", ""))
+            ]
+        elif code == "000155.SZ":
+            ex_values = [None if pd.isna(value) else value for value in matching_rows["ex_date"]]
+            if sorted(ex_values, key=str) != sorted(fact["vendor_ex_date_values"], key=str):
+                raise ValueError(f"vendor ex-date variants changed:{code}:{record_date}")
         if len(matching_rows) != expected_rows:
             raise ValueError(f"unexpected vendor row count:{code}:{ex_date}")
         for row in matching_rows.to_dict("records"):
@@ -96,7 +111,7 @@ def reconcile(
             }
         )
     if {item["instrument_id"] for item in applied} != set(reviewed):
-        raise ValueError("expected exactly four reviewed non-entitlements")
+        raise ValueError("expected exactly five reviewed non-entitlements")
     result = {**document, "coverage": {**document["coverage"], "unresolved": unresolved}}
     result["coverage"]["nonholder_conversion_reconciliation"] = applied
     return result, applied

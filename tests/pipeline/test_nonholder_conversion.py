@@ -118,10 +118,35 @@ def test_issuer_proven_nonholder_conversion_preserves_other_gaps(tmp_path):
                 "reason": "conflicting_duplicate",
             }
         )
+    cn_source = tmp_path / "000155-notice.pdf"
+    cn_source.write_bytes(b"issuer says old holdings unchanged and no ex-rights")
+    cn_raw = tmp_path / "000155.SZ.parquet"
+    pd.DataFrame(
+        [
+            {"div_proc": "实施", "record_date": "20161213", "ex_date": ex,
+             "stk_div": 1.7021276, "div_listdate": None, "cash_div": cash,
+             "cash_div_tax": cash}
+            for ex, cash in ((None, 0.0), ("20161214", None))
+        ]
+    ).to_parquet(cn_raw)
+    cn_fact = {
+        "instrument_id": "000155.SZ", "record_date": "2016-12-13",
+        "ex_date": None, "publication_date": "2016-12-10",
+        "vendor_stk_div": "1.7021276", "ordinary_holder_share_ratio": "0",
+        "vendor_ex_date_values": [None, "20161214"],
+        "source_file": cn_source.name,
+        "source_sha256": hashlib.sha256(cn_source.read_bytes()).hexdigest(),
+        "vendor_rows_sha256": hashlib.sha256(cn_raw.read_bytes()).hexdigest(),
+        "status": "issuer_verified_no_ordinary_holder_entitlement",
+    }
+    cn_issue = {
+        "instrument_id": "000155.SZ", "record_date": "20161213",
+        "ex_date": None, "reason": "missing_ex_date",
+    }
     other = {"instrument_id": "300116.SZ", "reason": "missing_div_listdate"}
-    all_issues = [issue, bird_issue, *more_issues, other]
+    all_issues = [issue, bird_issue, *more_issues, cn_issue, other]
     document = {"events": [], "coverage": {"unresolved": all_issues}}
-    all_facts = [fact, bird_fact, *more_facts]
+    all_facts = [fact, bird_fact, *more_facts, cn_fact]
 
     updated, applied = reconcile(document, {"facts": all_facts}, tmp_path, tmp_path)
     assert updated["events"] == []
@@ -129,12 +154,18 @@ def test_issuer_proven_nonholder_conversion_preserves_other_gaps(tmp_path):
     assert {item["classification"] for item in applied} == {"no_ordinary_holder_entitlement"}
     assert document["coverage"]["unresolved"] == all_issues
     assert {item["instrument_id"] for item in applied} == {
-        "002309.SZ", "603555.SH", "002122.SZ", "002157.SZ"
+        "002309.SZ", "603555.SH", "002122.SZ", "002157.SZ", "000155.SZ"
     }
 
     bad_fact = {**fact, "ordinary_holder_share_ratio": "0.05"}
     with pytest.raises(ValueError, match="nonzero holder entitlement"):
-        reconcile(document, {"facts": [bad_fact, bird_fact, *more_facts]}, tmp_path, tmp_path)
+        reconcile(document, {"facts": [bad_fact, bird_fact, *more_facts, cn_fact]},
+                  tmp_path, tmp_path)
     source.write_bytes(b"changed source")
     with pytest.raises(ValueError, match="issuer source changed"):
         reconcile(document, {"facts": all_facts}, tmp_path, tmp_path)
+    source.write_bytes(b"issuer notice fixture")
+    altered = {**cn_fact, "vendor_ex_date_values": [None, "20161215"]}
+    with pytest.raises(ValueError, match="vendor ex-date variants changed"):
+        reconcile(document, {"facts": [fact, bird_fact, *more_facts, altered]},
+                  tmp_path, tmp_path)
