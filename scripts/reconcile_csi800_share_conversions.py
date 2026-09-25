@@ -51,8 +51,9 @@ def reconcile(
             and row.get("ex_date") == terms["ex_date"]
             and row["reason"] == "conflicting_duplicate"
         ]
-        if len(matches) != 1:
-            raise ValueError(f"expected one conflicting group for issuer share fact:{key}")
+        expected_issues = 2 if code == "600733.SH" else 1
+        if len(matches) != expected_issues or any(row != matches[0] for row in matches):
+            raise ValueError(f"unexpected conflicting groups for issuer share fact:{key}")
         if any(e["instrument_id"] == code and e["ex_date"] == terms["ex_date"] for e in events):
             raise ValueError(f"ex-date already has an executable event:{key}")
         source_id = fact["source_id"].split(":", 1)[-1]
@@ -96,7 +97,8 @@ def reconcile(
             "share_denominator": fraction.denominator,
         }
         events.append(event)
-        unresolved.remove(matches[0])
+        for issue in matches:
+            unresolved.remove(issue)
         applied.append({
             "fact_id": fact["fact_id"],
             "event_id": event["event_id"],
@@ -105,8 +107,9 @@ def reconcile(
             "vendor_rows_sha256": digest(raw_path),
             "vendor_row_count": len(rows),
         })
-    if len(applied) != 4:
-        raise ValueError(f"expected four issuer-verified share events; got {len(applied)}")
+    expected_codes = {"000528.SZ", "000939.SZ", "688516.SH", "600733.SH"}
+    if len(applied) != 5 or {item["event_id"].split(":")[1] for item in applied} != expected_codes:
+        raise ValueError(f"expected five issuer-verified share events; got {len(applied)}")
     result = {**document, "events": sorted(events, key=lambda e: (e["ex_date"], e["event_id"]))}
     result["coverage"] = {
         **document["coverage"],
