@@ -28,19 +28,23 @@ def reconcile(
     unresolved = list(document["coverage"]["unresolved"])
     events = document["events"]
     applied = []
+    reviewed = {
+        "002309.SZ": ("missing_div_listdate", 1, None),
+        "603555.SH": ("conflicting_duplicate", 2, "20210610"),
+        "002122.SZ": ("conflicting_duplicate", 2, "20221222"),
+        "002157.SZ": ("conflicting_duplicate", 2, "20231208"),
+    }
     for fact in facts["facts"]:
         if fact["status"] != "issuer_verified_no_ordinary_holder_entitlement":
             continue
         code = fact["instrument_id"]
         ex_date = fact["ex_date"]
         record_date = fact["record_date"]
-        if code not in {"002309.SZ", "603555.SH"}:
+        if code not in reviewed:
             raise ValueError(f"unreviewed nonholder conversion:{code}:{ex_date}")
         if fact["ordinary_holder_share_ratio"] != "0":
             raise ValueError(f"nonzero holder entitlement:{code}:{ex_date}")
-        expected_reason = (
-            "missing_div_listdate" if code == "002309.SZ" else "conflicting_duplicate"
-        )
+        expected_reason, expected_rows, listing_date = reviewed[code]
         matching_issues = [
             issue
             for issue in unresolved
@@ -68,15 +72,14 @@ def reconcile(
             & raw["record_date"].eq(record_date.replace("-", ""))
             & raw["ex_date"].eq(ex_date.replace("-", ""))
         ]
-        expected_rows = 1 if code == "002309.SZ" else 2
         if len(matching_rows) != expected_rows:
             raise ValueError(f"unexpected vendor row count:{code}:{ex_date}")
         for row in matching_rows.to_dict("records"):
             if str(row["stk_div"]) != fact["vendor_stk_div"]:
                 raise ValueError(f"vendor share ratio changed:{code}:{ex_date}")
-            if code == "002309.SZ" and pd.notna(row["div_listdate"]):
+            if listing_date is None and pd.notna(row["div_listdate"]):
                 raise ValueError(f"unexpected listing date:{code}:{ex_date}")
-            if code == "603555.SH" and row["div_listdate"] != "20210610":
+            if listing_date is not None and row["div_listdate"] != listing_date:
                 raise ValueError(f"vendor listing date changed:{code}:{ex_date}")
             for cash_column in ("cash_div", "cash_div_tax"):
                 value = row[cash_column]
@@ -92,8 +95,8 @@ def reconcile(
                 "vendor_rows_sha256": digest(raw_path),
             }
         )
-    if {item["instrument_id"] for item in applied} != {"002309.SZ", "603555.SH"}:
-        raise ValueError("expected exactly two reviewed non-entitlements")
+    if {item["instrument_id"] for item in applied} != set(reviewed):
+        raise ValueError("expected exactly four reviewed non-entitlements")
     result = {**document, "coverage": {**document["coverage"], "unresolved": unresolved}}
     result["coverage"]["nonholder_conversion_reconciliation"] = applied
     return result, applied
