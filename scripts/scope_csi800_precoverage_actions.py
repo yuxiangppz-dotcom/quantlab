@@ -40,14 +40,29 @@ def scope(document: dict, facts: dict, raw_root: Path, source_root: Path) -> tup
         if digest(raw_path) != fact["vendor_rows_sha256"]:
             raise ValueError(f"vendor observations changed:{code}")
         rows = pd.read_parquet(raw_path)
-        rows = rows[rows["div_proc"].eq("实施") & rows["record_date"].eq(fact["record_date"])]
+        implemented = rows["div_proc"].eq("实施")
+        if fact["record_date"] is None:
+            if code != "600556.SH" or fact["end_date"] != "20081218":
+                raise ValueError(f"unexpected missing historical record date:{code}")
+            rows = rows[implemented & rows["record_date"].isna()
+                    & rows["end_date"].eq(fact["end_date"])]
+        else:
+            rows = rows[implemented & rows["record_date"].eq(fact["record_date"])]
         if len(rows) != 1 or pd.notna(rows.iloc[0]["ex_date"]):
             raise ValueError(f"historical vendor group changed:{code}")
         if rows.iloc[0]["div_listdate"] != fact["completed_by"].replace("-", ""):
             raise ValueError(f"historical delivery date changed:{code}")
-        if any(date.fromisoformat(fact[k]) >= cutoff for k in ("completed_by", "record_date_iso")):
+        dates = [fact["completed_by"]]
+        if fact["record_date_iso"] is not None:
+            dates.append(fact["record_date_iso"])
+        if any(date.fromisoformat(value) >= cutoff for value in dates):
             raise ValueError(f"historical event overlaps coverage:{code}")
-        if fact["record_date_iso"].replace("-", "") != fact["record_date"]:
+        if (fact["record_date_iso"] is None) != (fact["record_date"] is None):
+            raise ValueError(f"historical record-date mismatch:{code}")
+        if (
+            fact["record_date_iso"] is not None
+            and fact["record_date_iso"].replace("-", "") != fact["record_date"]
+        ):
             raise ValueError(f"historical record-date mismatch:{code}")
         matching = [
             issue for issue in unresolved
@@ -69,8 +84,8 @@ def scope(document: dict, facts: dict, raw_root: Path, source_root: Path) -> tup
             "issuer_source_sha256": fact["source_sha256"],
             "vendor_rows_sha256": fact["vendor_rows_sha256"],
         })
-    if seen != {"000403.SZ", "000703.SZ", "600176.SH", "600537.SH"}:
-        raise ValueError("expected exactly four issuer-verified precoverage actions")
+    if seen != {"000403.SZ", "000703.SZ", "600176.SH", "600537.SH", "600556.SH"}:
+        raise ValueError("expected exactly five issuer-verified precoverage actions")
     result = {
         **document,
         "coverage": {

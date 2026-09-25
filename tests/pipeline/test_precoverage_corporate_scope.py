@@ -43,6 +43,25 @@ def test_precoverage_scoping_keeps_issue_and_never_scopes_current_action(tmp_pat
             "instrument_id": code, "record_date": record,
             "ex_date": None, "reason": "missing_ex_date",
         })
+    old_source = tmp_path / "600556.SH.pdf"
+    old_source.write_bytes(b"issuer says old shareholders receive no new shares")
+    old_raw = tmp_path / "600556.SH.parquet"
+    pd.DataFrame([{
+        "div_proc": "实施", "end_date": "20081218", "record_date": None,
+        "ex_date": None, "div_listdate": "20130208",
+    }]).to_parquet(old_raw)
+    facts.append({
+        "instrument_id": "600556.SH", "record_date": None,
+        "record_date_iso": None, "end_date": "20081218",
+        "completed_by": "2013-02-08", "source_file": old_source.name,
+        "source_sha256": hashlib.sha256(old_source.read_bytes()).hexdigest(),
+        "vendor_rows_sha256": hashlib.sha256(old_raw.read_bytes()).hexdigest(),
+        "status": "issuer_verified_completed_precoverage",
+    })
+    issues.append({
+        "instrument_id": "600556.SH", "record_date": None,
+        "ex_date": None, "reason": "missing_ex_date",
+    })
     current = {
         "instrument_id": "002192.SZ", "record_date": "20180424",
         "ex_date": None, "reason": "missing_ex_date",
