@@ -1,0 +1,66 @@
+"""A restructuring share increase need not be a shareholder distribution."""
+
+import hashlib
+import importlib.util
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+_SCRIPT = Path(__file__).parents[2] / "scripts/reconcile_csi800_nonholder_conversions.py"
+_SPEC = importlib.util.spec_from_file_location("nonholder_reconciliation", _SCRIPT)
+assert _SPEC is not None and _SPEC.loader is not None
+_MODULE = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_MODULE)
+reconcile = _MODULE.reconcile
+
+
+def test_issuer_proven_nonholder_conversion_preserves_other_gaps(tmp_path):
+    source = tmp_path / "issuer.pdf"
+    source.write_bytes(b"issuer notice fixture")
+    raw = tmp_path / "002309.SZ.parquet"
+    pd.DataFrame(
+        [
+            {
+                "div_proc": "实施",
+                "record_date": "20241223",
+                "ex_date": "20241224",
+                "stk_div": 2.45,
+                "div_listdate": None,
+                "cash_div": None,
+                "cash_div_tax": None,
+            }
+        ]
+    ).to_parquet(raw)
+    fact = {
+        "instrument_id": "002309.SZ",
+        "record_date": "2024-12-23",
+        "ex_date": "2024-12-24",
+        "vendor_stk_div": "2.45",
+        "ordinary_holder_share_ratio": "0",
+        "source_file": source.name,
+        "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+        "vendor_rows_sha256": hashlib.sha256(raw.read_bytes()).hexdigest(),
+        "status": "issuer_verified_no_ordinary_holder_entitlement",
+    }
+    issue = {
+        "instrument_id": "002309.SZ",
+        "record_date": "20241223",
+        "ex_date": "2024-12-24",
+        "reason": "missing_div_listdate",
+    }
+    other = {"instrument_id": "300116.SZ", "reason": "missing_div_listdate"}
+    document = {"events": [], "coverage": {"unresolved": [issue, other]}}
+
+    updated, applied = reconcile(document, {"facts": [fact]}, tmp_path, tmp_path)
+    assert updated["events"] == []
+    assert updated["coverage"]["unresolved"] == [other]
+    assert applied[0]["classification"] == "no_ordinary_holder_entitlement"
+    assert document["coverage"]["unresolved"] == [issue, other]
+
+    bad_fact = {**fact, "ordinary_holder_share_ratio": "0.05"}
+    with pytest.raises(ValueError, match="nonzero holder entitlement"):
+        reconcile(document, {"facts": [bad_fact]}, tmp_path, tmp_path)
+    source.write_bytes(b"changed source")
+    with pytest.raises(ValueError, match="issuer source changed"):
+        reconcile(document, {"facts": [fact]}, tmp_path, tmp_path)
