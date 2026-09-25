@@ -157,6 +157,9 @@ def read_corporate_actions(path, start, end):
 
     payload = json.loads(Path(path).read_text())
     coverage = payload["coverage"]
+    minimum = coverage.get("minimum_replay_date")
+    if minimum is not None and start < date.fromisoformat(minimum):
+        raise ValueError("corporate evidence scoped to a later flat-account inception")
     if (
         not isinstance(coverage.get("source_id"), str)
         or not coverage["source_id"].strip()

@@ -21,7 +21,10 @@ def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def scope(document: dict, facts: dict, raw_root: Path, source_root: Path) -> tuple[dict, list]:
+def scope(
+    document: dict, facts: dict, raw_root: Path, source_root: Path,
+    project_start: date | None = None,
+) -> tuple[dict, list]:
     coverage = document["coverage"]
     cutoff = date.fromisoformat(coverage["start"])
     if "unresolved" not in coverage or "out_of_scope_historical_issues" in coverage:
@@ -86,13 +89,58 @@ def scope(document: dict, facts: dict, raw_root: Path, source_root: Path) -> tup
         })
     if seen != {"000403.SZ", "000703.SZ", "600176.SH", "600537.SH", "600556.SH"}:
         raise ValueError("expected exactly five issuer-verified precoverage actions")
+    flat_facts = facts.get("flat_inception_facts", [])
+    if flat_facts and (project_start is None or project_start <= cutoff):
+        raise ValueError("flat-inception scope requires a later project start")
+    for fact in flat_facts:
+        code = fact["instrument_id"]
+        record = fact["record_date"]
+        key = (code, record)
+        if fact["status"] != "issuer_verified_account_flat_on_record_date":
+            raise ValueError(f"unreviewed flat-inception fact:{key}")
+        if date.fromisoformat(record) >= project_start:
+            raise ValueError(f"record date is not before flat inception:{key}")
+        source = source_root / fact["source_file"]
+        raw_path = raw_root / f"{code}.parquet"
+        if (
+            digest(source) != fact["source_sha256"]
+            or digest(raw_path) != fact["vendor_rows_sha256"]
+        ):
+            raise ValueError(f"historical source changed:{key}")
+        rows = pd.read_parquet(raw_path)
+        rows = rows[rows["div_proc"].eq("实施") & rows["record_date"].eq(record.replace("-", ""))]
+        if len(rows) != fact["vendor_row_count"]:
+            raise ValueError(f"vendor record group changed:{key}")
+        matches = [
+            issue for issue in unresolved
+            if issue["instrument_id"] == code
+            and issue["record_date"] in {record, record.replace("-", "")}
+            and issue["reason"] == fact["reason"]
+        ]
+        if len(matches) != fact["issue_count"]:
+            raise ValueError(f"historical issue group changed:{key}")
+        if any(event["instrument_id"] == code and event["record_date"] == record
+               for event in document["events"]):
+            raise ValueError(f"historical group already executable:{key}")
+        for issue in matches:
+            unresolved.remove(issue)
+            scoped.append({
+                "issue": issue,
+                "classification": "no_account_holding_on_preinception_record_date",
+                "project_start": project_start.isoformat(),
+                "issuer_source_sha256": fact["source_sha256"],
+                "vendor_rows_sha256": fact["vendor_rows_sha256"],
+            })
+    result_coverage = {
+        **coverage,
+        "unresolved": unresolved,
+        "out_of_scope_historical_issues": scoped,
+    }
+    if flat_facts:
+        result_coverage["minimum_replay_date"] = project_start.isoformat()
     result = {
         **document,
-        "coverage": {
-            **coverage,
-            "unresolved": unresolved,
-            "out_of_scope_historical_issues": scoped,
-        },
+        "coverage": result_coverage,
     }
     return result, scoped
 
@@ -104,12 +152,13 @@ def main() -> None:
     parser.add_argument("--raw-root", type=Path, required=True)
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--project-start", type=date.fromisoformat)
     args = parser.parse_args()
     if args.output_dir.exists():
         raise FileExistsError(args.output_dir)
     result, scoped = scope(
         json.loads(args.corporate.read_text()), json.loads(args.facts.read_text()),
-        args.raw_root, args.source_root,
+        args.raw_root, args.source_root, args.project_start,
     )
     args.output_dir.mkdir(parents=True)
     output = args.output_dir / "corporate_actions.json"

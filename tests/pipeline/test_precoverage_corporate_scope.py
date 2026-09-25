@@ -2,6 +2,8 @@
 
 import hashlib
 import importlib.util
+import json
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -66,14 +68,30 @@ def test_precoverage_scoping_keeps_issue_and_never_scopes_current_action(tmp_pat
         "instrument_id": "002192.SZ", "record_date": "20180424",
         "ex_date": None, "reason": "missing_ex_date",
     }
+    prior = {
+        "instrument_id": "002131.SZ", "record_date": "20171213",
+        "ex_date": None, "reason": "missing_ex_date",
+    }
+    prior_source = tmp_path / "002131.SZ.pdf"
+    prior_source.write_bytes(b"issuer says recipients are December record holders")
+    prior_raw = tmp_path / "002131.SZ.parquet"
+    pd.DataFrame([{"div_proc": "实施", "record_date": "20171213"}]).to_parquet(prior_raw)
+    prior_fact = {
+        "instrument_id": "002131.SZ", "record_date": "2017-12-13",
+        "source_file": prior_source.name,
+        "source_sha256": hashlib.sha256(prior_source.read_bytes()).hexdigest(),
+        "vendor_rows_sha256": hashlib.sha256(prior_raw.read_bytes()).hexdigest(),
+        "status": "issuer_verified_account_flat_on_record_date",
+        "vendor_row_count": 1, "issue_count": 1, "reason": "missing_ex_date",
+    }
     doc = {
         "events": [{"instrument_id": "000403.SZ", "record_date": "2020-01-01"}],
-        "coverage": {"start": "2017-01-01", "unresolved": [*issues, current]},
+        "coverage": {"start": "2017-01-01", "unresolved": [*issues, prior, current]},
     }
     result, scoped = _MODULE.scope(doc, {"facts": facts}, tmp_path, tmp_path)
-    assert result["coverage"]["unresolved"] == [current]
+    assert result["coverage"]["unresolved"] == [prior, current]
     assert [x["issue"] for x in scoped] == issues
-    assert doc["coverage"]["unresolved"] == [*issues, current]
+    assert doc["coverage"]["unresolved"] == [*issues, prior, current]
     assert result["events"] == doc["events"]
 
     late = [*facts]
@@ -86,3 +104,24 @@ def test_precoverage_scoping_keeps_issue_and_never_scopes_current_action(tmp_pat
         _MODULE.scope(doc, {"facts": tampered}, tmp_path, tmp_path)
     with pytest.raises(ValueError, match="already scoped"):
         _MODULE.scope(result, {"facts": facts}, tmp_path, tmp_path)
+
+    scoped_result, scoped_issues = _MODULE.scope(
+        doc, {"facts": facts, "flat_inception_facts": [prior_fact]},
+        tmp_path, tmp_path, date(2018, 1, 1),
+    )
+    assert scoped_result["coverage"]["unresolved"] == [current]
+    assert len(scoped_issues) == len(issues) + 1
+    assert scoped_result["coverage"]["minimum_replay_date"] == "2018-01-01"
+    from quantlab.research.ml.io import read_corporate_actions
+
+    artifact = tmp_path / "corporate.json"
+    scoped_result["coverage"].update({"source_id": "fixture", "end": "2019-01-01"})
+    artifact.write_text(json.dumps({**scoped_result, "events": []}))
+    with pytest.raises(ValueError, match="later flat-account inception"):
+        read_corporate_actions(artifact, date(2017, 12, 13), date(2017, 12, 13))
+    assert read_corporate_actions(artifact, date(2018, 1, 2), date(2018, 1, 2)) == ()
+    with pytest.raises(ValueError, match="record date is not before flat inception"):
+        _MODULE.scope(
+            doc, {"facts": facts, "flat_inception_facts": [prior_fact]},
+            tmp_path, tmp_path, date(2017, 12, 13),
+        )
