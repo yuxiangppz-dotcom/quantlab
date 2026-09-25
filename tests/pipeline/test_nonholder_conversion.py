@@ -49,18 +49,48 @@ def test_issuer_proven_nonholder_conversion_preserves_other_gaps(tmp_path):
         "ex_date": "2024-12-24",
         "reason": "missing_div_listdate",
     }
+    advisor = tmp_path / "advisor.pdf"
+    advisor.write_bytes(b"financial advisor fixture")
+    bird_raw = tmp_path / "603555.SH.parquet"
+    pd.DataFrame(
+        [
+            {
+                "div_proc": "实施", "record_date": "20210608", "ex_date": "20210609",
+                "stk_div": 1.5, "div_listdate": "20210610", "cash_div": None,
+                "cash_div_tax": None,
+            },
+            {
+                "div_proc": "实施", "record_date": "20210608", "ex_date": "20210609",
+                "stk_div": 1.5, "div_listdate": "20210610", "cash_div": 0.0,
+                "cash_div_tax": 0.0,
+            },
+        ]
+    ).to_parquet(bird_raw)
+    bird_fact = {
+        "instrument_id": "603555.SH",
+        "record_date": "2021-06-08", "ex_date": "2021-06-09",
+        "vendor_stk_div": "1.5", "ordinary_holder_share_ratio": "0",
+        "source_file": advisor.name,
+        "source_sha256": hashlib.sha256(advisor.read_bytes()).hexdigest(),
+        "vendor_rows_sha256": hashlib.sha256(bird_raw.read_bytes()).hexdigest(),
+        "status": "issuer_verified_no_ordinary_holder_entitlement",
+    }
+    bird_issue = {
+        "instrument_id": "603555.SH", "record_date": "20210608",
+        "ex_date": "2021-06-09", "reason": "conflicting_duplicate",
+    }
     other = {"instrument_id": "300116.SZ", "reason": "missing_div_listdate"}
-    document = {"events": [], "coverage": {"unresolved": [issue, other]}}
+    document = {"events": [], "coverage": {"unresolved": [issue, bird_issue, other]}}
 
-    updated, applied = reconcile(document, {"facts": [fact]}, tmp_path, tmp_path)
+    updated, applied = reconcile(document, {"facts": [fact, bird_fact]}, tmp_path, tmp_path)
     assert updated["events"] == []
     assert updated["coverage"]["unresolved"] == [other]
-    assert applied[0]["classification"] == "no_ordinary_holder_entitlement"
-    assert document["coverage"]["unresolved"] == [issue, other]
+    assert {item["classification"] for item in applied} == {"no_ordinary_holder_entitlement"}
+    assert document["coverage"]["unresolved"] == [issue, bird_issue, other]
 
     bad_fact = {**fact, "ordinary_holder_share_ratio": "0.05"}
     with pytest.raises(ValueError, match="nonzero holder entitlement"):
-        reconcile(document, {"facts": [bad_fact]}, tmp_path, tmp_path)
+        reconcile(document, {"facts": [bad_fact, bird_fact]}, tmp_path, tmp_path)
     source.write_bytes(b"changed source")
     with pytest.raises(ValueError, match="issuer source changed"):
-        reconcile(document, {"facts": [fact]}, tmp_path, tmp_path)
+        reconcile(document, {"facts": [fact, bird_fact]}, tmp_path, tmp_path)
