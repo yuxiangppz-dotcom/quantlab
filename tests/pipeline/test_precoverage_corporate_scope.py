@@ -94,6 +94,38 @@ def test_precoverage_scoping_keeps_issue_and_never_scopes_current_action(tmp_pat
     assert doc["coverage"]["unresolved"] == [*issues, prior, current]
     assert result["events"] == doc["events"]
 
+    cash_source = tmp_path / "600699.SH.pdf"
+    cash_source.write_bytes(b"issuer confirms precoverage cash paid")
+    cash_raw = tmp_path / "600699.SH.parquet"
+    pd.DataFrame([{
+        "div_proc": "实施", "end_date": "19931231", "imp_ann_date": "19940401",
+        "record_date": None, "ex_date": None, "cash_div_tax": 0.12,
+    }]).to_parquet(cash_raw)
+    cash_fact = {
+        "instrument_id": "600699.SH", "end_date": "19931231",
+        "imp_ann_date": "19940401", "cash_div_tax": 0.12,
+        "paid_by": "1994-06-30", "source_file": cash_source.name,
+        "source_sha256": hashlib.sha256(cash_source.read_bytes()).hexdigest(),
+        "vendor_rows_sha256": hashlib.sha256(cash_raw.read_bytes()).hexdigest(),
+        "status": "issuer_verified_paid_precoverage_cash",
+    }
+    cash_issue = {"instrument_id": "600699.SH", "record_date": None,
+                  "ex_date": None, "reason": "missing_ex_date"}
+    cash_doc = {**doc, "coverage": {**doc["coverage"],
+                "unresolved": [*doc["coverage"]["unresolved"], cash_issue]}}
+    cash_result, cash_scoped = _MODULE.scope(
+        cash_doc, {"facts": facts, "historical_cash_facts": [cash_fact]},
+        tmp_path, tmp_path,
+    )
+    assert cash_result["coverage"]["unresolved"] == [prior, current]
+    assert cash_scoped[-1]["classification"] == (
+        "issuer_verified_cash_paid_before_corporate_coverage_start"
+    )
+    with pytest.raises(ValueError, match="historical cash overlaps coverage"):
+        _MODULE.scope(cash_doc, {"facts": facts, "historical_cash_facts": [
+            {**cash_fact, "paid_by": "2018-01-01"}
+        ]}, tmp_path, tmp_path)
+
     late = [*facts]
     late[0] = {**late[0], "completed_by": "2017-02-08"}
     with pytest.raises(ValueError, match="delivery date changed"):

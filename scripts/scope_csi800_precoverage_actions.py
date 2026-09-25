@@ -87,6 +87,50 @@ def scope(
             "issuer_source_sha256": fact["source_sha256"],
             "vendor_rows_sha256": fact["vendor_rows_sha256"],
         })
+    for fact in facts.get("historical_cash_facts", []):
+        code = fact["instrument_id"]
+        if fact["status"] != "issuer_verified_paid_precoverage_cash":
+            raise ValueError(f"unreviewed historical cash fact:{code}")
+        if digest(source_root / fact["source_file"]) != fact["source_sha256"]:
+            raise ValueError(f"issuer cash source changed:{code}")
+        raw_path = raw_root / f"{code}.parquet"
+        if digest(raw_path) != fact["vendor_rows_sha256"]:
+            raise ValueError(f"vendor cash observations changed:{code}")
+        rows = pd.read_parquet(raw_path)
+        rows = rows[rows["div_proc"].eq("实施") & rows["end_date"].eq(fact["end_date"])]
+        if (
+            len(rows) != 1
+            or rows.iloc[0]["imp_ann_date"] != fact["imp_ann_date"]
+            or pd.notna(rows.iloc[0]["record_date"])
+            or pd.notna(rows.iloc[0]["ex_date"])
+            or float(rows.iloc[0]["cash_div_tax"]) != fact["cash_div_tax"]
+        ):
+            raise ValueError(f"historical cash vendor group changed:{code}")
+        if (
+            date.fromisoformat(fact["paid_by"]) >= cutoff
+            or date.fromisoformat(fact["imp_ann_date"]) >= cutoff
+            or date.fromisoformat(fact["end_date"]) >= cutoff
+        ):
+            raise ValueError(f"historical cash overlaps coverage:{code}")
+        if any(event["instrument_id"] == code and event["record_date"] is None
+               for event in document["events"]):
+            raise ValueError(f"historical cash already executable:{code}")
+        matching = [
+            issue for issue in unresolved
+            if issue["instrument_id"] == code
+            and issue["reason"] == "missing_ex_date"
+            and issue["record_date"] is None and issue["ex_date"] is None
+        ]
+        if len(matching) != 1:
+            raise ValueError(f"expected one historical cash issue:{code}")
+        unresolved.remove(matching[0])
+        scoped.append({
+            "issue": matching[0],
+            "classification": "issuer_verified_cash_paid_before_corporate_coverage_start",
+            "paid_by": fact["paid_by"],
+            "issuer_source_sha256": fact["source_sha256"],
+            "vendor_rows_sha256": fact["vendor_rows_sha256"],
+        })
     if seen != {"000403.SZ", "000703.SZ", "600176.SH", "600537.SH", "600556.SH"}:
         raise ValueError("expected exactly five issuer-verified precoverage actions")
     flat_facts = facts.get("flat_inception_facts", [])
