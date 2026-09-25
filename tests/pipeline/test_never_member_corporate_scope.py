@@ -133,3 +133,100 @@ def test_never_member_scope_requires_every_prior_trading_day_and_bound_sources(t
     with pytest.raises(ValueError, match="compensation source changed"):
         bad_review = {"facts": [{**facts[0], "issuer_sha256": "0" * 64}, facts[1]]}
         _MODULE.scope(corporate, membership, calendar, [], bad_review, tmp_path, tmp_path, bindings)
+
+    # A later membership for 002192 cannot create entitlement at the older
+    # record dates. 600720 remains unreachable until its 2024 record date.
+    later = pd.DataFrame(
+        [
+            {"trade_date": day, "exchange": exchange, "is_open": day.weekday() < 5}
+            for day in pd.date_range("2019-04-24", "2024-06-12")
+            for exchange in ("SSE", "SZSE")
+        ]
+    )
+    extended_calendar = pd.concat([calendar, later], ignore_index=True)
+    extended_membership = {
+        **membership,
+        "snapshots": [
+            {**membership["snapshots"][0], "end": "2022-12-11"},
+            {
+                **membership["snapshots"][0],
+                "start": "2022-12-12",
+                "end": "2024-06-12",
+                "members": [*members[:-1], "002192.SZ"],
+            },
+        ],
+    }
+    cash_raw = tmp_path / "600720.SH.parquet"
+    pd.DataFrame(
+        [
+            {
+                "div_proc": "实施",
+                "record_date": "20240612",
+                "ex_date": "20240613",
+                "pay_date": "20240613",
+                "cash_div_tax": value,
+            }
+            for value in (0.1104, 0.1104, 0.257)
+        ]
+    ).to_parquet(cash_raw)
+    cash_source = tmp_path / "600720-issuer.html"
+    cash_source.write_bytes(b"issuer reviewed")
+    cash_fact = {
+        "instrument_id": "600720.SH",
+        "record_date": "2024-06-12",
+        "ex_date": "2024-06-13",
+        "pay_date": "2024-06-13",
+        "status": "issuer_terms_verified_not_accounting_implemented",
+        "source_file": cash_source.name,
+        "source_sha256": hashlib.sha256(cash_source.read_bytes()).hexdigest(),
+        "vendor_rows_sha256": hashlib.sha256(cash_raw.read_bytes()).hexdigest(),
+        "expected_vendor_cash_rates_cny": ["0.1104", "0.1104", "0.257"],
+    }
+    cash_issue = {
+        "instrument_id": "600720.SH",
+        "record_date": "2024-06-12",
+        "ex_date": "2024-06-13",
+        "reason": "conflicting_duplicate",
+    }
+    cash_doc = {
+        **corporate,
+        "coverage": {
+            **corporate["coverage"],
+            "unresolved": [*corporate["coverage"]["unresolved"], cash_issue, cash_issue],
+        },
+    }
+    cash_result, cash_scoped = _MODULE.scope(
+        cash_doc,
+        extended_membership,
+        extended_calendar,
+        [],
+        review,
+        tmp_path,
+        tmp_path,
+        bindings,
+        {"facts": [cash_fact]},
+    )
+    assert cash_result["coverage"]["unresolved"] == []
+    assert len(cash_scoped) == 4
+    assert [x["issue"] for x in cash_scoped[-2:]] == [cash_issue, cash_issue]
+    with pytest.raises(ValueError, match="account could acquire cash security"):
+        _MODULE.scope(
+            cash_doc,
+            {
+                **extended_membership,
+                "snapshots": [
+                    extended_membership["snapshots"][0],
+                    {
+                        **extended_membership["snapshots"][1],
+                        "members": [*members[:-2], "002192.SZ", "600720.SH"],
+                    },
+                ],
+            },
+            extended_calendar,
+            [],
+            review,
+            tmp_path,
+            tmp_path,
+            bindings,
+            {"facts": [cash_fact]},
+        )

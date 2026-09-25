@@ -12,6 +12,7 @@ import csv
 import hashlib
 import json
 from datetime import date, datetime, time
+from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -19,6 +20,8 @@ import pandas as pd
 
 CODE = "002192.SZ"
 RECORD_DATES = {"2018-04-24", "2019-04-23"}
+CASH_CODE = "600720.SH"
+CASH_RECORD = "2024-06-12"
 START = date(2018, 1, 1)
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
@@ -36,6 +39,7 @@ def scope(
     raw_root: Path,
     source_root: Path,
     bindings: dict[str, str],
+    cash_review: dict | None = None,
 ) -> tuple[dict, list[dict]]:
     if corporate["coverage"].get("minimum_replay_date") != START.isoformat():
         raise ValueError("flat account inception is not 2018-01-01")
@@ -45,14 +49,19 @@ def scope(
         or membership.get("semantics") != "published_effective_intervals"
     ):
         raise ValueError("historical CSI800 membership is not certified")
-    if any(CODE in {r["old_instrument_id"], r["new_instrument_id"]} for r in code_change_rows):
+    names = {CODE, CASH_CODE} if cash_review is not None else {CODE}
+    if any(names & {r["old_instrument_id"], r["new_instrument_id"]} for r in code_change_rows):
         raise ValueError("security identity changed")
     facts = [x for x in review["facts"] if x["record_date"] in RECORD_DATES]
     if {x["record_date"] for x in facts} != RECORD_DATES or len(facts) != 2:
         raise ValueError("two reviewed compensation facts required")
     unresolved = list(corporate["coverage"]["unresolved"])
     scoped = list(corporate["coverage"].get("out_of_scope_historical_issues", []))
-    end = max(date.fromisoformat(d) for d in RECORD_DATES)
+    end = (
+        date.fromisoformat(CASH_RECORD)
+        if cash_review is not None
+        else max(date.fromisoformat(d) for d in RECORD_DATES)
+    )
     dates = pd.to_datetime(calendar["trade_date"]).dt.date
     relevant = calendar.loc[(dates >= START) & (dates <= end)].copy()
     relevant["trade_date"] = dates[(dates >= START) & (dates <= end)]
@@ -85,8 +94,11 @@ def scope(
             or known_at > cutoff
         ):
             raise ValueError(f"uncertified membership:{day}")
-        if CODE in row["members"]:
+        if day <= max(date.fromisoformat(d) for d in RECORD_DATES) and CODE in row["members"]:
             raise ValueError(f"account could acquire issue security:{day}")
+        if cash_review is not None and day <= date.fromisoformat(CASH_RECORD):
+            if CASH_CODE in row["members"]:
+                raise ValueError(f"account could acquire cash security:{day}")
     for fact in sorted(facts, key=lambda x: x["record_date"]):
         if (
             fact["instrument_id"] != CODE
@@ -145,6 +157,71 @@ def scope(
                 "settlement_and_tax_certified": False,
             }
         )
+    new_count = 2
+    if cash_review is not None:
+        cash_facts = [
+            x
+            for x in cash_review["facts"]
+            if x["instrument_id"] == CASH_CODE and x["record_date"] == CASH_RECORD
+        ]
+        if len(cash_facts) != 1:
+            raise ValueError("one reviewed nonmember cash fact required")
+        fact = cash_facts[0]
+        if fact["status"] != "issuer_terms_verified_not_accounting_implemented":
+            raise ValueError("unreviewed cash fact")
+        source = source_root / fact["source_file"]
+        raw_path = raw_root / f"{CASH_CODE}.parquet"
+        if (
+            digest(source) != fact["source_sha256"]
+            or digest(raw_path) != fact["vendor_rows_sha256"]
+        ):
+            raise ValueError("nonmember cash source changed")
+        raw = pd.read_parquet(raw_path)
+        rows = raw[raw["record_date"].eq(CASH_RECORD.replace("-", "")) & raw["div_proc"].eq("实施")]
+        actual_rates = sorted(Decimal(str(value)) for value in rows["cash_div_tax"])
+        expected_rates = sorted(Decimal(value) for value in fact["expected_vendor_cash_rates_cny"])
+        if (
+            len(rows) != 3
+            or actual_rates != expected_rates
+            or set(rows["ex_date"]) != {fact["ex_date"].replace("-", "")}
+            or set(rows["pay_date"]) != {fact["pay_date"].replace("-", "")}
+        ):
+            raise ValueError("nonmember cash vendor group changed")
+        matches = [
+            x
+            for x in unresolved
+            if x["instrument_id"] == CASH_CODE
+            and x["record_date"] == CASH_RECORD
+            and x["ex_date"] == fact["ex_date"]
+            and x["reason"] == "conflicting_duplicate"
+        ]
+        if len(matches) != 2:
+            raise ValueError("expected two nonmember cash issues")
+        if any(
+            x["instrument_id"] == CASH_CODE and x.get("record_date") == CASH_RECORD
+            for x in corporate["events"]
+        ):
+            raise ValueError("nonmember cash already executable")
+        for issue in matches:
+            unresolved.remove(issue)
+            scoped.append(
+                {
+                    "issue": issue,
+                    "classification": "flat_account_never_held_outside_CSI800_before_record_date",
+                    "account_inception": START.isoformat(),
+                    "record_date": CASH_RECORD,
+                    "verified_trading_sessions": sum(
+                        day <= date.fromisoformat(CASH_RECORD) for day in open_days
+                    ),
+                    "membership_sha256": bindings["membership"],
+                    "calendar_sha256": bindings["calendar"],
+                    "code_changes_sha256": bindings["code_changes"],
+                    "source_sha256": fact["source_sha256"],
+                    "vendor_rows_sha256": fact["vendor_rows_sha256"],
+                    "settlement_and_tax_certified": False,
+                }
+            )
+        new_count += 2
     result = {
         **corporate,
         "coverage": {
@@ -153,7 +230,7 @@ def scope(
             "out_of_scope_historical_issues": scoped,
         },
     }
-    return result, scoped[-2:]
+    return result, scoped[-new_count:]
 
 
 def main() -> None:
@@ -169,6 +246,7 @@ def main() -> None:
         "output-dir",
     ):
         parser.add_argument(f"--{name}", type=Path, required=True)
+    parser.add_argument("--cash-review", type=Path)
     args = parser.parse_args()
     if args.output_dir.exists():
         raise FileExistsError(args.output_dir)
@@ -179,6 +257,8 @@ def main() -> None:
         "code_changes": args.code_changes,
         "review": args.review,
     }
+    if args.cash_review is not None:
+        inputs["cash_review"] = args.cash_review
     bindings = {name: digest(path) for name, path in inputs.items()}
     with args.code_changes.open(newline="") as f:
         code_change_rows = list(csv.DictReader(f))
@@ -191,6 +271,7 @@ def main() -> None:
         args.raw_root,
         args.source_root,
         bindings,
+        json.loads(args.cash_review.read_text()) if args.cash_review else None,
     )
     args.output_dir.mkdir(parents=True)
     output = args.output_dir / "corporate_actions.json"
