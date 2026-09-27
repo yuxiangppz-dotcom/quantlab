@@ -670,6 +670,47 @@ def test_corporate_dividend_receivable_prevents_fake_ex_date_loss():
     )
 
 
+def test_replay_charges_certified_dividend_tax_on_actual_sale_not_at_payment():
+    from quantlab.research.ml.corporate import CorporateEvent
+
+    days, market, universe, scores, marks, config = replay_fixture()
+    event = CorporateEvent(
+        "cash", "A", "cash_dividend", days[1], days[2], days[4], "synthetic",
+        net_cash_per_share_fen=Decimal(100),
+        gross_cash_per_share_fen=Decimal(100),
+        tax_treatment="individual_a_share_2015",
+        tax_evidence_sha256="0" * 64,
+        tax_evidence_url="https://example.invalid/synthetic-issuer-notice",
+    )
+
+    def run(item):
+        return replay_scores(
+            scores, universe, days, market, marks, start=days[1], end=days[6],
+            initial_cash_fen=10_000_000, config=config, corporate_actions=(item,),
+        )
+
+    taxed = run(event)
+    unverified = run(replace(
+        event, gross_cash_per_share_fen=None, tax_treatment="unverified_vendor_net",
+        tax_evidence_sha256=None, tax_evidence_url=None,
+    ))
+    assert taxed.schedule.status == unverified.schedule.status == "completed_scenario"
+    sale = taxed.schedule.records[2].attempts[0].transition
+    assert sale.simulated_quantity == 8_000
+    assert sale.book.cash_fen == unverified.schedule.records[2].attempts[0].transition.book.cash_fen
+    assert taxed.schedule.records[2].book.cash_fen == (
+        unverified.schedule.records[2].book.cash_fen - 160_000
+    )
+    assert taxed.decisions[2]["corporate_movements"][-1] == {
+        "event_id": "cash", "lot_id": "ml:2024-01-03:A",
+        "kind": "realized_individual_dividend_tax", "shares": 8_000,
+        "rate": "0.20", "cash_fen": -160_000,
+    }
+    assert taxed.schedule.records[2].modeled_fees_fen == (
+        unverified.schedule.records[2].modeled_fees_fen
+    )  # tax is a separate cash movement, never disguised as execution fees
+
+
 def training_bundle(tmp_path):
     from quantlab.research.ml.io import seal_bundle, write_json
 

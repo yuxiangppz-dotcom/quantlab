@@ -183,4 +183,26 @@ def read_corporate_actions(path, start, end):
         conflicts.add(key)
     if any((e.instrument_id, str(e.ex_date), str(e.record_date)) in conflicts for e in events):
         raise ValueError("conflicting corporate event remains executable; rebuild evidence")
-    return tuple(e for e in events if start <= e.ex_date <= end)
+    tax_sources = coverage.get("tax_sources", {})
+    if not isinstance(tax_sources, dict):
+        raise ValueError("cash tax source bindings must be a mapping")
+    artifact_dir = Path(path).resolve().parent
+    selected = tuple(e for e in events if start <= e.ex_date <= end)
+    for event in selected:
+        if event.tax_treatment != "individual_a_share_2015":
+            continue
+        source = tax_sources.get(event.tax_evidence_sha256)
+        if not isinstance(source, dict) or source.get("url") != event.tax_evidence_url:
+            raise ValueError(f"cash tax source binding missing:{event.event_id}")
+        relative = source.get("file")
+        if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
+            raise ValueError(f"cash tax source path invalid:{event.event_id}")
+        local = artifact_dir / relative
+        if (
+            not local.resolve().is_relative_to(artifact_dir)
+            or local.is_symlink()
+            or not local.is_file()
+            or sha256(local) != event.tax_evidence_sha256
+        ):
+            raise ValueError(f"cash tax source bytes mismatch:{event.event_id}")
+    return selected

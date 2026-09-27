@@ -434,9 +434,31 @@ def test_known_halt_carry_is_only_a_mark_and_action_requires_explicit_valuation(
         }
     ]
     path.write_text(json.dumps(corporate))
+    with pytest.raises(ValueError, match="corporate_cash_tax_basis_unverified"):
+        market_day(storage, receipts, sessions, day, {"000001.SZ"}, policy, path, hour=18)
+    from hashlib import sha256
+
+    tax_source = tmp_path / "issuer-notice.txt"
+    tax_source.write_bytes(b"synthetic issuer cash payment and personal tax basis")
+    digest = sha256(tax_source.read_bytes()).hexdigest()
+    corporate["coverage"]["tax_sources"] = {
+        digest: {
+            "file": tax_source.name,
+            "url": "https://example.invalid/synthetic-issuer-notice",
+        }
+    }
+    corporate["events"][0].update(
+        gross_cash_per_share_fen="10", tax_treatment="individual_a_share_2015",
+        tax_evidence_sha256=digest,
+        tax_evidence_url="https://example.invalid/synthetic-issuer-notice",
+    )
+    path.write_text(json.dumps(corporate))
     assert not market_day(storage, receipts, sessions, day, {"000001.SZ"}, policy, path, hour=18)[
         "marks"
     ]
+    tax_source.write_bytes(b"changed")
+    with pytest.raises(ValueError, match="cash tax source bytes mismatch"):
+        market_day(storage, receipts, sessions, day, {"000001.SZ"}, policy, path, hour=18)
 
 
 def test_release_rejects_cash_only_missing_risk_and_partial_replays():

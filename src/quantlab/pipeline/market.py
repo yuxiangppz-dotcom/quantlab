@@ -93,7 +93,17 @@ def market_day(
     sparse_scope=False,
 ):
     verify_session(storage, receipts, day)
-    read_corporate_actions(corporate_path, day, day)
+    day_events = read_corporate_actions(corporate_path, day, day)
+    for action in day_events:
+        if (
+            action.kind == "cash_dividend"
+            and action.instrument_id in instruments
+            and action.tax_treatment != "individual_a_share_2015"
+        ):
+            raise ValueError(
+                "corporate_cash_tax_basis_unverified:"
+                f"{action.instrument_id}:{action.ex_date}"
+            )
     # Unresolved corporate events (detected distributions with missing net
     # rates, listing dates or pay dates) block the session for the affected
     # instruments instead of letting a silently wrong ledger pass.

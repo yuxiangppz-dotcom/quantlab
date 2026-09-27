@@ -19,6 +19,7 @@ from quantlab.research.ml.corporate import (
     new_state,
     receivable_value,
 )
+from quantlab.research.ml.dividend_tax import charge_sale_tax
 from quantlab.research.ml.execution import admit_orders, exposure_report
 from quantlab.research.ml.strategies import portfolio_policy
 from quantlab.research.quantity_kernel import ResearchBook, ResearchOrder
@@ -305,16 +306,44 @@ def settle_plan(state, plan, evidence, corporate_actions, calendar, inception, c
         raise ValueError(advance.reason)
     record = advance.record
     assert record is not None
+    tax_fen, tax_movements = 0, []
+    before_attempt = morning_book
+    for attempt in record.attempts:
+        after_attempt = attempt.transition.book
+        if attempt.order.side == "sell" and attempt.transition.simulated_quantity:
+            next_corporate, charge, rows = charge_sale_tax(
+                next_corporate, before_attempt, after_attempt, day
+            )
+            tax_fen += charge
+            tax_movements.extend(rows)
+        before_attempt = after_attempt
+    if tax_fen > record.book.cash_fen:
+        raise ValueError("dividend_tax_cash_insufficient")
+    if tax_fen:
+        record = replace(
+            record,
+            book=replace(record.book, cash_fen=record.book.cash_fen - tax_fen),
+            marked_equity_fen=record.marked_equity_fen - tax_fen,
+        )
+    movements.extend(tax_movements)
     receivable = receivable_value(next_corporate)
     record = replace(record, marked_equity_fen=record.marked_equity_fen + receivable)
     marks = {m.instrument_id: m.price_fen for m in evidence.marks}
     decision = {k: v for k, v in plan.items() if k not in {"orders", "industries"}}
+    cash_events = [e for e in corporate_actions if e.kind == "cash_dividend"]
     decision.update(
         {
             "realized_exposure": exposure_report(
                 record.book, marks, plan["industries"], config, receivable
             ),
             "corporate_movements": movements,
+            "realized_dividend_tax_fen": tax_fen,
+            "dividend_tax_accounting": (
+                "not_applicable" if not cash_events else
+                "explicit_individual_a_share_2015" if all(
+                    e.tax_treatment == "individual_a_share_2015" for e in cash_events
+                ) else "unverified_vendor_net_input"
+            ),
             "corporate_cancelled_orders": cancelled,
             "receivable_fen": receivable,
         }
