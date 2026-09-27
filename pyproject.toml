@@ -5,6 +5,7 @@ description = "A-share quantitative research toolkit"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "numpy>=1.26,<3",
     "tushare>=1.4.0",
     "pandas>=2.2.0",
     "pyarrow>=15.0.0",
@@ -30,6 +31,8 @@ build-backend = "uv_build"
 dev = [
     "pytest>=9.1.1",
     "ruff>=0.16.6",
+    "pytest-cov>=6,<8",
+    "mypy>=1.15,<2",
 ]
 
 [[tool.uv.index]]
@@ -50,3 +53,18 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["quantlab"]
+
+[tool.coverage.run]
+branch = true
+source = ["src/quantlab/pipeline", "src/quantlab/research/ml"]
+
+[tool.coverage.report]
+fail_under = 75
+show_missing = true
+skip_covered = true
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src/quantlab/research/ml/statistics.py"]
+strict = true
+follow_imports = "skip"

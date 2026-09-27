@@ -1,0 +1,25 @@
+{
+  "schema": "quantlab_project_v2",
+  "canonical": "../data/canonical",
+  "raw": "../data/provider_observations",
+  "receipts": "../data/ingestion_receipts",
+  "workspace": "../data/experiments/csi800_v1",
+  "account": "../data/experiments/csi800_account_v1",
+  "registry": "../data/csi800_registry_v1",
+  "ml_config": "ml_daily_v2.json",
+  "context": "../data/evidence/pit_context.parquet",
+  "availability": "../data/evidence/source_availability.parquet",
+  "execution_policy": "../data/evidence/execution_policy.json",
+  "corporate_actions": "../data/evidence/corporate_actions.json",
+  "indices": [
+    "000906.SH"
+  ],
+  "benchmark": "000906.SH",
+  "start": "2018-01-01",
+  "end": "2026-09-15",
+  "test_start": "2023-01-03",
+  "test_end": "2025-12-31",
+  "capital_cny": 200000,
+  "provider_interval": 0.3,
+  "strategy": "strategy.csi800.json"
+}

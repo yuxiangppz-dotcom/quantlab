@@ -98,13 +98,32 @@ def _format_pct(value: float) -> str:
 st.title("QuantLab 个人量化工作台")
 st.caption("本地日频研究与辅助决策工具；研究目标不是券商订单，未知证据不会显示为安全。")
 
-page = st.sidebar.radio(
-    "页面",
-    ("开始使用", "数据状态与日报", "股票排名与因子", "前瞻观察",
-     "账户与参考计划", "资金流水与估值", "回测与基准", "组合与成本研究", "策略研究进度"),
+workspace = st.sidebar.radio(
+    "工作区", ("ML 工作台", "数据管理", "账户与参考计划", "资金流水与估值", "历史研究")
 )
+page = workspace
+if workspace == "历史研究":
+    page = st.sidebar.selectbox(
+        "历史入口",
+        (
+            "开始使用",
+            "数据状态与日报",
+            "股票排名与因子",
+            "前瞻观察",
+            "回测与基准",
+            "组合与成本研究",
+            "策略研究进度",
+        ),
+    )
+    st.info("历史研究入口：保留原协议和结果，不会自动使用新 ML 模型。")
 
-if page == "开始使用":
+if page == "ML 工作台":
+    from quantlab.ui.ml_workbench import render_ml_workbench
+
+    render_ml_workbench(PROJECT_ROOT)
+elif page == "数据管理":
+    render_data_update()
+elif page == "开始使用":
     render_start()
 elif page == "组合与成本研究":
     render_economic()
@@ -506,14 +525,17 @@ else:
                             preview = preview_manual_fills(account_id, fill_raw)
                             st.session_state["fill_preview"] = preview
                             st.session_state["fill_preview_sha"] = fill_sha
-                            st.session_state["fill_preview_account"] = (
-                                account["account_fingerprint"]
-                            )
+                            st.session_state["fill_preview_account"] = account[
+                                "account_fingerprint"
+                            ]
                         except Exception as exc:
                             st.error(f"成交预览失败：{exc}")
                     preview = st.session_state.get("fill_preview")
                     if preview_matches(
-                        preview, fill_sha, account, st.session_state.get("fill_preview_sha"),
+                        preview,
+                        fill_sha,
+                        account,
+                        st.session_state.get("fill_preview_sha"),
                         st.session_state.get("fill_preview_account"),
                     ):
                         st.write(

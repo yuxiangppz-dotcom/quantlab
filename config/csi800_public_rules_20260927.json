@@ -1,0 +1,20 @@
+{
+  "schema": "quantlab_public_source_intake_v1",
+  "sources": [
+    {
+      "name": "mof_dividend_tax_2012_85.html",
+      "url": "https://m.mof.gov.cn/zcfb/201211/t20121116_697495.htm",
+      "purpose": "FIFO holding period and individual dividend tax operation"
+    },
+    {
+      "name": "mof_dividend_tax_2015_101.html",
+      "url": "https://www.mof.gov.cn/gkml/caizhengwengao/wg2015/201510wg/201602/t20160202_1662802.htm",
+      "purpose": "2015-onward rates and sale-time collection"
+    },
+    {
+      "name": "cninfo_300116_20200325_1207404907.pdf",
+      "url": "https://static.cninfo.com.cn/finalpage/2020-03-25/1207404907.PDF",
+      "purpose": "issuer restructuring conversion beneficiary and record-date evidence"
+    }
+  ]
+}
