@@ -42,6 +42,7 @@ class Evidence:
     kind: str = "news"
     instrument_ids: tuple[str, ...] = ()
     evidence_id: str = ""
+    event_dates: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         timestamp(self.retrieved_at)
@@ -52,7 +53,17 @@ class Evidence:
         if not self.title.strip() or not self.source.strip():
             raise ValueError("Evidence needs a title and source")
         # Identity is based on content, not a fresh retrieval time.
-        identity = fingerprint([self.source, self.url, self.title, self.body, self.published_at])
+        identity = fingerprint(
+            [
+                self.source,
+                self.url,
+                self.title,
+                self.body,
+                self.published_at,
+                self.instrument_ids,
+                self.event_dates,
+            ]
+        )
         object.__setattr__(self, "evidence_id", f"ev-{identity[:16]}")
 
     def to_dict(self) -> dict:
@@ -76,6 +87,7 @@ class Candidate:
     routes: list[str] = field(default_factory=list)
     evidence_ids: list[str] = field(default_factory=list)
     cautions: list[str] = field(default_factory=list)
+    context: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return asdict(self)

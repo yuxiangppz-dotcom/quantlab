@@ -68,7 +68,7 @@ uv run scout --live --canonical-dir /absolute/path/to/quantlab/data/canonical
 `$env:OPENAI_API_KEY`、`$env:OPENAI_MODEL`，不使用 `source`。
 
 `OPENAI_MODEL` 必须是账户可用、支持 Responses、联网搜索和结构化输出的模型。
-`TUSHARE_TOKEN` 可选，用于新闻与当前行业分类；相关权限需自行确认。
+`TUSHARE_TOKEN` 可选，用于新闻、当前行业分类与交易披露；相关权限需自行确认。
 密钥只放本地环境变量，不写进配置 JSON，也不要发到聊天或提交 Git。
 
 **3. 按需增加信息源。**
@@ -76,6 +76,8 @@ uv run scout --live --canonical-dir /absolute/path/to/quantlab/data/canonical
 | 信息源 | 接入方式 | 当前边界 |
 |---|---|---|
 | TuShare 新闻、行业分类 | 本地 token 与配置 | 接口权限不足会在报告中显示失败 |
+| 龙虎榜、席位明细、大宗交易 | TuShare 接口或 `--disclosures` 文件 | 默认近 3 个交易日；保留披露窗口和获取时间 |
+| 同花顺等平台评论样本 | `--comments` 文件 | 样本去重与线索调查；不代表平台全部评论或真实持仓 |
 | 公开网页与公告 | AI 联网发现和专项检索 | 不是全量公告订阅；网页时间可能未知 |
 | RSS／Atom | `config/scout.local.json` 的 `rss` | 默认未配置，使用真实可访问的公开 HTTPS feed |
 | 自己看到的帖子或新闻 | `--clues /path/to/clues.json` | 作为未核实线索；参考 `config/scout_clues.example.json` |
@@ -84,6 +86,9 @@ uv run scout --live --canonical-dir /absolute/path/to/quantlab/data/canonical
 自定义参数时复制 `config/scout.json` 到 `config/scout.local.json`，运行时加
 `--config config/scout.local.json`。默认每轮最多 3 次模型请求，每次搜索最多 5 次工具调用；
 实际费用取决于模型、输入输出及搜索用量，不是固定金额封顶。
+
+交易披露默认每轮最多 9 次接口请求；评论目前支持导入，不自动抓取平台。
+数据口径、文件模板和使用方法见 [交易披露与讨论样本](docs/information_sources.md)。
 
 ## 运行结果
 

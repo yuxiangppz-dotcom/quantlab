@@ -7,5 +7,7 @@
   "min_amount_cny": 100000000,
   "tushare_news_sources": ["cls"],
   "tushare_industry": true,
+  "tushare_disclosures": true,
+  "disclosure_sessions": 3,
   "rss": []
 }

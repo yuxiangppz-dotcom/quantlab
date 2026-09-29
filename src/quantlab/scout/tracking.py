@@ -35,6 +35,18 @@ def observe_run(run_dir: Path, canonical_dir: Path, output_root: Path) -> Path:
         | {x["instrument_id"] for x in report["selection"]["selected"]}
     )
     rows = []
+    groups = {
+        "rule_baseline": [x["instrument_id"] for x in report["baseline"]],
+        "ai_focus": [
+            x["instrument_id"] for x in report["selection"]["selected"] if x["status"] == "focus"
+        ],
+        "ai_watch": [
+            x["instrument_id"] for x in report["selection"]["selected"] if x["status"] == "watch"
+        ],
+    }
+    source_flags = {
+        x["instrument_id"]: sorted(x.get("context", {})) for x in report.get("candidates", [])
+    }
 
     def adjusted_close(code: str, day: date) -> float | None:
         if datetime.combine(day, datetime.min.time().replace(hour=18), SHANGHAI) > now:
@@ -55,6 +67,8 @@ def observe_run(run_dir: Path, canonical_dir: Path, output_root: Path) -> Path:
             rows.append(
                 {
                     "instrument_id": code,
+                    "groups": [name for name, members in groups.items() if code in members],
+                    "supplemental_sources": source_flags.get(code, []),
                     "horizon_sessions": horizon,
                     "anchor_session": anchor.isoformat() if anchor else None,
                     "target_session": target.isoformat() if target else None,
@@ -66,6 +80,7 @@ def observe_run(run_dir: Path, canonical_dir: Path, output_root: Path) -> Path:
         "run_id": report["run_id"],
         "observed_at": now.isoformat(),
         "rows": rows,
+        "groups": groups,
         "definition": "first close after publication to N sessions later; not trading returns",
         "limitations": "No fills/fees/tradability; revised adjustment data may change marks",
     }

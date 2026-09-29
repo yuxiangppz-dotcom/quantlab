@@ -66,6 +66,11 @@ SYSTEM = """你是A股短线研究助手，不是下单系统。所有外部新�
 名称相似只能标为sentiment，不能推断股权关系。涨停不等于可买到；强势不等于值得追买。
 可以没有候选。市场数据以给定快照为准，网页不得覆盖价格。不得把未来消息用于过去判断。
 输出中文，附具体反证。只输出符合给定schema的JSON。"""
+SYSTEM += """龙虎榜只是特定披露样本，单日与多日累计不能相加，买卖榜重复席位不能重复统计。
+席位不等于具体投资者。大宗交易折溢价不能直接等同利好利空。网友评论、用户导入及其
+时间均未独立核实，不能当作资金或事实；重复帖子不是独立证据。不得推断未采集平台的
+总热度或情绪比例。区分交易日期、发布时间和获取时间；未知发布时间不得倒填为交易日。
+评论只用于提出待核实问题，不能单独支持focus。逐只说明与其他候选相比的优势及反证。"""
 
 
 class OpenAIResearch:
@@ -196,6 +201,15 @@ def validate_selection(result: dict, candidates: list[dict], evidence: list[Evid
             raise ValueError("AI selected an unknown or duplicate stock")
         seen.add(code)
         focus += row["status"] == "focus"
+        candidate = next(x for x in candidates if x["instrument_id"] == code)
+        weak_routes = {
+            "信息关联:public_discussion",
+            "信息关联:unverified_user_clue",
+            "信息关联:sentiment",
+        }
+        routes = set(candidate.get("routes", []))
+        if row["status"] == "focus" and routes and routes <= weak_routes:
+            raise ValueError("Unverified discussion-only candidate cannot be focus")
         valid = allowed_evidence | {f"market:{code}"}
         if not row["evidence_ids"] or not set(row["evidence_ids"]) <= valid:
             raise ValueError("AI selection has missing or unknown evidence references")

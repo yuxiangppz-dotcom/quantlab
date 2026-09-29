@@ -68,6 +68,9 @@ uv run python scripts/run_scout.py --live
 
 ## 多源信息如何接入
 
+新增龙虎榜、大宗交易、评论导入与候选发现对照，详见 [信息源说明](information_sources.md)。
+`--demo` 也包含这三类信息的明确合成样本，未连接真实平台。
+
 未传 `--config` 时使用内置默认值；`config/scout.json` 是同值的可编辑模板。
 复制为 `config/scout.local.json` 后使用 `--config` 指定，直接编辑模板不会自动加载。
 代码已实现这些入口，而不是宣称已连接所有网站：

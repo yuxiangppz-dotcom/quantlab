@@ -67,6 +67,75 @@ def render_report(report: dict) -> str:
             f"| {m['return_5d']:.2%} | {m['amount_cny'] / 1e8:.2f} "
             f"| {m['amount_ratio_5d']:.2f} | {text('；'.join(candidate['cautions']))} |"
         )
+    lines.extend(
+        [
+            "",
+            "## 交易披露与评论线索",
+            "",
+            "龙虎榜保留各上榜原因和统计窗口，不合计为全部资金；大宗折溢价不自动判为利好利空。",
+            "评论是导入样本，不能代表平台总体热度或真实持仓。",
+            "",
+        ]
+    )
+    for candidate in report["candidates"]:
+        context = candidate.get("context", {})
+        if not context:
+            continue
+        code = candidate["instrument_id"]
+        lines.extend([f"### {text(candidate['name'])} {code}", ""])
+        for dataset in ("top_list", "top_inst", "block_trade"):
+            if dataset in context:
+                item = context[dataset]
+                label = {
+                    "top_list": "龙虎榜统计",
+                    "top_inst": "龙虎榜席位明细",
+                    "block_trade": "大宗交易",
+                }[dataset]
+                lines.append(
+                    f"- {label}：{item['record_count']}条披露记录；交易日期 "
+                    f"{', '.join(item['observed_trade_dates'])}；证据 {item['evidence_id']}。"
+                )
+                if dataset == "block_trade":
+                    records = (
+                        report.get("disclosure_context", {})
+                        .get(code, {})
+                        .get(dataset, {})
+                        .get("records", [])
+                    )
+                    for row in records[:3]:
+                        premium = row["premium_to_close_pct"]
+                        display = f"{premium:+.2f}%" if premium is not None else "未知"
+                        lines.append(
+                            f"  样本：{row['trade_date']} 成交价 {row['price']}，"
+                            f"成交量 {row['volume_shares']:g}股，相对当日收盘价 {display}。"
+                        )
+        if "discussion" in context:
+            item = context["discussion"]
+            lines.append(
+                f"- 评论样本：{item['sample_count']}条，{item['unique_text_count']}种文本，"
+                f"重复文本比例 {item['repeated_text_fraction']:.1%}；"
+                f"采样方式：{text(item['sampling_method'])}。"
+            )
+            lines.append(
+                f"  样本窗口：{item['window_start']} 至 {item['window_end']}；热度增速未知。"
+            )
+            lines.append(f"  证据：{', '.join(item['evidence_ids'])}。")
+        lines.append("")
+    comparison = report.get("source_comparison", {})
+    if comparison:
+        lines.extend(
+            [
+                "### 候选发现对照",
+                "",
+                "新增来源加入前的候选池："
+                + text("、".join(comparison["pool_without_supplemental_routes"])),
+                "",
+                "新增来源带来的候选：" + text("、".join(comparison["new_candidate_codes"]) or "无"),
+                "",
+                "此处只对照候选发现；不是AI消融实验，也不能据此归因选股收益。",
+                "",
+            ]
+        )
     lines.extend(["", "## 信息源覆盖", "", "| 来源 | 状态 | 条数 | 说明 |", "|---|---|---:|---|"])
     for source in report["coverage"]:
         lines.append(
@@ -83,6 +152,7 @@ def render_report(report: dict) -> str:
                 f"  来源：{text(item['source'])}；发布时间："
                 f"{item['published_at'] or '未知，不能证明事件新鲜度'}；"
                 f"获取：{item['retrieved_at']}",
+                "  事件/交易日期：" + text("、".join(item.get("event_dates", [])) or "未单列"),
                 f"  <{url}>" if item["url"] else "  无可核实直链；需人工核对。",
             ]
         )

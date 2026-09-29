@@ -10,7 +10,7 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
-from quantlab.scout.demo import make_demo_market
+from quantlab.scout.demo import make_demo_market, make_demo_sources
 from quantlab.scout.pipeline import read_config, run_scout
 from quantlab.scout.tracking import observe_run
 
@@ -32,6 +32,10 @@ def _main() -> int:
     parser.add_argument("--session", type=date.fromisoformat)
     parser.add_argument("--clues", type=Path, help="JSON list of user-supplied clues")
     parser.add_argument("--sectors", type=Path, help="Timestamped stock-to-sector mapping JSON")
+    parser.add_argument(
+        "--disclosures", type=Path, help="Timestamped TuShare disclosure JSON export"
+    )
+    parser.add_argument("--comments", type=Path, help="Timestamped user comment sample JSON")
     args = parser.parse_args()
     config = read_config(args.config)
     if args.doctor:
@@ -43,6 +47,11 @@ def _main() -> int:
                     "tushare_token_present": bool(os.environ.get("TUSHARE_TOKEN")),
                     "canonical_dir_exists": args.canonical_dir.is_dir(),
                     "rss_count": len(config["rss"]),
+                    "disclosure_sessions": config["disclosure_sessions"],
+                    "disclosure_queries_max": config["disclosure_sessions"] * 3
+                    if config["tushare_disclosures"]
+                    else 0,
+                    "comments": "user JSON import only; no connected platform feed",
                     "provider_permissions": "not tested; doctor makes no network requests",
                     "next": "--demo needs no credentials; --live needs fresh local market data",
                 },
@@ -56,16 +65,19 @@ def _main() -> int:
         print(path)
         return 0
     if args.demo:
-        if args.session or args.clues or args.sectors:
-            parser.error("--demo cannot mix real session, clues, or sectors")
+        if args.session or args.clues or args.sectors or args.disclosures or args.comments:
+            parser.error("--demo cannot mix real session or imported sources")
         with tempfile.TemporaryDirectory(prefix="quantlab-scout-demo-") as directory:
             session = make_demo_market(Path(directory))
+            disclosures_path, comments_path = make_demo_sources(Path(directory), session)
             run_dir, report = run_scout(
                 Path(directory),
                 args.output_dir,
                 config,
                 session=session,
                 demo=True,
+                disclosures_path=disclosures_path,
+                comments_path=comments_path,
             )
     else:
         run_dir, report = run_scout(
@@ -76,6 +88,8 @@ def _main() -> int:
             session=args.session,
             clues_path=args.clues,
             sectors_path=args.sectors,
+            disclosures_path=args.disclosures,
+            comments_path=args.comments,
         )
     print(
         json.dumps(
