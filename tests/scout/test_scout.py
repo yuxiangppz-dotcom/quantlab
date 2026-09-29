@@ -198,6 +198,32 @@ def test_final_selection_rejects_unknown_evidence(result):
         validate_selection(result, [{"instrument_id": "600001.SH"}], [])
 
 
+def test_final_selection_rejects_other_stocks_or_unshown_evidence():
+    own = evidence(title="own", instrument_ids=("600001.SH",))
+    other = evidence(title="other", instrument_ids=("600002.SH",))
+    candidates = [
+        {"instrument_id": "600001.SH", "evidence_ids": [own.evidence_id]},
+        {"instrument_id": "600002.SH", "evidence_ids": [other.evidence_id]},
+    ]
+    with pytest.raises(ValueError, match="not shown or bound"):
+        validate_selection(
+            selection(ids=["market:600001.SH", other.evidence_id]),
+            candidates,
+            [own, other],
+        )
+    with pytest.raises(ValueError, match="not shown or bound"):
+        validate_selection(
+            selection(ids=["market:600001.SH", own.evidence_id]),
+            candidates,
+            [other],
+        )
+    assert validate_selection(
+        selection(ids=["market:600001.SH", own.evidence_id]),
+        candidates,
+        [own, other],
+    )["selected"][0]["instrument_id"] == "600001.SH"
+
+
 def test_search_sources_are_extracted_from_real_tool_metadata():
     raw = {
         "output": [
@@ -310,7 +336,18 @@ def test_three_stage_live_flow_archives_evidence(market, tmp_path, monkeypatch):
         stages.append(search)
         client.calls.append({"search": search, "status": "completed"})
         if search:
-            return {"hypotheses": []}, raw
+            code = "600001.SH"
+            return {
+                "hypotheses": [
+                    {
+                        "summary": "source-linked finding",
+                        "instrument_ids": [code],
+                        "relation": "theme",
+                        "source_urls": ["https://example.org/announcement"],
+                        "counterargument": "unverified",
+                    }
+                ]
+            }, raw
         packet = json.loads(prompt.split("\n", 1)[1])
         code = packet["candidates"][0]["instrument_id"]
         ref = packet["evidence"][0]["evidence_id"]

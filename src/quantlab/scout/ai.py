@@ -192,7 +192,7 @@ def bind_hypotheses(result: dict, evidence: list[Evidence], eligible: set[str]) 
 
 def validate_selection(result: dict, candidates: list[dict], evidence: list[Evidence]) -> dict:
     allowed_codes = {x["instrument_id"] for x in candidates}
-    allowed_evidence = {x.evidence_id for x in evidence}
+    shown_evidence = {x.evidence_id for x in evidence}
     seen = set()
     focus = 0
     for row in result["selected"]:
@@ -210,9 +210,13 @@ def validate_selection(result: dict, candidates: list[dict], evidence: list[Evid
         routes = set(candidate.get("routes", []))
         if row["status"] == "focus" and routes and routes <= weak_routes:
             raise ValueError("Unverified discussion-only candidate cannot be focus")
-        valid = allowed_evidence | {f"market:{code}"}
+        # A citation must both have reached the final prompt and be bound to
+        # this stock. A source shown for another candidate is not support here.
+        valid = ({f"market:{code}"} | set(candidate.get("evidence_ids", []))) & (
+            shown_evidence | {f"market:{code}"}
+        )
         if not row["evidence_ids"] or not set(row["evidence_ids"]) <= valid:
-            raise ValueError("AI selection has missing or unknown evidence references")
+            raise ValueError("AI selection cites evidence not shown or bound to this stock")
         if f"market:{code}" not in row["evidence_ids"]:
             raise ValueError("Every selection must cite its own market snapshot")
         if any(not row[key].strip() for key in ("thesis", "risk", "invalidation")):

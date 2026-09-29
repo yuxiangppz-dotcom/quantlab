@@ -373,6 +373,9 @@ def run_scout(
                             route = f"信息关联:{h['relation']}"
                             if route not in candidate["routes"]:
                                 candidate["routes"].append(route)
+                            candidate["evidence_ids"] = sorted(
+                                set(candidate["evidence_ids"] + h["evidence_ids"])
+                            )
                 coverage.append(Coverage("web_investigation", "ok", len(found)))
                 # Deduplicate by exact evidence ID without fabricating publication timestamps.
                 evidence = list({x.evidence_id: x for x in evidence}.values())
