@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "snapshots": [
+    {
+      "dataset": "top_inst",
+      "trade_date": "2026-09-28",
+      "retrieved_at": "2026-09-29T08:00:00+08:00",
+      "published_at": null,
+      "possibly_truncated": false,
+      "rows": []
+    }
+  ]
+}

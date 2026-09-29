@@ -1,3 +1,3 @@
-"""QuantLab — A-share quantitative research toolkit."""
+"""Scout — independent A-share AI research assistant."""
 
-__version__ = "1.0.0"
+__version__ = "0.1.0"

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "source": "同花顺用户导出（请替换为真实来源说明）",
+  "sampling_method": "manual_export",
+  "retrieved_at": "2026-09-29T14:00:00+08:00",
+  "window_start": "2026-09-29T09:00:00+08:00",
+  "window_end": "2026-09-29T13:00:00+08:00",
+  "comments": [
+    {
+      "comment_id": "replace-with-real-comment-id",
+      "instrument_id": "600000.SH",
+      "published_at": "2026-09-29T10:00:00+08:00",
+      "text": "格式示例，并非真实评论。请替换为实际取得的原文，不要作为选股证据使用。",
+      "url": null
+    }
+  ]
+}
