@@ -22,6 +22,34 @@ uv run python scripts/run_scout.py --demo
 `scripts/render_scout_html.py` 另存为 HTML，输出路径必须尚不存在。
 如公告索引的日期晚于行情日，报告顶部会提示这类线索不能倒填为行情日收盘时已知；
 精确发布时间未知的公告也不能据日期证明收盘前可见。
+
+人工核查公告 PDF 正文后，可以保存独立的后置复核 JSON，再生成一个新 HTML 视图：
+
+```bash
+uv run python scripts/render_scout_html.py /absolute/path/to/report.json \
+  /absolute/path/to/reviewed-view.html --review-json /absolute/path/to/review.json
+```
+
+复核文件格式如下。`run_id` 须匹配原报告，`reviewed_at` 须晚于原报告生成时间且带时区，
+股票和 `source_url` 须与该报告里已保存的官方公告索引匹配。`source_sha256` 需由复核者
+对原 PDF 独立计算；工具核对格式和链接归属，不会替复核者证明摘要真实或计算文件哈希。
+
+```json
+{
+  "run_id": "报告中的run_id",
+  "reviewed_at": "2026-09-30T04:30:00+08:00",
+  "findings": [{
+    "instrument_id": "000011.SZ",
+    "category": "risk",
+    "source_url": "https://static.cninfo.com.cn/finalpage/2026-09-30/1225588392.PDF",
+    "source_sha256": "a899f04d531f92b8a5ecb26b80dd72e4945e1ac629aef475a6d3150337cdcf1b",
+    "summary": "经人工核对的公告正文事实及其边界"
+  }]
+}
+```
+
+此叠加内容清楚标记为报告后的人工记录，不能倒填为模型输入或行情日收盘已知信息；
+原 `report.json`、`report.md` 和旧 HTML 文件保持不变。
 `--doctor --canonical-dir /absolute/path` 会显示预期交易日、最后具备连续 21 日
 日线与复权文件的日期、落后交易日数。它只检查文件存在；真实运行还会检查内容。
 如果数据落后，只能用显式 `--session` 做历史离线诊断，不应把旧候选当成今天的清单。

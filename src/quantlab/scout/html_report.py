@@ -6,6 +6,7 @@ from html import escape
 
 from quantlab.scout.models import web_url
 from quantlab.scout.report import announcement_timing_note, observed_facts
+from quantlab.scout.review import validate_post_run_review
 
 
 def h(value: object) -> str:
@@ -22,8 +23,11 @@ def official_notices(report: dict, code: str) -> list[dict]:
     return sorted(notices, key=lambda item: (item.get("event_dates") or [""])[0], reverse=True)
 
 
-def render_html_report(report: dict) -> str:
+def render_html_report(report: dict, review: dict | None = None) -> str:
     """Render only archived, already checked facts; never execute model/source text."""
+    if review is not None:
+        validate_post_run_review(report, review)
+    review_rows = review["findings"] if review else []
     selected = report["selection"]["selected"]
     candidates = {item["instrument_id"]: item for item in report["candidates"]}
     evidence = {item["evidence_id"]: item for item in report.get("evidence", [])}
@@ -47,7 +51,7 @@ def render_html_report(report: dict) -> str:
         ".shell{max-width:1100px;margin:auto;padding:28px 20px 64px}"
         "header{background:#172b3b;color:#f8fafc;border-radius:18px;padding:28px 30px}"
         "header h1{font-size:clamp(27px,4vw,38px);margin:0 0 8px;line-height:1.2}"
-        "header p{margin:7px 0;color:#dce7ee}.meta{font-size:13px}"
+        "header p{margin:7px 0;color:#dce7ee}header a{color:#fff}.meta{font-size:13px}"
         ".stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));"
         "gap:12px;margin:18px 0 22px}"
         ".stat,.panel,.card{background:#fff;border:1px solid #dce3e8;border-radius:14px}"
@@ -90,7 +94,9 @@ def render_html_report(report: dict) -> str:
         f"<p class='meta'>状态：{h(report['status'])} · "
         f"AI：{h(report.get('ai_provider') or '未调用')} / "
         f"{h(report.get('ai_model') or '无')}</p>",
-        "<p>模型只给研究优先级；本页不代表已验证策略、次日可交易名单或买卖建议。</p></header>",
+        "<p>模型只给研究优先级；本页不代表已验证策略、次日可交易名单或买卖建议。</p>"
+        "<nav aria-label='报告导航'><a href='#candidates'>查看候选研究卡</a> · "
+        "<a href='#coverage'>查看信息源覆盖</a></nav></header>",
         "<section class='stats' aria-label='本轮摘要'>",
         f"<div class='stat'><b>{len(selected)}</b><span>模型观察股票</span></div>",
         f"<div class='stat'><b>{held}</b><span>公告风险暂停资格</span></div>",
@@ -105,6 +111,12 @@ def render_html_report(report: dict) -> str:
             "<aside class='notice'><strong>公告风险拦截。</strong> "
             "有候选的官方公告索引标题含“停牌”；"
             "已暂停候选资格。须核对原文和生效日期，模型原分级仅供审计。</aside>"
+        )
+    if review:
+        parts.append(
+            "<aside class='notice'><strong>报告生成后的人工公告正文复核。</strong> "
+            f"复核时间 {h(review['reviewed_at'])}；{len(review_rows)} 条备注仅作后置风险核查，"
+            "未进入原模型分级，也不能倒填到行情日收盘。</aside>"
         )
     parts.extend(["<h2 id='candidates'>候选研究卡</h2>", "<section class='cards'>"])
     for row in selected:
@@ -168,6 +180,18 @@ def render_html_report(report: dict) -> str:
                 "<p class='notice'><strong>暂停候选资格：</strong>"
                 "公告标题含停牌；须核对原文和生效日期。</p>"
             )
+        stock_review = [item for item in review_rows if item["instrument_id"] == code]
+        if stock_review:
+            parts.append("<div class='subhead'>后置 PDF 正文复核（未参与模型分级）</div>")
+            parts.append("<ul class='sources'>")
+            for item in stock_review:
+                label = "风险" if item["category"] == "risk" else "背景"
+                parts.append(
+                    f"<li><strong>{label}：</strong>{h(item['summary'])} "
+                    f"<a href='{h(item['source_url'])}' rel='noopener noreferrer' "
+                    "target='_blank'>查看官方 PDF</a></li>"
+                )
+            parts.append("</ul>")
         parts.append(f"<p class='boundary'>证据边界：{h(row['risk'])}</p>")
         parts.append("<p class='boundary'>证据编号：")
         for index, ref in enumerate(row["evidence_ids"]):
@@ -223,7 +247,9 @@ def render_html_report(report: dict) -> str:
     parts.extend(
         [
             "</ul></section><footer>Scout 本地只读报告 · 完整指标与模型用量见同轮 report.json。"
-            "研究结果未经前瞻收益与可交易性验证。</footer></main></body></html>"
+            + ("后置复核来自独立文件；" if review else "")
+            + "研究结果未经前瞻收益与可交易性验证。"
+            "</footer></main></body></html>"
         ]
     )
     return "".join(parts)

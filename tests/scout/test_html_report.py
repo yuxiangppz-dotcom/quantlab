@@ -2,6 +2,8 @@
 
 from datetime import datetime
 
+import pytest
+
 from quantlab.scout.html_report import render_html_report
 from quantlab.scout.models import SHANGHAI, Evidence
 
@@ -20,6 +22,7 @@ def test_html_view_escapes_sources_and_shows_halt_across_candidate():
         event_dates=("2026-01-10",),
     )
     report = {
+        "run_id": "demo-review-run",
         "status": "live_research_unvalidated",
         "market": {"session": "2026-01-09"},
         "finished_at": now,
@@ -68,6 +71,7 @@ def test_html_view_escapes_sources_and_shows_halt_across_candidate():
     html = render_html_report(report)
     assert "<!doctype html>" in html
     assert "script-src 'none'" in html
+    assert "href='#candidates'" in html
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
     assert "暂停候选资格" in html
@@ -78,3 +82,42 @@ def test_html_view_escapes_sources_and_shows_halt_across_candidate():
     assert f"href='#evidence-{notice.evidence_id}'" in html
     assert "https://static.cninfo.com.cn/finalpage/2026-01-10/1.PDF" in html
     assert "没有净收益证据" in html
+
+    review = {
+        "run_id": report["run_id"],
+        "reviewed_at": "2026-01-11T12:00:00+08:00",
+        "findings": [
+            {
+                "instrument_id": "600001.SH",
+                "category": "risk",
+                "source_url": notice.url,
+                "source_sha256": "0" * 64,
+                "summary": "正文风险 <script>attack()</script>",
+            }
+        ],
+    }
+    reviewed_html = render_html_report(report, review)
+    assert "报告生成后的人工公告正文复核" in reviewed_html
+    assert "后置 PDF 正文复核（未参与模型分级）" in reviewed_html
+    assert "正文风险 &lt;script&gt;attack()&lt;/script&gt;" in reviewed_html
+    assert "<script>" not in reviewed_html
+    assert "后置复核来自独立文件" in reviewed_html
+    with pytest.raises(ValueError, match="archived official URL"):
+        render_html_report(
+            report,
+            {**review, "findings": [{**review["findings"][0], "source_url": "https://other.org"}]},
+        )
+    with pytest.raises(ValueError, match="later than report generation"):
+        render_html_report(report, {**review, "reviewed_at": now})
+    with pytest.raises(ValueError, match="run_id must match"):
+        render_html_report(report, {**review, "run_id": "different-run"})
+    with pytest.raises(ValueError, match="selected stock"):
+        render_html_report(
+            report,
+            {**review, "findings": [{**review["findings"][0], "instrument_id": "600002.SH"}]},
+        )
+    with pytest.raises(ValueError, match="selected stock"):
+        render_html_report(
+            report,
+            {**review, "findings": [{**review["findings"][0], "instrument_id": ["bad"]}]},
+        )

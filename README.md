@@ -158,6 +158,10 @@ uv run python scripts/render_scout_html.py data/scout/runs/实际运行目录/re
 正式公告索引的公告日期和获取时间不证明收盘前已经披露；报告会提示晚于行情日的公告，
 模型分级不能直接当作该收盘时点的回测信号。
 
+若人工读过公告正文，可另存复核 JSON，并用 `--review-json /absolute/path/to/review.json`
+生成一份新的 HTML 视图。复核备注只与报告里已有的官方公告链接绑定，标注为报告生成之后的核查，
+不改变原报告和模型分级。格式见 [Scout 使用说明](docs/scout_zh.md)。
+
 观察报告之后的价格变化：
 
 ```bash
