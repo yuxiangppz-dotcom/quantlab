@@ -30,6 +30,60 @@ def latest_completed_session(storage: ParquetStorage, now: datetime) -> date:
     return max(dates)
 
 
+def inspect_market_data(storage: ParquetStorage, now: datetime) -> dict:
+    """Inspect local file coverage without reading bars or connecting to a provider."""
+    local = now.astimezone(SHANGHAI)
+    calendar = storage.load_trading_calendar()
+    calendar_through = max((row.trade_date for row in calendar), default=None)
+    sessions = sorted(
+        {
+            row.trade_date
+            for row in calendar
+            if row.exchange == "SSE"
+            and row.is_open
+            and (row.trade_date < local.date() or local.time() >= time(18))
+            and row.trade_date <= local.date()
+        }
+    )
+    expected = (
+        sessions[-1]
+        if calendar_through and calendar_through >= local.date() and sessions
+        else None
+    )
+    last_partition = None
+    last_21_sessions = None
+    consecutive = 0
+    for day in sessions:
+        if storage.daily_bars_path(day).is_file() and storage.adj_factor_path(day).is_file():
+            last_partition = day
+            consecutive += 1
+            if consecutive >= 21:
+                last_21_sessions = day
+        else:
+            consecutive = 0
+    securities_present = storage.securities_path.is_file()
+    return {
+        "calendar_through": calendar_through.isoformat() if calendar_through else None,
+        "expected_session": expected.isoformat() if expected else None,
+        "latest_daily_and_adjustment_partition": (
+            last_partition.isoformat() if last_partition else None
+        ),
+        "latest_21_session_window": (
+            last_21_sessions.isoformat() if last_21_sessions else None
+        ),
+        "sessions_behind": (
+            sum(day > last_21_sessions for day in sessions)
+            if expected and last_21_sessions
+            else None
+        ),
+        "securities_present": securities_present,
+        "live_partition_files_present": bool(
+            securities_present and expected and last_21_sessions == expected
+        ),
+        "note": "File presence only; Scout validates record contents during a research run",
+    }
+
+
 def scan_market(
     canonical_dir: Path, session: date, min_amount: float = 100_000_000
 ) -> tuple[dict[str, Candidate], dict]:

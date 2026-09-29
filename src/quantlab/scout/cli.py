@@ -7,10 +7,13 @@ import argparse
 import json
 import os
 import tempfile
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
+from quantlab.data.storage import ParquetStorage
 from quantlab.scout.demo import make_demo_market, make_demo_sources
+from quantlab.scout.market import inspect_market_data
+from quantlab.scout.models import SHANGHAI
 from quantlab.scout.pipeline import read_config, run_scout
 from quantlab.scout.tracking import observe_run
 
@@ -39,6 +42,9 @@ def _main() -> int:
     args = parser.parse_args()
     config = read_config(args.config)
     if args.doctor:
+        market_data = inspect_market_data(
+            ParquetStorage(args.canonical_dir), datetime.now(SHANGHAI)
+        )
         print(
             json.dumps(
                 {
@@ -46,6 +52,7 @@ def _main() -> int:
                     "model_configured": bool(os.environ.get("OPENAI_MODEL") or config["model"]),
                     "tushare_token_present": bool(os.environ.get("TUSHARE_TOKEN")),
                     "canonical_dir_exists": args.canonical_dir.is_dir(),
+                    "market_data": market_data,
                     "rss_count": len(config["rss"]),
                     "disclosure_sessions": config["disclosure_sessions"],
                     "disclosure_queries_max": config["disclosure_sessions"] * 3
@@ -53,7 +60,11 @@ def _main() -> int:
                     else 0,
                     "comments": "user JSON import only; no connected platform feed",
                     "provider_permissions": "not tested; doctor makes no network requests",
-                    "next": "--demo needs no credentials; --live needs fresh local market data",
+                    "next": (
+                        "--live needs today's completed market partitions"
+                        if not market_data["live_partition_files_present"]
+                        else "Local partition files are present; --live also needs credentials"
+                    ),
                 },
                 ensure_ascii=False,
                 indent=2,
