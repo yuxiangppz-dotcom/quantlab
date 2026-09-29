@@ -96,6 +96,61 @@ def observed_facts(candidate: dict, disclosure_context: dict) -> list[str]:
     return facts
 
 
+def announcement_index_lines(evidence: list[dict], code: str) -> list[str]:
+    notices = [
+        item
+        for item in evidence
+        if item.get("kind") == "official_announcement_index_unverified"
+        and code in item.get("instrument_ids", [])
+    ]
+    notices.sort(key=lambda item: (item.get("event_dates") or [""])[0], reverse=True)
+    lines = []
+    for item in notices[:5]:
+        event = (item.get("event_dates") or ["未知"])[0]
+        url = item.get("url")
+        link = f"[原文]({url.replace(')', '%29')})" if url else "原文链接未知"
+        after_selection = (
+            "；模型分级后补查" if item.get("source", "").endswith("post_selection") else ""
+        )
+        lines.append(
+            f"- {text(item['title'])}（公告日期 {text(event)}；精确发布时间"
+            f"{text(item.get('published_at') or '未知')}；正文未读取{after_selection}） {link}"
+        )
+    if len(notices) > 5:
+        lines.append(f"- 另有 {len(notices) - 5} 条索引记录未在候选卡展开。")
+    if not lines:
+        lines.append("本轮未检出该股正式公告索引；这不表示没有公告。")
+    if any("停牌" in item["title"] for item in notices):
+        lines.insert(
+            0,
+            "**停牌风险线索：公告标题包含“停牌”。须核对原文和生效日期，"
+            "不能据此报告假定次日可交易。**",
+        )
+    return lines
+
+
+def screen_notice_risks(selection: dict, evidence: list[dict]) -> dict:
+    """Retain model priority but hold title-level suspension risks for review."""
+    selected = []
+    for row in selection["selected"]:
+        code = row["instrument_id"]
+        suspension_titles = [
+            item["title"]
+            for item in evidence
+            if item.get("kind") == "official_announcement_index_unverified"
+            and code in item.get("instrument_ids", [])
+            and "停牌" in item.get("title", "")
+        ]
+        if suspension_titles:
+            row = {
+                **row,
+                "screening_status": "hold_for_official_notice_review",
+                "screening_reason": "官方公告索引标题含停牌；正文及生效日期待核实",
+            }
+        selected.append(row)
+    return {**selection, "selected": selected}
+
+
 def render_report(report: dict) -> str:
     status = report["status"]
     title = "【合成演示，不是真实荐股】" if status == "demo" else ""
@@ -117,15 +172,35 @@ def render_report(report: dict) -> str:
         "## AI候选（模型分级，事实由程序列示）",
         "",
     ]
+    held = [
+        row
+        for row in report["selection"]["selected"]
+        if row.get("screening_status") == "hold_for_official_notice_review"
+    ]
+    if held:
+        lines.extend(
+            [
+                f"**公告风险拦截：{len(held)}只模型候选的官方公告索引标题含“停牌”，"
+                "暂停候选资格并等待原文与生效日期核实；模型原分级保留供审计。**",
+                "",
+            ]
+        )
     for row in report["selection"]["selected"]:
         code = row["instrument_id"]
         candidate = next(x for x in report["candidates"] if x["instrument_id"] == code)
+        notice_lines = announcement_index_lines(report.get("evidence", []), code)
+        model_label = "优先核查" if row["status"] == "focus" else "一般观察"
+        display_label = (
+            "暂停候选资格（停牌公告待核实）"
+            if row.get("screening_status") == "hold_for_official_notice_review"
+            else model_label
+        )
+        tier_note = f"模型原分级为{model_label}；" if display_label != model_label else ""
         lines.extend(
             [
-                f"### {text(candidate['name'])} {code} · "
-                f"{'优先核查' if row['status'] == 'focus' else '一般观察'}",
+                f"### {text(candidate['name'])} {code} · {display_label}",
                 "",
-                f"分级说明：{text(row['thesis'])}",
+                f"分级说明：{tier_note}{text(row['thesis'])}",
                 "",
                 "可核查事实："
                 + " ".join(
@@ -134,6 +209,9 @@ def render_report(report: dict) -> str:
                         candidate, report.get("disclosure_context", {}).get(code, {})
                     )
                 ),
+                "",
+                "正式公告索引（仅标题和链接，未核实正文）：",
+                *notice_lines,
                 "",
                 f"证据边界：{text(row['risk'])}",
                 "",

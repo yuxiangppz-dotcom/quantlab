@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import re
 import socket
 import urllib.error
 import urllib.request
@@ -12,11 +13,13 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from quantlab.scout.models import SHANGHAI, Coverage, Evidence, timestamp, web_url
 
 MAX_BYTES = 2_000_000
+CNINFO_STOCKS = "https://www.cninfo.com.cn/new/data/szse_stock.json"
+CNINFO_QUERY = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -187,6 +190,157 @@ def collect_announcements(
         f"TuShare anns_d index for {len(targets)} target stocks only; "
         f"{failed} failed queries, {invalid} rejected rows, {truncated} local/provider cap hits; "
         "PDF content not read; empty is not proof of absence"
+    )
+    return evidence, Coverage(name, status, len(evidence), detail)
+
+
+def read_cninfo_json(url: str, form: dict | None = None) -> dict:
+    """Read only the two fixed official endpoints with bounded responses."""
+    if url not in {CNINFO_STOCKS, CNINFO_QUERY}:
+        raise ValueError("Unexpected CNINFO endpoint")
+    payload = urlencode(form).encode() if form is not None else None
+    request = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "User-Agent": "Mozilla/5.0 QuantLab-Scout/1.0",
+            "Referer": "https://www.cninfo.com.cn/",
+            "Origin": "https://www.cninfo.com.cn",
+        },
+    )
+    with urllib.request.build_opener(NoRedirect()).open(request, timeout=20) as response:
+        raw = response.read(MAX_BYTES + 1)
+    if len(raw) > MAX_BYTES:
+        raise ValueError("CNINFO response exceeds size limit")
+    result = json.loads(raw)
+    if not isinstance(result, dict):
+        raise ValueError("CNINFO response must be an object")
+    return result
+
+
+def collect_cninfo_announcements(
+    config: dict,
+    now: datetime,
+    online: bool,
+    codes: list[str],
+    *,
+    post_selection: bool = False,
+) -> tuple[list[Evidence], Coverage]:
+    """Targeted official index. Its date-only timestamp is never a publication time."""
+    name = (
+        "cninfo_official_index_post_selection"
+        if post_selection
+        else "cninfo_official_index_targeted"
+    )
+    if not config["cninfo_announcements"]:
+        return [], Coverage(name, "not_configured")
+    if not online:
+        return [], Coverage(name, "disabled", detail="offline mode")
+    targets = list(dict.fromkeys(codes))[:8]
+    if not targets:
+        return [], Coverage(name, "empty_unconfirmed", detail="no target stocks")
+    try:
+        stock_rows = read_cninfo_json(CNINFO_STOCKS)["stockList"]
+        if not isinstance(stock_rows, list):
+            raise ValueError("Invalid CNINFO stock list")
+        org_by_code = {
+            row["code"]: row["orgId"]
+            for row in stock_rows
+            if isinstance(row, dict)
+            and isinstance(row.get("code"), str)
+            and isinstance(row.get("orgId"), str)
+        }
+    except (KeyError, TypeError, ValueError, OSError, urllib.error.URLError):
+        return [], Coverage(name, "failed", detail="stock list unavailable")
+    lookback_days = min(8, (config["lookback_hours"] + 23) // 24 + 1)
+    earliest = now.date() - timedelta(days=lookback_days)
+    date_range = f"{earliest.isoformat()}~{now.date().isoformat()}"
+    evidence: list[Evidence] = []
+    failed = invalid = truncated = 0
+    for code in targets:
+        short_code = code[:6]
+        org_id = org_by_code.get(short_code)
+        if not re.fullmatch(r"\d{6}\.(SZ|SH)", code) or not org_id:
+            failed += 1
+            continue
+        sh = code.endswith(".SH")
+        form = {
+            "pageNum": 1,
+            "pageSize": 30,
+            "column": "sse" if sh else "szse",
+            "tabName": "fulltext",
+            "plate": "sh" if sh else "sz",
+            "stock": f"{short_code},{org_id}",
+            "searchkey": "",
+            "secid": "",
+            "category": "",
+            "trade": "",
+            "seDate": date_range,
+            "sortName": "",
+            "sortType": "",
+            "isHLtitle": "true",
+        }
+        try:
+            result = read_cninfo_json(CNINFO_QUERY, form)
+            rows = result["announcements"]
+            if rows is None and result.get("totalAnnouncement") == 0:
+                rows = []
+            if not isinstance(rows, list):
+                raise ValueError("Invalid announcement list")
+            truncated += int(bool(result.get("hasMore")) or len(rows) > 30)
+        except (KeyError, TypeError, ValueError, OSError, urllib.error.URLError):
+            failed += 1
+            continue
+        for row in rows[:30]:
+            try:
+                if row["secCode"] != short_code:
+                    raise ValueError("Announcement stock mismatch")
+                event = datetime.fromtimestamp(int(row["announcementTime"]) / 1000, SHANGHAI).date()
+                if not earliest <= event <= now.date():
+                    raise ValueError("Announcement date outside request")
+                title = str(row["announcementTitle"]).strip()
+                path = str(row["adjunctUrl"])
+                if not title or not re.fullmatch(r"finalpage/\d{4}-\d{2}-\d{2}/\d+\.PDF", path):
+                    raise ValueError("Missing title or unexpected PDF path")
+                evidence.append(
+                    Evidence(
+                        source=(
+                            "cninfo:official_index_post_selection"
+                            if post_selection
+                            else "cninfo:official_index"
+                        ),
+                        title=title[:500],
+                        body=(
+                            "巨潮公告索引仅提供标题和PDF链接；正文未由Scout读取。"
+                            "公告日期不等于精确发布时间。"
+                            + ("此条在模型分级后补查。" if post_selection else "")
+                        ),
+                        url=f"https://static.cninfo.com.cn/{path}",
+                        published_at=None,
+                        retrieved_at=datetime.now(SHANGHAI).isoformat(),
+                        kind="official_announcement_index_unverified",
+                        instrument_ids=(code,),
+                        event_dates=(event.isoformat(),),
+                    )
+                )
+            except (KeyError, TypeError, ValueError, OverflowError):
+                invalid += 1
+    if truncated:
+        status = "possibly_truncated"
+    elif failed == len(targets):
+        status = "failed"
+    elif failed or invalid:
+        status = "partial"
+    elif evidence:
+        status = "targeted_only"
+    else:
+        status = "empty_unconfirmed"
+    detail = (
+        f"CNINFO index for {len(targets)} target stocks only; "
+        f"{failed} failed queries, {invalid} rejected rows, {truncated} page-cap hits; "
+        "count is raw index rows before evidence deduplication; "
+        "PDF content not read, publication time unknown; empty is not proof of absence"
+        + ("; queried after model selection" if post_selection else "")
     )
     return evidence, Coverage(name, status, len(evidence), detail)
 

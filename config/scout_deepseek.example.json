@@ -4,5 +4,6 @@
   "max_output_tokens": 16000,
   "deepseek_reasoning_effort": "high",
   "candidate_limit": 8,
-  "tushare_announcements": false
+  "tushare_announcements": false,
+  "cninfo_announcements": false
 }

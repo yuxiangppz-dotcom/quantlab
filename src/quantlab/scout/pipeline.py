@@ -34,7 +34,12 @@ from quantlab.scout.models import (
     fingerprint,
     timestamp,
 )
-from quantlab.scout.sources import collect_announcements, collect_sources, load_manual
+from quantlab.scout.sources import (
+    collect_announcements,
+    collect_cninfo_announcements,
+    collect_sources,
+    load_manual,
+)
 
 DEFAULT_CONFIG = {
     "provider": "openai",
@@ -47,6 +52,7 @@ DEFAULT_CONFIG = {
     "min_amount_cny": 100_000_000,
     "tushare_news_sources": ["cls"],
     "tushare_announcements": False,
+    "cninfo_announcements": False,
     "tushare_industry": True,
     "tushare_disclosures": True,
     "disclosure_sessions": 3,
@@ -98,6 +104,8 @@ def read_config(path: Path | None) -> dict:
         raise ValueError("tushare_disclosures must be boolean")
     if type(config["tushare_announcements"]) is not bool:
         raise ValueError("tushare_announcements must be boolean")
+    if type(config["cninfo_announcements"]) is not bool:
+        raise ValueError("cninfo_announcements must be boolean")
     for feed in config["rss"]:
         if set(feed) != {"name", "url"}:
             raise ValueError("RSS entry requires only name and url")
@@ -276,6 +284,11 @@ def run_scout(
     announcements, announcement_coverage = collect_announcements(config, now, online, target_codes)
     evidence.extend(announcements)
     coverage.append(announcement_coverage)
+    cninfo_announcements, cninfo_coverage = collect_cninfo_announcements(
+        config, now, online, target_codes
+    )
+    evidence.extend(cninfo_announcements)
+    coverage.append(cninfo_coverage)
     evidence, filtered = admit_evidence(evidence, datetime.now(SHANGHAI), config["lookback_hours"])
     discussion_evidence, comment_filtered = admit_evidence(
         discussion_evidence, now, config["lookback_hours"]
@@ -553,6 +566,21 @@ def run_scout(
     else:
         calls = []
         coverage.append(Coverage("AI/web", "disabled", detail="No network calls in offline/demo"))
+    if online and config["cninfo_announcements"] and result["selected"]:
+        missing_codes = [
+            row["instrument_id"]
+            for row in result["selected"]
+            if row["instrument_id"] not in target_codes
+        ]
+        if missing_codes:
+            later_notices, later_coverage = collect_cninfo_announcements(
+                config, datetime.now(SHANGHAI), True, missing_codes, post_selection=True
+            )
+            evidence.extend(later_notices)
+            coverage.append(later_coverage)
+    from quantlab.scout.report import screen_notice_risks
+
+    result = screen_notice_risks(result, [x.to_dict() for x in evidence])
     coverage.extend(
         [
             Coverage("licensed_social_stream", "not_connected", detail="manual clues/search only"),
