@@ -22,6 +22,11 @@ def render_report(report: dict) -> str:
         "",
         f"状态：**{status}** · 行情日期：{report['market']['session']}",
         f"生成时间：{report['finished_at']}",
+        (
+            f"AI：{text(report['ai_provider'])} / {text(report['ai_model'])}"
+            if report.get("ai_provider")
+            else "AI：未调用"
+        ),
         "",
         "本报告不代表已验证策略或可执行买卖建议。",
         "",

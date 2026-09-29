@@ -146,8 +146,203 @@ class OpenAIResearch:
         return parsed, raw
 
 
+class ZAIResearch:
+    """GLM-5.3 chat completion with bounded search and local JSON validation."""
+
+    ENDPOINT = "https://api.z.ai/api/paas/v4/chat/completions"
+
+    def __init__(
+        self, model: str = "glm-5.3", max_output_tokens: int = 6000, max_tool_calls: int = 5
+    ):
+        self.key = os.environ.get("ZAI_API_KEY", "")
+        if not self.key:
+            raise ValueError("ZAI_API_KEY is missing")
+        if model != "glm-5.3":
+            raise ValueError("The Z.AI adapter currently supports glm-5.3 only")
+        self.model = model
+        self.max_output_tokens = max_output_tokens
+        self.max_search_results = min(max_tool_calls, 5)
+        self.calls: list[dict] = []
+
+    def ask(self, prompt: str, schema: dict, search: bool = False) -> tuple[dict, dict]:
+        if len(self.calls) >= 3:
+            raise ValueError("Three-call run budget exhausted")
+        instructions = (
+            SYSTEM
+            + "\n严格输出符合以下 JSON Schema 的对象，不要输出 Markdown 或额外字段：\n"
+            + json.dumps(schema, ensure_ascii=False)
+        )
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": instructions},
+                {"role": "user", "content": prompt},
+            ],
+            "thinking": {"type": "enabled"},
+            "reasoning_effort": "max",
+            "max_tokens": self.max_output_tokens,
+            "response_format": {"type": "json_object"},
+            "stream": False,
+        }
+        if search:
+            # One bounded search tool in each of the first two model calls.
+            payload["tools"] = [
+                {
+                    "type": "web_search",
+                    "web_search": {
+                        "enable": True,
+                        "search_engine": "search-prime",
+                        "search_result": True,
+                        "count": self.max_search_results,
+                    },
+                }
+            ]
+        request = urllib.request.Request(
+            self.ENDPOINT,
+            data=json.dumps(payload, ensure_ascii=False).encode(),
+            headers={"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        self.calls.append({"search": search, "status": "started", "model": self.model})
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                raw_bytes = response.read(5_000_001)
+        except urllib.error.HTTPError as exc:
+            self.calls[-1]["status"] = f"http_{exc.code}"
+            raise RuntimeError(f"Z.AI HTTP {exc.code}; check account/model access") from None
+        except (OSError, TimeoutError):
+            self.calls[-1]["status"] = "network_error"
+            raise RuntimeError("Z.AI network error; no automatic retry") from None
+        if len(raw_bytes) > 5_000_000:
+            raise ValueError("Z.AI response exceeds size limit")
+        raw = json.loads(raw_bytes)
+        choices = raw.get("choices") if isinstance(raw, dict) else None
+        if not isinstance(choices, list) or len(choices) != 1:
+            raise ValueError("Z.AI response has no single completion")
+        choice = choices[0]
+        self.calls[-1].update(
+            {"status": choice.get("finish_reason"), "usage": raw.get("usage", {})}
+        )
+        if choice.get("finish_reason") != "stop":
+            raise ValueError("Z.AI response incomplete; refusing partial selection")
+        content = choice.get("message", {}).get("content")
+        if not isinstance(content, str):
+            raise ValueError("Z.AI response has no JSON content")
+        parsed = json.loads(content)
+        from jsonschema import validate
+
+        validate(parsed, schema)
+        if search and not source_urls(raw):
+            raise ValueError("Search returned no source references")
+        # Keep the answer and source metadata, but do not archive private reasoning.
+        archived = {
+            "id": raw.get("id"),
+            "model": raw.get("model"),
+            "choices": [
+                {
+                    "finish_reason": choice["finish_reason"],
+                    "message": {"role": "assistant", "content": content},
+                }
+            ],
+            "usage": raw.get("usage", {}),
+            "web_search": raw.get("web_search", []),
+        }
+        return parsed, archived
+
+
+class DeepSeekResearch:
+    """V4.1 Flash over Chat Completions; searches must come from Scout sources."""
+
+    ENDPOINT = "https://api.deepseek.com/chat/completions"
+
+    def __init__(self, model: str = "deepseek-flash", max_output_tokens: int = 12000):
+        self.key = os.environ.get("DEEPSEEK_API_KEY", "")
+        if not self.key:
+            raise ValueError("DEEPSEEK_API_KEY is missing")
+        if model != "deepseek-flash":
+            raise ValueError("The DeepSeek adapter currently supports deepseek-flash only")
+        self.model = model
+        self.max_output_tokens = max_output_tokens
+        self.calls: list[dict] = []
+
+    def ask(self, prompt: str, schema: dict, search: bool = False) -> tuple[dict, dict]:
+        if search:
+            raise ValueError("DeepSeek API does not provide Scout web search")
+        if len(self.calls) >= 3:
+            raise ValueError("Three-call run budget exhausted")
+        instructions = (
+            SYSTEM
+            + "\n你不能联网搜索。只能依据用户提示里实际提供的来源，不得编造来源URL。"
+            + "严格输出符合以下 JSON Schema 的对象，不要输出 Markdown 或额外字段：\n"
+            + json.dumps(schema, ensure_ascii=False)
+        )
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": instructions},
+                {"role": "user", "content": prompt},
+            ],
+            "thinking": {"type": "enabled"},
+            "reasoning_effort": "max",
+            "max_tokens": self.max_output_tokens,
+            "response_format": {"type": "json_object"},
+            "stream": False,
+        }
+        request = urllib.request.Request(
+            self.ENDPOINT,
+            data=json.dumps(payload, ensure_ascii=False).encode(),
+            headers={"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        self.calls.append({"search": False, "status": "started", "model": self.model})
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                raw_bytes = response.read(5_000_001)
+        except urllib.error.HTTPError as exc:
+            self.calls[-1]["status"] = f"http_{exc.code}"
+            raise RuntimeError(f"DeepSeek HTTP {exc.code}; check account/model access") from None
+        except (OSError, TimeoutError):
+            self.calls[-1]["status"] = "network_error"
+            raise RuntimeError("DeepSeek network error; no automatic retry") from None
+        if len(raw_bytes) > 5_000_000:
+            raise ValueError("DeepSeek response exceeds size limit")
+        raw = json.loads(raw_bytes)
+        choices = raw.get("choices") if isinstance(raw, dict) else None
+        if not isinstance(choices, list) or len(choices) != 1:
+            raise ValueError("DeepSeek response has no single completion")
+        choice = choices[0]
+        self.calls[-1].update(
+            {"status": choice.get("finish_reason"), "usage": raw.get("usage", {})}
+        )
+        if choice.get("finish_reason") != "stop":
+            raise ValueError("DeepSeek response incomplete; refusing partial selection")
+        content = choice.get("message", {}).get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("DeepSeek response has no JSON content")
+        parsed = json.loads(content)
+        from jsonschema import validate
+
+        validate(parsed, schema)
+        archived = {
+            "id": raw.get("id"),
+            "model": raw.get("model"),
+            "choices": [
+                {
+                    "finish_reason": choice["finish_reason"],
+                    "message": {"role": "assistant", "content": content},
+                }
+            ],
+            "usage": raw.get("usage", {}),
+        }
+        return parsed, archived
+
+
 def source_urls(raw: dict) -> dict[str, str]:
     sources: dict[str, str] = {}
+    for source in raw.get("web_search", []):
+        url = source.get("link", "")
+        if web_url(url):
+            sources[url] = source.get("title") or url
     for item in raw.get("output", []):
         if item.get("type") == "web_search_call":
             for source in item.get("action", {}).get("sources", []):
@@ -165,18 +360,36 @@ def source_urls(raw: dict) -> dict[str, str]:
 
 
 def search_evidence(raw: dict, now: datetime) -> list[Evidence]:
-    return [
+    found = [
         Evidence(
-            source="openai_web_search",
-            title=title,
-            url=url,
-            body="网页检索来源；摘要需核对原文",
+            source="zai_web_search",
+            title=source.get("title") or source["link"],
+            url=source["link"],
+            body=("搜索摘要，尚未核对网页原文：" + str(source.get("content") or ""))[:6000],
             published_at=None,
             retrieved_at=now.isoformat(),
-            kind="search_reference_undated",
+            kind="search_snippet_unverified",
         )
-        for url, title in source_urls(raw).items()
+        for source in raw.get("web_search", [])
+        if web_url(source.get("link", ""))
     ]
+    seen = {item.url for item in found}
+    found.extend(
+        [
+            Evidence(
+                source="openai_web_search",
+                title=title,
+                url=url,
+                body="网页检索来源；摘要需核对原文",
+                published_at=None,
+                retrieved_at=now.isoformat(),
+                kind="search_reference_undated",
+            )
+            for url, title in source_urls(raw).items()
+            if url not in seen
+        ]
+    )
+    return found
 
 
 def bind_hypotheses(result: dict, evidence: list[Evidence], eligible: set[str]) -> list[dict]:

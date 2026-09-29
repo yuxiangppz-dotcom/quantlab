@@ -1,4 +1,5 @@
 {
+  "provider": "openai",
   "model": "",
   "max_output_tokens": 6000,
   "max_tool_calls": 5,

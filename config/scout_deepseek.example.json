@@ -1,0 +1,5 @@
+{
+  "provider": "deepseek",
+  "model": "deepseek-flash",
+  "max_output_tokens": 12000
+}

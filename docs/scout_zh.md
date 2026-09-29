@@ -1,7 +1,7 @@
 # 多源短线研究助手 Scout
 
 Scout 是此分支独立演进的只读研究工具。它合并量价异动、板块领先、信息关联三路候选，
-使用 OpenAI Responses 的联网搜索调查，再生成最多 3 只重点观察和 5 只普通观察候选。
+使用配置的 OpenAI、GLM-5.3 或 DeepSeek 模型调查，再生成最多 3 只重点观察和 5 只普通观察候选。
 它不接券商、不下单，不宣称已找到有效 alpha。旧策略、回测和界面代码已从本分支移除，
 原项目保留在 `master`。仅保留兼容旧行情文件的精简数据适配层。
 
@@ -42,6 +42,41 @@ daily_basic、涨跌停价缺失时保留未知值和提示，不按固定涨幅
 
 ## 配置联网研究
 
+DeepSeek V4.1 Flash 用法：
+
+```bash
+export DEEPSEEK_API_KEY='你的 DeepSeek API Key'
+uv run python scripts/run_scout.py --doctor \
+  --config config/scout_deepseek.example.json --canonical-dir /absolute/path/to/canonical
+uv run python scripts/run_scout.py --live \
+  --config config/scout_deepseek.example.json --canonical-dir /absolute/path/to/canonical
+```
+
+`deepseek-flash` 是官方 V4.1 Flash API 名称，使用思考级别 `max`。
+DeepSeek API 不提供本项目所需的内置网页搜索；Scout 只把已采集的 RSS、TuShare 新闻、
+交易披露、评论样本和用户线索交给模型，并在覆盖表中标记网页搜索 `not_supported`。
+没有来源时，模型可以分析量价，但不能凭空得出公告、业务关系或新闻事实。
+参见[官方模型更新](https://api-docs.deepseek.com/updates/)与
+[Responses API 工具限制](https://api-docs.deepseek.com/guides/responses_api/)。
+
+GLM-5.3 用法：
+
+```bash
+export ZAI_API_KEY='你的 Z.ai 开放平台 API Key'
+uv run python scripts/run_scout.py --doctor \
+  --config config/scout_zai.example.json --canonical-dir /absolute/path/to/canonical
+uv run python scripts/run_scout.py --live \
+  --config config/scout_zai.example.json --canonical-dir /absolute/path/to/canonical
+```
+
+GLM-5.3 使用官方 Chat Completion API，思考级别为 `max`，输出进入本地 JSON Schema
+校验；前两阶段使用搜索，最后比较阶段不搜索。搜索结果中的摘要仍是未核实线索，
+网页标注日期不自动当作正式发布时间。程序不把推理过程写入报告。
+这里需要 Z.ai 开放平台的 API Key；Coding Plan 订阅按其[官方使用规则](https://docs.z.ai/devpack/usage-policy)
+仅供支持的编程工具使用。模型参数见[官方 GLM-5.3 文档](https://docs.z.ai/guides/llm/glm-5.3)。
+
+原 OpenAI 用法：
+
 ```bash
 cp config/scout.env.example .env.scout
 # 在本地编辑 .env.scout，填写API Key、可用模型及TuShare Token
@@ -52,7 +87,7 @@ uv run python scripts/run_scout.py --live
 
 必需环境变量：
 
-- `OPENAI_API_KEY`：API项目的密钥，API费用独立于ChatGPT订阅。
+- `OPENAI_API_KEY`：OpenAI API项目的密钥，API费用独立于ChatGPT订阅。
 - `OPENAI_MODEL`：账户有权限且支持 Responses、`web_search` 与 JSON schema 的模型。
   未预设默认型号，避免假定账户权限。模型名也可写入配置的 `model`，环境变量优先。
 - `TUSHARE_TOKEN`：可选，但启用新闻和实时行业分类需要；已有日线不需要重新拉取。
@@ -128,9 +163,9 @@ uv run python scripts/run_scout.py --live --clues /path/to/clues.json
    这是一套未经验证的透明启发式，不是涨停概率。
 2. 两类量价入口：日涨幅>2%且成交额比>1.2；或突破前20日高点且5日收益>0。
 3. 行业入口和信息入口拥有保留名额，避免全部被涨幅排序挤掉。
-4. 第一次GPT调用：联网发现近期多主题线索，提出有引用的股票关联。
-5. 第二次GPT调用：对合并候选调查公告、产业、业务关系和反证。
-6. 第三次GPT调用：在证据包内选最多3只focus和5只watch，允许为空。
+4. 第一次模型调用：搜索近期多主题线索；DeepSeek 模式只处理已给来源。
+5. 第二次模型调用：对合并候选调查业务关系和反证；DeepSeek 模式仍只处理已给来源。
+6. 第三次模型调用：在证据包内选最多3只focus和5只watch，允许为空。
 7. 代码验证股票属于候选池、引用已进入最终证据包且绑定该股票，并要求每只引用自己的行情快照。
 
 直接/产业链/题材/名称情绪关系分开记录。网页来源存在只证明检索返回过该来源，
@@ -144,7 +179,7 @@ uv run python scripts/run_scout.py --live --clues /path/to/clues.json
 
 - `report.md`：中文候选、指标、失效观察点、覆盖清单、可点击来源及限制。
 - `report.json`：基线名单、完整候选与合格股票指标快照、行业映射、结构化依据、数据时间、模型用量。
-- `ai_responses.json`：本次调用得到的原始响应，仅本地存储。
+- `ai_responses.json`：本次调用响应，仅本地存储；GLM 与 DeepSeek 的私有推理内容不入档。
 - `manifest.json`：内容哈希，后续观察前核对原报告是否被更改。
 
 `offline_diagnostic`：未调用AI，只有规则候选。
@@ -156,7 +191,9 @@ uv run python scripts/run_scout.py --live --clues /path/to/clues.json
 调查期间新发现的网页会有真实获取时间，不强行伪装为最初运行时已知的信息。
 配置缺失或行情不完整会在调用付费模型前停止。
 
-每次最多3次模型调用、每次搜索调用上限默认5、每次输出token上限默认6000。
+每次最多3次模型调用、每次输出token上限默认6000；DeepSeek 示例设为12000，
+用于容纳思考与最终 JSON。OpenAI 搜索调用上限默认5；
+GLM 搜索每阶段最多返回5条结果，最多两个含搜索的阶段。
 限制是请求数量/token上限，不是美元硬封顶；搜索结果token和输入仍计费。
 没有自动重试，避免失败时重复消耗。先从少量运行测量实际用量，再决定是否定时。
 

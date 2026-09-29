@@ -59,7 +59,42 @@ uv run scout --offline --canonical-dir /absolute/path/to/quantlab/data/canonical
 连续 21 个交易日的日线和复权因子；换手率、涨跌停价可选。具体格式见
 [行情数据约定](docs/market_data.md)。缺失必需数据时停止，不会偷偷联网补齐。
 
-**2. 在本地配置密钥。**
+**2. 在本地配置 AI。** 默认仍为 OpenAI Responses。使用 DeepSeek V4.1 Flash 时：
+
+```bash
+export DEEPSEEK_API_KEY='你的 DeepSeek API Key'
+uv run scout --doctor --config config/scout_deepseek.example.json \
+  --canonical-dir /absolute/path/to/quantlab/data/canonical
+uv run scout --live --config config/scout_deepseek.example.json \
+  --canonical-dir /absolute/path/to/quantlab/data/canonical
+```
+
+官方 API 名称是 `deepseek-flash`。Scout 使用 `reasoning_effort=max` 和本地结构校验；
+DeepSeek API 在此模式没有内置网页搜索，模型只调查 Scout 已采集的行情、新闻、
+披露及导入线索。报告会标明网页搜索未覆盖，不允许模型编造新 URL。
+需要配置真实信息源并检查覆盖状态，才能评估调查内容。
+[模型名称](https://api-docs.deepseek.com/updates/)、
+[Responses 工具限制](https://api-docs.deepseek.com/guides/responses_api/)。
+
+若使用 GLM-5.3，复制
+[`config/scout_zai.example.json`](config/scout_zai.example.json) 并在运行时传入：
+
+```bash
+export ZAI_API_KEY='你的 Z.ai 开放平台 API Key'
+uv run scout --doctor --config config/scout_zai.example.json \
+  --canonical-dir /absolute/path/to/quantlab/data/canonical
+uv run scout --live --config config/scout_zai.example.json \
+  --canonical-dir /absolute/path/to/quantlab/data/canonical
+```
+
+GLM-5.3 接口使用 `reasoning_effort=max`、JSON 模式和前两阶段联网搜索；
+程序仍会在本地校验 JSON 结构、来源归属和完整结束状态。每轮最多 3 次模型请求，
+GLM 每次搜索最多返回配置的 `max_tool_calls` 条（上限 5），并非美元费用上限。
+请使用 Z.ai **开放平台 API Key**；Coding Plan 的订阅凭据有独立使用范围。
+联网请求和真实账户权限尚需本地联调。[GLM-5.3 接口](https://docs.z.ai/guides/llm/glm-5.3)、
+[Coding Plan 使用规则](https://docs.z.ai/devpack/usage-policy)。
+
+继续使用 OpenAI 时：
 
 ```bash
 cp config/scout.env.example .env.scout
@@ -104,7 +139,7 @@ uv run scout --live --canonical-dir /absolute/path/to/quantlab/data/canonical
 |---|---|
 | `report.md` | 中文候选、依据、风险、失效观察点、来源与覆盖状态 |
 | `report.json` | 行情指标快照、规则基线、行业映射、证据、配置和模型用量 |
-| `ai_responses.json` | 本地保存的原始 AI 响应 |
+| `ai_responses.json` | 本地保存的 AI 响应；GLM 与 DeepSeek 的私有推理内容不入档 |
 | `manifest.json` | 内容哈希，用于后续核对原报告 |
 
 观察报告之后的价格变化：

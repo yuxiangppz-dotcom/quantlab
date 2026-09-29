@@ -26,7 +26,7 @@ def _main() -> int:
     modes.add_argument("--demo", action="store_true", help="Synthetic offline walkthrough")
     modes.add_argument("--offline", action="store_true", help="Read local data; no AI or network")
     modes.add_argument(
-        "--live", action="store_true", help="Read providers and call paid OpenAI API"
+        "--live", action="store_true", help="Read sources and call the configured paid AI API"
     )
     modes.add_argument("--track-run", type=Path, help="Original run directory to observe forward")
     parser.add_argument("--config", type=Path, default=None)
@@ -42,6 +42,16 @@ def _main() -> int:
     args = parser.parse_args()
     config = read_config(args.config)
     if args.doctor:
+        ai_provider = config["provider"]
+        model_name = (
+            (config["model"] or "deepseek-flash")
+            if ai_provider == "deepseek"
+            else (
+                (config["model"] or "glm-5.3")
+                if ai_provider == "zai"
+                else (os.environ.get("OPENAI_MODEL") or config["model"])
+            )
+        )
         market_data = inspect_market_data(
             ParquetStorage(args.canonical_dir), datetime.now(SHANGHAI)
         )
@@ -49,7 +59,10 @@ def _main() -> int:
             json.dumps(
                 {
                     "openai_key_present": bool(os.environ.get("OPENAI_API_KEY")),
-                    "model_configured": bool(os.environ.get("OPENAI_MODEL") or config["model"]),
+                    "zai_key_present": bool(os.environ.get("ZAI_API_KEY")),
+                    "deepseek_key_present": bool(os.environ.get("DEEPSEEK_API_KEY")),
+                    "ai_provider": ai_provider,
+                    "model_configured": bool(model_name),
                     "tushare_token_present": bool(os.environ.get("TUSHARE_TOKEN")),
                     "canonical_dir_exists": args.canonical_dir.is_dir(),
                     "market_data": market_data,
