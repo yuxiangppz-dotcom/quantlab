@@ -31,6 +31,7 @@ def announcement_timing_note(report: dict) -> str | None:
         f"时点边界：{len(notices)}条正式公告索引中，{later}条公告日期晚于行情日{session}，"
         f"{unknown_time}条精确发布时间未知。这些线索不能证明在{session}收盘时已知；"
         "模型分级不得用于该收盘时点的回测评价。"
+        "公告索引仅含标题与链接，PDF正文未进入模型分级，使用候选前须核对原文风险。"
     )
 
 
