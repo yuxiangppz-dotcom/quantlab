@@ -59,6 +59,8 @@ uv run python scripts/run_scout.py --live \
 DeepSeek API 不提供本项目所需的内置网页搜索；Scout 只把已采集的 RSS、TuShare 新闻、
 交易披露、评论样本和用户线索交给模型，并在覆盖表中标记网页搜索 `not_supported`。
 没有来源时，模型可以分析量价，但不能凭空得出公告、业务关系或新闻事实。
+为避免自由论述把席位方向、披露窗口或次日可成交性说错，报告仅展示模型分级和
+程序计算的量价、披露事实；模型原文保存在原始响应文件中供审查，不直接当作结论。
 参见[官方模型更新](https://api-docs.deepseek.com/updates/)与
 [Responses API 工具限制](https://api-docs.deepseek.com/guides/responses_api/)。
 

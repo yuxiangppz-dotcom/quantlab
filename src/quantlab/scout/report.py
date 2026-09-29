@@ -14,6 +14,88 @@ def text(value: object) -> str:
     return re.sub(r"([\\`*_{}\[\]<>|])", r"\\\1", str(value)).replace("\n", " ")
 
 
+def present_selection(model_selection: dict, candidates: list[dict]) -> dict:
+    """Keep model priority/citations, but never publish its unverified prose as fact."""
+    by_code = {row["instrument_id"]: row for row in candidates}
+    selected = []
+    for row in model_selection["selected"]:
+        candidate = by_code.get(row["instrument_id"])
+        if candidate is None:
+            # The ordinary scope validator will reject the unknown code.
+            candidate = {}
+        has_disclosure = any(
+            key in candidate.get("context", {}) for key in ("top_list", "top_inst")
+        )
+        selected.append(
+            {
+                "instrument_id": row["instrument_id"],
+                "status": row["status"],
+                "thesis": (
+                    "模型列为优先核查；下方量价和披露事实由程序根据本轮输入列示。"
+                    if row["status"] == "focus"
+                    else "模型列为一般观察；下方量价和披露事实由程序根据本轮输入列示。"
+                ),
+                "risk": (
+                    "交易披露仅覆盖上榜样本，统计窗口可能重叠；发布时间可能未知。"
+                    if has_disclosure
+                    else "本轮没有该股交易披露样本；这不表示不存在反向信息。"
+                )
+                + "未采集订单簿或次日可执行价格，不能推断实际成交。",
+                "invalidation": "需用后续已完成会话重新观察量价和披露；尚未验证收益或可交易阈值。",
+                "evidence_ids": row["evidence_ids"],
+            }
+        )
+    return {
+        "market_view": (
+            "模型仅给出候选研究优先级。以下事实由程序从已采集行情和披露生成；"
+            "原始模型论述单独封存，未通过人工事实审查前不作为报告依据。"
+        ),
+        "selected": selected,
+    }
+
+
+def observed_facts(candidate: dict, disclosure_context: dict) -> list[str]:
+    """Build a compact fact card without inferring fills or investor intent."""
+    m = candidate["metrics"]
+    price = (
+        f"一日涨跌幅 {m['return_1d']:.2%}、五日 {m['return_5d']:.2%}、"
+        f"二十日 {m['return_20d']:.2%}；成交额 {m['amount_cny'] / 1e8:.2f} 亿元，"
+        f"相对前五日均值 {m['amount_ratio_5d']:.2f} 倍；"
+        f"相对前二十日最高价的突破指标 {m['breakout_20d']:.2%}。"
+    )
+    if m["one_price_session"]:
+        shape = "当日开高低收为同一价格；这不显示委托队列或整日封单。"
+    else:
+        location = m["close_location"]
+        display = f"{location:.2f}" if location is not None else "未知"
+        shape = f"当日不是一价行情，收盘位置指标 {display}。"
+    if m.get("up_limit") is not None:
+        shape += (
+            "收盘价等于当日涨停价。"
+            if abs(m["close"] - m["up_limit"]) < 1e-8
+            else "收盘价不等于当日涨停价。"
+        )
+    facts = [price, shape]
+    records = disclosure_context.get("top_list", {}).get("records", [])
+    if records:
+        for record in records[:4]:
+            net = record.get("net_amount")
+            direction = (
+                "正"
+                if net is not None and net > 0
+                else "负"
+                if net is not None and net < 0
+                else "未知"
+            )
+            facts.append(
+                f"龙虎榜统计：{record.get('window_label', '统计窗口未知')}；"
+                f"披露净额方向为{direction}，仅代表该上榜记录。"
+            )
+    else:
+        facts.append("本轮没有该股龙虎榜统计记录；不能据此推断没有反向信息。")
+    return facts
+
+
 def render_report(report: dict) -> str:
     status = report["status"]
     title = "【合成演示，不是真实荐股】" if status == "demo" else ""
@@ -32,7 +114,7 @@ def render_report(report: dict) -> str:
         "",
         text(report["selection"]["market_view"]),
         "",
-        "## AI候选",
+        "## AI候选（模型分级，事实由程序列示）",
         "",
     ]
     for row in report["selection"]["selected"]:
@@ -40,11 +122,20 @@ def render_report(report: dict) -> str:
         candidate = next(x for x in report["candidates"] if x["instrument_id"] == code)
         lines.extend(
             [
-                f"### {text(candidate['name'])} {code} · {row['status']}",
+                f"### {text(candidate['name'])} {code} · "
+                f"{'优先核查' if row['status'] == 'focus' else '一般观察'}",
                 "",
-                f"依据：{text(row['thesis'])}",
+                f"分级说明：{text(row['thesis'])}",
                 "",
-                f"风险：{text(row['risk'])}",
+                "可核查事实："
+                + " ".join(
+                    text(x)
+                    for x in observed_facts(
+                        candidate, report.get("disclosure_context", {}).get(code, {})
+                    )
+                ),
+                "",
+                f"证据边界：{text(row['risk'])}",
                 "",
                 f"失效观察：{text(row['invalidation'])}",
                 "",

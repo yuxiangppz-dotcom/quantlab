@@ -254,6 +254,26 @@ def test_final_selection_rejects_wrong_one_price_and_sell_only_claims():
         validate_selection(result, [candidate], [seat])
 
 
+@pytest.mark.parametrize(
+    ("claim", "caution"),
+    [
+        ("一字涨停并封至收盘", "日线不能证明一字封板"),
+        ("实际可买性极低", "实际可买性未知"),
+        ("流动性与可成交性更好", "日成交额不等于次日可成交性更好"),
+        ("缩量涨停说明分歧小", "缩量不能证明分歧小"),
+        ("筹码更轻且弹性更高", "成交额不能推断筹码更轻且弹性更高"),
+        ("资金推动逻辑明确", "成交额不能推断资金推动机制"),
+    ],
+)
+def test_selection_rejects_execution_and_causal_claims_without_order_book(claim, caution):
+    result = selection()
+    result["selected"][0]["risk"] = claim
+    with pytest.raises(ValueError, match="order-book, execution or causal"):
+        validate_selection(result, [{"instrument_id": "600001.SH"}], [])
+    result["selected"][0]["risk"] = caution
+    assert validate_selection(result, [{"instrument_id": "600001.SH"}], []) == result
+
+
 def test_search_sources_are_extracted_from_real_tool_metadata():
     raw = {
         "output": [

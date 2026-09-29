@@ -73,6 +73,29 @@ SYSTEM += """龙虎榜只是特定披露样本，单日与多日累计不能相�
 时间均未独立核实，不能当作资金或事实；重复帖子不是独立证据。不得推断未采集平台的
 总热度或情绪比例。区分交易日期、发布时间和获取时间；未知发布时间不得倒填为交易日。
 评论只用于提出待核实问题，不能单独支持focus。逐只说明与其他候选相比的优势及反证。"""
+SYSTEM += """只有日线量价和披露样本，没有订单簿、排队、委托、逐笔成交或未来开盘数据。
+不能据此断言封单、整日封板、次日可买概率、实际可成交性、资金承接或投资者分歧。
+成交额和市值不是次日可成交保证，也不证明筹码轻、弹性高或资金推动机制。
+量价关系只可作为待验证假设；说明观察事实、证据缺口和失效条件。"""
+
+
+UNSUPPORTED_MICROSTRUCTURE_CLAIMS = (
+    r"封至收盘|一字封板|一字涨停|封单|封死",
+    r"实际可买性.{0,4}(高|低)|可成交性.{0,4}(更好|较好|更高)",
+    r"缩量.{0,12}(分歧小|分歧减少)|筹码.{0,4}(更轻|较轻)|弹性.{0,4}(更高|较高)",
+    r"资金推动|资金承接.{0,4}(强|弱)",
+)
+UNCERTAINTY_MARKERS = re.compile(r"不能|不可|无法|不等于|不代表|未验证|未知|没有.{0,6}证据")
+
+
+def asserts_unsupported_microstructure(text: str) -> bool:
+    """Reject affirmative claims while allowing explicit uncertainty or negation."""
+    for clause in re.split(r"[。；，]", text):
+        if UNCERTAINTY_MARKERS.search(clause):
+            continue
+        if any(re.search(pattern, clause) for pattern in UNSUPPORTED_MICROSTRUCTURE_CLAIMS):
+            return True
+    return False
 
 
 class OpenAIResearch:
@@ -434,6 +457,8 @@ def validate_selection(result: dict, candidates: list[dict], evidence: list[Evid
             raise ValueError("AI selection repeats unverified numeric claims")
         if re.search(r"候选最高|全池最高|量比最高|成交额最高|涨幅最高", narrative):
             raise ValueError("AI selection makes an unchecked superlative claim")
+        if asserts_unsupported_microstructure(narrative):
+            raise ValueError("AI infers order-book, execution or causal facts from daily data")
         if metrics.get("one_price_session") is False and "一价收盘" in row["thesis"]:
             raise ValueError("AI mislabels a non-one-price session as one-price")
         weak_routes = {

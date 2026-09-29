@@ -506,6 +506,8 @@ def run_scout(
                     "与单日成交额作任何大小/规模比较，或将重叠的单日榜和多日榜解释为连续独立净买。"
                     "自由文本只作定性判断，不复写阿拉伯数字；精确数值由程序在候选表展示。"
                     "不要声称某指标在候选中最高，除非逐一比较所有候选。"
+                    "没有订单簿/排队/逐笔数据；一价只能说OHLC相等，收盘等于涨停价只能说收盘状态。"
+                    "不得据成交额、市值或缩量推断次日可买性、封单、投资者分歧、筹码轻重或弹性。"
                     "写出反证与失效观察点，不给交易指令、目标收益或凭空价格。"
                     "搜索引用仅表示发现来源，不等于事实已经独立核实；缺失与日期不明须披露。\n"
                     + json.dumps(packet, ensure_ascii=False)
@@ -513,8 +515,12 @@ def run_scout(
                 selection, raw = client.ask(prompt, SELECTION_SCHEMA)
                 raw_responses.append(raw)
                 shown_ids = {item["evidence_id"] for item in packet["evidence"]}
+                from quantlab.scout.report import present_selection
+
                 result = validate_selection(
-                    selection, pool, [x for x in evidence if x.evidence_id in shown_ids]
+                    present_selection(selection, pool),
+                    pool,
+                    [x for x in evidence if x.evidence_id in shown_ids],
                 )
             else:
                 result = {"market_view": "当前没有通过候选条件的股票。", "selected": []}
@@ -577,6 +583,11 @@ def run_scout(
         "prompt_evidence_audit": prompt_evidence_audit,
         "failure": failure,
         "selection": result,
+        "selection_presentation": (
+            "model priority; program-derived facts; raw model prose archived only"
+            if online
+            else "rules only; no model selection"
+        ),
         "limitations": [
             "仅研究观察；无下单、成交模拟、持仓管理或收益承诺",
             "启发式筛选未经样本外验证；AI引文存在不等于事实核验通过",
