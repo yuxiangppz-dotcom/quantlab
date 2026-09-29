@@ -46,7 +46,7 @@ def test_deepseek_request_and_private_reasoning_redaction(monkeypatch):
         return Response()
 
     monkeypatch.setattr("urllib.request.urlopen", fetch)
-    client = DeepSeekResearch(max_output_tokens=12000)
+    client = DeepSeekResearch(max_output_tokens=12000, reasoning_effort="max")
     result, archived = client.ask("仅分析给定材料", DISCOVERY_SCHEMA)
     assert result == {"hypotheses": []}
     assert requests[0]["model"] == "deepseek-flash"
@@ -71,6 +71,9 @@ def test_deepseek_config_and_source_grounded_pipeline(tmp_path, monkeypatch):
     assert read_config(config_path)["provider"] == "deepseek"
     config_path.write_text('{"provider":"deepseek","model":"unsupported"}')
     with pytest.raises(ValueError, match="deepseek-flash"):
+        read_config(config_path)
+    config_path.write_text('{"provider":"deepseek","deepseek_reasoning_effort":"invalid"}')
+    with pytest.raises(ValueError, match="deepseek_reasoning_effort"):
         read_config(config_path)
 
     canonical = tmp_path / "canonical"
@@ -115,7 +118,7 @@ def test_discovery_cannot_bind_a_source_omitted_from_its_prompt(tmp_path, monkey
         Evidence(
             source="test",
             title=f"source {i}",
-            body="unverified clue",
+            body="unverified clue " * 300,
             url=f"https://example.org/{i}",
             published_at=now,
             retrieved_at=now,
@@ -156,5 +159,9 @@ def test_discovery_cannot_bind_a_source_omitted_from_its_prompt(tmp_path, monkey
     ):
         _, report = run_scout(canonical, tmp_path / "runs", config, online=True)
     assert len(stages) == 3
+    assert len(stages[0]) < 25_000
+    assert len(stages[1]) < 45_000
     assert report["status"] == "live_research_unvalidated"
     assert report["hypotheses"] == []
+    assert report["prompt_evidence_audit"][0]["stage"] == "discovery"
+    assert report["prompt_evidence_audit"][0]["body_truncated_count"] > 0

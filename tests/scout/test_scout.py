@@ -217,11 +217,41 @@ def test_final_selection_rejects_other_stocks_or_unshown_evidence():
             candidates,
             [other],
         )
-    assert validate_selection(
-        selection(ids=["market:600001.SH", own.evidence_id]),
-        candidates,
-        [own, other],
-    )["selected"][0]["instrument_id"] == "600001.SH"
+    assert (
+        validate_selection(
+            selection(ids=["market:600001.SH", own.evidence_id]),
+            candidates,
+            [own, other],
+        )["selected"][0]["instrument_id"]
+        == "600001.SH"
+    )
+
+
+def test_final_selection_rejects_wrong_one_price_and_sell_only_claims():
+    candidate = {"instrument_id": "600001.SH", "metrics": {"one_price_session": False}}
+    result = selection()
+    result["selected"][0]["thesis"] = "一价收盘"
+    with pytest.raises(ValueError, match="non-one-price"):
+        validate_selection(result, [candidate], [])
+
+    seat = evidence(
+        source="disclosure:top_inst",
+        kind="trading_disclosure",
+        instrument_ids=("600001.SH",),
+        body=json.dumps(
+            {
+                "records": [
+                    {"trade_date": "2026-01-10", "net_buy": -2},
+                    {"trade_date": "2026-01-10", "net_buy": 3},
+                ]
+            }
+        ),
+    )
+    result["selected"][0]["thesis"] = "明细全部只出现在卖出席位"
+    result["selected"][0]["evidence_ids"] = ["market:600001.SH", seat.evidence_id]
+    candidate["evidence_ids"] = [seat.evidence_id]
+    with pytest.raises(ValueError, match="mixed seat records"):
+        validate_selection(result, [candidate], [seat])
 
 
 def test_search_sources_are_extracted_from_real_tool_metadata():

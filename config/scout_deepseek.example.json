@@ -1,5 +1,6 @@
 {
   "provider": "deepseek",
   "model": "deepseek-flash",
-  "max_output_tokens": 12000
+  "max_output_tokens": 16000,
+  "deepseek_reasoning_effort": "high"
 }

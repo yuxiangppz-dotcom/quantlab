@@ -82,7 +82,7 @@ class Coverage:
 class Candidate:
     instrument_id: str
     name: str
-    metrics: dict[str, float | None]
+    metrics: dict[str, float | bool | None]
     score: float
     routes: list[str] = field(default_factory=list)
     evidence_ids: list[str] = field(default_factory=list)

@@ -52,7 +52,8 @@ uv run python scripts/run_scout.py --live \
   --config config/scout_deepseek.example.json --canonical-dir /absolute/path/to/canonical
 ```
 
-`deepseek-flash` 是官方 V4.1 Flash API 名称，使用思考级别 `max`。
+`deepseek-flash` 是官方 V4.1 Flash API 名称，默认思考级别为 `high`；
+可用 `deepseek_reasoning_effort` 配置 `low`、`high` 或 `max`。
 DeepSeek API 不提供本项目所需的内置网页搜索；Scout 只把已采集的 RSS、TuShare 新闻、
 交易披露、评论样本和用户线索交给模型，并在覆盖表中标记网页搜索 `not_supported`。
 没有来源时，模型可以分析量价，但不能凭空得出公告、业务关系或新闻事实。
@@ -191,7 +192,7 @@ uv run python scripts/run_scout.py --live --clues /path/to/clues.json
 调查期间新发现的网页会有真实获取时间，不强行伪装为最初运行时已知的信息。
 配置缺失或行情不完整会在调用付费模型前停止。
 
-每次最多3次模型调用、每次输出token上限默认6000；DeepSeek 示例设为12000，
+每次最多3次模型调用、每次输出token上限默认6000；DeepSeek 示例设为16000，
 用于容纳思考与最终 JSON。OpenAI 搜索调用上限默认5；
 GLM 搜索每阶段最多返回5条结果，最多两个含搜索的阶段。
 限制是请求数量/token上限，不是美元硬封顶；搜索结果token和输入仍计费。

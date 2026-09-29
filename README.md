@@ -69,7 +69,8 @@ uv run scout --live --config config/scout_deepseek.example.json \
   --canonical-dir /absolute/path/to/quantlab/data/canonical
 ```
 
-官方 API 名称是 `deepseek-flash`。Scout 使用 `reasoning_effort=max` 和本地结构校验；
+官方 API 名称是 `deepseek-flash`。Scout 默认使用 `reasoning_effort=high` 和本地结构校验；
+可在配置中改为 `max`，但复杂多股调查可能耗尽输出 token 并使整轮标记为未完成。
 DeepSeek API 在此模式没有内置网页搜索，模型只调查 Scout 已采集的行情、新闻、
 披露及导入线索。报告会标明网页搜索未覆盖，不允许模型编造新 URL。
 需要配置真实信息源并检查覆盖状态，才能评估调查内容。

@@ -46,9 +46,7 @@ def inspect_market_data(storage: ParquetStorage, now: datetime) -> dict:
         }
     )
     expected = (
-        sessions[-1]
-        if calendar_through and calendar_through >= local.date() and sessions
-        else None
+        sessions[-1] if calendar_through and calendar_through >= local.date() and sessions else None
     )
     last_partition = None
     last_21_sessions = None
@@ -68,9 +66,7 @@ def inspect_market_data(storage: ParquetStorage, now: datetime) -> dict:
         "latest_daily_and_adjustment_partition": (
             last_partition.isoformat() if last_partition else None
         ),
-        "latest_21_session_window": (
-            last_21_sessions.isoformat() if last_21_sessions else None
-        ),
+        "latest_21_session_window": (last_21_sessions.isoformat() if last_21_sessions else None),
         "sessions_behind": (
             sum(day > last_21_sessions for day in sessions)
             if expected and last_21_sessions
@@ -180,12 +176,17 @@ def scan_market(
             "amount_cny": last.amount,
             "amount_ratio_5d": amount_ratio,
             "close_location": close_location,
+            "one_price_session": last.high == last.low,
             "breakout_20d": closes[-1] / high20 - 1,
             "close": last.close,
             "turnover_rate_pct": basic.turnover_rate * 100 if basic else None,
             "up_limit": up_limit if finite(up_limit) else None,
         }
-        if any(v is not None and not finite(v) for v in metrics.values()):
+        if any(
+            v is not None and not finite(v)
+            for key, v in metrics.items()
+            if key != "one_price_session"
+        ):
             reject("invalid_metrics")
             continue
         candidates[code] = Candidate(code, security.name, metrics, 0)

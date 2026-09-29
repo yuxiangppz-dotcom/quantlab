@@ -255,14 +255,22 @@ class DeepSeekResearch:
 
     ENDPOINT = "https://api.deepseek.com/chat/completions"
 
-    def __init__(self, model: str = "deepseek-flash", max_output_tokens: int = 12000):
+    def __init__(
+        self,
+        model: str = "deepseek-flash",
+        max_output_tokens: int = 16000,
+        reasoning_effort: str = "high",
+    ):
         self.key = os.environ.get("DEEPSEEK_API_KEY", "")
         if not self.key:
             raise ValueError("DEEPSEEK_API_KEY is missing")
         if model != "deepseek-flash":
             raise ValueError("The DeepSeek adapter currently supports deepseek-flash only")
+        if reasoning_effort not in {"low", "high", "max"}:
+            raise ValueError("DeepSeek reasoning_effort must be low, high or max")
         self.model = model
         self.max_output_tokens = max_output_tokens
+        self.reasoning_effort = reasoning_effort
         self.calls: list[dict] = []
 
     def ask(self, prompt: str, schema: dict, search: bool = False) -> tuple[dict, dict]:
@@ -283,7 +291,7 @@ class DeepSeekResearch:
                 {"role": "user", "content": prompt},
             ],
             "thinking": {"type": "enabled"},
-            "reasoning_effort": "max",
+            "reasoning_effort": self.reasoning_effort,
             "max_tokens": self.max_output_tokens,
             "response_format": {"type": "json_object"},
             "stream": False,
@@ -415,6 +423,9 @@ def validate_selection(result: dict, candidates: list[dict], evidence: list[Evid
         seen.add(code)
         focus += row["status"] == "focus"
         candidate = next(x for x in candidates if x["instrument_id"] == code)
+        metrics = candidate.get("metrics") or {}
+        if metrics.get("one_price_session") is False and "一价收盘" in row["thesis"]:
+            raise ValueError("AI mislabels a non-one-price session as one-price")
         weak_routes = {
             "信息关联:public_discussion",
             "信息关联:unverified_user_clue",
@@ -432,6 +443,26 @@ def validate_selection(result: dict, candidates: list[dict], evidence: list[Evid
             raise ValueError("AI selection cites evidence not shown or bound to this stock")
         if f"market:{code}" not in row["evidence_ids"]:
             raise ValueError("Every selection must cite its own market snapshot")
+        if any(
+            phrase in row["thesis"] + row["risk"] for phrase in ("全部只出现在卖出", "全部净卖出")
+        ):
+            for item in evidence:
+                if (
+                    item.evidence_id not in row["evidence_ids"]
+                    or item.source != "disclosure:top_inst"
+                ):
+                    continue
+                try:
+                    disclosure = json.loads(item.body)
+                except ValueError:
+                    continue
+                records = disclosure.get("records", [])
+                dates = {record.get("trade_date") for record in records}
+                if len(dates) == 1 and any(
+                    isinstance(record.get("net_buy"), (int, float)) and record["net_buy"] > 0
+                    for record in records
+                ):
+                    raise ValueError("AI falsely describes mixed seat records as all sell-side")
         if any(not row[key].strip() for key in ("thesis", "risk", "invalidation")):
             raise ValueError("AI selection lacks thesis, risk or invalidation")
     if focus > 3 or len(seen) - focus > 5:

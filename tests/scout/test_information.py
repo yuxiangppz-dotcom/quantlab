@@ -255,6 +255,30 @@ def test_model_evidence_budget_and_stock_scope():
     assert len(json.dumps(packet[0], ensure_ascii=False)) <= 4000
 
 
+def test_compact_disclosure_prompt_counts_both_sides_of_seat_sample():
+    records = [
+        {"trade_date": DAY.isoformat(), "reason": "累计偏离", "exalter": f"seat{i}", "net_buy": net}
+        for i, net in enumerate([-7, -2, 3, 9])
+    ]
+    item = Evidence(
+        "disclosure:top_inst",
+        "seat sample",
+        json.dumps({"dataset": "top_inst", "records": records}),
+        None,
+        None,
+        NOW.isoformat(),
+        kind="trading_disclosure",
+        instrument_ids=(CODE,),
+    )
+    packet = evidence_packet([item], {CODE}, max_chars=4000, max_body_chars=1400)
+    summary = json.loads(packet[0]["body"])
+    assert packet[0]["body_compacted"]
+    assert summary["record_count"] == 4
+    assert summary["groups"][0]["positive_net_rows"] == 2
+    assert summary["groups"][0]["negative_net_rows"] == 2
+    assert {row["net_buy"] for row in summary["groups"][0]["largest_positive"]} == {3, 9}
+
+
 def test_offline_supplements_reach_candidate_report_without_canonical_writes(tmp_path):
     canonical = tmp_path / "canonical"
     day = make_demo_market(canonical)
