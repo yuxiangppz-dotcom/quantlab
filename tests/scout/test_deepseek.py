@@ -63,6 +63,12 @@ def test_deepseek_request_and_private_reasoning_redaction(monkeypatch):
     raw["choices"][0]["finish_reason"] = "length"
     with pytest.raises(ValueError, match="incomplete"):
         client.ask("data", DISCOVERY_SCHEMA)
+    raw["choices"][0]["finish_reason"] = "stop"
+    raw["choices"][0]["message"]["content"] = '{"hypotheses":[{"bad":1}]}'
+    with pytest.raises(ValueError, match="schema validation"):
+        client.ask("data", DISCOVERY_SCHEMA)
+    assert client.calls[-1]["status"] == "schema_error"
+    assert client.calls[-1]["schema_path"] == ["hypotheses", "0"]
 
 
 def test_deepseek_config_and_source_grounded_pipeline(tmp_path, monkeypatch):
@@ -74,6 +80,11 @@ def test_deepseek_config_and_source_grounded_pipeline(tmp_path, monkeypatch):
         read_config(config_path)
     config_path.write_text('{"provider":"deepseek","deepseek_reasoning_effort":"invalid"}')
     with pytest.raises(ValueError, match="deepseek_reasoning_effort"):
+        read_config(config_path)
+    config_path.write_text('{"provider":"deepseek","max_output_tokens":24000}')
+    assert read_config(config_path)["max_output_tokens"] == 24000
+    config_path.write_text('{"provider":"openai","max_output_tokens":24000}')
+    with pytest.raises(ValueError, match="max_output_tokens"):
         read_config(config_path)
 
     canonical = tmp_path / "canonical"

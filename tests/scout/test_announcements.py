@@ -7,7 +7,11 @@ import pandas as pd
 
 from quantlab.scout.models import SHANGHAI, Evidence, admit_evidence
 from quantlab.scout.pipeline import DEFAULT_CONFIG
-from quantlab.scout.report import announcement_index_lines, screen_notice_risks
+from quantlab.scout.report import (
+    announcement_index_lines,
+    hold_candidate_pool,
+    screen_notice_risks,
+)
 from quantlab.scout.sources import (
     CNINFO_QUERY,
     CNINFO_STOCKS,
@@ -144,6 +148,11 @@ def test_cninfo_title_is_visible_but_midnight_is_not_publication_time():
     assert screened["selected"][0]["status"] == "focus"
     assert screened["selected"][0]["screening_status"] == "hold_for_official_notice_review"
     assert "screening_status" not in model_selection["selected"][0]
+    pool = [{"instrument_id": code, "cautions": []}]
+    held_pool = hold_candidate_pool(pool, screened)
+    assert held_pool[0]["screening_status"] == "hold_for_official_notice_review"
+    assert "暂停候选资格" in held_pool[0]["cautions"][0]
+    assert pool[0]["cautions"] == []
 
 
 def test_cninfo_empty_and_page_cap_are_not_full_coverage():

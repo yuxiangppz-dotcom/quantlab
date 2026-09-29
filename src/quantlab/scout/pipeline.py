@@ -81,7 +81,7 @@ def read_config(path: Path | None) -> dict:
     ] not in {"low", "high", "max"}:
         raise ValueError("deepseek_reasoning_effort must be low, high or max")
     for name, lower, upper in (
-        ("max_output_tokens", 1000, 16000),
+        ("max_output_tokens", 1000, 32768 if config["provider"] == "deepseek" else 16000),
         ("max_tool_calls", 1, 10),
         ("lookback_hours", 1, 168),
         ("candidate_limit", 8, 40),
@@ -578,9 +578,10 @@ def run_scout(
             )
             evidence.extend(later_notices)
             coverage.append(later_coverage)
-    from quantlab.scout.report import screen_notice_risks
+    from quantlab.scout.report import hold_candidate_pool, screen_notice_risks
 
     result = screen_notice_risks(result, [x.to_dict() for x in evidence])
+    pool = hold_candidate_pool(pool, result)
     coverage.extend(
         [
             Coverage("licensed_social_stream", "not_connected", detail="manual clues/search only"),

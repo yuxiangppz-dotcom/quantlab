@@ -352,10 +352,24 @@ class DeepSeekResearch:
         content = choice.get("message", {}).get("content")
         if not isinstance(content, str) or not content.strip():
             raise ValueError("DeepSeek response has no JSON content")
-        parsed = json.loads(content)
-        from jsonschema import validate
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError:
+            self.calls[-1]["status"] = "invalid_json"
+            raise ValueError("DeepSeek response is not valid JSON") from None
+        from jsonschema import ValidationError, validate
 
-        validate(parsed, schema)
+        try:
+            validate(parsed, schema)
+        except ValidationError as exc:
+            self.calls[-1].update(
+                {
+                    "status": "schema_error",
+                    "schema_validator": exc.validator,
+                    "schema_path": [str(part) for part in exc.absolute_path][:8],
+                }
+            )
+            raise ValueError("DeepSeek response failed schema validation") from None
         archived = {
             "id": raw.get("id"),
             "model": raw.get("model"),

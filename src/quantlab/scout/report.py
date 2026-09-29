@@ -151,6 +151,25 @@ def screen_notice_risks(selection: dict, evidence: list[dict]) -> dict:
     return {**selection, "selected": selected}
 
 
+def hold_candidate_pool(pool: list[dict], selection: dict) -> list[dict]:
+    held_codes = {
+        row["instrument_id"]
+        for row in selection["selected"]
+        if row.get("screening_status") == "hold_for_official_notice_review"
+    }
+    return [
+        {
+            **candidate,
+            "screening_status": "hold_for_official_notice_review",
+            "cautions": candidate["cautions"]
+            + ["官方公告索引标题含停牌；暂停候选资格，待核实原文"],
+        }
+        if candidate["instrument_id"] in held_codes
+        else candidate
+        for candidate in pool
+    ]
+
+
 def render_report(report: dict) -> str:
     status = report["status"]
     title = "【合成演示，不是真实荐股】" if status == "demo" else ""
@@ -195,12 +214,11 @@ def render_report(report: dict) -> str:
             if row.get("screening_status") == "hold_for_official_notice_review"
             else model_label
         )
-        tier_note = f"模型原分级为{model_label}；" if display_label != model_label else ""
         lines.extend(
             [
                 f"### {text(candidate['name'])} {code} · {display_label}",
                 "",
-                f"分级说明：{tier_note}{text(row['thesis'])}",
+                f"分级说明：{text(row['thesis'])}",
                 "",
                 "可核查事实："
                 + " ".join(
