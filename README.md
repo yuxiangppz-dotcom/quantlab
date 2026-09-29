@@ -175,6 +175,17 @@ uv run scout --track-run data/scout/runs/实际运行目录 \
 结果从报告发布后第一个收盘价开始计算，缺失值保留为空。
 它不是实际买卖收益，不假设涨停能买到或跌停能卖出。
 
+开盘前需要复查已保存候选的正式公告索引时，可运行：
+
+```bash
+uv run python scripts/recheck_scout_notices.py data/scout/runs/实际运行目录/report.json \
+  /absolute/path/to/new-notice-check.json
+```
+
+该命令只读查询最多8只最终候选的巨潮公告索引并另存差异，不调用AI、不写旧run。
+运行前核对 `report.json` 与同目录 `manifest.json` 的哈希；输出必须在旧run目录之外。
+“原归档未见”不等于“刚发布”；查询失败或为空不能证明没有公告，正文和精确发布时间仍需人工核查。
+
 ## 代码结构与开发
 
 | 路径 | 职责 |

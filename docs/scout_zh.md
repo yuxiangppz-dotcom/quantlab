@@ -51,6 +51,11 @@ uv run python scripts/render_scout_html.py /absolute/path/to/report.json \
 
 此叠加内容清楚标记为报告后的人工记录，不能倒填为模型输入或行情日收盘已知信息；
 原 `report.json`、`report.md` 和旧 HTML 文件保持不变。
+
+开盘前可用 `scripts/recheck_scout_notices.py` 对已存完整报告中的最多8只最终候选重新查询巨潮公告索引，
+输出到原run目录之外的新JSON文件。结果只指出新查询中哪些官方链接**不在原归档索引**；
+不声称它们刚刚发布。失败、部分成功、截取和空结果均保留来源状态，不代表没有公告。
+这项复查不调用AI，不读取PDF正文，不刷新行情，不改变原模型分级。
 `--doctor --canonical-dir /absolute/path` 会显示预期交易日、最后具备连续 21 日
 日线与复权文件的日期、落后交易日数。它只检查文件存在；真实运行还会检查内容。
 如果数据落后，只能用显式 `--session` 做历史离线诊断，不应把旧候选当成今天的清单。
