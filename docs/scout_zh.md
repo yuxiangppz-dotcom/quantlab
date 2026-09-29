@@ -54,6 +54,8 @@ uv run python scripts/run_scout.py --live \
 
 `deepseek-flash` 是官方 V4.1 Flash API 名称，默认思考级别为 `high`；
 可用 `deepseek_reasoning_effort` 配置 `low`、`high` 或 `max`。
+示例配置将 AI 深查候选限制为 8 只；20 只候选的真实高思考运行在调查阶段
+耗尽 16,000 输出 token，整轮未完成。规则筛选仍可保留更多候选。
 DeepSeek API 不提供本项目所需的内置网页搜索；Scout 只把已采集的 RSS、TuShare 新闻、
 交易披露、评论样本和用户线索交给模型，并在覆盖表中标记网页搜索 `not_supported`。
 没有来源时，模型可以分析量价，但不能凭空得出公告、业务关系或新闻事实。

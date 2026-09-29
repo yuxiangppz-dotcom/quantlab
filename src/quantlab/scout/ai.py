@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from datetime import datetime
 
+from quantlab.scout.disclosures import disclosure_window
 from quantlab.scout.models import Evidence, web_url
 
 
@@ -412,6 +414,8 @@ def bind_hypotheses(result: dict, evidence: list[Evidence], eligible: set[str]) 
 
 
 def validate_selection(result: dict, candidates: list[dict], evidence: list[Evidence]) -> dict:
+    if re.search(r"[0-9]", result["market_view"]):
+        raise ValueError("AI market view repeats unverified numeric claims")
     allowed_codes = {x["instrument_id"] for x in candidates}
     shown_evidence = {x.evidence_id for x in evidence}
     seen = set()
@@ -424,6 +428,12 @@ def validate_selection(result: dict, candidates: list[dict], evidence: list[Evid
         focus += row["status"] == "focus"
         candidate = next(x for x in candidates if x["instrument_id"] == code)
         metrics = candidate.get("metrics") or {}
+        narrative = " ".join(row[key] for key in ("thesis", "risk", "invalidation"))
+        numeric_text = re.sub(r"(?<!\d)\d{6}\.(?:SZ|SH)(?![A-Z])", "", narrative)
+        if re.search(r"[0-9]", numeric_text):
+            raise ValueError("AI selection repeats unverified numeric claims")
+        if re.search(r"候选最高|全池最高|量比最高|成交额最高|涨幅最高", narrative):
+            raise ValueError("AI selection makes an unchecked superlative claim")
         if metrics.get("one_price_session") is False and "一价收盘" in row["thesis"]:
             raise ValueError("AI mislabels a non-one-price session as one-price")
         weak_routes = {
@@ -443,6 +453,47 @@ def validate_selection(result: dict, candidates: list[dict], evidence: list[Evid
             raise ValueError("AI selection cites evidence not shown or bound to this stock")
         if f"market:{code}" not in row["evidence_ids"]:
             raise ValueError("Every selection must cite its own market snapshot")
+        cited_disclosures = []
+        for item in evidence:
+            if item.evidence_id not in row["evidence_ids"] or item.source not in {
+                "disclosure:top_list",
+                "disclosure:top_inst",
+            }:
+                continue
+            try:
+                cited_disclosures.extend(json.loads(item.body).get("records", []))
+            except (TypeError, ValueError):
+                continue
+        window_types = {
+            record.get("window_type")
+            or disclosure_window(record.get("reason"), record.get("trade_date", "unknown"))[
+                "window_type"
+            ]
+            for record in cited_disclosures
+        }
+        if "multi_session" in window_types:
+            if re.search(r"(连续|持续).{0,6}(净买|净卖|资金流)", row["thesis"]):
+                raise ValueError("AI infers a continuous flow from overlapping disclosure windows")
+            if "single_session" in window_types and re.search(
+                r"独立.{0,4}窗口|窗口.{0,4}独立|独立.{0,4}证据", narrative
+            ):
+                raise ValueError("AI treats overlapping disclosure windows as independent")
+            if (
+                re.search(r"(当日|单日|当天).{0,16}(净买|净卖|净流|资金流)", row["thesis"])
+                and "single_session" not in window_types
+                and not re.search(r"不能|不可|不应", row["thesis"])
+            ):
+                raise ValueError("AI describes multi-session disclosure as daily flow")
+            for sentence in re.split(r"[。；，]", narrative):
+                if (
+                    "成交" in sentence
+                    and re.search(r"净买|净卖|龙虎榜|榜单", sentence)
+                    and not re.search(r"不能|不可|不得", sentence)
+                ):
+                    raise ValueError("AI compares multi-session disclosure with daily turnover")
+            if any(word in row["thesis"] for word in ("净买", "净卖", "龙虎榜", "席位")):
+                if "累计" not in row["thesis"]:
+                    raise ValueError("AI omits the multi-session disclosure window")
         if any(
             phrase in row["thesis"] + row["risk"] for phrase in ("全部只出现在卖出", "全部净卖出")
         ):

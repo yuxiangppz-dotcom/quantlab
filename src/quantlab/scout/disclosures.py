@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
@@ -18,6 +19,31 @@ FIELDS = {
     "block_trade": ("price", "vol", "amount", "buyer", "seller"),
 }
 STRINGS = {"reason", "exalter", "side", "buyer", "seller"}
+
+
+def disclosure_window(reason: str | None, trade_date: str) -> dict:
+    """Label the observation window; the trade date is only its end date."""
+    text = reason or ""
+    match = re.search(r"连续([一二三四五六七八九十\d]+)个?交易日", text)
+    if match or "累计" in text:
+        sessions = match.group(1) if match else None
+        span = f"{sessions}个交易日" if sessions else "多日"
+        return {
+            "window_type": "multi_session",
+            "window_sessions": sessions,
+            "window_label": f"截至{trade_date}的{span}累计披露，非{trade_date}单日资金",
+        }
+    if re.search(r"单日|当日|日涨幅|日收盘|日换手|日价格", text):
+        return {
+            "window_type": "single_session",
+            "window_sessions": "一",
+            "window_label": f"{trade_date}单日披露",
+        }
+    return {
+        "window_type": "unknown",
+        "window_sessions": None,
+        "window_label": f"截至{trade_date}的披露，统计窗口未确认",
+    }
 
 
 def read_json(path: Path, max_bytes: int = 10_000_000):
@@ -188,6 +214,8 @@ def disclosure_context(snapshots: list[dict], universe: dict, closes: dict) -> t
                     seen[identity]["rank_sides"].append(row["side"])
                 continue
             value = dict(row)
+            if dataset in {"top_list", "top_inst"}:
+                value.update(disclosure_window(row.get("reason"), row["trade_date"]))
             if dataset == "top_list":
                 value["amount_unit"] = "provider raw; unverified unit; not cross-source summed"
             if dataset == "top_inst":

@@ -12,6 +12,7 @@ from quantlab.scout.demo import make_demo_market, make_demo_sources
 from quantlab.scout.disclosures import (
     collect_disclosures,
     disclosure_context,
+    disclosure_window,
     normalize_snapshot,
     normalized_rows,
 )
@@ -99,6 +100,76 @@ def test_rank_sides_merge_but_different_windows_do_not_sum():
     assert evidence[0].published_at is None
     assert evidence[0].event_dates == (DAY.isoformat(),)
     assert contexts[CODE]["top_inst"]["duplicate_or_indistinguishable_rows"] == 1
+    assert records[0]["window_type"] == "single_session"
+    assert records[1]["window_type"] == "multi_session"
+    assert "累计" in records[1]["window_label"]
+
+
+def test_disclosure_window_keeps_unknown_and_end_date_separate():
+    day = DAY.isoformat()
+    multi = disclosure_window("连续三个交易日内，涨幅偏离值累计达到20%", day)
+    assert multi["window_type"] == "multi_session"
+    assert multi["window_sessions"] == "三"
+    assert "非2026-01-09单日资金" in multi["window_label"]
+    assert disclosure_window("无法判断的原因", day)["window_type"] == "unknown"
+
+
+def test_selection_rejects_overlapping_window_flow_and_numeric_claims():
+    evidence = Evidence(
+        "disclosure:top_list",
+        "累计榜",
+        json.dumps({"records": [{"window_type": "multi_session", "trade_date": DAY.isoformat()}]}),
+        None,
+        None,
+        NOW.isoformat(),
+        instrument_ids=(CODE,),
+    )
+    candidates = [
+        {"instrument_id": CODE, "routes": ["量价异动"], "evidence_ids": [evidence.evidence_id]}
+    ]
+    selected = {
+        "instrument_id": CODE,
+        "status": "watch",
+        "thesis": "龙虎榜连续净买",
+        "risk": "披露样本有限",
+        "invalidation": "量价转弱",
+        "evidence_ids": [f"market:{CODE}", evidence.evidence_id],
+    }
+    result = {"market_view": "行情偏暖", "selected": [selected]}
+    with pytest.raises(ValueError, match="continuous flow"):
+        validate_selection(result, candidates, [evidence])
+    selected["thesis"] = "三日累计榜净买与量价走势一致"
+    selected["risk"] = "披露样本和单日成交不可直接比较，参照600002.SH观察"
+    assert validate_selection(result, candidates, [evidence]) == result
+    selected["risk"] = "龙虎榜净买规模相对当日成交额较小"
+    with pytest.raises(ValueError, match="daily turnover"):
+        validate_selection(result, candidates, [evidence])
+    selected["risk"] = "三日累计净买规模相对当日成交有限"
+    with pytest.raises(ValueError, match="daily turnover"):
+        validate_selection(result, candidates, [evidence])
+    selected["risk"] = "披露样本和单日成交不可直接比较"
+    single = Evidence(
+        "disclosure:top_inst",
+        "单日榜",
+        json.dumps({"records": [{"window_type": "single_session", "trade_date": DAY.isoformat()}]}),
+        None,
+        None,
+        NOW.isoformat(),
+        instrument_ids=(CODE,),
+    )
+    selected["evidence_ids"].append(single.evidence_id)
+    candidates[0]["evidence_ids"].append(single.evidence_id)
+    selected["thesis"] = "三日累计与单日榜两个独立窗口方向一致"
+    with pytest.raises(ValueError, match="overlapping disclosure windows"):
+        validate_selection(result, candidates, [evidence, single])
+    selected["evidence_ids"].remove(single.evidence_id)
+    candidates[0]["evidence_ids"].remove(single.evidence_id)
+    selected["thesis"] = "三日累计榜净买1167万元"
+    with pytest.raises(ValueError, match="numeric claims"):
+        validate_selection(result, candidates, [evidence])
+    selected["thesis"] = "量比最高"
+    with pytest.raises(ValueError, match="superlative"):
+        validate_selection(result, candidates, [evidence])
 
 
 def test_identical_block_rows_are_not_assumed_duplicate_transactions():

@@ -20,7 +20,11 @@ from quantlab.scout.ai import (
     search_evidence,
     validate_selection,
 )
-from quantlab.scout.disclosures import collect_disclosures, disclosure_context
+from quantlab.scout.disclosures import (
+    collect_disclosures,
+    disclosure_context,
+    disclosure_window,
+)
 from quantlab.scout.discussion import load_comments
 from quantlab.scout.market import add_sectors, latest_completed_session, scan_market
 from quantlab.scout.models import (
@@ -498,6 +502,10 @@ def run_scout(
                     "无新增催化不必淘汰量价候选；未确认传闻和纯名称联想只能作为观察线索。"
                     "close_location=1.0只表示收在当日最高价；只有one_price_session=true才是一价行情。"
                     "披露摘要的positive_net_rows与negative_net_rows都须考虑，不得把截取样本说成全部。"
+                    "龙虎榜trade_date是统计窗口截止日；multi_session是多日累计，不能写成当日净额、"
+                    "与单日成交额作任何大小/规模比较，或将重叠的单日榜和多日榜解释为连续独立净买。"
+                    "自由文本只作定性判断，不复写阿拉伯数字；精确数值由程序在候选表展示。"
+                    "不要声称某指标在候选中最高，除非逐一比较所有候选。"
                     "写出反证与失效观察点，不给交易指令、目标收益或凭空价格。"
                     "搜索引用仅表示发现来源，不等于事实已经独立核实；缺失与日期不明须披露。\n"
                     + json.dumps(packet, ensure_ascii=False)
@@ -618,6 +626,7 @@ def compact_disclosure_body(body: str, max_chars: int) -> str | None:
             group = {
                 "trade_date": day,
                 "reason": reason[:80],
+                **disclosure_window(reason, day),
                 "rows": len(rows),
                 "positive_net_rows": len(positive),
                 "negative_net_rows": len(negative),
@@ -636,7 +645,16 @@ def compact_disclosure_body(body: str, max_chars: int) -> str | None:
         summary["records"] = [
             {
                 key: row.get(key)
-                for key in ("trade_date", "reason", "l_buy", "l_sell", "net_amount", "net_rate")
+                for key in (
+                    "trade_date",
+                    "reason",
+                    "window_type",
+                    "window_label",
+                    "l_buy",
+                    "l_sell",
+                    "net_amount",
+                    "net_rate",
+                )
             }
             for row in records
             if isinstance(row, dict)
