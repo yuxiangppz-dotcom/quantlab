@@ -71,6 +71,9 @@ def _main() -> int:
                     "disclosure_queries_max": config["disclosure_sessions"] * 3
                     if config["tushare_disclosures"]
                     else 0,
+                    "announcement_queries_max": min(config["candidate_limit"], 8)
+                    if config["tushare_announcements"]
+                    else 0,
                     "comments": "user JSON import only; no connected platform feed",
                     "provider_permissions": "not tested; doctor makes no network requests",
                     "next": (

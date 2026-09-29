@@ -59,6 +59,12 @@ uv run python scripts/run_scout.py --live \
 DeepSeek API 不提供本项目所需的内置网页搜索；Scout 只把已采集的 RSS、TuShare 新闻、
 交易披露、评论样本和用户线索交给模型，并在覆盖表中标记网页搜索 `not_supported`。
 没有来源时，模型可以分析量价，但不能凭空得出公告、业务关系或新闻事实。
+可选的 `tushare_announcements: true` 会在联网运行时对最多 8 只规则候选逐股查询
+[TuShare `anns_d` 公告索引](https://tushare.pro/document/2?doc_id=176)。该接口需要单独权限，
+默认关闭；`--doctor` 不测试权限或发送请求。索引只给标题、公告日期和原文链接，
+Scout 不读取 PDF 正文，因此将其标为未核实线索，不能据标题确认事件影响。
+`rec_time` 仅在带明确时区且不晚于运行时间时作为发布时间；否则发布时间保留未知。
+查询失败、空结果和每股截取上限均显示在覆盖表中，不能据此断言没有公告或已全量覆盖。
 为避免自由论述把席位方向、披露窗口或次日可成交性说错，报告仅展示模型分级和
 程序计算的量价、披露事实；模型原文保存在原始响应文件中供审查，不直接当作结论。
 参见[官方模型更新](https://api-docs.deepseek.com/updates/)与

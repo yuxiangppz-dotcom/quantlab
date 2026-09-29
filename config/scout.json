@@ -7,6 +7,7 @@
   "candidate_limit": 20,
   "min_amount_cny": 100000000,
   "tushare_news_sources": ["cls"],
+  "tushare_announcements": false,
   "tushare_industry": true,
   "tushare_disclosures": true,
   "disclosure_sessions": 3,

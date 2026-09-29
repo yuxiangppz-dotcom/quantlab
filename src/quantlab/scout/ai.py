@@ -464,6 +464,7 @@ def validate_selection(result: dict, candidates: list[dict], evidence: list[Evid
         weak_routes = {
             "信息关联:public_discussion",
             "信息关联:unverified_user_clue",
+            "信息关联:announcement_index_unverified",
             "信息关联:sentiment",
         }
         routes = set(candidate.get("routes", []))

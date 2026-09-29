@@ -99,6 +99,98 @@ def load_manual(path: Path, now: datetime) -> list[Evidence]:
     ]
 
 
+def collect_announcements(
+    config: dict, now: datetime, online: bool, codes: list[str]
+) -> tuple[list[Evidence], Coverage]:
+    """Optional targeted TuShare announcement index; never claim full coverage."""
+    name = "official_announcement_targeted"
+    if not config["tushare_announcements"]:
+        return [], Coverage(name, "not_configured", detail="TuShare anns_d disabled")
+    if not online or not os.environ.get("TUSHARE_TOKEN"):
+        return [], Coverage(name, "disabled", detail="offline or missing token")
+    targets = list(dict.fromkeys(codes))[:8]
+    if not targets:
+        return [], Coverage(name, "empty_unconfirmed", detail="no target stocks")
+    import tushare as ts
+
+    try:
+        api = ts.pro_api(os.environ["TUSHARE_TOKEN"], timeout=20)
+    except Exception as exc:
+        return [], Coverage(name, "failed", detail=type(exc).__name__)
+    lookback_days = min(8, (config["lookback_hours"] + 23) // 24 + 1)
+    earliest = now.date() - timedelta(days=lookback_days)
+    start = earliest.strftime("%Y%m%d")
+    end = now.date().strftime("%Y%m%d")
+    evidence: list[Evidence] = []
+    failed = invalid = truncated = 0
+    for code in targets:
+        try:
+            frame = api.anns_d(
+                ts_code=code,
+                start_date=start,
+                end_date=end,
+                fields="ann_date,ts_code,name,title,url,rec_time",
+            )
+            rows = frame.to_dict("records")
+        except Exception:
+            failed += 1
+            continue
+        truncated += int(len(rows) > 100)
+        for row in rows[:100]:
+            try:
+                if row.get("ts_code") != code:
+                    raise ValueError("Announcement stock mismatch")
+                event = datetime.strptime(str(row["ann_date"]), "%Y%m%d").date()
+                if not earliest <= event <= now.date():
+                    raise ValueError("Announcement date outside request")
+                url = str(row["url"])
+                title = str(row["title"]).strip()
+                if not web_url(url) or not title:
+                    raise ValueError("Announcement needs title and public URL")
+                published = None
+                raw_time = row.get("rec_time")
+                if raw_time is not None and str(raw_time).strip().lower() not in {"", "nan", "nat"}:
+                    try:
+                        parsed = datetime.fromisoformat(str(raw_time))
+                    except (TypeError, ValueError):
+                        parsed = None
+                    if parsed is not None and parsed.tzinfo is not None:
+                        if parsed > now:
+                            raise ValueError("Future announcement publication")
+                        published = parsed.isoformat()
+                evidence.append(
+                    Evidence(
+                        source="tushare:anns_d",
+                        title=title[:500],
+                        body="公告索引仅提供标题与原文链接；PDF正文未读取或核实。",
+                        url=url,
+                        published_at=published,
+                        retrieved_at=datetime.now(SHANGHAI).isoformat(),
+                        kind="official_announcement_index_unverified",
+                        instrument_ids=(code,),
+                        event_dates=(event.isoformat(),),
+                    )
+                )
+            except (KeyError, TypeError, ValueError):
+                invalid += 1
+    if truncated:
+        status = "possibly_truncated"
+    elif failed == len(targets):
+        status = "failed"
+    elif failed or invalid:
+        status = "partial"
+    elif evidence:
+        status = "targeted_only"
+    else:
+        status = "empty_unconfirmed"
+    detail = (
+        f"TuShare anns_d index for {len(targets)} target stocks only; "
+        f"{failed} failed queries, {invalid} rejected rows, {truncated} local/provider cap hits; "
+        "PDF content not read; empty is not proof of absence"
+    )
+    return evidence, Coverage(name, status, len(evidence), detail)
+
+
 def collect_sources(config: dict, now: datetime, online: bool) -> tuple[list, list]:
     evidence: list[Evidence] = []
     coverage: list[Coverage] = []

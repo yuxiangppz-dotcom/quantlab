@@ -34,7 +34,7 @@ from quantlab.scout.models import (
     fingerprint,
     timestamp,
 )
-from quantlab.scout.sources import collect_sources, load_manual
+from quantlab.scout.sources import collect_announcements, collect_sources, load_manual
 
 DEFAULT_CONFIG = {
     "provider": "openai",
@@ -46,6 +46,7 @@ DEFAULT_CONFIG = {
     "candidate_limit": 20,
     "min_amount_cny": 100_000_000,
     "tushare_news_sources": ["cls"],
+    "tushare_announcements": False,
     "tushare_industry": True,
     "tushare_disclosures": True,
     "disclosure_sessions": 3,
@@ -95,6 +96,8 @@ def read_config(path: Path | None) -> dict:
         raise ValueError("tushare_industry must be boolean")
     if type(config["tushare_disclosures"]) is not bool:
         raise ValueError("tushare_disclosures must be boolean")
+    if type(config["tushare_announcements"]) is not bool:
+        raise ValueError("tushare_announcements must be boolean")
     for feed in config["rss"]:
         if set(feed) != {"name", "url"}:
             raise ValueError("RSS entry requires only name and url")
@@ -266,6 +269,13 @@ def run_scout(
         memberships, sector_coverage = sector_memberships(config, online)
     coverage.append(sector_coverage)
     sector_codes = add_sectors(universe, memberships)
+    target_codes = [
+        row["instrument_id"]
+        for row in build_pool(universe, [], sector_codes, min(config["candidate_limit"], 8))
+    ]
+    announcements, announcement_coverage = collect_announcements(config, now, online, target_codes)
+    evidence.extend(announcements)
+    coverage.append(announcement_coverage)
     evidence, filtered = admit_evidence(evidence, datetime.now(SHANGHAI), config["lookback_hours"])
     discussion_evidence, comment_filtered = admit_evidence(
         discussion_evidence, now, config["lookback_hours"]
@@ -288,7 +298,11 @@ def run_scout(
             manual_hypotheses.append(
                 {
                     "instrument_ids": ids,
-                    "relation": "unverified_user_clue",
+                    "relation": (
+                        "announcement_index_unverified"
+                        if item.kind == "official_announcement_index_unverified"
+                        else "unverified_user_clue"
+                    ),
                     "summary": item.title,
                     "evidence_ids": [item.evidence_id],
                 }
@@ -506,6 +520,7 @@ def run_scout(
                     "与单日成交额作任何大小/规模比较，或将重叠的单日榜和多日榜解释为连续独立净买。"
                     "自由文本只作定性判断，不复写阿拉伯数字；精确数值由程序在候选表展示。"
                     "不要声称某指标在候选中最高，除非逐一比较所有候选。"
+                    "公告索引仅有标题和原文链接，未读取PDF，不能声称已核实公告正文或业务影响。"
                     "没有订单簿/排队/逐笔数据；一价只能说OHLC相等，收盘等于涨停价只能说收盘状态。"
                     "不得据成交额、市值或缩量推断次日可买性、封单、投资者分歧、筹码轻重或弹性。"
                     "写出反证与失效观察点，不给交易指令、目标收益或凭空价格。"
