@@ -35,13 +35,24 @@ def observe_run(run_dir: Path, canonical_dir: Path, output_root: Path) -> Path:
         | {x["instrument_id"] for x in report["selection"]["selected"]}
     )
     rows = []
+    selected = report["selection"]["selected"]
+    unheld = [
+        row for row in selected if row.get("screening_status") != "hold_for_official_notice_review"
+    ]
     groups = {
         "rule_baseline": [x["instrument_id"] for x in report["baseline"]],
-        "ai_focus": [
-            x["instrument_id"] for x in report["selection"]["selected"] if x["status"] == "focus"
+        "ai_focus": [x["instrument_id"] for x in selected if x["status"] == "focus"],
+        "ai_watch": [x["instrument_id"] for x in selected if x["status"] == "watch"],
+        "ai_focus_without_notice_hold": [
+            x["instrument_id"] for x in unheld if x["status"] == "focus"
         ],
-        "ai_watch": [
-            x["instrument_id"] for x in report["selection"]["selected"] if x["status"] == "watch"
+        "ai_watch_without_notice_hold": [
+            x["instrument_id"] for x in unheld if x["status"] == "watch"
+        ],
+        "official_notice_hold": [
+            x["instrument_id"]
+            for x in selected
+            if x.get("screening_status") == "hold_for_official_notice_review"
         ],
     }
     source_flags = {
@@ -82,7 +93,10 @@ def observe_run(run_dir: Path, canonical_dir: Path, output_root: Path) -> Path:
         "rows": rows,
         "groups": groups,
         "definition": "first close after publication to N sessions later; not trading returns",
-        "limitations": "No fills/fees/tradability; revised adjustment data may change marks",
+        "limitations": (
+            "No fills/fees/tradability; a missing notice hold does not prove tradability; "
+            "revised adjustment data may change marks"
+        ),
     }
     output_root.mkdir(parents=True, exist_ok=True)
     path = output_root / f"{report['run_id']}-{uuid4().hex[:8]}.json"

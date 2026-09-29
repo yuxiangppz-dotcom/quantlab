@@ -431,14 +431,26 @@ def test_tracking_starts_strictly_after_publication(market, tmp_path):
         "status": "live_research_unvalidated",
         "finished_at": f"{days[10]}T19:00:00+08:00",
         "baseline": [{"instrument_id": code}],
-        "selection": {"selected": []},
+        "selection": {
+            "selected": [
+                {
+                    "instrument_id": code,
+                    "status": "focus",
+                    "screening_status": "hold_for_official_notice_review",
+                }
+            ]
+        },
     }
     run = tmp_path / "original"
     run.mkdir()
     (run / "report.json").write_text(json.dumps(report))
     (run / "manifest.json").write_text(json.dumps({"report_sha256": fingerprint(report)}))
     path = observe_run(run, root, tmp_path / "marks")
-    first = json.loads(path.read_text())["rows"][0]
+    observation = json.loads(path.read_text())
+    first = observation["rows"][0]
+    assert observation["groups"]["ai_focus"] == [code]
+    assert observation["groups"]["ai_focus_without_notice_hold"] == []
+    assert observation["groups"]["official_notice_hold"] == [code]
     assert first["anchor_session"] == days[11].isoformat()
     assert first["target_session"] == days[12].isoformat()
     assert first["status"] == "observed"
