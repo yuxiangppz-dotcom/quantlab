@@ -1,0 +1,11 @@
+{
+  "model": "",
+  "max_output_tokens": 6000,
+  "max_tool_calls": 5,
+  "lookback_hours": 72,
+  "candidate_limit": 20,
+  "min_amount_cny": 100000000,
+  "tushare_news_sources": ["cls"],
+  "tushare_industry": true,
+  "rss": []
+}

@@ -606,3 +606,15 @@ Current facts of the formal 2020–2024 baseline
 
 The Alpha Research Factory will let agents generate and screen candidate alphas,
 with promotion criteria enforced by the system's research protocol.
+
+## 多源短线研究助手（独立入口）
+
+新增只读的短线研究流程：本地量价/板块候选、新闻和手工线索、GPT联网调查、
+中文报告、来源覆盖与推荐后观察。它不改变原有策略，不自动下单，也不宣称策略有效。
+
+```bash
+uv run python scripts/run_scout.py --doctor
+uv run python scripts/run_scout.py --demo
+```
+
+真实运行及API配置见 [Scout使用说明](docs/scout_zh.md)。

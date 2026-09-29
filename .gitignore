@@ -26,3 +26,8 @@ htmlcov/
 
 # Local ZCode/Codex coordination mailbox (SQLite is the authority)
 .agent-loop/
+
+# Local API credentials and scout overrides
+.env
+.env.*
+/config/scout.local.json
