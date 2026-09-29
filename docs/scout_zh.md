@@ -20,6 +20,8 @@ uv run python scripts/run_scout.py --demo
 命令输出 `report.md` 的路径；同目录还有可离线打开的只读 `report.html`。
 每次运行生成独立目录，旧报告不覆盖。已有 `report.json` 可用
 `scripts/render_scout_html.py` 另存为 HTML，输出路径必须尚不存在。
+如公告索引的日期晚于行情日，报告顶部会提示这类线索不能倒填为行情日收盘时已知；
+精确发布时间未知的公告也不能据日期证明收盘前可见。
 `--doctor --canonical-dir /absolute/path` 会显示预期交易日、最后具备连续 21 日
 日线与复权文件的日期、落后交易日数。它只检查文件存在；真实运行还会检查内容。
 如果数据落后，只能用显式 `--session` 做历史离线诊断，不应把旧候选当成今天的清单。

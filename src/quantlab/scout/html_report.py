@@ -5,7 +5,7 @@ from __future__ import annotations
 from html import escape
 
 from quantlab.scout.models import web_url
-from quantlab.scout.report import observed_facts
+from quantlab.scout.report import announcement_timing_note, observed_facts
 
 
 def h(value: object) -> str:
@@ -97,6 +97,9 @@ def render_html_report(report: dict) -> str:
         f"<div class='stat'><b>{official_count}</b><span>定向公告索引记录</span></div>",
         "</section>",
     ]
+    timing_note = announcement_timing_note(report)
+    if timing_note:
+        parts.append(f"<aside class='notice'><strong>{h(timing_note)}</strong></aside>")
     if held:
         parts.append(
             "<aside class='notice'><strong>公告风险拦截。</strong> "

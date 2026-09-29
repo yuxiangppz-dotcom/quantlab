@@ -72,6 +72,8 @@ def test_html_view_escapes_sources_and_shows_halt_across_candidate():
     assert "&lt;script&gt;" in html
     assert "暂停候选资格" in html
     assert "发布时间 未知" in html
+    assert "1条公告日期晚于行情日2026-01-09" in html
+    assert "模型分级不得用于该收盘时点的回测评价" in html
     assert f"href='#evidence-{notice.evidence_id}'" in html
     assert "https://static.cninfo.com.cn/finalpage/2026-01-10/1.PDF" in html
     assert "没有净收益证据" in html

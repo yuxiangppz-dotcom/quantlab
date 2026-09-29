@@ -15,6 +15,25 @@ def text(value: object) -> str:
     return re.sub(r"([\\`*_{}\[\]<>|])", r"\\\1", str(value)).replace("\n", " ")
 
 
+def announcement_timing_note(report: dict) -> str | None:
+    """Describe index timestamps relative to the market snapshot without backdating them."""
+    notices = [
+        item
+        for item in report.get("evidence", [])
+        if item.get("kind") == "official_announcement_index_unverified"
+    ]
+    if not notices:
+        return None
+    session = report["market"]["session"]
+    later = sum(any(day > session for day in item.get("event_dates", [])) for item in notices)
+    unknown_time = sum(not item.get("published_at") for item in notices)
+    return (
+        f"时点边界：{len(notices)}条正式公告索引中，{later}条公告日期晚于行情日{session}，"
+        f"{unknown_time}条精确发布时间未知。这些线索不能证明在{session}收盘时已知；"
+        "模型分级不得用于该收盘时点的回测评价。"
+    )
+
+
 def present_selection(model_selection: dict, candidates: list[dict]) -> dict:
     """Keep model priority/citations, but never publish its unverified prose as fact."""
     by_code = {row["instrument_id"]: row for row in candidates}
@@ -189,9 +208,11 @@ def render_report(report: dict) -> str:
         "",
         text(report["selection"]["market_view"]),
         "",
-        "## AI候选（模型分级，事实由程序列示）",
-        "",
     ]
+    timing_note = announcement_timing_note(report)
+    if timing_note:
+        lines.extend([f"**{text(timing_note)}**", ""])
+    lines.extend(["## AI候选（模型分级，事实由程序列示）", ""])
     held = [
         row
         for row in report["selection"]["selected"]
