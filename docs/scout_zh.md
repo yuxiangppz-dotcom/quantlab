@@ -1,8 +1,9 @@
 # 多源短线研究助手 Scout
 
-Scout 是 QuantLab 内的独立只读研究工具。它合并量价异动、板块领先、信息关联三路候选，
+Scout 是此分支独立演进的只读研究工具。它合并量价异动、板块领先、信息关联三路候选，
 使用 OpenAI Responses 的联网搜索调查，再生成最多 3 只重点观察和 5 只普通观察候选。
-它不接券商、不下单、不改变原有策略/回测/风控语义，不宣称已找到有效 alpha。
+它不接券商、不下单，不宣称已找到有效 alpha。旧策略、回测和界面代码已从本分支移除，
+原项目保留在 `master`。仅保留兼容旧行情文件的精简数据适配层。
 
 ## 先运行，不需要密钥
 
@@ -25,7 +26,7 @@ uv run python scripts/run_scout.py --offline --session 2026-09-28
 ```
 
 日期仅为用法示例，必须替换为本地完整数据的交易日。
-默认读取仓库内 `data/canonical`，也可加 `--canonical-dir /absolute/path`。
+默认读取当前工作目录下的 `data/canonical`，也可加 `--canonical-dir /absolute/path`。
 读取既有 `ParquetStorage` 的证券表、SSE交易日历、连续21个交易日的日线和复权因子。
 daily_basic、涨跌停价缺失时保留未知值和提示，不按固定涨幅推算涨停。
 不完整历史、无效行情、停牌造成的缺行、主板以外和当前名称中的ST/退市股票被排除。
@@ -33,7 +34,8 @@ daily_basic、涨跌停价缺失时保留未知值和提示，不按固定涨幅
 当前证券名称筛选不等于完整的历史风险警示状态校验。
 
 历史日期的离线结果只能看作当前数据快照下的诊断，不能当作时点正确的历史选股回测。
-本工具不自动补齐或写 canonical 数据；需要时使用原仓库已有的数据更新入口。
+本工具不自动补齐或写 canonical 数据。旧数据更新入口只保留在 `master`，
+需要时在另一份旧项目工作目录中运行。文件布局及单位见 [行情数据约定](market_data.md)。
 
 ## 配置联网研究
 
@@ -66,7 +68,8 @@ uv run python scripts/run_scout.py --live
 
 ## 多源信息如何接入
 
-复制 `config/scout.json` 为 `config/scout.local.json` 后使用 `--config` 指定。
+未传 `--config` 时使用内置默认值；`config/scout.json` 是同值的可编辑模板。
+复制为 `config/scout.local.json` 后使用 `--config` 指定，直接编辑模板不会自动加载。
 代码已实现这些入口，而不是宣称已连接所有网站：
 
 | 入口 | 当前实现 | 权限/覆盖说明 |

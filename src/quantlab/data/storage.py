@@ -1,4 +1,7 @@
-"""Local Parquet storage for market data."""
+"""Minimal compatible Parquet adapter. Scout live/offline paths only read data.
+
+Save methods support temporary synthetic fixtures; no provider sync lives here.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +11,6 @@ from dataclasses import asdict
 from datetime import date
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -18,19 +20,9 @@ from quantlab.data.models import (
     DailyBasic,
     DailyPriceLimit,
     DataValidationError,
-    DividendObservation,
-    FinancialIndicatorObservation,
-    IndexDailyBar,
-    NameChangeRecord,
-    RawLifecycleAnnouncement,
     Security,
-    SecurityLifecycleEvent,
-    StockSTStatus,
-    SuspensionRecord,
     TradingCalendar,
 )
-
-_SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 class DuplicateDataError(Exception):
@@ -68,10 +60,6 @@ def _none_if_na(value: Any) -> str | None:
     return str(value)
 
 
-def _float_or_none(value: Any) -> float | None:
-    return None if pd.isna(value) else float(value)
-
-
 _SECURITY_COLUMNS = [
     "instrument_id",
     "symbol",
@@ -83,7 +71,11 @@ _SECURITY_COLUMNS = [
     "list_date",
     "delist_date",
 ]
+
+
 _CALENDAR_COLUMNS = ["exchange", "trade_date", "is_open"]
+
+
 _BAR_COLUMNS = [
     "instrument_id",
     "trade_date",
@@ -95,18 +87,11 @@ _BAR_COLUMNS = [
     "volume",
     "amount",
 ]
+
+
 _ADJ_COLUMNS = ["instrument_id", "trade_date", "adj_factor"]
-_INDEX_DAILY_COLUMNS = [
-    "instrument_id",
-    "trade_date",
-    "open",
-    "high",
-    "low",
-    "close",
-    "pre_close",
-    "volume",
-    "amount",
-]
+
+
 _DAILY_BASIC_COLUMNS = [
     "instrument_id",
     "trade_date",
@@ -157,26 +142,6 @@ def _frame_to_calendar(frame: pd.DataFrame) -> list[TradingCalendar]:
     ]
 
 
-def _merge_calendar(
-    existing: list[TradingCalendar],
-    incoming: list[TradingCalendar],
-) -> list[TradingCalendar]:
-    by_key = {(item.exchange, item.trade_date): item for item in existing}
-    for item in incoming:
-        by_key[(item.exchange, item.trade_date)] = item  # incoming wins
-    return list(by_key.values())
-
-
-def _merge_securities(
-    existing: list[Security],
-    incoming: list[Security],
-) -> list[Security]:
-    by_id = {item.instrument_id: item for item in existing}
-    for item in incoming:
-        by_id[item.instrument_id] = item  # incoming wins
-    return list(by_id.values())
-
-
 def _bars_to_frame(bars: list[DailyBar]) -> pd.DataFrame:
     frame = pd.DataFrame([asdict(item) for item in bars], columns=_BAR_COLUMNS)
     frame["trade_date"] = pd.to_datetime(frame["trade_date"], errors="coerce")
@@ -198,13 +163,6 @@ def _frame_to_bars(frame: pd.DataFrame) -> list[DailyBar]:
         )
         for row in frame.to_dict("records")
     ]
-
-
-def _group_bars_by_date(bars: list[DailyBar]) -> list[tuple[date, list[DailyBar]]]:
-    grouped: dict[date, list[DailyBar]] = {}
-    for bar in bars:
-        grouped.setdefault(bar.trade_date, []).append(bar)
-    return sorted(grouped.items())
 
 
 def _adj_factors_to_frame(factors: list[AdjFactor]) -> pd.DataFrame:
@@ -230,29 +188,6 @@ def _daily_basic_to_frame(items: list[DailyBasic]) -> pd.DataFrame:
     return frame
 
 
-def _index_daily_to_frame(bars: list[IndexDailyBar]) -> pd.DataFrame:
-    frame = pd.DataFrame([asdict(item) for item in bars], columns=_INDEX_DAILY_COLUMNS)
-    frame["trade_date"] = pd.to_datetime(frame["trade_date"], errors="coerce")
-    return frame
-
-
-def _frame_to_index_daily(frame: pd.DataFrame) -> list[IndexDailyBar]:
-    return [
-        IndexDailyBar(
-            instrument_id=row["instrument_id"],
-            trade_date=_to_required_date(row["trade_date"]),
-            open=float(row["open"]),
-            high=float(row["high"]),
-            low=float(row["low"]),
-            close=float(row["close"]),
-            pre_close=float(row["pre_close"]),
-            volume=float(row["volume"]),
-            amount=float(row["amount"]),
-        )
-        for row in frame.to_dict("records")
-    ]
-
-
 def _frame_to_daily_basic(frame: pd.DataFrame) -> list[DailyBasic]:
     return [
         DailyBasic(
@@ -267,20 +202,7 @@ def _frame_to_daily_basic(frame: pd.DataFrame) -> list[DailyBasic]:
 
 
 class ParquetStorage:
-    """Store canonical market data as local Parquet files.
-
-    Layout::
-
-        data/canonical/securities/securities.parquet
-        data/canonical/calendar/calendar.parquet
-        data/canonical/daily/year={year}/month={month}/{trade_date}.parquet
-        data/canonical/adj_factor/year={year}/month={month}/{trade_date}.parquet
-        data/canonical/index_daily/year={year}/month={month}/{trade_date}.parquet
-
-    Daily bars and adj factors are stored one file per trading date, sorted
-    by instrument_id. Dates are stored as ``datetime64[ns]`` and returned as
-    ``datetime.date``.
-    """
+    """Six canonical datasets using the original paths, fields and units."""
 
     def __init__(self, base_dir: str | Path = "data/canonical") -> None:
         self.base_dir = Path(base_dir)
@@ -302,28 +224,9 @@ class ParquetStorage:
             / f"{trade_date.isoformat()}.parquet"
         )
 
-    def daily_bars_exists(self, trade_date: date) -> bool:
-        return self.daily_bars_path(trade_date).exists()
-
     def save_securities(self, securities: list[Security]) -> Path:
         frame = _securities_to_frame(securities)
         _ensure_unique(frame, ["instrument_id"])
-        return self._write(frame, self.securities_path)
-
-    def upsert_securities(self, securities: list[Security]) -> Path:
-        """Merge incoming securities into the existing ones (incoming wins per id).
-
-        Historical securities not present in ``incoming`` are preserved; the
-        result is sorted by instrument_id and written atomically.
-        """
-        merged = (
-            securities
-            if not self.securities_path.exists()
-            else _merge_securities(self.load_securities(), securities)
-        )
-        frame = _securities_to_frame(merged)
-        _ensure_unique(frame, ["instrument_id"])
-        frame = frame.sort_values("instrument_id")
         return self._write(frame, self.securities_path)
 
     def load_securities(self) -> list[Security]:
@@ -331,44 +234,15 @@ class ParquetStorage:
             return []
         return _frame_to_securities(pd.read_parquet(self.securities_path))
 
-    def securities_exists(self) -> bool:
-        return self.securities_path.exists()
-
     def save_trading_calendar(self, calendar: list[TradingCalendar]) -> Path:
         frame = _calendar_to_frame(calendar)
         _ensure_unique(frame, ["exchange", "trade_date"])
-        return self._write(frame, self.calendar_path)
-
-    def upsert_trading_calendar(self, calendar: list[TradingCalendar]) -> Path:
-        """Merge incoming calendar into the existing one (incoming wins per key).
-
-        Keys are (exchange, trade_date); the result is always sorted by
-        trade_date then exchange and written atomically.
-        """
-        merged = (
-            calendar
-            if not self.calendar_path.exists()
-            else _merge_calendar(self.load_trading_calendar(), calendar)
-        )
-        frame = _calendar_to_frame(merged)
-        _ensure_unique(frame, ["exchange", "trade_date"])
-        frame = frame.sort_values(["trade_date", "exchange"])
         return self._write(frame, self.calendar_path)
 
     def load_trading_calendar(self) -> list[TradingCalendar]:
         if not self.calendar_path.exists():
             return []
         return _frame_to_calendar(pd.read_parquet(self.calendar_path))
-
-    def trading_calendar_exists(self) -> bool:
-        return self.calendar_path.exists()
-
-    def save_daily_bars(self, bars: list[DailyBar]) -> list[Path]:
-        """Group bars by trade_date and write one file per date."""
-        paths: list[Path] = []
-        for trade_date, group in _group_bars_by_date(bars):
-            paths.append(self.save_daily_bars_by_date(group, trade_date))
-        return paths
 
     def save_daily_bars_by_date(self, bars: list[DailyBar], trade_date: date) -> Path:
         frame = _bars_to_frame(bars)
@@ -390,9 +264,6 @@ class ParquetStorage:
             / f"month={trade_date.month:02d}"
             / f"{trade_date.isoformat()}.parquet"
         )
-
-    def adj_factor_exists(self, trade_date: date) -> bool:
-        return self.adj_factor_path(trade_date).exists()
 
     def save_adj_factors_by_date(self, factors: list[AdjFactor], trade_date: date) -> Path:
         frame = _adj_factors_to_frame(factors)
@@ -423,9 +294,6 @@ class ParquetStorage:
             / f"month={trade_date.month:02d}"
             / f"{trade_date.isoformat()}.parquet"
         )
-
-    def daily_price_limit_exists(self, trade_date: date) -> bool:
-        return self.daily_price_limit_path(trade_date).exists()
 
     def save_daily_price_limits_by_date(
         self, items: list[DailyPriceLimit], trade_date: date
@@ -468,378 +336,6 @@ class ParquetStorage:
             for row in pd.read_parquet(path).to_dict("records")
         ]
 
-    def _observation_snapshot_path(self, dataset: str, observed_on: date, fingerprint: str) -> Path:
-        return (
-            self.base_dir
-            / dataset
-            / f"observed_on={observed_on.isoformat()}"
-            / f"snapshot={fingerprint}.parquet"
-        )
-
-    @staticmethod
-    def _record_set_fingerprint(items: list[object]) -> str:
-        import hashlib
-        import json
-
-        record_ids = sorted(str(item.source_record_id) for item in items)
-        return hashlib.sha256(json.dumps(record_ids, separators=(",", ":")).encode()).hexdigest()
-
-    def save_financial_indicator_observations(
-        self, items: list[FinancialIndicatorObservation]
-    ) -> Path:
-        if not items:
-            raise DataValidationError("financial indicator observation is empty")
-        observed_on = min(item.observed_at.astimezone(_SHANGHAI).date() for item in items)
-        if {item.observed_at.astimezone(_SHANGHAI).date() for item in items} != {observed_on}:
-            raise DataValidationError("financial observation batch spans multiple dates")
-        fingerprint = self._record_set_fingerprint(items)
-        path = self._observation_snapshot_path("financial_indicator", observed_on, fingerprint)
-        if path.exists():
-            return path
-        frame = pd.DataFrame(
-            [asdict(item) for item in items],
-            columns=list(FinancialIndicatorObservation.__dataclass_fields__),
-        )
-        _ensure_unique(frame, ["source_record_id"])
-        frame["announcement_date"] = pd.to_datetime(frame["announcement_date"])
-        frame["period_end"] = pd.to_datetime(frame["period_end"])
-        frame["available_from"] = pd.to_datetime(frame["available_from"])
-        frame["observed_at"] = pd.to_datetime(frame["observed_at"], utc=True)
-        return self._write(frame.sort_values(["instrument_id", "announcement_date"]), path)
-
-    def load_financial_indicator_observations(self) -> list[FinancialIndicatorObservation]:
-        paths = sorted(self.base_dir.glob("financial_indicator/observed_on=*/snapshot=*.parquet"))
-        if not paths:
-            return []
-        frame = pd.concat((pd.read_parquet(path) for path in paths), ignore_index=True)
-        frame = frame.sort_values("observed_at").drop_duplicates("source_record_id", keep="first")
-        return [
-            FinancialIndicatorObservation(
-                instrument_id=row["instrument_id"],
-                announcement_date=_to_required_date(row["announcement_date"]),
-                period_end=_to_required_date(row["period_end"]),
-                update_flag=_none_if_na(row["update_flag"]),
-                roe=_float_or_none(row["roe"]),
-                roa=_float_or_none(row["roa"]),
-                gross_profit_margin=_float_or_none(row["gross_profit_margin"]),
-                net_profit_margin=_float_or_none(row["net_profit_margin"]),
-                revenue_growth_yoy=_float_or_none(row["revenue_growth_yoy"]),
-                net_profit_growth_yoy=_float_or_none(row["net_profit_growth_yoy"]),
-                operating_cashflow_to_revenue=_float_or_none(row["operating_cashflow_to_revenue"]),
-                debt_to_assets=_float_or_none(row["debt_to_assets"]),
-                observed_at=pd.Timestamp(row["observed_at"]).to_pydatetime(),
-                available_from=_to_required_date(row["available_from"]),
-                pit_status=row["pit_status"],
-                source=row["source"],
-                source_record_id=row["source_record_id"],
-            )
-            for row in frame.to_dict("records")
-        ]
-
-    def save_dividend_observations(self, items: list[DividendObservation]) -> Path:
-        if not items:
-            raise DataValidationError("dividend observation is empty")
-        observed_on = min(item.observed_at.astimezone(_SHANGHAI).date() for item in items)
-        if {item.observed_at.astimezone(_SHANGHAI).date() for item in items} != {observed_on}:
-            raise DataValidationError("dividend observation batch spans multiple dates")
-        fingerprint = self._record_set_fingerprint(items)
-        path = self._observation_snapshot_path("dividend", observed_on, fingerprint)
-        if path.exists():
-            return path
-        frame = pd.DataFrame(
-            [asdict(item) for item in items], columns=list(DividendObservation.__dataclass_fields__)
-        )
-        _ensure_unique(frame, ["source_record_id"])
-        for column in (
-            "period_end",
-            "announcement_date",
-            "record_date",
-            "ex_date",
-            "pay_date",
-            "share_listing_date",
-            "implementation_announcement_date",
-            "available_from",
-        ):
-            frame[column] = pd.to_datetime(frame[column])
-        frame["observed_at"] = pd.to_datetime(frame["observed_at"], utc=True)
-        return self._write(frame.sort_values(["instrument_id", "announcement_date"]), path)
-
-    def load_dividend_observations(self) -> list[DividendObservation]:
-        paths = sorted(self.base_dir.glob("dividend/observed_on=*/snapshot=*.parquet"))
-        if not paths:
-            return []
-        frame = pd.concat((pd.read_parquet(path) for path in paths), ignore_index=True)
-        frame = frame.sort_values("observed_at").drop_duplicates("source_record_id", keep="first")
-        return [
-            DividendObservation(
-                instrument_id=row["instrument_id"],
-                period_end=_to_date(row["period_end"]),
-                announcement_date=_to_date(row["announcement_date"]),
-                process_status=_none_if_na(row["process_status"]),
-                stock_dividend_per_share=_float_or_none(row["stock_dividend_per_share"]),
-                stock_bonus_rate=_float_or_none(row["stock_bonus_rate"]),
-                stock_conversion_rate=_float_or_none(row["stock_conversion_rate"]),
-                cash_dividend_after_tax=_float_or_none(row["cash_dividend_after_tax"]),
-                cash_dividend_before_tax=_float_or_none(row["cash_dividend_before_tax"]),
-                record_date=_to_date(row["record_date"]),
-                ex_date=_to_date(row["ex_date"]),
-                pay_date=_to_date(row["pay_date"]),
-                share_listing_date=_to_date(row["share_listing_date"]),
-                implementation_announcement_date=_to_date(row["implementation_announcement_date"]),
-                observed_at=pd.Timestamp(row["observed_at"]).to_pydatetime(),
-                available_from=_to_required_date(row["available_from"]),
-                source=row["source"],
-                source_record_id=row["source_record_id"],
-            )
-            for row in frame.to_dict("records")
-        ]
-
-    def daily_basic_exists(self, trade_date: date) -> bool:
-        return self.daily_basic_path(trade_date).exists()
-
-    def lifecycle_announcements_path(self, announcement_date: date) -> Path:
-        return (
-            self.base_dir
-            / "lifecycle_raw"
-            / "announcements"
-            / f"year={announcement_date.year}"
-            / f"month={announcement_date.month:02d}"
-            / f"{announcement_date.isoformat()}.parquet"
-        )
-
-    def lifecycle_announcements_exists(self, announcement_date: date) -> bool:
-        return self.lifecycle_announcements_path(announcement_date).exists()
-
-    def save_lifecycle_announcements_by_date(
-        self, items: list[RawLifecycleAnnouncement], announcement_date: date
-    ) -> Path:
-        columns = list(RawLifecycleAnnouncement.__dataclass_fields__)
-        frame = pd.DataFrame([asdict(item) for item in items], columns=columns)
-        if not frame.empty:
-            frame["announcement_date"] = pd.to_datetime(frame["announcement_date"])
-            _ensure_unique(frame, ["source", "source_record_id"])
-            frame = frame.sort_values(["source", "source_record_id"])
-        return self._write(frame, self.lifecycle_announcements_path(announcement_date))
-
-    def load_lifecycle_announcements_by_date(
-        self, announcement_date: date
-    ) -> list[RawLifecycleAnnouncement]:
-        path = self.lifecycle_announcements_path(announcement_date)
-        if not path.exists():
-            return []
-        return [
-            RawLifecycleAnnouncement(
-                source=row["source"],
-                source_record_id=row["source_record_id"],
-                instrument_id=_none_if_na(row["instrument_id"]),
-                announcement_date=_to_required_date(row["announcement_date"]),
-                announcement_time=_none_if_na(row["announcement_time"]),
-                title=row["title"],
-                source_url=_none_if_na(row["source_url"]),
-                raw_payload=row["raw_payload"],
-                content_fingerprint=row["content_fingerprint"],
-            )
-            for row in pd.read_parquet(path).to_dict("records")
-        ]
-
-    @property
-    def lifecycle_events_path(self) -> Path:
-        return self.base_dir / "lifecycle_events" / "events.parquet"
-
-    def save_lifecycle_events(self, events: list[SecurityLifecycleEvent]) -> Path:
-        columns = list(SecurityLifecycleEvent.__dataclass_fields__)
-        frame = pd.DataFrame([asdict(item) for item in events], columns=columns)
-        if not frame.empty:
-            for column in ("event_date", "available_from", "effective_date"):
-                frame[column] = pd.to_datetime(frame[column])
-            _ensure_unique(frame, ["event_id"])
-            frame = frame.sort_values(["available_from", "event_id"])
-        return self._write(frame, self.lifecycle_events_path)
-
-    def load_lifecycle_events(self) -> list[SecurityLifecycleEvent]:
-        if not self.lifecycle_events_path.exists():
-            return []
-        return [
-            SecurityLifecycleEvent(
-                event_id=row["event_id"],
-                instrument_id=row["instrument_id"],
-                event_type=row["event_type"],
-                event_date=_to_required_date(row["event_date"]),
-                event_time=_none_if_na(row["event_time"]),
-                available_from=_to_required_date(row["available_from"]),
-                effective_date=_to_date(row["effective_date"]),
-                source=row["source"],
-                source_record_id=row["source_record_id"],
-                source_url=_none_if_na(row["source_url"]),
-                raw_title=row["raw_title"],
-                verification_status=row["verification_status"],
-                classification_reason=row["classification_reason"],
-                content_fingerprint=row["content_fingerprint"],
-            )
-            for row in pd.read_parquet(self.lifecycle_events_path).to_dict("records")
-        ]
-
-    @property
-    def stock_st_path(self) -> Path:
-        """Deprecated v0 path; never used as trusted v0.1.1 context input."""
-        return self.base_dir / "lifecycle_context" / "stock_st.parquet"
-
-    @property
-    def suspensions_path(self) -> Path:
-        """Deprecated v0 path; never used as trusted v0.1.1 context input."""
-        return self.base_dir / "lifecycle_context" / "suspensions.parquet"
-
-    def stock_st_v1_path(self, trade_date: date) -> Path:
-        return (
-            self.base_dir
-            / "lifecycle_context_v1"
-            / "stock_st"
-            / f"year={trade_date.year}"
-            / f"month={trade_date.month:02d}"
-            / f"{trade_date.isoformat()}.parquet"
-        )
-
-    def suspensions_v1_path(self, trade_date: date) -> Path:
-        return (
-            self.base_dir
-            / "lifecycle_context_v1"
-            / "suspensions"
-            / f"year={trade_date.year}"
-            / f"month={trade_date.month:02d}"
-            / f"{trade_date.isoformat()}.parquet"
-        )
-
-    def stock_st_v1_exists(self, trade_date: date) -> bool:
-        return self.stock_st_v1_path(trade_date).exists()
-
-    def suspensions_v1_exists(self, trade_date: date) -> bool:
-        return self.suspensions_v1_path(trade_date).exists()
-
-    def save_stock_st_v1_by_date(self, items: list[StockSTStatus], trade_date: date) -> Path:
-        columns = list(StockSTStatus.__dataclass_fields__)
-        frame = pd.DataFrame([asdict(item) for item in items], columns=columns)
-        if not frame.empty:
-            frame["trade_date"] = pd.to_datetime(frame["trade_date"])
-            _ensure_unique(frame, ["instrument_id", "trade_date", "source_record_id"])
-            frame = frame.sort_values(["instrument_id", "source_record_id"])
-        return self._write(frame, self.stock_st_v1_path(trade_date))
-
-    def load_stock_st_v1_by_date(self, trade_date: date) -> list[StockSTStatus]:
-        path = self.stock_st_v1_path(trade_date)
-        if not path.exists():
-            return []
-        return [
-            StockSTStatus(
-                instrument_id=row["instrument_id"],
-                trade_date=_to_required_date(row["trade_date"]),
-                name=_none_if_na(row["name"]),
-                status=_none_if_na(row["status"]),
-                type_name=_none_if_na(row["type_name"]),
-                source_record_id=row["source_record_id"],
-            )
-            for row in pd.read_parquet(path).to_dict("records")
-        ]
-
-    def save_suspensions_v1_by_date(self, items: list[SuspensionRecord], trade_date: date) -> Path:
-        columns = list(SuspensionRecord.__dataclass_fields__)
-        frame = pd.DataFrame([asdict(item) for item in items], columns=columns)
-        if not frame.empty:
-            frame["trade_date"] = pd.to_datetime(frame["trade_date"])
-            _ensure_unique(frame, ["instrument_id", "trade_date", "source_record_id"])
-            frame = frame.sort_values(["instrument_id", "source_record_id"])
-        return self._write(frame, self.suspensions_v1_path(trade_date))
-
-    def load_suspensions_v1_by_date(self, trade_date: date) -> list[SuspensionRecord]:
-        path = self.suspensions_v1_path(trade_date)
-        if not path.exists():
-            return []
-        return [
-            SuspensionRecord(
-                instrument_id=row["instrument_id"],
-                trade_date=_to_required_date(row["trade_date"]),
-                suspend_type=row["suspend_type"],
-                suspend_timing=_none_if_na(row["suspend_timing"]),
-                source_record_id=row["source_record_id"],
-            )
-            for row in pd.read_parquet(path).to_dict("records")
-        ]
-
-    @property
-    def name_changes_v1_path(self) -> Path:
-        return self.base_dir / "lifecycle_context_v1" / "name_changes.parquet"
-
-    def save_name_changes_v1(self, items: list[NameChangeRecord]) -> Path:
-        columns = list(NameChangeRecord.__dataclass_fields__)
-        frame = pd.DataFrame([asdict(item) for item in items], columns=columns)
-        if not frame.empty:
-            frame["start_date"] = pd.to_datetime(frame["start_date"])
-            frame["end_date"] = pd.to_datetime(frame["end_date"])
-            _ensure_unique(frame, ["instrument_id", "start_date", "source_record_id"])
-            frame = frame.sort_values(["instrument_id", "start_date", "source_record_id"])
-        return self._write(frame, self.name_changes_v1_path)
-
-    def load_name_changes_v1(self) -> list[NameChangeRecord]:
-        if not self.name_changes_v1_path.exists():
-            return []
-        return [
-            NameChangeRecord(
-                instrument_id=row["instrument_id"],
-                start_date=_to_required_date(row["start_date"]),
-                end_date=_to_date(row["end_date"]),
-                name=_none_if_na(row["name"]),
-                change_reason=_none_if_na(row["change_reason"]),
-                source_record_id=row["source_record_id"],
-            )
-            for row in pd.read_parquet(self.name_changes_v1_path).to_dict("records")
-        ]
-
-    def save_stock_st(self, items: list[StockSTStatus]) -> Path:
-        columns = list(StockSTStatus.__dataclass_fields__)
-        frame = pd.DataFrame([asdict(item) for item in items], columns=columns)
-        if not frame.empty:
-            frame["trade_date"] = pd.to_datetime(frame["trade_date"])
-            _ensure_unique(frame, ["instrument_id", "trade_date", "source_record_id"])
-            frame = frame.sort_values(["instrument_id", "trade_date", "source_record_id"])
-        return self._write(frame, self.stock_st_path)
-
-    def load_stock_st(self) -> list[StockSTStatus]:
-        if not self.stock_st_path.exists():
-            return []
-        return [
-            StockSTStatus(
-                instrument_id=row["instrument_id"],
-                trade_date=_to_required_date(row["trade_date"]),
-                name=_none_if_na(row["name"]),
-                status=_none_if_na(row["status"]),
-                type_name=None,
-                source_record_id=row["source_record_id"],
-            )
-            for row in pd.read_parquet(self.stock_st_path).to_dict("records")
-        ]
-
-    def save_suspensions(self, items: list[SuspensionRecord]) -> Path:
-        columns = list(SuspensionRecord.__dataclass_fields__)
-        frame = pd.DataFrame([asdict(item) for item in items], columns=columns)
-        if not frame.empty:
-            frame["trade_date"] = pd.to_datetime(frame["trade_date"])
-            _ensure_unique(frame, ["instrument_id", "trade_date", "source_record_id"])
-            frame = frame.sort_values(["instrument_id", "trade_date", "source_record_id"])
-        return self._write(frame, self.suspensions_path)
-
-    def load_suspensions(self) -> list[SuspensionRecord]:
-        if not self.suspensions_path.exists():
-            return []
-        return [
-            SuspensionRecord(
-                instrument_id=row["instrument_id"],
-                trade_date=_to_required_date(row["trade_date"]),
-                suspend_type=row["suspend_type"],
-                suspend_timing=_none_if_na(row["suspend_timing"]),
-                source_record_id=row["source_record_id"],
-            )
-            for row in pd.read_parquet(self.suspensions_path).to_dict("records")
-        ]
-
     def save_daily_basic_by_date(self, items: list[DailyBasic], trade_date: date) -> Path:
         frame = _daily_basic_to_frame(items)
         _ensure_unique(frame, ["instrument_id", "trade_date"])
@@ -851,30 +347,6 @@ class ParquetStorage:
         if not path.exists():
             return []
         return _frame_to_daily_basic(pd.read_parquet(path))
-
-    def index_daily_path(self, trade_date: date) -> Path:
-        return (
-            self.base_dir
-            / "index_daily"
-            / f"year={trade_date.year}"
-            / f"month={trade_date.month:02d}"
-            / f"{trade_date.isoformat()}.parquet"
-        )
-
-    def index_daily_exists(self, trade_date: date) -> bool:
-        return self.index_daily_path(trade_date).exists()
-
-    def save_index_daily_by_date(self, bars: list[IndexDailyBar], trade_date: date) -> Path:
-        frame = _index_daily_to_frame(bars)
-        _ensure_unique(frame, ["instrument_id", "trade_date"])
-        frame = frame.sort_values("instrument_id")
-        return self._write(frame, self.index_daily_path(trade_date))
-
-    def load_index_daily_by_date(self, trade_date: date) -> list[IndexDailyBar]:
-        path = self.index_daily_path(trade_date)
-        if not path.exists():
-            return []
-        return _frame_to_index_daily(pd.read_parquet(path))
 
     @staticmethod
     def _write(frame: pd.DataFrame, path: Path) -> Path:

@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+from quantlab.data.models import DailyBasic, DailyPriceLimit
 from quantlab.data.storage import ParquetStorage
 from quantlab.scout.ai import bind_hypotheses, source_urls, validate_selection
 from quantlab.scout.demo import make_demo_market
@@ -115,6 +116,19 @@ def test_sector_route_and_unknown_turnover(market):
     codes = add_sectors(universe, {code: "synthetic" for code in universe})
     assert codes
     assert all("板块领先:synthetic" in universe[x].routes for x in codes)
+
+
+def test_canonical_optional_fields_keep_original_units(market):
+    root, day = market
+    storage = ParquetStorage(root)
+    code = storage.load_daily_bars_by_date(day)[0].instrument_id
+    storage.save_daily_basic_by_date([DailyBasic(code, day, 0.052, 1e9, 8e8)], day)
+    limit = DailyPriceLimit(code, day, 10.0, 11.0, 9.0, "SSE", "test", "fixture-limit")
+    storage.save_daily_price_limits_by_date([limit], day)
+    assert storage.load_daily_price_limits_by_date(day) == [limit]
+    universe, _ = scan_market(root, day)
+    assert universe[code].metrics["turnover_rate_pct"] == pytest.approx(5.2)
+    assert universe[code].metrics["up_limit"] == 11.0
 
 
 def test_stale_calendar_blocks_live(market):

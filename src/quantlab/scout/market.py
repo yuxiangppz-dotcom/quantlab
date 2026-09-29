@@ -128,7 +128,7 @@ def scan_market(
             "close_location": close_location,
             "breakout_20d": closes[-1] / high20 - 1,
             "close": last.close,
-            "turnover_rate_pct": basic.turnover_rate if basic else None,
+            "turnover_rate_pct": basic.turnover_rate * 100 if basic else None,
             "up_limit": up_limit if finite(up_limit) else None,
         }
         if any(v is not None and not finite(v) for v in metrics.values()):
