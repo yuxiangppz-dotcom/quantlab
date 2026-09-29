@@ -143,9 +143,18 @@ uv run scout --live --canonical-dir /absolute/path/to/quantlab/data/canonical
 | 文件 | 内容 |
 |---|---|
 | `report.md` | 中文候选、依据、风险、失效观察点、来源与覆盖状态 |
+| `report.html` | 可离线打开的只读候选卡、公告风险、来源索引和覆盖表；不加载脚本或外部资源 |
 | `report.json` | 行情指标快照、规则基线、行业映射、证据、配置和模型用量 |
 | `ai_responses.json` | 本地保存的 AI 响应；GLM 与 DeepSeek 的私有推理内容不入档 |
 | `manifest.json` | 内容哈希，用于后续核对原报告 |
+
+要给已有报告生成单独的 HTML 视图，指定一个尚不存在的输出文件：
+
+```bash
+uv run python scripts/render_scout_html.py data/scout/runs/实际运行目录/report.json /absolute/path/to/scout-view.html
+```
+
+该命令只读取归档 JSON；输出文件已存在时会报错，避免覆盖旧视图或实验产物。
 
 观察报告之后的价格变化：
 

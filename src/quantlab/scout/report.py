@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from hashlib import sha256
 from pathlib import Path
 
 from quantlab.scout.models import fingerprint
@@ -354,18 +355,25 @@ def render_report(report: dict) -> str:
 
 
 def write_report(root: Path, report: dict, raw: list[dict]) -> Path:
+    from quantlab.scout.html_report import render_html_report
+
+    markdown = render_report(report)
+    html = render_html_report(report)
     run_dir = root / report["run_id"]
     run_dir.mkdir(parents=True, exist_ok=False)
     for name, value in (("report.json", report), ("ai_responses.json", raw)):
         (run_dir / name).write_text(
             json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8"
         )
-    (run_dir / "report.md").write_text(render_report(report), encoding="utf-8")
+    (run_dir / "report.md").write_text(markdown, encoding="utf-8")
+    html_path = run_dir / "report.html"
+    html_path.write_text(html, encoding="utf-8")
     (run_dir / "manifest.json").write_text(
         json.dumps(
             {
                 "report_sha256": fingerprint(report),
                 "ai_responses_sha256": fingerprint(raw),
+                "html_sha256": sha256(html_path.read_bytes()).hexdigest(),
             },
             indent=2,
         )

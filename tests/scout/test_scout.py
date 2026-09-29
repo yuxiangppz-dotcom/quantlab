@@ -3,6 +3,7 @@
 import json
 from dataclasses import replace
 from datetime import datetime, timedelta
+from hashlib import sha256
 from unittest.mock import patch
 
 import pytest
@@ -300,8 +301,11 @@ def test_offline_is_network_free_immutable_and_no_ai_recommendation(market, tmp_
     assert report["selection"]["selected"] == []
     assert report["candidates"]
     assert "不是推荐" in report["selection"]["market_view"]
-    assert json.loads((path / "manifest.json").read_text())["report_sha256"] == fingerprint(report)
+    manifest = json.loads((path / "manifest.json").read_text())
+    assert manifest["report_sha256"] == fingerprint(report)
+    assert manifest["html_sha256"] == sha256((path / "report.html").read_bytes()).hexdigest()
     assert (path / "report.md").is_file()
+    assert (path / "report.html").is_file()
 
 
 def test_live_missing_key_stops_before_sources(market, tmp_path, monkeypatch):

@@ -17,7 +17,9 @@ uv run python scripts/run_scout.py --demo
 
 `--demo` 在临时目录创建明确标注的合成股票和行情，不写真实 canonical 数据，不联网。
 它演示候选筛选、覆盖清单、报告落盘；不会伪造 GPT 分析或真实推荐。
-命令输出 `report.md` 的路径。每次运行生成独立目录，旧报告不覆盖。
+命令输出 `report.md` 的路径；同目录还有可离线打开的只读 `report.html`。
+每次运行生成独立目录，旧报告不覆盖。已有 `report.json` 可用
+`scripts/render_scout_html.py` 另存为 HTML，输出路径必须尚不存在。
 `--doctor --canonical-dir /absolute/path` 会显示预期交易日、最后具备连续 21 日
 日线与复权文件的日期、落后交易日数。它只检查文件存在；真实运行还会检查内容。
 如果数据落后，只能用显式 `--session` 做历史离线诊断，不应把旧候选当成今天的清单。
