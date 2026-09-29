@@ -35,6 +35,29 @@ def announcement_timing_note(report: dict) -> str | None:
     )
 
 
+def execution_observation(report: dict) -> tuple[int, str] | None:
+    """Summarize observed limit prices without inferring a fill or next-session access."""
+    selected = report["selection"]["selected"]
+    if not selected:
+        return None
+    candidates = {item["instrument_id"]: item for item in report["candidates"]}
+    metrics = [candidates[item["instrument_id"]]["metrics"] for item in selected]
+    at_limit = sum(
+        item.get("up_limit") is not None and abs(item["close"] - item["up_limit"]) < 1e-8
+        for item in metrics
+    )
+    one_price = sum(item["one_price_session"] for item in metrics)
+    unknown = sum(item.get("up_limit") is None for item in metrics)
+    note = (
+        f"可交易性观察：{len(selected)}只模型观察股票中，{at_limit}只当日收盘价等于涨停价；"
+        f"{one_price}只出现一价行情（两项可重叠）。"
+    )
+    if unknown:
+        note += f"另有{unknown}只涨停价未知。"
+    note += "这仅是当日行情描述；次日开盘价和盘口未知，不能推断可按该收盘价成交。"
+    return at_limit, note
+
+
 def present_selection(model_selection: dict, candidates: list[dict]) -> dict:
     """Keep model priority/citations, but never publish its unverified prose as fact."""
     by_code = {row["instrument_id"]: row for row in candidates}
@@ -213,6 +236,9 @@ def render_report(report: dict) -> str:
     timing_note = announcement_timing_note(report)
     if timing_note:
         lines.extend([f"**{text(timing_note)}**", ""])
+    execution = execution_observation(report)
+    if execution:
+        lines.extend([f"**{text(execution[1])}**", ""])
     lines.extend(["## AI候选（模型分级，事实由程序列示）", ""])
     held = [
         row

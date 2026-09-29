@@ -5,7 +5,7 @@ from __future__ import annotations
 from html import escape
 
 from quantlab.scout.models import web_url
-from quantlab.scout.report import announcement_timing_note, observed_facts
+from quantlab.scout.report import announcement_timing_note, execution_observation, observed_facts
 from quantlab.scout.review import validate_post_run_review
 
 
@@ -36,6 +36,7 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
         item.get("kind") == "official_announcement_index_unverified"
         for item in report.get("evidence", [])
     )
+    execution = execution_observation(report)
     parts = [
         "<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>",
         "<meta name='viewport' content='width=device-width, initial-scale=1'>",
@@ -52,7 +53,7 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
         "header{background:#172b3b;color:#f8fafc;border-radius:18px;padding:28px 30px}"
         "header h1{font-size:clamp(27px,4vw,38px);margin:0 0 8px;line-height:1.2}"
         "header p{margin:7px 0;color:#dce7ee}header a{color:#fff}.meta{font-size:13px}"
-        ".stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));"
+        ".stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));"
         "gap:12px;margin:18px 0 22px}"
         ".stat,.panel,.card{background:#fff;border:1px solid #dce3e8;border-radius:14px}"
         ".stat{padding:15px 18px}.stat b{display:block;font-size:23px;line-height:1.3}"
@@ -101,8 +102,12 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
         f"<div class='stat'><b>{len(selected)}</b><span>模型观察股票</span></div>",
         f"<div class='stat'><b>{held}</b><span>公告风险暂停资格</span></div>",
         f"<div class='stat'><b>{official_count}</b><span>定向公告索引记录</span></div>",
+        f"<div class='stat'><b>{execution[0] if execution else 0}</b>"
+        "<span>已知收盘等于涨停价</span></div>",
         "</section>",
     ]
+    if execution:
+        parts.append(f"<p class='boundary'>{h(execution[1])}</p>")
     timing_note = announcement_timing_note(report)
     if timing_note:
         parts.append(f"<aside class='notice'><strong>{h(timing_note)}</strong></aside>")

@@ -6,6 +6,31 @@ import pytest
 
 from quantlab.scout.html_report import render_html_report
 from quantlab.scout.models import SHANGHAI, Evidence
+from quantlab.scout.report import execution_observation
+
+
+def test_execution_summary_counts_observed_and_unknown_separately():
+    report = {
+        "selection": {
+            "selected": [{"instrument_id": "a"}, {"instrument_id": "b"}],
+        },
+        "candidates": [
+            {
+                "instrument_id": "a",
+                "metrics": {"close": 11, "up_limit": 11, "one_price_session": True},
+            },
+            {
+                "instrument_id": "b",
+                "metrics": {"close": 12, "up_limit": None, "one_price_session": False},
+            },
+        ],
+    }
+    count, note = execution_observation(report)
+    assert count == 1
+    assert "1只当日收盘价等于涨停价" in note
+    assert "1只出现一价行情（两项可重叠）" in note
+    assert "另有1只涨停价未知" in note
+    assert "不能推断可按该收盘价成交" in note
 
 
 def test_html_view_escapes_sources_and_shows_halt_across_candidate():
@@ -79,6 +104,8 @@ def test_html_view_escapes_sources_and_shows_halt_across_candidate():
     assert "1条公告日期晚于行情日2026-01-09" in html
     assert "模型分级不得用于该收盘时点的回测评价" in html
     assert "PDF正文未进入模型分级" in html
+    assert "涨停价未知" in html
+    assert "次日开盘价和盘口未知" in html
     assert f"href='#evidence-{notice.evidence_id}'" in html
     assert "https://static.cninfo.com.cn/finalpage/2026-01-10/1.PDF" in html
     assert "没有净收益证据" in html
