@@ -308,7 +308,7 @@ def render_report(report: dict) -> str:
                     if themes
                     else []
                 ),
-                "正式公告索引（仅标题和链接，未核实正文）：",
+                "正式公告索引与正文提取状态（机器提取未人工核实）：",
                 *notice_lines,
                 "",
                 f"证据边界：{text(row['risk'])}",

@@ -79,6 +79,8 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
         ".subhead{font-size:14px;font-weight:700;margin:18px 0 6px;color:#334f61}"
         ".facts{margin:7px 0}.facts li{margin:4px 0}"
         ".sources{padding-left:21px}.sources li{margin:7px 0}"
+        ".pdf-text{white-space:pre-wrap;overflow:auto;max-height:360px;padding:12px;"
+        "background:#f3f6f8;border-radius:8px;font:12px/1.6 ui-monospace,monospace}"
         ".unknown{color:#695744;font-size:13px}.boundary{color:#526474;font-size:13px}"
         ".panel{padding:20px 24px;margin-top:12px;overflow:auto}"
         "table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:10px 9px;"
@@ -165,8 +167,8 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
             parts.append("</ul>")
         parts.append("<div class='subhead'>正式公告索引</div>")
         notices = official_notices(report, code)
-        body_urls = {
-            item.get("url")
+        body_by_url = {
+            item.get("url"): item
             for item in report.get("evidence", [])
             if item.get("kind") == "official_pdf_text_unverified"
             and code in item.get("instrument_ids", [])
@@ -185,11 +187,21 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
                     " · 模型分级后补查" if item.get("source", "").endswith("post_selection") else ""
                 )
                 published = item.get("published_at") or "未知"
-                body_status = "机器提取正文，未人工核实" if url in body_urls else "PDF正文未读取"
+                body_status = "机器提取正文，未人工核实" if url in body_by_url else "PDF正文未读取"
                 parts.append(
                     f"<li>{h(item['title'])} <span class='unknown'>公告日 {h(event)} · "
-                    f"发布时间 {h(published)} · {body_status}{post}</span> {link}</li>"
+                    f"发布时间 {h(published)} · {body_status}{post}</span> {link}"
                 )
+                if url in body_by_url:
+                    body = body_by_url[url]["body"]
+                    excerpt = body[:4000] + (
+                        "\n[页面截取；完整机器文本见 report.json]" if len(body) > 4000 else ""
+                    )
+                    parts.append(
+                        "<details><summary>展开机器提取正文（未人工核实）</summary>"
+                        f"<pre class='pdf-text'>{h(excerpt)}</pre></details>"
+                    )
+                parts.append("</li>")
             if len(notices) > 5:
                 parts.append(
                     f"<li class='unknown'>另有 {len(notices) - 5} 条索引未在卡片展开。</li>"

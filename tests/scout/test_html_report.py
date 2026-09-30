@@ -124,6 +124,24 @@ def test_html_view_escapes_sources_and_shows_halt_across_candidate():
     assert "https://static.cninfo.com.cn/finalpage/2026-01-10/1.PDF" in html
     assert "没有净收益证据" in html
 
+    extracted = Evidence(
+        source="cninfo:official_pdf_text",
+        title="机器提取正文",
+        body="正文风险 <script>不能执行</script>",
+        url=notice.url,
+        published_at=None,
+        retrieved_at=now,
+        kind="official_pdf_text_unverified",
+        instrument_ids=("600001.SH",),
+        event_dates=("2026-01-10",),
+    )
+    report["evidence"].append(extracted.to_dict())
+    with_body = render_html_report(report)
+    assert "展开机器提取正文（未人工核实）" in with_body
+    assert "正文风险 &lt;script&gt;不能执行&lt;/script&gt;" in with_body
+    assert "其中1条PDF正文在模型分级前机器提取" in with_body
+    assert "<script>不能执行</script>" not in with_body
+
     review = {
         "run_id": report["run_id"],
         "reviewed_at": "2026-01-11T12:00:00+08:00",
