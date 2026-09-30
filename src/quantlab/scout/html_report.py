@@ -165,6 +165,12 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
             parts.append("</ul>")
         parts.append("<div class='subhead'>正式公告索引</div>")
         notices = official_notices(report, code)
+        body_urls = {
+            item.get("url")
+            for item in report.get("evidence", [])
+            if item.get("kind") == "official_pdf_text_unverified"
+            and code in item.get("instrument_ids", [])
+        }
         if notices:
             parts.append("<ul class='sources'>")
             for item in notices[:5]:
@@ -179,9 +185,10 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
                     " · 模型分级后补查" if item.get("source", "").endswith("post_selection") else ""
                 )
                 published = item.get("published_at") or "未知"
+                body_status = "机器提取正文，未人工核实" if url in body_urls else "PDF正文未读取"
                 parts.append(
                     f"<li>{h(item['title'])} <span class='unknown'>公告日 {h(event)} · "
-                    f"发布时间 {h(published)} · PDF正文未读取{post}</span> {link}</li>"
+                    f"发布时间 {h(published)} · {body_status}{post}</span> {link}</li>"
                 )
             if len(notices) > 5:
                 parts.append(

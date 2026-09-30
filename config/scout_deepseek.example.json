@@ -6,5 +6,6 @@
   "candidate_limit": 8,
   "tushare_announcements": false,
   "cninfo_announcements": false,
+  "cninfo_pdf_bodies": false,
   "tushare_kpl_limit": false
 }

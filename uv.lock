@@ -531,6 +531,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pypdf"
+version = "6.19.0"
+source = { registry = "https://uv.agentsmirror.com/pypi/simple" }
+sdist = { url = "https://uv.agentsmirror.com/pypi/files/files.pythonhosted.org/packages/1f/ac/63d71aaedb59acbcdef491e6ca6469165e3771c9c74358204818fd9bc5a6/pypdf-6.19.0.tar.gz", hash = "sha256:bbc43aca292369ccc6cbc8a921991ecf2538a3587ab5a116eff06c321d647155", size = 7033266, upload-time = "2026-09-16T09:32:05.946Z" }
+wheels = [
+    { url = "https://uv.agentsmirror.com/pypi/files/files.pythonhosted.org/packages/3c/2c/c43c03eaf630435f023f1dc61ec4a4a78951ad5530a62c71cc89bde307b7/pypdf-6.19.0-py3-none-any.whl", hash = "sha256:7e5d6e730e7dae87d560a2cee218b852f6498c8be61966f3cd02ead971e48d14", size = 395480, upload-time = "2026-09-16T09:32:04.087Z" },
+]
+
+[[package]]
 name = "pytest"
 version = "9.1.1"
 source = { registry = "https://uv.agentsmirror.com/pypi/simple" }
@@ -566,6 +575,7 @@ dependencies = [
     { name = "jsonschema" },
     { name = "pandas" },
     { name = "pyarrow" },
+    { name = "pypdf" },
     { name = "tushare" },
 ]
 
@@ -580,6 +590,7 @@ requires-dist = [
     { name = "jsonschema", specifier = ">=4.20,<5" },
     { name = "pandas", specifier = ">=2.2.0" },
     { name = "pyarrow", specifier = ">=15.0.0" },
+    { name = "pypdf", specifier = ">=6.18,<7" },
     { name = "tushare", specifier = ">=1.4.0" },
 ]
 

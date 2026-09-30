@@ -9,6 +9,7 @@
   "tushare_news_sources": ["cls"],
   "tushare_announcements": false,
   "cninfo_announcements": false,
+  "cninfo_pdf_bodies": false,
   "tushare_industry": true,
   "tushare_disclosures": true,
   "disclosure_sessions": 3,

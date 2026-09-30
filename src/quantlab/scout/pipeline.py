@@ -37,6 +37,7 @@ from quantlab.scout.models import (
 from quantlab.scout.sources import (
     collect_announcements,
     collect_cninfo_announcements,
+    collect_cninfo_pdf_bodies,
     collect_kpl_limit_reasons,
     collect_sources,
     load_manual,
@@ -54,6 +55,7 @@ DEFAULT_CONFIG = {
     "tushare_news_sources": ["cls"],
     "tushare_announcements": False,
     "cninfo_announcements": False,
+    "cninfo_pdf_bodies": False,
     "tushare_kpl_limit": False,
     "tushare_industry": True,
     "tushare_disclosures": True,
@@ -108,6 +110,8 @@ def read_config(path: Path | None) -> dict:
         raise ValueError("tushare_announcements must be boolean")
     if type(config["cninfo_announcements"]) is not bool:
         raise ValueError("cninfo_announcements must be boolean")
+    if type(config["cninfo_pdf_bodies"]) is not bool:
+        raise ValueError("cninfo_pdf_bodies must be boolean")
     if type(config["tushare_kpl_limit"]) is not bool:
         raise ValueError("tushare_kpl_limit must be boolean")
     for feed in config["rss"]:
@@ -293,6 +297,11 @@ def run_scout(
     )
     evidence.extend(cninfo_announcements)
     coverage.append(cninfo_coverage)
+    cninfo_bodies, body_coverage = collect_cninfo_pdf_bodies(
+        config, now, online, cninfo_announcements
+    )
+    evidence.extend(cninfo_bodies)
+    coverage.append(body_coverage)
     kpl_themes, kpl_coverage = collect_kpl_limit_reasons(config, now, online, session, target_codes)
     evidence.extend(kpl_themes)
     coverage.append(kpl_coverage)
@@ -300,10 +309,13 @@ def run_scout(
     discussion_evidence, comment_filtered = admit_evidence(
         discussion_evidence, now, config["lookback_hours"]
     )
-    # Bounded input, newest known-time evidence first. Keep all admitted evidence in the archive.
+    # Put retrieved official text first; keep all admitted evidence in the archive.
     input_evidence = sorted(
         evidence,
-        key=lambda x: timestamp(x.published_at).timestamp() if x.published_at else float("-inf"),
+        key=lambda x: (
+            x.kind == "official_pdf_text_unverified",
+            timestamp(x.published_at).timestamp() if x.published_at else float("-inf"),
+        ),
         reverse=True,
     )[:80]
     baseline = [
@@ -321,6 +333,8 @@ def run_scout(
                     "relation": (
                         "announcement_index_unverified"
                         if item.kind == "official_announcement_index_unverified"
+                        else "official_pdf_text_unverified"
+                        if item.kind == "official_pdf_text_unverified"
                         else "third_party_theme_unverified"
                         if item.kind == "theme_board_unverified"
                         else "unverified_user_clue"
@@ -544,7 +558,8 @@ def run_scout(
                     "与单日成交额作任何大小/规模比较，或将重叠的单日榜和多日榜解释为连续独立净买。"
                     "自由文本只作定性判断，不复写阿拉伯数字；精确数值由程序在候选表展示。"
                     "不要声称某指标在候选中最高，除非逐一比较所有候选。"
-                    "公告索引仅有标题和原文链接，未读取PDF，不能声称已核实公告正文或业务影响。"
+                    "部分公告有机器提取的PDF正文；逐条核对evidence_id，未提供正文的索引不能声称已读。"
+                    "机器提取未经人工核实，公告日期不是精确发布时间，不得倒填为行情日收盘前已知。"
                     "没有订单簿/排队/逐笔数据；一价只能说OHLC相等，收盘等于涨停价只能说收盘状态。"
                     "不得据成交额、市值或缩量推断次日可买性、封单、投资者分歧、筹码轻重或弹性。"
                     "写出反证与失效观察点，不给交易指令、目标收益或凭空价格。"
@@ -763,6 +778,7 @@ def evidence_packet(
     relevant = [x for x in items if not x.instrument_ids or set(x.instrument_ids) & codes]
     relevant.sort(
         key=lambda x: (
+            x.kind != "official_pdf_text_unverified",
             x.kind != "search_reference_undated",
             not bool(x.instrument_ids),
             x.kind == "public_comment_unverified",

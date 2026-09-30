@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
 import ipaddress
 import json
 import os
@@ -20,6 +22,7 @@ from quantlab.scout.models import SHANGHAI, Coverage, Evidence, timestamp, web_u
 MAX_BYTES = 2_000_000
 CNINFO_STOCKS = "https://www.cninfo.com.cn/new/data/szse_stock.json"
 CNINFO_QUERY = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
+CNINFO_PDF = re.compile(r"https://static\.cninfo\.com\.cn/finalpage/\d{4}-\d{2}-\d{2}/\d+\.PDF")
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -341,6 +344,103 @@ def collect_cninfo_announcements(
         "count is raw index rows before evidence deduplication; "
         "PDF content not read, publication time unknown; empty is not proof of absence"
         + ("; queried after model selection" if post_selection else "")
+    )
+    return evidence, Coverage(name, status, len(evidence), detail)
+
+
+def read_cninfo_pdf(url: str) -> bytes:
+    """Fetch only a bounded official archive PDF; never follow a redirect."""
+    if not CNINFO_PDF.fullmatch(url):
+        raise ValueError("Unexpected CNINFO PDF URL")
+    request = urllib.request.Request(url, headers={"User-Agent": "QuantLab-Scout/1.0"})
+    with urllib.request.build_opener(NoRedirect()).open(request, timeout=20) as response:
+        raw = response.read(MAX_BYTES + 1)
+    if len(raw) > MAX_BYTES or not raw.startswith(b"%PDF-"):
+        raise ValueError("Invalid or oversized CNINFO PDF")
+    return raw
+
+
+def collect_cninfo_pdf_bodies(
+    config: dict, now: datetime, online: bool, notices: list[Evidence]
+) -> tuple[list[Evidence], Coverage]:
+    """Extract one relevant initial official PDF per stock before AI ranking.
+
+    Extraction is machine text, not an independently verified interpretation.
+    The archive date is not a point-in-time publication timestamp.
+    """
+    name = "cninfo_official_pdf_text_targeted"
+    if not config["cninfo_pdf_bodies"]:
+        return [], Coverage(name, "not_configured")
+    if not online or not config["cninfo_announcements"]:
+        return [], Coverage(name, "disabled", detail="requires live official index")
+    priority = re.compile(r"停牌|业绩|财务|年度报告|季度报告|异常波动|股票交易")
+    chosen: dict[str, Evidence] = {}
+    for item in notices:
+        if (
+            item.source != "cninfo:official_index"
+            or not item.url
+            or not priority.search(item.title)
+        ):
+            continue
+        code = item.instrument_ids[0]
+        current = chosen.get(code)
+        rank = ("停牌" in item.title, (item.event_dates or ("",))[0], item.url)
+        if current is None or rank > (
+            "停牌" in current.title,
+            (current.event_dates or ("",))[0],
+            current.url,
+        ):
+            chosen[code] = item
+    evidence: list[Evidence] = []
+    failed = empty = oversized = 0
+    from pypdf import PdfReader
+
+    for item in list(chosen.values())[:8]:
+        try:
+            raw = read_cninfo_pdf(item.url)
+            reader = PdfReader(io.BytesIO(raw), strict=True)
+            if reader.is_encrypted or not 1 <= len(reader.pages) <= 12:
+                oversized += 1
+                continue
+            parts = [page.extract_text() or "" for page in reader.pages]
+            body = "\n".join(parts).strip()
+            if len(body) < 80:
+                empty += 1
+                continue
+            sha = hashlib.sha256(raw).hexdigest()
+            evidence.append(
+                Evidence(
+                    source="cninfo:official_pdf_text",
+                    title=item.title + "（机器提取正文）",
+                    body=(
+                        f"官方PDF SHA-256: {sha}; 页数: {len(reader.pages)}; "
+                        "正文由机器提取，未人工核实；不能据公告日期推断精确披露时间。\n"
+                        + body[:12000]
+                    ),
+                    url=item.url,
+                    published_at=None,
+                    retrieved_at=datetime.now(SHANGHAI).isoformat(),
+                    kind="official_pdf_text_unverified",
+                    instrument_ids=item.instrument_ids,
+                    event_dates=item.event_dates,
+                )
+            )
+        except (OSError, ValueError, KeyError, TypeError, urllib.error.URLError):
+            failed += 1
+        except Exception:
+            # A malformed PDF must lower coverage, not abort the entire research run.
+            failed += 1
+    if failed or empty or oversized:
+        status = "partial"
+    elif evidence:
+        status = "targeted_only"
+    else:
+        status = "empty_unconfirmed"
+    detail = (
+        f"up to one priority PDF per stock, {len(chosen)} selected, {failed} failed, "
+        f"{empty} without extractable text, {oversized} encrypted/over 12 pages; "
+        "machine text not manually verified, exact publication time unknown; "
+        "no OCR, empty is not proof of absence"
     )
     return evidence, Coverage(name, status, len(evidence), detail)
 

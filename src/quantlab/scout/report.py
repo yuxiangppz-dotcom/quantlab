@@ -27,11 +27,18 @@ def announcement_timing_note(report: dict) -> str | None:
     session = report["market"]["session"]
     later = sum(any(day > session for day in item.get("event_dates", [])) for item in notices)
     unknown_time = sum(not item.get("published_at") for item in notices)
+    body_urls = {
+        item.get("url")
+        for item in report.get("evidence", [])
+        if item.get("kind") == "official_pdf_text_unverified"
+    }
+    read_count = sum(item.get("url") in body_urls for item in notices)
     return (
         f"时点边界：{len(notices)}条正式公告索引中，{later}条公告日期晚于行情日{session}，"
         f"{unknown_time}条精确发布时间未知。这些线索不能证明在{session}收盘时已知；"
         "模型分级不得用于该收盘时点的回测评价。"
-        "公告索引仅含标题与链接，PDF正文未进入模型分级，使用候选前须核对原文风险。"
+        f"其中{read_count}条PDF正文在模型分级前机器提取；其余索引仅含标题与链接。"
+        "机器提取未经过人工核实，且实际进入模型的证据须以输入审计为准；使用候选前须核对原文风险。"
     )
 
 
@@ -148,6 +155,12 @@ def announcement_index_lines(evidence: list[dict], code: str) -> list[str]:
         and code in item.get("instrument_ids", [])
     ]
     notices.sort(key=lambda item: (item.get("event_dates") or [""])[0], reverse=True)
+    body_urls = {
+        item.get("url")
+        for item in evidence
+        if item.get("kind") == "official_pdf_text_unverified"
+        and code in item.get("instrument_ids", [])
+    }
     lines = []
     for item in notices[:5]:
         event = (item.get("event_dates") or ["未知"])[0]
@@ -156,9 +169,10 @@ def announcement_index_lines(evidence: list[dict], code: str) -> list[str]:
         after_selection = (
             "；模型分级后补查" if item.get("source", "").endswith("post_selection") else ""
         )
+        body_status = "机器提取正文、未人工核实" if url in body_urls else "正文未读取"
         lines.append(
             f"- {text(item['title'])}（公告日期 {text(event)}；精确发布时间"
-            f"{text(item.get('published_at') or '未知')}；正文未读取{after_selection}） {link}"
+            f"{text(item.get('published_at') or '未知')}；{body_status}{after_selection}） {link}"
         )
     if len(notices) > 5:
         lines.append(f"- 另有 {len(notices) - 5} 条索引记录未在候选卡展开。")

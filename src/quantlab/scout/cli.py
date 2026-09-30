@@ -77,6 +77,9 @@ def _main() -> int:
                     "cninfo_queries_max": min(config["candidate_limit"], 8) + 1
                     if config["cninfo_announcements"]
                     else 0,
+                    "cninfo_pdf_downloads_max": min(config["candidate_limit"], 8)
+                    if config["cninfo_announcements"] and config["cninfo_pdf_bodies"]
+                    else 0,
                     "kpl_queries_max": 1 if config["tushare_kpl_limit"] else 0,
                     "kpl_target_stocks_max": min(config["candidate_limit"], 8)
                     if config["tushare_kpl_limit"]

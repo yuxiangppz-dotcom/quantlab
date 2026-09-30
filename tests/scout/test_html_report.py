@@ -117,7 +117,7 @@ def test_html_view_escapes_sources_and_shows_halt_across_candidate():
     assert "发布时间 未知" in html
     assert "1条公告日期晚于行情日2026-01-09" in html
     assert "模型分级不得用于该收盘时点的回测评价" in html
-    assert "PDF正文未进入模型分级" in html
+    assert "其中0条PDF正文在模型分级前机器提取" in html
     assert "涨停价未知" in html
     assert "次日开盘价和盘口未知" in html
     assert f"href='#evidence-{notice.evidence_id}'" in html
