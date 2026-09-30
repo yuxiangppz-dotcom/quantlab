@@ -173,6 +173,15 @@ def announcement_index_lines(evidence: list[dict], code: str) -> list[str]:
     return lines
 
 
+def theme_board_items(evidence: list[dict], code: str) -> list[dict]:
+    """Return only provider-labeled, unverified themes for this stock."""
+    return [
+        item
+        for item in evidence
+        if item.get("kind") == "theme_board_unverified" and code in item.get("instrument_ids", [])
+    ]
+
+
 def screen_notice_risks(selection: dict, evidence: list[dict]) -> dict:
     """Keep research priority and flag title-level trading-status uncertainty."""
     selected = []
@@ -257,6 +266,7 @@ def render_report(report: dict) -> str:
         code = row["instrument_id"]
         candidate = next(x for x in report["candidates"] if x["instrument_id"] == code)
         notice_lines = announcement_index_lines(report.get("evidence", []), code)
+        themes = theme_board_items(report.get("evidence", []), code)
         model_label = "优先核查" if row["status"] == "focus" else "一般观察"
         display_label = model_label
         if row.get("screening_status") == "hold_for_official_notice_review":
@@ -275,6 +285,15 @@ def render_report(report: dict) -> str:
                     )
                 ),
                 "",
+                *(
+                    [
+                        "第三方涨停题材标签（未核实，非公司公告）：",
+                        *(f"- {text(item['title'])}；{text(item['body'])}" for item in themes),
+                        "",
+                    ]
+                    if themes
+                    else []
+                ),
                 "正式公告索引（仅标题和链接，未核实正文）：",
                 *notice_lines,
                 "",

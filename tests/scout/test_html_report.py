@@ -93,6 +93,18 @@ def test_html_view_escapes_sources_and_shows_halt_across_candidate():
         ],
         "limitations": ["没有净收益证据"],
     }
+    theme = Evidence(
+        source="tushare:kpl_list",
+        title="第三方题材<script>",
+        body="供应商归类，非公司事实",
+        url=None,
+        published_at=None,
+        retrieved_at=now,
+        kind="theme_board_unverified",
+        instrument_ids=("600001.SH",),
+        event_dates=("2026-01-09",),
+    )
+    report["evidence"].append(theme.to_dict())
     html = render_html_report(report)
     assert "<!doctype html>" in html
     assert "script-src 'none'" in html
@@ -101,6 +113,7 @@ def test_html_view_escapes_sources_and_shows_halt_across_candidate():
     assert "&lt;script&gt;" in html
     assert "优先核查" in html
     assert "停牌线索 · 交易状态待核查" in html
+    assert "第三方涨停题材标签（未核实，非公司公告）" in html
     assert "发布时间 未知" in html
     assert "1条公告日期晚于行情日2026-01-09" in html
     assert "模型分级不得用于该收盘时点的回测评价" in html

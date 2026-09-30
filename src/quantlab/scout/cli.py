@@ -77,6 +77,10 @@ def _main() -> int:
                     "cninfo_queries_max": min(config["candidate_limit"], 8) + 1
                     if config["cninfo_announcements"]
                     else 0,
+                    "kpl_queries_max": 1 if config["tushare_kpl_limit"] else 0,
+                    "kpl_target_stocks_max": min(config["candidate_limit"], 8)
+                    if config["tushare_kpl_limit"]
+                    else 0,
                     "comments": "user JSON import only; no connected platform feed",
                     "provider_permissions": "not tested; doctor makes no network requests",
                     "next": (

@@ -10,7 +10,7 @@ import socket
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit
@@ -341,6 +341,92 @@ def collect_cninfo_announcements(
         "count is raw index rows before evidence deduplication; "
         "PDF content not read, publication time unknown; empty is not proof of absence"
         + ("; queried after model selection" if post_selection else "")
+    )
+    return evidence, Coverage(name, status, len(evidence), detail)
+
+
+def collect_kpl_limit_reasons(
+    config: dict, now: datetime, online: bool, session: date, codes: list[str]
+) -> tuple[list[Evidence], Coverage]:
+    """Read bounded third-party limit-up themes after the documented next-day update."""
+    name = "tushare_kpl_limit_themes"
+    if not config["tushare_kpl_limit"]:
+        return [], Coverage(name, "not_configured")
+    if not online or not os.environ.get("TUSHARE_TOKEN"):
+        return [], Coverage(name, "disabled", detail="offline or missing token")
+    available_after = datetime.combine(session + timedelta(days=1), time(6), SHANGHAI)
+    if now.astimezone(SHANGHAI) < available_after:
+        return [], Coverage(
+            name, "not_yet_expected", detail="provider documents next-day 06:00 update"
+        )
+    session_close = datetime.combine(session, time(15), SHANGHAI)
+    if (now.astimezone(SHANGHAI) - session_close).total_seconds() > config["lookback_hours"] * 3600:
+        return [], Coverage(name, "stale", detail="market session outside configured lookback")
+    targets = set(dict.fromkeys(codes[:8]))
+    if not targets:
+        return [], Coverage(name, "empty_unconfirmed", detail="no target stocks")
+    import tushare as ts
+
+    try:
+        frame = ts.pro_api(os.environ["TUSHARE_TOKEN"], timeout=20).kpl_list(
+            trade_date=session.strftime("%Y%m%d"),
+            tag="涨停",
+            fields="ts_code,name,trade_date,tag,theme,status,lu_desc",
+        )
+        rows = frame.to_dict("records")
+    except Exception as exc:
+        return [], Coverage(name, "failed", detail=type(exc).__name__)
+    evidence = []
+    rejected = 0
+    for row in rows[:8000]:
+        if row.get("ts_code") not in targets:
+            continue
+        try:
+            if str(row["trade_date"]) != session.strftime("%Y%m%d") or row["tag"] != "涨停":
+                raise ValueError("KPL session or tag mismatch")
+            theme = str(row["theme"]).strip()
+            reason = str(row.get("lu_desc") or "").strip()
+            if not theme or theme.lower() in {"nan", "none"}:
+                raise ValueError("KPL theme missing")
+            if reason.lower() in {"", "nan", "none"}:
+                reason = "未知"
+            board_status = str(row.get("status") or "").strip()
+            if board_status.lower() in {"", "nan", "none"}:
+                board_status = "未知"
+            code = row["ts_code"]
+            evidence.append(
+                Evidence(
+                    source="tushare:kpl_list",
+                    title=f"第三方涨停题材标签：{theme[:180]}",
+                    body=(
+                        f"开盘啦榜单标注涨停原因：{reason[:240]}；"
+                        f"连板状态：{board_status[:80]}。"
+                        "这是第三方题材归类，不是上市公司公告或已核实的上涨因果。"
+                        "供应商未提供逐条精确发布时间或原文URL。"
+                    ),
+                    url=None,
+                    published_at=None,
+                    retrieved_at=datetime.now(SHANGHAI).isoformat(),
+                    kind="theme_board_unverified",
+                    instrument_ids=(code,),
+                    event_dates=(session.isoformat(),),
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            rejected += 1
+    status = (
+        "possibly_truncated"
+        if len(rows) > 8000
+        else "partial"
+        if rejected
+        else "targeted_only"
+        if evidence
+        else "empty_unconfirmed"
+    )
+    detail = (
+        f"KPL tag=涨停 for {len(targets)} target stocks; provider returned {len(rows)} rows, "
+        f"{rejected} targeted rows rejected. Third-party theme attribution, no per-row "
+        "publication time or URL; not an issuer fact or causal explanation"
     )
     return evidence, Coverage(name, status, len(evidence), detail)
 

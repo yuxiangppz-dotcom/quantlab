@@ -5,7 +5,12 @@ from __future__ import annotations
 from html import escape
 
 from quantlab.scout.models import web_url
-from quantlab.scout.report import announcement_timing_note, execution_observation, observed_facts
+from quantlab.scout.report import (
+    announcement_timing_note,
+    execution_observation,
+    observed_facts,
+    theme_board_items,
+)
 from quantlab.scout.review import validate_post_run_review
 
 
@@ -151,7 +156,14 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
         parts.append("</div><div class='subhead'>可核查事实</div><ul class='facts'>")
         facts = observed_facts(candidate, report.get("disclosure_context", {}).get(code, {}))
         parts.extend(f"<li>{h(fact)}</li>" for fact in facts)
-        parts.append("</ul><div class='subhead'>正式公告索引</div>")
+        parts.append("</ul>")
+        themes = theme_board_items(report.get("evidence", []), code)
+        if themes:
+            parts.append("<div class='subhead'>第三方涨停题材标签（未核实，非公司公告）</div>")
+            parts.append("<ul class='sources'>")
+            parts.extend(f"<li>{h(item['title'])}；{h(item['body'])}</li>" for item in themes)
+            parts.append("</ul>")
+        parts.append("<div class='subhead'>正式公告索引</div>")
         notices = official_notices(report, code)
         if notices:
             parts.append("<ul class='sources'>")

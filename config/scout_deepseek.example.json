@@ -5,5 +5,6 @@
   "deepseek_reasoning_effort": "high",
   "candidate_limit": 8,
   "tushare_announcements": false,
-  "cninfo_announcements": false
+  "cninfo_announcements": false,
+  "tushare_kpl_limit": false
 }
