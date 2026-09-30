@@ -99,7 +99,8 @@ def test_html_view_escapes_sources_and_shows_halt_across_candidate():
     assert "href='#candidates'" in html
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
-    assert "暂停候选资格" in html
+    assert "优先核查" in html
+    assert "停牌线索 · 交易状态待核查" in html
     assert "发布时间 未知" in html
     assert "1条公告日期晚于行情日2026-01-09" in html
     assert "模型分级不得用于该收盘时点的回测评价" in html

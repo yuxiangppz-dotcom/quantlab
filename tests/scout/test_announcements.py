@@ -151,7 +151,7 @@ def test_cninfo_title_is_visible_but_midnight_is_not_publication_time():
     pool = [{"instrument_id": code, "cautions": []}]
     held_pool = hold_candidate_pool(pool, screened)
     assert held_pool[0]["screening_status"] == "hold_for_official_notice_review"
-    assert "暂停候选资格" in held_pool[0]["cautions"][0]
+    assert "交易状态待核实" in held_pool[0]["cautions"][0]
     assert pool[0]["cautions"] == []
 
 

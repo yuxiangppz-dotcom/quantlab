@@ -100,7 +100,7 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
         "<a href='#coverage'>查看信息源覆盖</a></nav></header>",
         "<section class='stats' aria-label='本轮摘要'>",
         f"<div class='stat'><b>{len(selected)}</b><span>模型观察股票</span></div>",
-        f"<div class='stat'><b>{held}</b><span>公告风险暂停资格</span></div>",
+        f"<div class='stat'><b>{held}</b><span>停牌线索待核查</span></div>",
         f"<div class='stat'><b>{official_count}</b><span>定向公告索引记录</span></div>",
         f"<div class='stat'><b>{execution[0] if execution else 0}</b>"
         "<span>已知收盘等于涨停价</span></div>",
@@ -115,7 +115,7 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
         parts.append(
             "<aside class='notice'><strong>公告风险拦截。</strong> "
             "有候选的官方公告索引标题含“停牌”；"
-            "已暂停候选资格。须核对原文和生效日期，模型原分级仅供审计。</aside>"
+            "研究分级照常显示。须核对原文与生效日期，不能据此视作可成交名单。</aside>"
         )
     if review:
         parts.append(
@@ -129,10 +129,8 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
         candidate = candidates[code]
         metrics = candidate["metrics"]
         is_held = row.get("screening_status") == "hold_for_official_notice_review"
-        badge = (
-            "暂停候选资格" if is_held else "优先核查" if row["status"] == "focus" else "一般观察"
-        )
-        badge_class = "held" if is_held else "focus" if row["status"] == "focus" else ""
+        badge = "优先核查" if row["status"] == "focus" else "一般观察"
+        badge_class = "focus" if row["status"] == "focus" else ""
         parts.extend(
             [
                 f"<article class='card{' held' if is_held else ''}' id='stock-{h(code)}'>",
@@ -182,8 +180,8 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
             parts.append("<p class='unknown'>本轮未检出该股公告索引；这不表示没有公告。</p>")
         if is_held:
             parts.append(
-                "<p class='notice'><strong>暂停候选资格：</strong>"
-                "公告标题含停牌；须核对原文和生效日期。</p>"
+                "<p class='notice'><strong>停牌线索 · 交易状态待核查：</strong>"
+                "模型研究分级保留；须核对原文和生效日期。</p>"
             )
         stock_review = [item for item in review_rows if item["instrument_id"] == code]
         if stock_review:

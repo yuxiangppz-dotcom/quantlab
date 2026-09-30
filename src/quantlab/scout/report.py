@@ -174,7 +174,7 @@ def announcement_index_lines(evidence: list[dict], code: str) -> list[str]:
 
 
 def screen_notice_risks(selection: dict, evidence: list[dict]) -> dict:
-    """Retain model priority but hold title-level suspension risks for review."""
+    """Keep research priority and flag title-level trading-status uncertainty."""
     selected = []
     for row in selection["selected"]:
         code = row["instrument_id"]
@@ -189,7 +189,7 @@ def screen_notice_risks(selection: dict, evidence: list[dict]) -> dict:
             row = {
                 **row,
                 "screening_status": "hold_for_official_notice_review",
-                "screening_reason": "官方公告索引标题含停牌；正文及生效日期待核实",
+                "screening_reason": "官方公告索引标题含停牌；研究分级保留，交易状态待核实",
             }
         selected.append(row)
     return {**selection, "selected": selected}
@@ -206,7 +206,7 @@ def hold_candidate_pool(pool: list[dict], selection: dict) -> list[dict]:
             **candidate,
             "screening_status": "hold_for_official_notice_review",
             "cautions": candidate["cautions"]
-            + ["官方公告索引标题含停牌；暂停候选资格，待核实原文"],
+            + ["官方公告索引标题含停牌；研究分级保留，交易状态待核实"],
         }
         if candidate["instrument_id"] in held_codes
         else candidate
@@ -248,8 +248,8 @@ def render_report(report: dict) -> str:
     if held:
         lines.extend(
             [
-                f"**公告风险拦截：{len(held)}只模型候选的官方公告索引标题含“停牌”，"
-                "暂停候选资格并等待原文与生效日期核实；模型原分级保留供审计。**",
+                f"**交易状态提醒：{len(held)}只模型候选的官方公告索引标题含“停牌”，"
+                "研究分级照常显示；交易状态及生效日期待核实，不能据此视作可成交名单。**",
                 "",
             ]
         )
@@ -258,11 +258,9 @@ def render_report(report: dict) -> str:
         candidate = next(x for x in report["candidates"] if x["instrument_id"] == code)
         notice_lines = announcement_index_lines(report.get("evidence", []), code)
         model_label = "优先核查" if row["status"] == "focus" else "一般观察"
-        display_label = (
-            "暂停候选资格（停牌公告待核实）"
-            if row.get("screening_status") == "hold_for_official_notice_review"
-            else model_label
-        )
+        display_label = model_label
+        if row.get("screening_status") == "hold_for_official_notice_review":
+            display_label += " · 停牌线索（交易状态待核查）"
         lines.extend(
             [
                 f"### {text(candidate['name'])} {code} · {display_label}",
