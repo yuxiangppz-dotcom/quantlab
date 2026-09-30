@@ -459,6 +459,48 @@ def test_tracking_starts_strictly_after_publication(market, tmp_path):
     assert first["adjusted_close_return"] == pytest.approx(target / anchor - 1)
 
 
+def test_tracking_distinguishes_future_and_missing_prices(market, tmp_path):
+    root, _ = market
+    storage = ParquetStorage(root)
+    days = sorted({x.trade_date for x in storage.load_trading_calendar() if x.is_open})
+    code = storage.load_daily_bars_by_date(days[0])[0].instrument_id
+    report = {
+        "run_id": "test-future-observation",
+        "status": "live_research_unvalidated",
+        "finished_at": f"{days[10]}T19:00:00+08:00",
+        "baseline": [{"instrument_id": code}],
+        "selection": {"selected": []},
+    }
+    run = tmp_path / "source"
+    run.mkdir()
+    (run / "report.json").write_text(json.dumps(report))
+    (run / "manifest.json").write_text(json.dumps({"report_sha256": fingerprint(report)}))
+
+    def observe_at(day, hour):
+        fixed = datetime.fromisoformat(f"{day}T{hour:02d}:00:00+08:00")
+
+        class FrozenClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed
+
+        with patch("quantlab.scout.tracking.datetime", FrozenClock):
+            path = observe_run(run, root, tmp_path / "marks")
+        return json.loads(path.read_text())["rows"][0]
+
+    before_anchor = observe_at(days[11], 12)
+    assert before_anchor["status"] == "anchor_not_yet_due"
+    assert before_anchor["adjusted_close_return"] is None
+    after_anchor = observe_at(days[11], 19)
+    assert after_anchor["status"] == "target_not_yet_due"
+    assert after_anchor["anchor_price_status"] == "available"
+    assert after_anchor["target_price_status"] == "not_yet_due"
+    storage.adj_factor_path(days[11]).unlink()
+    missing_anchor = observe_at(days[12], 19)
+    assert missing_anchor["status"] == "anchor_price_or_factor_missing"
+    assert missing_anchor["adjusted_close_return"] is None
+
+
 def test_ai_schema_payload_and_citation_validation(monkeypatch):
     from quantlab.scout.ai import DISCOVERY_SCHEMA, OpenAIResearch
 

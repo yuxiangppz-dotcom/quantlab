@@ -288,6 +288,10 @@ uv run python scripts/run_scout.py \
 
 从报告发布之后第一个收盘价开始，观察再往后1/3/5个交易日的复权收盘价变化。
 缺失或尚未发生的结果为null，不填0。基线与AI名单均记录，不覆盖原报告。
+每行分别记录首个观察日和目标日的价格状态：交易日未到18:00为 `not_yet_due`，
+到时后若缺少行情或复权因子则为 `price_or_factor_missing`，日历不足另列
+`calendar_unavailable`；缺数原因不自动判为停牌。只有两端价格都可用时才计算收益。
+交易日跨度按本地交易日历确定，长假不会按自然日填造价格。
 观察文件保留模型原始 `ai_focus` / `ai_watch` 分组，并单列 `official_notice_hold`；
 `ai_focus_without_notice_hold` / `ai_watch_without_notice_hold` 排除公告标题触发暂停核查的股票。
 未触发暂停核查不代表可交易，不能把这些分组当作可成交组合。

@@ -59,22 +59,32 @@ def observe_run(run_dir: Path, canonical_dir: Path, output_root: Path) -> Path:
         x["instrument_id"]: sorted(x.get("context", {})) for x in report.get("candidates", [])
     }
 
-    def adjusted_close(code: str, day: date) -> float | None:
+    def adjusted_close(code: str, day: date | None) -> tuple[float | None, str]:
+        if day is None:
+            return None, "calendar_unavailable"
         if datetime.combine(day, datetime.min.time().replace(hour=18), SHANGHAI) > now:
-            return None
+            return None, "not_yet_due"
         bars = {x.instrument_id: x for x in storage.load_daily_bars_by_date(day)}
         adj = {x.instrument_id: x for x in storage.load_adj_factors_by_date(day)}
         if code not in bars or code not in adj:
-            return None
+            return None, "price_or_factor_missing"
         value = bars[code].close * adj[code].adj_factor
-        return value if finite(value) and value > 0 else None
+        if not finite(value) or value <= 0:
+            return None, "adjusted_price_invalid"
+        return value, "available"
 
     for code in codes:
         for horizon in (1, 3, 5):
             anchor = future[0] if future else None
             target = future[horizon] if len(future) > horizon else None
-            start = adjusted_close(code, anchor) if anchor else None
-            end = adjusted_close(code, target) if target else None
+            start, anchor_state = adjusted_close(code, anchor)
+            end, target_state = adjusted_close(code, target)
+            if anchor_state != "available":
+                status = f"anchor_{anchor_state}"
+            elif target_state != "available":
+                status = f"target_{target_state}"
+            else:
+                status = "observed"
             rows.append(
                 {
                     "instrument_id": code,
@@ -83,8 +93,10 @@ def observe_run(run_dir: Path, canonical_dir: Path, output_root: Path) -> Path:
                     "horizon_sessions": horizon,
                     "anchor_session": anchor.isoformat() if anchor else None,
                     "target_session": target.isoformat() if target else None,
+                    "anchor_price_status": anchor_state,
+                    "target_price_status": target_state,
                     "adjusted_close_return": end / start - 1 if start and end else None,
-                    "status": "observed" if start and end else "pending_or_missing",
+                    "status": status,
                 }
             )
     result = {
@@ -94,7 +106,8 @@ def observe_run(run_dir: Path, canonical_dir: Path, output_root: Path) -> Path:
         "groups": groups,
         "definition": "first close after publication to N sessions later; not trading returns",
         "limitations": (
-            "No fills/fees/tradability; a missing notice hold does not prove tradability; "
+            "No fills/fees/tradability; missing bar/factor does not identify a suspension; "
+            "a missing notice hold does not prove tradability; "
             "revised adjustment data may change marks"
         ),
     }
