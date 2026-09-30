@@ -125,10 +125,18 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
             "研究分级照常显示。须核对原文与生效日期，不能据此视作可成交名单。</aside>"
         )
     if review:
+        machine_text_note = (
+            "本轮部分PDF机器正文已在模型前采集；是否实际输入模型须查看输入审计。"
+            if any(
+                item.get("kind") == "official_pdf_text_unverified"
+                for item in report.get("evidence", [])
+            )
+            else "本轮公告PDF正文未在模型前机器采集。"
+        )
         parts.append(
             "<aside class='notice'><strong>报告生成后的人工公告正文复核。</strong> "
             f"复核时间 {h(review['reviewed_at'])}；{len(review_rows)} 条备注仅作后置风险核查，"
-            "未进入原模型分级，也不能倒填到行情日收盘。</aside>"
+            f"未进入原模型分级，也不能倒填到行情日收盘。{machine_text_note}</aside>"
         )
     parts.extend(["<h2 id='candidates'>候选研究卡</h2>", "<section class='cards'>"])
     for row in selected:
@@ -216,7 +224,7 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
             )
         stock_review = [item for item in review_rows if item["instrument_id"] == code]
         if stock_review:
-            parts.append("<div class='subhead'>后置 PDF 正文复核（未参与模型分级）</div>")
+            parts.append("<div class='subhead'>报告后人工复核备注（备注未参与模型分级）</div>")
             parts.append("<ul class='sources'>")
             for item in stock_review:
                 label = "风险" if item["category"] == "risk" else "背景"

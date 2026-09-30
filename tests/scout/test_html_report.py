@@ -157,7 +157,8 @@ def test_html_view_escapes_sources_and_shows_halt_across_candidate():
     }
     reviewed_html = render_html_report(report, review)
     assert "报告生成后的人工公告正文复核" in reviewed_html
-    assert "后置 PDF 正文复核（未参与模型分级）" in reviewed_html
+    assert "报告后人工复核备注（备注未参与模型分级）" in reviewed_html
+    assert "本轮部分PDF机器正文已在模型前采集" in reviewed_html
     assert "正文风险 &lt;script&gt;attack()&lt;/script&gt;" in reviewed_html
     assert "<script>" not in reviewed_html
     assert "后置复核来自独立文件" in reviewed_html

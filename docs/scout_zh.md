@@ -50,6 +50,7 @@ uv run python scripts/render_scout_html.py /absolute/path/to/report.json \
 ```
 
 此叠加内容清楚标记为报告后的人工记录，不能倒填为模型输入或行情日收盘已知信息；
+若该轮另有排序前机器提取的PDF正文，两者的来源时点分别展示，人工备注不改写模型输入。
 原 `report.json`、`report.md` 和旧 HTML 文件保持不变。
 
 开盘前可用 `scripts/recheck_scout_notices.py` 对已存完整报告中的最多8只最终候选重新查询巨潮公告索引，
