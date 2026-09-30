@@ -195,7 +195,7 @@ def scan_market(
     if not candidates:
         raise ValueError("No eligible stocks with complete valid history")
     frame = pd.DataFrame({k: v.metrics for k, v in candidates.items()}).T
-    # Transparent heuristic baseline, NOT a fitted model or a probability.
+    # A discovery ordering hint, not a calibrated probability or trading signal.
     scores = (
         sum(
             frame[col].rank(pct=True)
@@ -210,6 +210,20 @@ def scan_market(
             candidate.routes.append("量价异动")
         if m["breakout_20d"] >= 0 and m["return_5d"] > 0:
             candidate.routes.append("趋势突破")
+        if (
+            -0.12 <= m["return_5d"] <= 0.08
+            and -0.08 <= m["return_1d"] <= 0.015
+            and m["amount_ratio_5d"] >= 1.1
+            and m["close_location"] is not None
+            and m["close_location"] >= 0.45
+        ):
+            candidate.routes.append("回撤放量")
+        if (
+            -0.04 <= m["return_5d"] <= 0.12
+            and m["return_1d"] < 0.06
+            and m["amount_ratio_5d"] >= 1.35
+        ):
+            candidate.routes.append("温和放量")
     return candidates, {
         "session": session.isoformat(),
         "history_start": days[0].isoformat(),
@@ -220,7 +234,10 @@ def scan_market(
         "security_master": "current_snapshot_not_historical_PIT",
         "median_return_1d": float(frame.return_1d.median()),
         "positive_fraction": float((frame.return_1d > 0).mean()),
-        "score_definition": "mean percentile rank of 1d/5d return, amount ratio, breakout",
+        "score_definition": (
+            "discovery-only mean percentile rank of 1d/5d return, amount ratio, breakout; "
+            "not a probability"
+        ),
     }
 
 

@@ -1,0 +1,21 @@
+{
+  "provider": "deepseek",
+  "model": "deepseek-flash",
+  "max_output_tokens": 32768,
+  "deepseek_reasoning_effort": "high",
+  "candidate_limit": 24,
+  "discovery_limit": 160,
+  "lookback_hours": 72,
+  "min_amount_cny": 100000000,
+  "akshare_hot_rank": true,
+  "cninfo_market_index": true,
+  "cninfo_announcements": true,
+  "cninfo_pdf_bodies": true,
+  "tushare_news_sources": ["cls"],
+  "tushare_industry": true,
+  "tushare_disclosures": true,
+  "disclosure_sessions": 3,
+  "tushare_announcements": false,
+  "tushare_kpl_limit": false,
+  "rss": []
+}

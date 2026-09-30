@@ -42,6 +42,7 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
         for item in report.get("evidence", [])
     )
     execution = execution_observation(report)
+    timing = report.get("timing") or {}
     parts = [
         "<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>",
         "<meta name='viewport' content='width=device-width, initial-scale=1'>",
@@ -99,6 +100,11 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
         "<header><h1>Scout · 短线研究观察</h1>",
         f"<p>行情截至 {h(report['market']['session'])} 收盘 · "
         f"报告生成 {h(report['finished_at'])}</p>",
+        (
+            f"<p>目标观察交易日 {h(timing.get('target_session') or '未知')} · "
+            f"类型 {h(timing.get('report_kind') or '旧版未标注')} · "
+            f"信息截点 {h(timing.get('information_cutoff') or '未知')}</p>"
+        ),
         f"<p class='meta'>状态：{h(report['status'])} · "
         f"AI：{h(report.get('ai_provider') or '未调用')} / "
         f"{h(report.get('ai_model') or '无')}</p>",
@@ -115,6 +121,15 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
     ]
     if execution:
         parts.append(f"<p class='boundary'>{h(execution[1])}</p>")
+    stages = report.get("candidate_stages")
+    if stages:
+        parts.append(
+            "<p class='boundary'>"
+            f"廉价召回 {len(stages['cheap_candidates'])} 只；"
+            f"AI 深查池 {len(stages['deep_candidates'])} 只；"
+            f"深查预算外 {len(stages['not_deep_reason'])} 只。"
+            "逐只原因见 report.json。</p>"
+        )
     timing_note = announcement_timing_note(report)
     if timing_note:
         parts.append(f"<aside class='notice'><strong>{h(timing_note)}</strong></aside>")
@@ -163,10 +178,30 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
             ("成交额/前5日均值", f"{metrics['amount_ratio_5d']:.2f}倍"),
         ):
             parts.append(f"<div class='metric'><b>{h(value)}</b><small>{h(label)}</small></div>")
-        parts.append("</div><div class='subhead'>可核查事实</div><ul class='facts'>")
+        parts.append(
+            "</div><div class='subhead'>模型分级与发现理由</div>"
+            f"<p>{h(row.get('thesis') or '模型理由未通过核查')}</p>"
+            "<div class='subhead'>可核查事实</div><ul class='facts'>"
+        )
         facts = observed_facts(candidate, report.get("disclosure_context", {}).get(code, {}))
         parts.extend(f"<li>{h(fact)}</li>" for fact in facts)
         parts.append("</ul>")
+        parts.append(
+            "<p class='boundary'>"
+            f"发现入口：{h('、'.join(row.get('opportunity_type', candidate.get('routes', []))))}；"
+            f"证据等级：{h(row.get('evidence_quality', '未知'))}；"
+            f"预设观察期限：{h(row.get('observation_horizon_sessions', 5))}个交易日。"
+            "</p>"
+        )
+        hot = candidate.get("context", {}).get("hot_rank")
+        if hot:
+            previous = hot.get("previous_rank")
+            parts.append(
+                "<p class='boundary'>东方财富人气榜抓取时排名 "
+                f"{h(hot['rank'])}；前次可比排名 "
+                f"{h(previous if previous is not None else '未知')}。"
+                "关注度只作线索，榜单精确发布时间未知。</p>"
+            )
         themes = theme_board_items(report.get("evidence", []), code)
         if themes:
             parts.append("<div class='subhead'>第三方涨停题材标签（未核实，非公司公告）</div>")
@@ -235,6 +270,7 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
                 )
             parts.append("</ul>")
         parts.append(f"<p class='boundary'>证据边界：{h(row['risk'])}</p>")
+        parts.append(f"<p class='boundary'>失效观察：{h(row.get('invalidation') or '未知')}</p>")
         parts.append("<p class='boundary'>证据编号：")
         for index, ref in enumerate(row["evidence_ids"]):
             if index:
@@ -245,7 +281,39 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
                 parts.append(h(ref))
         parts.append("</p></article>")
     if not selected:
-        parts.append("<div class='panel'>本轮无完整AI候选；请查看状态和覆盖信息。</div>")
+        parts.append(
+            "<div class='panel'>今天没有足够依据推荐新的关注标的；请查看状态和覆盖信息。</div>"
+        )
+    elif not any(row.get("status") == "focus" for row in selected):
+        parts.append(
+            "<div class='panel'>本轮无重点关注："
+            f"{h(report['selection'].get('no_recommendation_reason') or '具体原因待核实')}"
+            "</div>"
+        )
+    portfolio = report.get("portfolio_review", {})
+    if portfolio.get("status") == "provided":
+        parts.append("<h2>持仓与自选独立观察</h2><section class='panel'>")
+        parts.append(
+            "<p>清单不占新候选名额；这里只显示已知行情与风险，未单独调用 AI 深查。"
+            f"输入时间 {h(portfolio['observed_at'])}；"
+            f"超过一周：{'是' if portfolio['stale_input'] else '否'}。</p>"
+        )
+        parts.append(
+            "<table><thead><tr><th>类别</th><th>股票</th><th>收盘</th>"
+            "<th>新候选合格</th><th>已知缺口</th></tr></thead><tbody>"
+        )
+        for item in portfolio["rows"]:
+            close = f"{item['close']:.2f}" if item["close"] is not None else "未知"
+            parts.append(
+                "<tr>"
+                f"<td>{h(item['group'])}</td>"
+                f"<td>{h(item['name'] or '身份未知')} {h(item['instrument_id'])}</td>"
+                f"<td>{h(close)}</td>"
+                f"<td>{'是' if item['new_candidate_eligible'] else '否'}</td>"
+                f"<td>{h('、'.join(item['concerns']) or '暂无已知警示')}</td>"
+                "</tr>"
+            )
+        parts.append("</tbody></table></section>")
     parts.extend(
         ["</section><h2 id='coverage'>信息源覆盖</h2><section class='panel'>", "<table><thead><tr>"]
     )

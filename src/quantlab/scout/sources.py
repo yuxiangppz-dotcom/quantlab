@@ -348,6 +348,95 @@ def collect_cninfo_announcements(
     return evidence, Coverage(name, status, len(evidence), detail)
 
 
+def collect_cninfo_market_index(
+    config: dict, now: datetime, online: bool, valid_codes: set[str]
+) -> tuple[list[Evidence], Coverage]:
+    """Bounded market-wide announcement lead scan, independent of price ranking.
+
+    CNINFO only supplies a date in this index.  This is a discovery sample, not a
+    complete announcement subscription or a timestamped publication feed.
+    """
+    name = "cninfo_market_index"
+    if not config.get("cninfo_market_index", False):
+        return [], Coverage(name, "not_configured")
+    if not online:
+        return [], Coverage(name, "disabled", detail="offline mode")
+    lookback = min(3, (config["lookback_hours"] + 23) // 24)
+    earliest = now.date() - timedelta(days=lookback)
+    rows_seen, failures, capped = 0, 0, 0
+    evidence: list[Evidence] = []
+    for column, plate, suffix in (("sse", "sh", "SH"), ("szse", "sz", "SZ")):
+        for page in range(1, 3):
+            form = {
+                "pageNum": page,
+                "pageSize": 50,
+                "column": column,
+                "tabName": "fulltext",
+                "plate": plate,
+                "stock": "",
+                "searchkey": "",
+                "secid": "",
+                "category": "",
+                "trade": "",
+                "seDate": f"{earliest.isoformat()}~{now.date().isoformat()}",
+                "sortName": "time",
+                "sortType": "desc",
+                "isHLtitle": "true",
+            }
+            try:
+                result = read_cninfo_json(CNINFO_QUERY, form)
+                rows = result.get("announcements") or []
+                if not isinstance(rows, list):
+                    raise ValueError("Invalid announcement list")
+                capped += int(page == 2 and bool(result.get("hasMore")))
+            except (ValueError, OSError, urllib.error.URLError):
+                failures += 1
+                break
+            rows_seen += len(rows)
+            for row in rows:
+                try:
+                    code = f"{row['secCode']}.{suffix}"
+                    if code not in valid_codes:
+                        continue
+                    event = datetime.fromtimestamp(
+                        int(row["announcementTime"]) / 1000, SHANGHAI
+                    ).date()
+                    path = str(row["adjunctUrl"])
+                    title = str(row["announcementTitle"]).strip()
+                    if (
+                        not earliest <= event <= now.date()
+                        or not title
+                        or not re.fullmatch(r"finalpage/\d{4}-\d{2}-\d{2}/\d+\.PDF", path)
+                    ):
+                        continue
+                    evidence.append(
+                        Evidence(
+                            source="cninfo:market_index",
+                            title=title[:500],
+                            body="巨潮市场公告索引；仅标题和PDF链接，精确发布时间未知。",
+                            url=f"https://static.cninfo.com.cn/{path}",
+                            published_at=None,
+                            retrieved_at=datetime.now(SHANGHAI).isoformat(),
+                            kind="official_announcement_index_unverified",
+                            instrument_ids=(code,),
+                            event_dates=(event.isoformat(),),
+                        )
+                    )
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    continue
+            if len(rows) < 50:
+                break
+    status = "failed" if failures == 2 and not rows_seen else "partial" if failures else "sampled"
+    return evidence, Coverage(
+        name,
+        status,
+        len(evidence),
+        f"{rows_seen} raw rows across at most 2 pages per exchange; "
+        f"{failures} failed requests, {capped} page caps; market index is not exhaustive; "
+        "publication time unknown",
+    )
+
+
 def read_cninfo_pdf(url: str) -> bytes:
     """Fetch only a bounded official archive PDF; never follow a redirect."""
     if not CNINFO_PDF.fullmatch(url):

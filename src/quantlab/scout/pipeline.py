@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import asdict
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pathlib import Path
 from uuid import uuid4
 
@@ -26,17 +26,23 @@ from quantlab.scout.disclosures import (
     disclosure_window,
 )
 from quantlab.scout.discussion import load_comments
+from quantlab.scout.hot import INTERFACE as HOT_INTERFACE
+from quantlab.scout.hot import SOURCE as HOT_SOURCE
+from quantlab.scout.hot import collect_hot_rank, normalize_hot_rank, save_hot_snapshot
 from quantlab.scout.market import add_sectors, latest_completed_session, scan_market
 from quantlab.scout.models import (
     SHANGHAI,
     Coverage,
+    Evidence,
     admit_evidence,
     fingerprint,
     timestamp,
 )
+from quantlab.scout.portfolio import load_portfolio_review
 from quantlab.scout.sources import (
     collect_announcements,
     collect_cninfo_announcements,
+    collect_cninfo_market_index,
     collect_cninfo_pdf_bodies,
     collect_kpl_limit_reasons,
     collect_sources,
@@ -50,11 +56,14 @@ DEFAULT_CONFIG = {
     "deepseek_reasoning_effort": "high",
     "max_tool_calls": 5,
     "lookback_hours": 72,
-    "candidate_limit": 20,
+    "candidate_limit": 24,
+    "discovery_limit": 160,
     "min_amount_cny": 100_000_000,
     "tushare_news_sources": ["cls"],
     "tushare_announcements": False,
     "cninfo_announcements": False,
+    "cninfo_market_index": False,
+    "akshare_hot_rank": False,
     "cninfo_pdf_bodies": False,
     "tushare_kpl_limit": False,
     "tushare_industry": True,
@@ -62,6 +71,64 @@ DEFAULT_CONFIG = {
     "disclosure_sessions": 3,
     "rss": [],
 }
+
+EVENT_LEAD_TERMS = (
+    "重大合同",
+    "中标",
+    "订单",
+    "业绩预告",
+    "业绩快报",
+    "重大资产重组",
+    "收购",
+    "回购",
+    "增持",
+    "减持",
+    "停牌",
+    "复牌",
+    "诉讼",
+    "风险提示",
+)
+
+
+def event_lead_priority(title: str) -> int:
+    """Route material-looking titles first without asserting a positive catalyst."""
+    return int(any(term in title for term in EVENT_LEAD_TERMS))
+
+
+def scoped_leads(items: list[Evidence], universe: set[str]) -> list[dict]:
+    """Use all admitted stock-scoped leads before any model prompt truncation."""
+    leads = []
+    ordered = sorted(
+        items,
+        key=lambda item: (
+            -event_lead_priority(item.title),
+            item.kind != "official_announcement_index_unverified",
+            item.title,
+        ),
+    )
+    for item in ordered:
+        if item.kind == "attention_rank_unverified":
+            continue
+        ids = sorted(set(item.instrument_ids) & universe)
+        if not ids:
+            continue
+        leads.append(
+            {
+                "instrument_ids": ids,
+                "relation": (
+                    "announcement_index_unverified"
+                    if item.kind == "official_announcement_index_unverified"
+                    else "official_pdf_text_unverified"
+                    if item.kind == "official_pdf_text_unverified"
+                    else "third_party_theme_unverified"
+                    if item.kind == "theme_board_unverified"
+                    else "unverified_user_clue"
+                ),
+                "summary": item.title,
+                "evidence_ids": [item.evidence_id],
+            }
+        )
+    return leads
 
 
 def read_config(path: Path | None) -> dict:
@@ -89,6 +156,7 @@ def read_config(path: Path | None) -> dict:
         ("max_tool_calls", 1, 10),
         ("lookback_hours", 1, 168),
         ("candidate_limit", 8, 40),
+        ("discovery_limit", 40, 200),
         ("disclosure_sessions", 1, 5),
     ):
         if type(config[name]) is not int or not lower <= config[name] <= upper:
@@ -110,6 +178,12 @@ def read_config(path: Path | None) -> dict:
         raise ValueError("tushare_announcements must be boolean")
     if type(config["cninfo_announcements"]) is not bool:
         raise ValueError("cninfo_announcements must be boolean")
+    if type(config["cninfo_market_index"]) is not bool:
+        raise ValueError("cninfo_market_index must be boolean")
+    if type(config["akshare_hot_rank"]) is not bool:
+        raise ValueError("akshare_hot_rank must be boolean")
+    if config["discovery_limit"] < config["candidate_limit"]:
+        raise ValueError("discovery_limit must cover candidate_limit")
     if type(config["cninfo_pdf_bodies"]) is not bool:
         raise ValueError("cninfo_pdf_bodies must be boolean")
     if type(config["tushare_kpl_limit"]) is not bool:
@@ -143,11 +217,19 @@ def sector_memberships(config: dict, online: bool) -> tuple[dict, Coverage]:
         return {}, Coverage("industry_membership", "failed", detail=type(exc).__name__)
 
 
-def build_pool(universe: dict, hypotheses: list[dict], sector_codes: list[str], limit: int) -> list:
-    # Reserve capacity for information/sector routes so momentum cannot crowd them out.
+def build_pool(
+    universe: dict,
+    hypotheses: list[dict],
+    sector_codes: list[str],
+    limit: int,
+    attention_codes: list[str] | None = None,
+) -> list:
+    """Merge independent routes with bounded capacity and deterministic ordering."""
     event_codes: list[str] = []
     for hypothesis in hypotheses:
         for code in hypothesis["instrument_ids"]:
+            if code not in universe:
+                continue
             candidate = universe[code]
             route = f"信息关联:{hypothesis['relation']}"
             if route not in candidate.routes:
@@ -157,23 +239,67 @@ def build_pool(universe: dict, hypotheses: list[dict], sector_codes: list[str], 
             )
             if code not in event_codes:
                 event_codes.append(code)
-    market_codes = [
+    momentum_codes = [
         x.instrument_id
         for x in sorted(universe.values(), key=lambda x: (-x.score, x.instrument_id))
         if any(route in {"量价异动", "趋势突破"} for route in x.routes)
     ]
+    pullback_codes = [
+        x.instrument_id
+        for x in sorted(
+            universe.values(),
+            key=lambda x: (
+                -x.metrics["amount_ratio_5d"],
+                -x.metrics["close_location"] if x.metrics["close_location"] is not None else 0,
+                x.instrument_id,
+            ),
+        )
+        if "回撤放量" in x.routes or "温和放量" in x.routes
+    ]
+    attention_codes = [code for code in (attention_codes or []) if code in universe]
+    for code in attention_codes:
+        if "热度观察" not in universe[code].routes:
+            universe[code].routes.append("热度观察")
     chosen = []
-    for codes in (
-        event_codes[: limit // 3],
-        sector_codes[: limit // 3],
-        market_codes,
-        event_codes,
-        sector_codes,
-    ):
+    routes = (event_codes, sector_codes, pullback_codes, attention_codes, momentum_codes)
+    # Each route gets an initial share. Unused capacity is filled in the same
+    # fixed order; overlap never counts twice.
+    for codes in tuple(codes[: max(1, limit // 5)] for codes in routes) + routes:
         for code in codes:
             if code not in chosen and len(chosen) < limit:
                 chosen.append(code)
     return [universe[code].to_dict() for code in chosen]
+
+
+def report_timing(
+    open_sessions: list[date], finished: datetime, asof_session: date, valid: bool
+) -> dict:
+    """Choose D from the frozen completion time, never from an assumed tomorrow."""
+    if finished.tzinfo is None:
+        raise ValueError("Report completion time requires timezone")
+    local = finished.astimezone(SHANGHAI)
+    future = sorted(
+        day for day in open_sessions if datetime.combine(day, time(9, 30), SHANGHAI) > local
+    )
+    target = future[0] if future else None
+    return {
+        "timezone": "Asia/Shanghai",
+        "asof_session": asof_session.isoformat(),
+        "generated_at": local.isoformat(),
+        "information_cutoff": local.isoformat(),
+        "target_session": target.isoformat() if target else None,
+        "report_kind": (
+            "premarket"
+            if target == local.date()
+            else "next_session_prep"
+            if target
+            else "current_observation"
+        ),
+        "primary_eligible": bool(valid and target),
+        "primary_selection_rule": (
+            "last valid report frozen before target 09:30, by generated_at then run_id"
+        ),
+    }
 
 
 def run_scout(
@@ -187,6 +313,8 @@ def run_scout(
     sectors_path: Path | None = None,
     disclosures_path: Path | None = None,
     comments_path: Path | None = None,
+    hot_file: Path | None = None,
+    portfolio_file: Path | None = None,
     demo: bool = False,
 ) -> tuple[Path, dict]:
     now = datetime.now(SHANGHAI)
@@ -225,6 +353,7 @@ def run_scout(
     if output_root.resolve().is_relative_to(canonical_dir.resolve()):
         raise ValueError("Scout output must not be written inside canonical data")
     universe, market = scan_market(canonical_dir, session, config["min_amount_cny"])
+    portfolio_review = load_portfolio_review(portfolio_file, now, session, storage, universe)
     discussion_evidence, discussion_context, discussion_audit = [], {}, {}
     if comments_path:
         discussion_evidence, discussion_context, discussion_audit = load_comments(
@@ -248,6 +377,104 @@ def run_scout(
     }
     extra_evidence, disclosure_by_stock = disclosure_context(snapshots, universe, closes)
     evidence, coverage = collect_sources(config, now, online)
+    hot_root = output_root.parent / "hot_snapshots"
+    previous_hot = None
+    if online and hot_root.is_dir():
+        for prior_path in sorted(hot_root.glob("*.json"), reverse=True):
+            try:
+                previous_hot = json.loads(prior_path.read_text(encoding="utf-8"))
+                break
+            except (OSError, ValueError):
+                continue
+    if hot_file and not online:
+        raise ValueError("A hot snapshot may only be used in a live research run")
+    if hot_file:
+        hot_snapshot = json.loads(hot_file.read_text(encoding="utf-8"))
+        captured = timestamp(hot_snapshot["retrieved_at"])
+        if (
+            hot_snapshot.get("source") != HOT_SOURCE
+            or hot_snapshot.get("interface") != HOT_INTERFACE
+            or hot_snapshot.get("scope") != "current_top100"
+            or not isinstance(hot_snapshot.get("raw_rows"), list)
+            or not isinstance(hot_snapshot.get("normalized"), list)
+            or captured > now
+            or (now - captured).total_seconds() > 86400
+        ):
+            raise ValueError("Hot snapshot is invalid, future-dated or older than 24 hours")
+        checked_hot, _ = normalize_hot_rank(hot_snapshot["raw_rows"], captured)
+        if checked_hot is None or [
+            (row["instrument_id"], row["rank"]) for row in checked_hot["normalized"]
+        ] != [(row["instrument_id"], row["rank"]) for row in hot_snapshot["normalized"]]:
+            raise ValueError("Saved hot snapshot does not match its raw rows")
+        hot_coverage = Coverage(
+            HOT_SOURCE,
+            "cached_explicit",
+            len(hot_snapshot["normalized"]),
+            f"operator-selected snapshot retrieved {captured.isoformat()}; provider as-of unknown",
+        )
+        hot_path = hot_file
+    else:
+        hot_snapshot, hot_coverage = collect_hot_rank(
+            datetime.now(SHANGHAI), online and config["akshare_hot_rank"], previous_hot
+        )
+    if not config["akshare_hot_rank"] and not hot_file:
+        hot_coverage = Coverage("akshare:eastmoney_hot_rank", "not_configured")
+    hot_path = hot_file if hot_file else None
+    if hot_snapshot and not hot_file:
+        hot_path = hot_root / (
+            datetime.now(SHANGHAI).strftime("%Y%m%dT%H%M%S%f") + "-" + uuid4().hex[:6] + ".json"
+        )
+        try:
+            save_hot_snapshot(hot_path, hot_snapshot)
+        except OSError:
+            hot_snapshot = None
+            hot_path = None
+            hot_coverage = Coverage(
+                "akshare:eastmoney_hot_rank", "failed", detail="snapshot_write_failed"
+            )
+    valid_hot_rows = [
+        row
+        for row in (hot_snapshot or {}).get("normalized", [])
+        if row["instrument_id"] in universe
+        and row["name"].replace(" ", "") == universe[row["instrument_id"]].name.replace(" ", "")
+    ]
+    hot_identity_conflicts = [
+        row["instrument_id"]
+        for row in (hot_snapshot or {}).get("normalized", [])
+        if row["instrument_id"] in universe
+        and row["name"].replace(" ", "") != universe[row["instrument_id"]].name.replace(" ", "")
+    ]
+    if hot_identity_conflicts:
+        hot_coverage.detail += (
+            f"; {len(hot_identity_conflicts)} name conflicts excluded from attention route"
+        )
+    coverage.append(hot_coverage)
+    attention_codes = [row["instrument_id"] for row in valid_hot_rows]
+    for row in valid_hot_rows:
+        code = row["instrument_id"]
+        if code not in universe:
+            continue
+        universe[code].context["hot_rank"] = {
+            key: row[key] for key in ("rank", "previous_rank", "rank_delta", "change_status")
+        }
+        hot_evidence = Evidence(
+            source="akshare:eastmoney_hot_rank",
+            title=f"东方财富人气榜当前第{row['rank']}位：{row['name']}",
+            body=(
+                f"当前榜单排名{row['rank']}；前次可比排名"
+                f"{row['previous_rank'] if row['previous_rank'] is not None else '未知'}。"
+                "这是关注线索，不证明公司事实、资金流向或未来上涨。"
+            ),
+            url=hot_snapshot["source_url"],
+            published_at=None,
+            retrieved_at=hot_snapshot["retrieved_at"],
+            kind="attention_rank_unverified",
+            instrument_ids=(code,),
+        )
+        evidence.append(hot_evidence)
+        universe[code].evidence_ids = sorted(
+            set(universe[code].evidence_ids + [hot_evidence.evidence_id])
+        )
     coverage.extend(disclosure_coverage)
     coverage.append(
         Coverage(
@@ -285,9 +512,32 @@ def run_scout(
         memberships, sector_coverage = sector_memberships(config, online)
     coverage.append(sector_coverage)
     sector_codes = add_sectors(universe, memberships)
+    market_notices, market_notice_coverage = collect_cninfo_market_index(
+        config, now, online, set(universe)
+    )
+    evidence.extend(market_notices)
+    coverage.append(market_notice_coverage)
+    early_event_hypotheses = [
+        {
+            "instrument_ids": list(item.instrument_ids),
+            "relation": "announcement_index_unverified",
+            "summary": item.title,
+            "evidence_ids": [item.evidence_id],
+        }
+        for item in sorted(
+            market_notices,
+            key=lambda item: (-event_lead_priority(item.title), item.title),
+        )
+    ]
     target_codes = [
         row["instrument_id"]
-        for row in build_pool(universe, [], sector_codes, min(config["candidate_limit"], 8))
+        for row in build_pool(
+            universe,
+            early_event_hypotheses,
+            sector_codes,
+            min(config["candidate_limit"], 8),
+            attention_codes,
+        )
     ]
     announcements, announcement_coverage = collect_announcements(config, now, online, target_codes)
     evidence.extend(announcements)
@@ -314,37 +564,16 @@ def run_scout(
         evidence,
         key=lambda x: (
             x.kind == "official_pdf_text_unverified",
+            event_lead_priority(x.title),
             timestamp(x.published_at).timestamp() if x.published_at else float("-inf"),
         ),
         reverse=True,
     )[:80]
-    baseline = [
-        x.to_dict()
-        for x in sorted(universe.values(), key=lambda x: (-x.score, x.instrument_id))[:3]
-    ]
     hypotheses: list[dict] = []
-    manual_hypotheses = []
-    for item in input_evidence:
-        ids = sorted(set(item.instrument_ids) & set(universe))
-        if ids:
-            manual_hypotheses.append(
-                {
-                    "instrument_ids": ids,
-                    "relation": (
-                        "announcement_index_unverified"
-                        if item.kind == "official_announcement_index_unverified"
-                        else "official_pdf_text_unverified"
-                        if item.kind == "official_pdf_text_unverified"
-                        else "third_party_theme_unverified"
-                        if item.kind == "theme_board_unverified"
-                        else "unverified_user_clue"
-                    ),
-                    "summary": item.title,
-                    "evidence_ids": [item.evidence_id],
-                }
-            )
-    pool = build_pool(universe, manual_hypotheses, sector_codes, config["candidate_limit"])
-    reference_pool = [x["instrument_id"] for x in pool]
+    manual_hypotheses = scoped_leads(evidence, set(universe))
+    pool = build_pool(
+        universe, manual_hypotheses, sector_codes, config["candidate_limit"], attention_codes
+    )
     extra_evidence.extend(discussion_evidence)
     evidence.extend(extra_evidence)
     admitted_ids = {x.evidence_id for x in extra_evidence}
@@ -378,9 +607,46 @@ def run_scout(
             h["instrument_ids"],
         )
     )
-    pool = build_pool(
-        universe, manual_hypotheses + extra_hypotheses, sector_codes, config["candidate_limit"]
+    all_hypotheses = manual_hypotheses + extra_hypotheses
+    cheap_pool = build_pool(
+        universe, all_hypotheses, sector_codes, config["discovery_limit"], attention_codes
     )
+    pool = build_pool(
+        universe, all_hypotheses, sector_codes, config["candidate_limit"], attention_codes
+    )
+    open_sessions = [
+        row.trade_date
+        for row in storage.load_trading_calendar()
+        if row.exchange == "SSE" and row.is_open
+    ]
+    expected_target = report_timing(open_sessions, now, session, True)["target_session"]
+    input_fingerprint = fingerprint(
+        {
+            "prompt_version": "scout_multi_route_v1",
+            "session": session.isoformat(),
+            "target_session": expected_target,
+            "config": config,
+            "portfolio_review": portfolio_review,
+            "candidates": pool,
+            "evidence_ids": sorted(item.evidence_id for item in evidence),
+            "hot_rank": [
+                {key: row[key] for key in ("instrument_id", "rank", "last_price", "previous_rank")}
+                for row in (hot_snapshot or {}).get("normalized", [])
+            ],
+        }
+    )
+    if online and output_root.is_dir():
+        for prior in sorted(output_root.glob("*/report.json"), reverse=True):
+            try:
+                cached = json.loads(prior.read_text(encoding="utf-8"))
+                if (
+                    cached.get("input_fingerprint") == input_fingerprint
+                    and cached.get("status") == "live_research_unvalidated"
+                    and cached.get("timing", {}).get("target_session") == expected_target
+                ):
+                    return prior.parent, cached
+            except (OSError, ValueError):
+                continue
     result = {"market_view": "未调用AI；下面仅为规则候选，不是推荐或已核实结论。", "selected": []}
     status = "demo" if demo else "offline_diagnostic"
     raw_responses = []
@@ -429,20 +695,16 @@ def run_scout(
                 [x for x in input_evidence if x.evidence_id in discovery_ids] + found,
                 set(universe),
             )
-            reference_pool = [
-                x["instrument_id"]
-                for x in build_pool(
-                    universe,
-                    manual_hypotheses + hypotheses,
-                    sector_codes,
-                    config["candidate_limit"],
-                )
-            ]
+            all_hypotheses = manual_hypotheses + hypotheses + extra_hypotheses
+            cheap_pool = build_pool(
+                universe, all_hypotheses, sector_codes, config["discovery_limit"], attention_codes
+            )
             pool = build_pool(
                 universe,
-                manual_hypotheses + hypotheses + extra_hypotheses,
+                all_hypotheses,
                 sector_codes,
                 config["candidate_limit"],
+                attention_codes,
             )
             coverage.append(
                 Coverage(
@@ -526,16 +788,47 @@ def run_scout(
                 )
                 # Deduplicate by exact evidence ID without fabricating publication timestamps.
                 evidence = list({x.evidence_id: x for x in evidence}.values())
+                final_evidence = evidence_packet(
+                    evidence,
+                    {x["instrument_id"] for x in pool},
+                    max_chars=evidence_budget,
+                    max_body_chars=evidence_body_limit,
+                )
+                final_ids = {item["evidence_id"] for item in final_evidence}
+                for candidate in pool:
+                    scoped = [
+                        item["evidence_id"]
+                        for item in final_evidence
+                        if candidate["instrument_id"] in item.get("instrument_ids", [])
+                    ]
+                    candidate["evidence_ids"] = sorted(set(candidate["evidence_ids"] + scoped))
+                final_model_pool = [
+                    {
+                        **(
+                            {k: v for k, v in row.items() if k != "context"}
+                            if config["provider"] == "deepseek"
+                            else row
+                        ),
+                        "evidence_ids": [
+                            ref
+                            for ref in row["evidence_ids"]
+                            if ref.startswith("market:") or ref in final_ids
+                        ],
+                    }
+                    for row in pool
+                ]
                 packet = {
                     "market": market,
-                    "candidates": model_pool,
-                    "hypotheses": hypotheses,
-                    "evidence": evidence_packet(
-                        evidence,
-                        {x["instrument_id"] for x in pool},
-                        max_chars=evidence_budget,
-                        max_body_chars=evidence_body_limit,
-                    ),
+                    "candidates": final_model_pool,
+                    "hypotheses": [
+                        {
+                            **h,
+                            "evidence_ids": [ref for ref in h["evidence_ids"] if ref in final_ids],
+                        }
+                        for h in hypotheses
+                        if any(ref in final_ids for ref in h["evidence_ids"])
+                    ],
+                    "evidence": final_evidence,
                     "coverage": [asdict(x) for x in coverage],
                 }
                 prompt_evidence_audit.append(
@@ -549,7 +842,7 @@ def run_scout(
                 )
                 prompt = (
                     "根据下列证据包做最终比较，不再搜索。最多3只focus，最多5只watch，"
-                    "可以为空。规则score是基线排序不是概率，不应机械照抄。"
+                    "可以为空。规则score只是发现阶段的排序提示，不是上涨概率，不应机械照抄。"
                     "每只必须引用它自己的market:股票代码，引用新闻只能使用给定evidence_id。"
                     "无新增催化不必淘汰量价候选；未确认传闻和纯名称联想只能作为观察线索。"
                     "close_location=1.0只表示收在当日最高价；只有one_price_session=true才是一价行情。"
@@ -617,18 +910,39 @@ def run_scout(
         ]
     )
     finished = datetime.now(SHANGHAI)
+    timing = report_timing(
+        open_sessions, finished, session, online and status == "live_research_unvalidated"
+    )
+    deep_codes = {row["instrument_id"] for row in pool}
+    cheap_codes = {row["instrument_id"] for row in cheap_pool}
+    not_deep_reason = {
+        code: (
+            "deep_budget_limit"
+            if code in cheap_codes
+            else "cheap_budget_limit"
+            if candidate.routes
+            else "no_qualifying_route"
+        )
+        for code, candidate in universe.items()
+        if code not in deep_codes
+    }
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": f"{finished:%Y%m%dT%H%M%S}-{uuid4().hex[:8]}",
         "status": status,
         "ai_provider": config["provider"] if online else None,
         "ai_model": client.model if online else None,
         "started_at": now.isoformat(),
         "finished_at": finished.isoformat(),
+        "timing": timing,
         "market": market,
+        "hot_snapshot_file": str(hot_path) if hot_path else None,
+        "hot_snapshot": hot_snapshot,
+        "hot_identity_conflicts": hot_identity_conflicts,
         "config": config,
         "config_sha256": fingerprint(config),
-        "baseline": baseline,
+        "input_fingerprint": input_fingerprint,
+        "prompt_version": "scout_multi_route_v1",
         "market_universe": {code: item.to_dict() for code, item in universe.items()},
         "industry_memberships": memberships,
         "candidates": pool,
@@ -640,13 +954,15 @@ def run_scout(
         "disclosure_context": disclosure_by_stock,
         "discussion_snapshot": discussion_audit,
         "discussion_context": discussion_context,
-        "source_comparison": {
-            "pool_without_supplemental_routes": reference_pool,
-            "pool_with_supplemental_routes": [x["instrument_id"] for x in pool],
-            "new_candidate_codes": [
-                x["instrument_id"] for x in pool if x["instrument_id"] not in reference_pool
-            ],
-            "definition": "candidate discovery comparison; not AI ablation/profit attribution",
+        "portfolio_review": portfolio_review,
+        "candidate_stages": {
+            "method_version": "multi_route_v1",
+            "cheap_limit": config["discovery_limit"],
+            "deep_limit": config["candidate_limit"],
+            "eligible_universe_count": len(universe),
+            "cheap_candidates": [row["instrument_id"] for row in cheap_pool],
+            "deep_candidates": [row["instrument_id"] for row in pool],
+            "not_deep_reason": not_deep_reason,
         },
         "coverage": [asdict(x) for x in coverage],
         "ai_calls": calls,
@@ -666,7 +982,13 @@ def run_scout(
             "缺失的信息源不能解读为没有负面信息；搜索并非全量公告订阅",
             "龙虎榜不代表全部资金；不合计不同披露窗口；营业部不等于具体投资者",
             "评论仅为用户提供的样本，不能推断总体热度、实际持仓或交易方向",
-        ],
+        ]
+        + (
+            ["目标交易日前隔有较长休市期；开盘前应重查公告与热榜，本报告只保留当时可见信息"]
+            if timing["target_session"]
+            and (date.fromisoformat(timing["target_session"]) - finished.date()).days > 3
+            else []
+        ),
     }
     from quantlab.scout.report import write_report
 

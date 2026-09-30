@@ -12,10 +12,15 @@ from pathlib import Path
 
 from quantlab.data.storage import ParquetStorage
 from quantlab.scout.demo import make_demo_market, make_demo_sources
+from quantlab.scout.hot import collect_hot_rank, save_hot_snapshot
 from quantlab.scout.market import inspect_market_data
 from quantlab.scout.models import SHANGHAI
 from quantlab.scout.pipeline import read_config, run_scout
-from quantlab.scout.tracking import observe_run
+from quantlab.scout.tracking import observe_run, summarize_tracking
+
+
+def _percent(value: float | None) -> str:
+    return f"{value:.2%}" if value is not None else "待观察"
 
 
 def _main() -> int:
@@ -29,6 +34,10 @@ def _main() -> int:
         "--live", action="store_true", help="Read sources and call the configured paid AI API"
     )
     modes.add_argument("--track-run", type=Path, help="Original run directory to observe forward")
+    modes.add_argument("--tracking-summary", action="store_true", help="Aggregate frozen reports")
+    modes.add_argument(
+        "--hot-snapshot", action="store_true", help="Save one public hot-rank snapshot"
+    )
     parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--canonical-dir", type=Path, default=root / "data/canonical")
     parser.add_argument("--output-dir", type=Path, default=root / "data/scout/runs")
@@ -39,6 +48,8 @@ def _main() -> int:
         "--disclosures", type=Path, help="Timestamped TuShare disclosure JSON export"
     )
     parser.add_argument("--comments", type=Path, help="Timestamped user comment sample JSON")
+    parser.add_argument("--hot-file", type=Path, help="Use a saved recent AKShare hot snapshot")
+    parser.add_argument("--portfolio-file", type=Path, help="Timestamped holdings/watchlist JSON")
     args = parser.parse_args()
     config = read_config(args.config)
     if args.doctor:
@@ -98,11 +109,75 @@ def _main() -> int:
         )
         return 0
     if args.track_run:
-        path = observe_run(args.track_run, args.canonical_dir, args.output_dir)
+        path = observe_run(args.track_run, args.canonical_dir, args.output_dir.parent / "tracking")
         print(path)
         return 0
+    if args.tracking_summary:
+        path = summarize_tracking(
+            args.output_dir,
+            args.output_dir.parent / "tracking",
+            args.output_dir.parent / "tracking-summary.json",
+        )
+        summary = json.loads(path.read_text(encoding="utf-8"))
+        lines = [
+            "# Scout 冻结报告前瞻观察",
+            "",
+            f"覆盖目标交易日：{summary['covered_report_dates']}；"
+            f"无重点关注日期：{summary['no_focus_dates']}。",
+            "",
+            "以下是目标日开盘至固定终点收盘的复权价格观察，不是成交收益。",
+            "",
+            "| 分组 | 期限(交易日) | 原候选 | 可计算 | 上涨比例 | 平均 | 中位 | 缺失/待成熟 |",
+            "|---|---:|---:|---:|---:|---:|---:|---|",
+        ]
+        for group, label in (("focus", "重点"), ("watch", "观察")):
+            for horizon in (1, 3, 5, 10):
+                row = summary["summary"][group][str(horizon)]
+                missing = (
+                    "、".join(
+                        f"{reason}:{count}" for reason, count in row["missing_reasons"].items()
+                    )
+                    or "无"
+                )
+                lines.append(
+                    f"| {label} | {horizon} | {row['original_candidates']} | "
+                    f"{row['calculable']} | {_percent(row['positive_fraction'])} | "
+                    f"{_percent(row['mean'])} | {_percent(row['median'])} | {missing} |"
+                )
+        lines.extend(["", "仅计开盘前最后一份有效冻结报告；旧口径报告另存，不混算。", ""])
+        markdown = path.with_suffix(".md")
+        markdown.write_text("\n".join(lines), encoding="utf-8")
+        print(json.dumps({"json": str(path), "markdown": str(markdown)}, ensure_ascii=False))
+        return 0
+    if args.hot_snapshot:
+        directory = args.output_dir.parent / "hot_snapshots"
+        previous = None
+        if directory.is_dir():
+            for prior in sorted(directory.glob("*.json"), reverse=True):
+                try:
+                    previous = json.loads(prior.read_text(encoding="utf-8"))
+                    break
+                except (OSError, ValueError):
+                    continue
+        now = datetime.now(SHANGHAI)
+        snapshot, coverage = collect_hot_rank(now, True, previous)
+        if snapshot is None:
+            print(json.dumps({"source": coverage.source, "status": coverage.status}))
+            return 2
+        path = directory / f"{now:%Y%m%dT%H%M%S%f}.json"
+        save_hot_snapshot(path, snapshot)
+        print(json.dumps({"path": str(path), "count": coverage.count}, ensure_ascii=False))
+        return 0
     if args.demo:
-        if args.session or args.clues or args.sectors or args.disclosures or args.comments:
+        if (
+            args.session
+            or args.clues
+            or args.sectors
+            or args.disclosures
+            or args.comments
+            or args.hot_file
+            or args.portfolio_file
+        ):
             parser.error("--demo cannot mix real session or imported sources")
         with tempfile.TemporaryDirectory(prefix="quantlab-scout-demo-") as directory:
             session = make_demo_market(Path(directory))
@@ -127,6 +202,8 @@ def _main() -> int:
             sectors_path=args.sectors,
             disclosures_path=args.disclosures,
             comments_path=args.comments,
+            hot_file=args.hot_file,
+            portfolio_file=args.portfolio_file,
         )
     print(
         json.dumps(

@@ -366,15 +366,14 @@ def test_offline_supplements_reach_candidate_report_without_canonical_writes(tmp
         )
     candidate = next(x for x in report["candidates"] if x["instrument_id"] == "600007.SH")
     assert set(candidate["context"]) == {"top_list", "top_inst", "block_trade", "discussion"}
-    assert report["source_comparison"]["definition"].startswith("candidate discovery")
+    assert report["candidate_stages"]["method_version"] == "multi_route_v1"
     assert report["selection"]["selected"] == []
     assert report["disclosure_snapshots"]
     assert "评论样本" in (run / "report.md").read_text()
     assert before == {str(p): p.read_bytes() for p in canonical.rglob("*.parquet")}
     universe, _ = scan_market(canonical, day)
-    assert [x["score"] for x in report["baseline"]] == sorted(
-        [x.score for x in universe.values()], reverse=True
-    )[:3]
+    assert report["candidate_stages"]["eligible_universe_count"] == len(universe)
+    assert "baseline" not in report and "source_comparison" not in report
 
 
 def test_live_mock_reads_new_evidence_and_keeps_calls_bounded(tmp_path, monkeypatch):

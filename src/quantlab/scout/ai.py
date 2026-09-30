@@ -440,13 +440,26 @@ def search_evidence(raw: dict, now: datetime) -> list[Evidence]:
 
 
 def bind_hypotheses(result: dict, evidence: list[Evidence], eligible: set[str]) -> list[dict]:
-    by_url = {x.url: x.evidence_id for x in evidence if x.url}
+    by_url: dict[str, list[Evidence]] = {}
+    for item in evidence:
+        if item.url:
+            by_url.setdefault(item.url, []).append(item)
     accepted = []
     for hypothesis in result["hypotheses"][:12]:
-        ids = [by_url[url] for url in hypothesis["source_urls"] if url in by_url]
         codes = sorted(set(hypothesis["instrument_ids"]) & eligible)
-        if ids and codes:
-            accepted.append({**hypothesis, "instrument_ids": codes[:5], "evidence_ids": ids})
+        for code in codes[:5]:
+            # A company-specific announcement cannot become another issuer's
+            # supporting evidence merely because the model supplied its URL.
+            refs = sorted(
+                {
+                    item.evidence_id
+                    for url in hypothesis["source_urls"]
+                    for item in by_url.get(url, [])
+                    if not item.instrument_ids or code in item.instrument_ids
+                }
+            )
+            if refs:
+                accepted.append({**hypothesis, "instrument_ids": [code], "evidence_ids": refs})
     return accepted
 
 
@@ -480,6 +493,8 @@ def validate_selection(result: dict, candidates: list[dict], evidence: list[Evid
             "信息关联:unverified_user_clue",
             "信息关联:announcement_index_unverified",
             "信息关联:sentiment",
+            "信息关联:theme",
+            "信息关联:supply_chain",
         }
         routes = set(candidate.get("routes", []))
         if row["status"] == "focus" and routes and routes <= weak_routes:

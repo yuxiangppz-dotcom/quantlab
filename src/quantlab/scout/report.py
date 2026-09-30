@@ -77,23 +77,76 @@ def present_selection(model_selection: dict, candidates: list[dict]) -> dict:
         has_disclosure = any(
             key in candidate.get("context", {}) for key in ("top_list", "top_inst")
         )
+        routes = candidate.get("routes", [])
+        route_summary = (
+            "、".join(
+                label
+                for label, applies in (
+                    ("公告与事件", any("announcement" in route for route in routes)),
+                    ("板块", any(route.startswith("板块领先:") for route in routes)),
+                    ("回撤或温和放量", any("回撤" in route or "温和" in route for route in routes)),
+                    ("量价或趋势", any(route in {"量价异动", "趋势突破"} for route in routes)),
+                    ("热榜", "热度观察" in routes),
+                )
+                if applies
+            )
+            or "行情完整性核查"
+        )
+        hot = candidate.get("context", {}).get("hot_rank")
+        attention = "含已保存的热榜观察" if hot else "热度变化未由本轮证实"
+        m = candidate.get("metrics", {})
+        at_limit = (
+            m.get("up_limit") is not None
+            and m.get("close") is not None
+            and abs(m["close"] - m["up_limit"]) < 1e-8
+        )
+        price_risk = (
+            "本轮收盘等于涨停价，后续价格和实际可买性仍未知。"
+            if at_limit
+            else "后续价格和实际可买性仍未知。"
+        )
+        if (m.get("return_5d") or 0) > 0.2:
+            price_risk = "近期涨幅较大，关注拥挤和回撤。" + price_risk
+        relation_risk = (
+            "公告索引或题材关联仍需核对原文与发布时间。"
+            if any(route.startswith("信息关联:") for route in routes)
+            else "本轮未确认新的公司级催化事实。"
+        )
         selected.append(
             {
                 "instrument_id": row["instrument_id"],
                 "status": row["status"],
                 "thesis": (
-                    "模型列为优先核查；下方量价和披露事实由程序根据本轮输入列示。"
+                    "模型列为优先核查；发现路径为" + route_summary + "；" + attention + "。"
                     if row["status"] == "focus"
-                    else "模型列为一般观察；下方量价和披露事实由程序根据本轮输入列示。"
+                    else "模型列为一般观察；发现路径为" + route_summary + "；" + attention + "。"
                 ),
                 "risk": (
                     "交易披露仅覆盖上榜样本，统计窗口可能重叠；发布时间可能未知。"
                     if has_disclosure
                     else "本轮没有该股交易披露样本；这不表示不存在反向信息。"
                 )
-                + "未采集订单簿或次日可执行价格，不能推断实际成交。",
-                "invalidation": "需用后续已完成会话重新观察量价和披露；尚未验证收益或可交易阈值。",
+                + price_risk
+                + relation_risk,
+                "invalidation": (
+                    "若后续官方原文不支持该公司关联，应撤销事件假设；"
+                    if any(route.startswith("信息关联:") for route in routes)
+                    else "若后续独立证据与该价格观察相反，应重审假设；"
+                )
+                + "固定观察期限内按交易所日历补齐复权价格，不能事后挑最有利终点。",
                 "evidence_ids": row["evidence_ids"],
+                "opportunity_type": candidate.get("routes", []),
+                "evidence_quality": (
+                    "external_lead_requires_verification"
+                    if any(ref.startswith("ev-") for ref in row["evidence_ids"])
+                    else "market_observation_only"
+                ),
+                "price_attention_status": (
+                    "recently_extended"
+                    if candidate.get("metrics", {}).get("return_5d", 0) > 0.2
+                    else "not_derived_as_probable_upside"
+                ),
+                "observation_horizon_sessions": 5,
             }
         )
     return {
@@ -102,6 +155,11 @@ def present_selection(model_selection: dict, candidates: list[dict]) -> dict:
             "原始模型论述单独封存，未通过人工事实审查前不作为报告依据。"
         ),
         "selected": selected,
+        "no_recommendation_reason": (
+            "模型本轮未列重点关注；候选只保留一般观察或证据仍待核实。"
+            if not any(row["status"] == "focus" for row in selected)
+            else None
+        ),
     }
 
 
@@ -256,6 +314,19 @@ def render_report(report: dict) -> str:
         text(report["selection"]["market_view"]),
         "",
     ]
+    timing = report.get("timing")
+    if timing:
+        lines.extend(
+            [
+                f"目标观察交易日：{timing['target_session'] or '未知'} · "
+                f"报告类型：{timing['report_kind']} · 时区：{timing['timezone']}",
+                f"信息截点：{timing['information_cutoff']} · "
+                f"行情截至：{timing['asof_session']} · "
+                f"可进入盘前主版本跟踪：{'是' if timing['primary_eligible'] else '否'}",
+                "夜间准备报告保留真实生成时间；若在目标开盘后完成，不算该日盘前预测。",
+                "",
+            ]
+        )
     timing_note = announcement_timing_note(report)
     if timing_note:
         lines.extend([f"**{text(timing_note)}**", ""])
@@ -290,6 +361,9 @@ def render_report(report: dict) -> str:
                 f"### {text(candidate['name'])} {code} · {display_label}",
                 "",
                 f"分级说明：{text(row['thesis'])}",
+                f"机会入口：{text('、'.join(row.get('opportunity_type', candidate['routes'])))}；"
+                f"证据等级：{text(row.get('evidence_quality', '未知'))}；"
+                f"观察期限：{row.get('observation_horizon_sessions', 5)}个交易日。",
                 "",
                 "可核查事实："
                 + " ".join(
@@ -319,13 +393,22 @@ def render_report(report: dict) -> str:
                 "",
             ]
         )
-    if not report["selection"]["selected"]:
-        lines.extend(["没有AI重点候选。以下是待调查的规则候选，不能当作AI推荐。", ""])
+    if not any(row["status"] == "focus" for row in report["selection"]["selected"]):
+        lines.extend(
+            [
+                "今天没有足够依据推荐新的重点关注标的。",
+                text(
+                    report["selection"].get("no_recommendation_reason")
+                    or "模型未给出重点；具体原因尚未结构化核实。"
+                ),
+                "",
+            ]
+        )
     lines.extend(
         [
-            "## 规则候选与多路候选池",
+            "## 多入口深查候选池",
             "",
-            "规则分数只用于可复现排序，不是涨停概率。",
+            "发现阶段的排序分数不是上涨概率，也不是 AI 与规则的收益对照。",
             "",
             "| 股票 | 入口 | 1日涨幅 | 5日涨幅 | 成交额(亿元) | 额比(5日) | 注意事项 |",
             "|---|---|---:|---:|---:|---:|---|",
@@ -339,6 +422,41 @@ def render_report(report: dict) -> str:
             f"| {m['return_5d']:.2%} | {m['amount_cny'] / 1e8:.2f} "
             f"| {m['amount_ratio_5d']:.2f} | {text('；'.join(candidate['cautions']))} |"
         )
+    stages = report.get("candidate_stages", {})
+    if stages:
+        lines.extend(
+            [
+                "",
+                f"廉价召回 {len(stages['cheap_candidates'])} 只；"
+                f"深查 {len(stages['deep_candidates'])} 只；"
+                f"因深查预算未进入 {len(stages['not_deep_reason'])} 只。",
+                "逐只阶段与原因见 report.json 的 candidate_stages。",
+            ]
+        )
+    portfolio = report.get("portfolio_review", {})
+    lines.extend(["", "## 持仓与自选独立观察", ""])
+    if portfolio.get("status") != "provided":
+        lines.extend(["本轮未提供持仓或自选清单。", ""])
+    else:
+        lines.extend(
+            [
+                f"清单观察时间：{text(portfolio['observed_at'])}；"
+                f"输入超过一周：{'是' if portfolio['stale_input'] else '否'}。",
+                "此处只显示已知行情与风险，不占新候选名额，未单独调用 AI 深查。",
+                "",
+                "| 类别 | 股票 | 行情日收盘 | 新候选合格 | 已知缺口 |",
+                "|---|---|---:|---|---|",
+            ]
+        )
+        for item in portfolio["rows"]:
+            close = f"{item['close']:.2f}" if item["close"] is not None else "未知"
+            lines.append(
+                f"| {text(item['group'])} | {text(item['name'] or '身份未知')} "
+                f"{item['instrument_id']} | {close} | "
+                f"{'是' if item['new_candidate_eligible'] else '否'} | "
+                f"{text('、'.join(item['concerns']) or '暂无已知警示')} |"
+            )
+        lines.append("")
     lines.extend(
         [
             "",
@@ -393,21 +511,6 @@ def render_report(report: dict) -> str:
             )
             lines.append(f"  证据：{', '.join(item['evidence_ids'])}。")
         lines.append("")
-    comparison = report.get("source_comparison", {})
-    if comparison:
-        lines.extend(
-            [
-                "### 候选发现对照",
-                "",
-                "新增来源加入前的候选池："
-                + text("、".join(comparison["pool_without_supplemental_routes"])),
-                "",
-                "新增来源带来的候选：" + text("、".join(comparison["new_candidate_codes"]) or "无"),
-                "",
-                "此处只对照候选发现；不是AI消融实验，也不能据此归因选股收益。",
-                "",
-            ]
-        )
     lines.extend(["", "## 信息源覆盖", "", "| 来源 | 状态 | 条数 | 说明 |", "|---|---|---:|---|"])
     for source in report["coverage"]:
         lines.append(
@@ -429,7 +532,7 @@ def render_report(report: dict) -> str:
             ]
         )
     lines.extend(["", "## 限制", ""] + [f"- {x}" for x in report["limitations"]])
-    lines.extend(["", "完整指标、基线名单、模型用量和原始响应保存在同目录JSON中。", ""])
+    lines.extend(["", "完整指标、模型用量和原始响应保存在同目录JSON中。", ""])
     return "\n".join(lines)
 
 
