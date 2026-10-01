@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 from datetime import date, datetime, time
+from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
 
 from quantlab.data.storage import ParquetStorage
-from quantlab.scout.ai import ShownEvidence, retain_valid_selection
+from quantlab.scout.ai import ShownEvidence, retain_valid_selection, unparsed_core_fragment
+from quantlab.scout.facts import extract_core_claims
 from quantlab.scout.models import SHANGHAI, Evidence, fingerprint, timestamp
 from quantlab.scout.pipeline import candidate_diagnostics, report_timing
 from quantlab.scout.report import (
@@ -20,10 +23,37 @@ from quantlab.scout.report import (
 )
 
 
+def validator_head() -> str:
+    root = Path(__file__).resolve().parents[1]
+    pointer = root / ".git"
+    if pointer.is_file():
+        git_dir = pointer.read_text(encoding="utf-8").strip().removeprefix("gitdir: ")
+        git_dir = git_dir.replace("//wsl.localhost/Ubuntu/", "/", 1)
+        command = ["git", f"--git-dir={git_dir}", f"--work-tree={root}", "rev-parse", "HEAD"]
+    else:
+        command = ["git", "-C", str(root), "rev-parse", "HEAD"]
+    result = subprocess.run(command, capture_output=True, text=True, check=True)
+    return result.stdout.strip()
+
+
+def validator_file_hashes() -> dict[str, str]:
+    root = Path(__file__).resolve().parents[1]
+    names = (
+        "scripts/scout_revalidate.py",
+        "src/quantlab/scout/ai.py",
+        "src/quantlab/scout/facts.py",
+        "src/quantlab/scout/report.py",
+    )
+    return {name: sha256((root / name).read_bytes()).hexdigest() for name in names}
+
+
 def revalidate(
     source: Path, canonical_dir: Path, output_root: Path, validator_commit: str | None = None
 ) -> Path:
     raw_report = (source / "report.json").read_text(encoding="utf-8")
+    actual_commit = validator_head()
+    if validator_commit is not None and validator_commit != actual_commit:
+        raise ValueError("Validator commit does not match current code HEAD")
     manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
     report = json.loads(raw_report)
     if fingerprint(report) != manifest["report_sha256"]:
@@ -67,6 +97,25 @@ def revalidate(
         isinstance(row.get("quant_claims"), list)
         for row in report["selection_raw"].get("selected", [])
     )
+    unverified_core_prose = []
+    if not typed_compatible:
+        by_code = {row["instrument_id"]: row for row in packet_candidates}
+        for row in report["selection_raw"].get("selected", []):
+            own = by_code.get(row.get("instrument_id"))
+            if own is None:
+                continue
+            for field in ("thesis", "risk", "invalidation"):
+                parsed = extract_core_claims(field, row.get(field, ""), own, packet_candidates)
+                fragment = unparsed_core_fragment(row.get(field, ""), parsed)
+                if fragment:
+                    unverified_core_prose.append(
+                        {
+                            "instrument_id": own["instrument_id"],
+                            "field": field,
+                            "fragment": fragment,
+                            "status": "not_typed_verified",
+                        }
+                    )
     selected, rejected = retain_valid_selection(
         report["selection_raw"], packet_candidates, evidence, report["market"]
     )
@@ -119,6 +168,7 @@ def revalidate(
                     if typed_compatible
                     else "legacy_unstructured_model_output"
                 ),
+                "unverified_core_prose": unverified_core_prose,
             },
             "selection_presentation": (
                 "saved original model output; legacy core numeric prose remains unstructured"
@@ -131,13 +181,15 @@ def revalidate(
                 "source_report_sha256": manifest["report_sha256"],
                 "source_ai_responses_sha256": manifest["ai_responses_sha256"],
                 "validator_version": "scout_core_facts_v4",
-                "validator_code_commit": validator_commit or "unrecorded",
+                "validator_code_commit": actual_commit,
+                "validator_files_sha256": validator_file_hashes(),
                 "schema_version": 4,
                 "compatibility": (
                     "typed_quant_claims_v1"
                     if typed_compatible
                     else "legacy_unstructured_model_output"
                 ),
+                "unverified_core_prose_count": len(unverified_core_prose),
                 "old_selected": [
                     (x["instrument_id"], x["status"]) for x in old_selection.get("selected", [])
                 ],

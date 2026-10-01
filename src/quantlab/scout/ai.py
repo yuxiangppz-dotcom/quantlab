@@ -150,6 +150,18 @@ class SelectionValidationError(ValueError):
         self.supported = supported
 
 
+def unparsed_core_fragment(text: str, parsed: list) -> str | None:
+    residual = text
+    for claim in parsed:
+        residual = residual.replace(claim.text, "", 1)
+    match = re.search(
+        r"(?:收益|涨幅|跌幅|上涨|下跌|成交额|净流|连续|第\d+板)"
+        r".{0,25}?\d+(?:\.\d+)?\s*(?:%|亿元|万元|元|亿|万|板)",
+        residual,
+    )
+    return match.group() if match else None
+
+
 def asserts_unsupported_microstructure(text: str) -> bool:
     """Reject affirmative claims while allowing explicit uncertainty or negation."""
     for clause in re.split(r"[。；，、]|但|然而|不过", text):
@@ -232,19 +244,12 @@ def semantic_numeric_issue(
                 return SelectionValidationError(
                     "core_claim_not_in_prose", field, str(declaration.get("text"))[:160]
                 )
-    residual = text
-    for claim in parsed:
-        residual = residual.replace(claim.text, "", 1)
-    unparsed = re.search(
-        r"(?:收益|涨幅|跌幅|上涨|下跌|成交额|净流|连续|第\d+板)"
-        r".{0,25}?\d+(?:\.\d+)?\s*(?:%|亿元|万元|元|亿|万|板)",
-        residual,
-    )
-    if unparsed:
+    unparsed = unparsed_core_fragment(text, parsed)
+    if unparsed and declared_claims is not None:
         return SelectionValidationError(
             "core_claim_unparsed",
             field,
-            unparsed.group(),
+            unparsed,
             "use one explicit period and unit per claim",
         )
     for match in re.finditer(r"回购\s*\d+\s*次", text):

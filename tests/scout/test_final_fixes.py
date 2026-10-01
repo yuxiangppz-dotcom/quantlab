@@ -2,6 +2,8 @@
 
 import json
 from datetime import datetime
+from pathlib import Path
+from runpy import run_path
 
 import pytest
 
@@ -226,3 +228,14 @@ def test_limit_history_keeps_recent_complete_rows_and_exposes_omissions():
     assert json.loads(tiny["body"])["omitted"] == "budget"
     assert tiny["shown_event_dates"] == []
     assert tiny["omitted_event_dates"] == dates
+
+
+def test_revalidation_rejects_claimed_commit_that_is_not_current_head(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "report.json").write_text("{}")
+    revalidate = run_path(str(Path(__file__).resolve().parents[2] / "scripts/scout_revalidate.py"))[
+        "revalidate"
+    ]
+    with pytest.raises(ValueError, match="Validator commit does not match"):
+        revalidate(source, tmp_path / "canonical", tmp_path / "derived", "0" * 40)
