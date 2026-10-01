@@ -40,6 +40,21 @@ ROW_CAPS = {
 EVENT_APIS = {"forecast_vip", "express_vip", "repurchase", "stk_holdertrade"}
 
 
+def report_periods(asof: date, count: int = 7, include_next: bool = False) -> list[str]:
+    """Recent quarter ends; forecasts may be published before the period ends."""
+    year = asof.year
+    periods = [
+        date(y, m, d)
+        for y in range(year - 2, year + 2)
+        for m, d in ((3, 31), (6, 30), (9, 30), (12, 31))
+    ]
+    past = sorted((day for day in periods if day <= asof), reverse=True)[:count]
+    if include_next:
+        upcoming = min(day for day in periods if day > asof)
+        return [upcoming.strftime("%Y%m%d")] + [day.strftime("%Y%m%d") for day in past]
+    return [day.strftime("%Y%m%d") for day in past]
+
+
 def ymd(value: object) -> date | None:
     if value is None:
         return None
@@ -109,9 +124,7 @@ class TusharePack:
                         }
                     )
                     rows = saved["rows"]
-                    self.row_snapshots.update(
-                        (fingerprint([api, row]), str(path)) for row in rows
-                    )
+                    self.row_snapshots.update((fingerprint([api, row]), str(path)) for row in rows)
                     return rows
             except (OSError, KeyError, ValueError, TypeError):
                 continue
@@ -240,7 +253,7 @@ def collect_market_pack(
     context: dict[str, dict] = {}
     session_text = session.strftime("%Y%m%d")
     cutoff = pack.now
-    newest = session - timedelta(days=4)
+    newest = cutoff.date() - timedelta(days=4)
 
     def add_event(api: str, row: dict, title: str, fields: tuple[str, ...]) -> None:
         code = str(row.get("ts_code") or "")
@@ -254,6 +267,9 @@ def collect_market_pack(
                 {
                     "instrument_ids": [code],
                     "relation": "new_company_event_date_only",
+                    "route_type": "event",
+                    "event_date": event_day.isoformat(),
+                    "event_source": api,
                     "summary": title,
                     "evidence_ids": [item.evidence_id],
                 }
@@ -347,6 +363,8 @@ def collect_market_pack(
                 {
                     "instrument_ids": [code],
                     "relation": "third_party_theme_membership_unverified",
+                    "route_type": "sector",
+                    "theme_id": concept,
                     "summary": item.title,
                     "evidence_ids": [item.evidence_id],
                 }
@@ -355,9 +373,7 @@ def collect_market_pack(
                 str(row.get("name") or concept)
             )
 
-    periods = [(session.replace(day=1) - timedelta(days=1)).strftime("%Y%m%d")]
-    if periods[0][4:6] not in {"03", "06", "09", "12"}:
-        periods = [f"{session.year}0630", f"{session.year}0930"]
+    periods = report_periods(cutoff.date(), count=5, include_next=True)
     for api, fields in (
         (
             "forecast_vip",
@@ -401,7 +417,7 @@ def collect_market_pack(
                     continue
                 seen.add(key)
                 add_event(api, row, f"{api} 公司披露 {row.get('ann_date') or '日期未知'}", fields)
-    beginning = session - timedelta(days=30)
+    beginning = cutoff.date() - timedelta(days=30)
     for api, fields in (
         ("repurchase", ("ann_date", "end_date", "proc", "exp_date", "vol", "amount")),
         (
@@ -418,20 +434,26 @@ def collect_market_pack(
         ),
     ):
         middle = beginning + timedelta(days=15)
-        for start, end in ((beginning, middle), (middle + timedelta(days=1), session)):
+        for start, end in ((beginning, middle), (middle + timedelta(days=1), cutoff.date())):
             for row in pack.fetch(
                 api, {"start_date": start.strftime("%Y%m%d"), "end_date": end.strftime("%Y%m%d")}
             ):
                 add_event(api, row, f"{api} 公司披露 {row.get('ann_date') or '日期未知'}", fields)
-    future = session + timedelta(days=30)
+    future = cutoff.date() + timedelta(days=30)
     for week in range(5):
-        start = session + timedelta(days=1 + week * 7)
+        start = cutoff.date() + timedelta(days=1 + week * 7)
         end = min(start + timedelta(days=6), future)
         if start > end:
             break
         for row in fetch_unlock_window(pack, start, end):
             code = str(row.get("ts_code") or "")
-            if code in valid_codes and public_time(row, "ann_date", cutoff):
+            float_day = ymd(row.get("float_date"))
+            if (
+                code in valid_codes
+                and public_time(row, "ann_date", cutoff)
+                and float_day
+                and start <= float_day <= end
+            ):
                 evidence.append(
                     pack.evidence(
                         "share_float",
@@ -576,18 +598,24 @@ def collect_deep_pack(
                 ("end_date", "bz_item", "bz_code", "bz_sales", "bz_profit", "bz_cost", "curr_type"),
             ),
         ):
-            rows = pack.fetch(api, {"ts_code": code, "period": "20260630"})
+            rows = []
+            for period in report_periods(pack.now.date()):
+                rows = [
+                    row
+                    for row in pack.fetch(api, {"ts_code": code, "period": period})
+                    if row.get("ts_code", code) == code and str(row.get("end_date")) == period
+                ]
+                if api == "fina_indicator":
+                    rows = [row for row in rows if public_time(row, "ann_date", pack.now)]
+                if rows:
+                    break
             if api == "fina_indicator":
-                rows = [row for row in rows if public_time(row, "ann_date", pack.now)]
                 rows.sort(key=lambda x: str(x.get("ann_date") or ""), reverse=True)
                 rows = rows[:1]
             else:
                 rows = rows[:8]  # Report period is not a publication date.
             if api == "fina_mainbz" and rows:
-                segments = [
-                    {key: row.get(key) for key in fields if key in row}
-                    for row in rows
-                ]
+                segments = [{key: row.get(key) for key in fields if key in row} for row in rows]
                 snapshot = pack.row_snapshots.get(fingerprint([api, rows[0]]))
                 context.setdefault(code, {})[api] = segments
                 evidence.append(
@@ -620,17 +648,39 @@ def collect_deep_pack(
                     {key: row.get(key) for key in fields if key in row}
                 )
         rows = pack.fetch("disclosure_date", {"ts_code": code})
-        target = set(target_sessions[:10])
-        for row in rows:
+        target_end = target_sessions[9] if len(target_sessions) >= 10 else None
+        context.setdefault(code, {})["disclosure_window"] = {
+            "start": pack.now.date().isoformat(),
+            "end": target_end.isoformat() if target_end else None,
+            "status": "covered" if target_end else "calendar_insufficient",
+        }
+        latest_by_period = {}
+        for row in sorted(rows, key=lambda item: str(item.get("ann_date") or "")):
+            if row.get("ts_code") == code and public_time(row, "ann_date", pack.now):
+                latest_by_period[str(row.get("end_date") or row.get("pre_date"))] = row
+        context[code]["disclosure_schedule"] = [
+            {key: row.get(key) for key in ("ann_date", "end_date", "pre_date", "actual_date")}
+            for row in latest_by_period.values()
+        ]
+        for row in latest_by_period.values():
             planned = ymd(row.get("pre_date"))
-            if planned in target and public_time(row, "ann_date", pack.now):
+            actual = ymd(row.get("actual_date"))
+            if (
+                target_end is not None
+                and planned is not None
+                and pack.now.date() <= planned <= target_end
+            ):
                 evidence.append(
                     pack.evidence(
                         "disclosure_date",
                         row,
                         code,
-                        "已知财报披露计划",
-                        "scheduled_disclosure",
+                        "财报披露已完成"
+                        if actual and actual <= pack.now.date()
+                        else "已知财报披露计划",
+                        "completed_disclosure"
+                        if actual and actual <= pack.now.date()
+                        else "scheduled_disclosure",
                         ("ann_date", "end_date", "pre_date", "actual_date"),
                         "pre_date",
                     )

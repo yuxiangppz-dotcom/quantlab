@@ -7,6 +7,7 @@ import os
 from collections import Counter
 from dataclasses import asdict
 from datetime import date, datetime, time
+from itertools import zip_longest
 from pathlib import Path
 from uuid import uuid4
 
@@ -137,6 +138,13 @@ def scoped_leads(items: list[Evidence], universe: set[str]) -> list[dict]:
         leads.append(
             {
                 "instrument_ids": ids,
+                "route_type": (
+                    "sector"
+                    if item.kind == "theme_board_unverified"
+                    else "attention"
+                    if item.kind in {"public_comment_unverified", "unverified_user_clue"}
+                    else "event"
+                ),
                 "relation": (
                     "announcement_index_unverified"
                     if item.kind == "official_announcement_index_unverified"
@@ -251,7 +259,34 @@ def build_pool(
 ) -> list:
     """Give each route unique slots, then share spare slots round robin."""
     event_codes: list[str] = []
-    for hypothesis in hypotheses:
+    theme_groups: dict[str, list[str]] = {}
+    ordered_hypotheses = sorted(
+        hypotheses,
+        key=lambda row: (
+            int(row.get("route_type") == "event"),
+            str(row.get("event_date") or ""),
+            str(row.get("event_source") or ""),
+        ),
+        reverse=True,
+    )
+    for hypothesis in ordered_hypotheses:
+        relation = hypothesis.get("relation", "")
+        route_type = hypothesis.get("route_type")
+        if route_type is None:  # Old saved hypotheses remain readable.
+            route_type = (
+                "event"
+                if relation
+                in {
+                    "announcement_index_unverified",
+                    "new_company_event_date_only",
+                    "official_pdf_text_unverified",
+                    "direct",
+                    "trading_disclosure",
+                }
+                else "sector"
+                if "theme" in relation or relation == "supply_chain"
+                else "attention"
+            )
         for code in hypothesis["instrument_ids"]:
             if code not in universe:
                 continue
@@ -262,8 +297,12 @@ def build_pool(
             candidate.evidence_ids = sorted(
                 set(candidate.evidence_ids + hypothesis["evidence_ids"])
             )
-            if code not in event_codes:
+            if route_type == "event" and code not in event_codes:
                 event_codes.append(code)
+            elif route_type == "sector":
+                theme_groups.setdefault(
+                    str(hypothesis.get("theme_id") or hypothesis.get("summary") or relation), []
+                ).append(code)
     momentum_codes = [
         x.instrument_id
         for x in sorted(universe.values(), key=lambda x: (-x.score, x.instrument_id))
@@ -285,9 +324,25 @@ def build_pool(
     for code in attention_codes:
         if "热度观察" not in universe[code].routes:
             universe[code].routes.append("热度观察")
+    theme_codes: list[str] = []
+    theme_queues = {
+        name: list(dict.fromkeys(codes)) for name, codes in sorted(theme_groups.items())
+    }
+    while any(theme_queues.values()):
+        for queue in theme_queues.values():
+            if queue:
+                theme_codes.append(queue.pop(0))
+    sector_order = list(
+        dict.fromkeys(
+            code
+            for pair in zip_longest(sector_codes, theme_codes)
+            for code in pair
+            if code in universe
+        )
+    )
     routes = {
         "event": list(dict.fromkeys(event_codes)),
-        "sector": list(dict.fromkeys(code for code in sector_codes if code in universe)),
+        "sector": sector_order,
         "pullback": list(dict.fromkeys(pullback_codes)),
         "attention": list(dict.fromkeys(attention_codes)),
         "momentum": list(dict.fromkeys(momentum_codes)),
@@ -703,6 +758,7 @@ def run_scout(
     early_event_hypotheses = upgrade_hypotheses + [
         {
             "instrument_ids": list(item.instrument_ids),
+            "route_type": "event",
             "relation": "announcement_index_unverified",
             "summary": item.title,
             "evidence_ids": [item.evidence_id],
@@ -776,6 +832,7 @@ def run_scout(
         extra_hypotheses.append(
             {
                 "instrument_ids": list(item.instrument_ids),
+                "route_type": "attention" if item.kind == "public_comment_unverified" else "event",
                 "relation": "public_discussion"
                 if item.kind == "public_comment_unverified"
                 else "trading_disclosure",
@@ -802,7 +859,7 @@ def run_scout(
         cheap_route_diagnostics,
     )
     pool = build_pool(
-        universe,
+        {row["instrument_id"]: universe[row["instrument_id"]] for row in cheap_pool},
         all_hypotheses,
         sector_codes,
         config["candidate_limit"],
@@ -848,6 +905,8 @@ def run_scout(
     prompt_evidence_audit = []
     selection_raw = None
     selection_input_evidence: list[dict] = []
+    selection_input_packet: dict = {}
+    final_input_cutoff = now
     selection_validation = {"rejected": [], "validated_before_presentation": False}
     failure = None
     if online:
@@ -903,7 +962,7 @@ def run_scout(
                 cheap_route_diagnostics,
             )
             pool = build_pool(
-                universe,
+                {row["instrument_id"]: universe[row["instrument_id"]] for row in cheap_pool},
                 all_hypotheses,
                 sector_codes,
                 config["candidate_limit"],
@@ -1075,10 +1134,28 @@ def run_scout(
                             for ref in row["evidence_ids"]
                             if ref.startswith("market:") or ref in final_ids
                         ],
+                        "program_fact_ids": {
+                            "market": {
+                                key: f"fact:{row['instrument_id']}:market:{key}"
+                                for key in row.get("metrics", {})
+                            },
+                            "moneyflow": {
+                                key: f"fact:{row['instrument_id']}:moneyflow:{key}"
+                                for key in (
+                                    (row.get("source_summary") or {}).get("moneyflow") or {}
+                                )
+                            },
+                        },
                     }
                     for row in pool
                 ]
                 packet = {
+                    "timing": {
+                        "asof_session": session.isoformat(),
+                        "target_session": expected_target,
+                        "primary_horizon_sessions": 5,
+                        "observation_horizons_sessions": [1, 3, 5, 10],
+                    },
                     "market": market,
                     "candidates": final_model_pool,
                     "hypotheses": [
@@ -1101,10 +1178,14 @@ def run_scout(
                         ),
                     }
                 )
+                final_input_cutoff = datetime.now(SHANGHAI)
+                packet["timing"]["information_cutoff"] = final_input_cutoff.isoformat()
                 prompt = (
                     "根据下列证据包做最终比较，不再搜索。最多3只focus，最多5只watch，"
                     "可以为空。规则score只是发现阶段的排序提示，不是上涨概率，不应机械照抄。"
                     "每只必须引用它自己的market:股票代码，引用新闻只能使用给定evidence_id。"
+                    "引用程序量价或资金事实时，把对应的program_fact_ids填入fact_ids；"
+                    "跨股票比较须写明对方名称或代码，并引用对方在本次输入中可见的证据ID；"
                     "无新增催化不必淘汰量价候选；未确认传闻和纯名称联想只能作为观察线索。"
                     "close_location=1.0只表示收在当日最高价；只有one_price_session=true才是一价行情。"
                     "披露摘要的positive_net_rows与negative_net_rows都须考虑，不得把截取样本说成全部。"
@@ -1130,6 +1211,7 @@ def run_scout(
 
                 selection_raw = selection
                 selection_input_evidence = final_evidence
+                selection_input_packet = packet
                 valid_selection, rejected = retain_valid_selection(
                     selection,
                     pool,
@@ -1175,6 +1257,47 @@ def run_scout(
     timing = report_timing(
         open_sessions, finished, session, online and status == "live_research_unvalidated"
     )
+    timing["information_cutoff"] = final_input_cutoff.isoformat()
+    if (
+        online
+        and status == "live_research_unvalidated"
+        and timing["target_session"] != expected_target
+    ):
+        failure = "target_session_changed_during_run"
+        status = "incomplete"
+        timing["primary_eligible"] = False
+        result = {
+            "market_view": "运行跨越目标交易日开盘；保留原始输出供审计，不作为盘前选择。",
+            "selected": [],
+        }
+    shown_ids = {item["evidence_id"] for item in selection_input_evidence}
+    cited_by_code = {
+        row["instrument_id"]: set(row.get("evidence_ids", []))
+        for row in (selection_raw or {}).get("selected", [])
+        if isinstance(row, dict) and row.get("instrument_id")
+    }
+    evidence_flow = {}
+    for candidate in pool:
+        code = candidate["instrument_id"]
+        acquired = [item for item in evidence if code in item.instrument_ids]
+        shown = [
+            item for item in selection_input_evidence if code in item.get("instrument_ids", [])
+        ]
+        evidence_flow[code] = {
+            "acquired_count": len(acquired),
+            "shown_count": len(shown),
+            "cited_count": len(cited_by_code.get(code, set()) & shown_ids),
+            "source_summary_sent": bool(selection_input_packet)
+            and bool(candidate.get("source_summary")),
+            "source_summary_keys": sorted((candidate.get("source_summary") or {}).keys()),
+            "omitted_acquired_ids": sorted(
+                item.evidence_id for item in acquired if item.evidence_id not in shown_ids
+            ),
+            "note": (
+                "Historical daily limit records may be represented by one "
+                "synthetic prompt summary ID"
+            ),
+        }
     deep_codes = {row["instrument_id"] for row in pool}
     cheap_codes = {row["instrument_id"] for row in cheap_pool}
     not_deep_reason = {
@@ -1189,7 +1312,7 @@ def run_scout(
         if code not in deep_codes
     }
     report = {
-        "schema_version": 2,
+        "schema_version": 3,
         "run_id": f"{finished:%Y%m%dT%H%M%S}-{uuid4().hex[:8]}",
         "status": status,
         "ai_provider": config["provider"] if online else None,
@@ -1236,10 +1359,12 @@ def run_scout(
         "coverage": [asdict(x) for x in coverage],
         "ai_calls": calls,
         "prompt_evidence_audit": prompt_evidence_audit,
+        "evidence_flow": evidence_flow,
         "failure": failure,
         "selection": result,
         "selection_raw": selection_raw,
         "selection_input_evidence": selection_input_evidence,
+        "selection_input_packet": selection_input_packet,
         "selection_validation": selection_validation,
         "selection_presentation": (
             "original model reasoning retained after validation; program cautions appended"
@@ -1377,6 +1502,8 @@ def candidate_source_summary(candidate: dict, memberships: dict[str, str]) -> di
         "trading_status": source.get("trading_status"),
         "fina_indicator": source.get("fina_indicator", [])[:1],
         "fina_mainbz": source.get("fina_mainbz", [])[:2],
+        "disclosure_window": source.get("disclosure_window"),
+        "disclosure_schedule": source.get("disclosure_schedule", [])[:3],
         "hot_rank": candidate.get("context", {}).get("hot_rank"),
         "industry": memberships.get(candidate["instrument_id"]),
     }
@@ -1388,12 +1515,43 @@ def evidence_packet(
     """Bound model input, prefer relevant scoped facts, expose every text truncation."""
     selected, used, seen = [], 2, set()
     relevant = [x for x in items if not x.instrument_ids or set(x.instrument_ids) & codes]
+    limit_groups: dict[str, list[Evidence]] = {}
+    other_relevant = []
+    for item in relevant:
+        if item.kind == "historical_limit_structure" and len(item.instrument_ids) == 1:
+            limit_groups.setdefault(item.instrument_ids[0], []).append(item)
+        else:
+            other_relevant.append(item)
+    for code, group in limit_groups.items():
+        rows = []
+        for item in sorted(group, key=lambda x: x.event_dates):
+            try:
+                rows.append({"source_id": item.evidence_id, **json.loads(item.body)})
+            except ValueError:
+                rows.append({"source_id": item.evidence_id, "text": item.body})
+        other_relevant.append(
+            Evidence(
+                source="scout:limit_history_summary",
+                title="历史涨跌停结构摘要（逐日供应商记录）",
+                body=json.dumps(rows, ensure_ascii=False),
+                url=None,
+                published_at=None,
+                retrieved_at=max(group, key=lambda x: x.retrieved_at).retrieved_at,
+                kind="historical_limit_summary",
+                instrument_ids=(code,),
+                event_dates=tuple(sorted({day for item in group for day in item.event_dates})),
+                snapshot_refs=tuple(sorted({ref for item in group for ref in item.snapshot_refs})),
+            )
+        )
+    relevant = other_relevant
     priority = {
         "trading_status": 0,
+        "scheduled_disclosure": 0,
+        "completed_disclosure": 1,
         "known_future_unlock": 1,
-        "official_pdf_text_unverified": 2,
-        "company_event_date_only": 3,
-        "historical_limit_structure": 4,
+        "official_pdf_text_unverified": 1,
+        "company_event_date_only": 2,
+        "historical_limit_summary": 3,
         "moneyflow_context": 5,
         "financial_background": 6,
         "official_announcement_index_unverified": 7,
@@ -1402,12 +1560,22 @@ def evidence_packet(
         "attention_rank_unverified": 10,
         "public_comment_unverified": 20,
     }
+
     def sort_key(item: Evidence) -> tuple[int, str]:
         return (priority.get(item.kind, 12), item.evidence_id)
-    scoped = {
-        code: sorted((x for x in relevant if code in x.instrument_ids), key=sort_key)[:12]
-        for code in sorted(codes)
-    }
+
+    scoped = {}
+    for code in sorted(codes):
+        per_kind: dict[str, list[Evidence]] = {}
+        for item in sorted((x for x in relevant if code in x.instrument_ids), key=sort_key):
+            per_kind.setdefault(item.kind, []).append(item)
+        ordered_kinds = sorted(per_kind, key=lambda kind: priority.get(kind, 12))
+        queue = []
+        while any(per_kind.values()) and len(queue) < 12:
+            for kind in ordered_kinds:
+                if per_kind[kind] and len(queue) < 12:
+                    queue.append(per_kind[kind].pop(0))
+        scoped[code] = queue
     ordered = [
         queue[index]
         for index in range(max((len(queue) for queue in scoped.values()), default=0))

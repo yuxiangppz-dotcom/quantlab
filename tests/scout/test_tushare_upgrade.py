@@ -148,9 +148,9 @@ def test_capped_unlock_window_is_partitioned_without_losing_future_event(tmp_pat
         if api != "share_float":
             return []
         requests.append(params)
-        if params == {"start_date": "20261001", "end_date": "20261007"}:
+        if params == {"start_date": "20261002", "end_date": "20261008"}:
             return [{}] * 6000
-        if params == {"start_date": "20261001", "end_date": "20261004"}:
+        if params == {"start_date": "20261002", "end_date": "20261005"}:
             return [
                 {
                     "ts_code": CODE,
@@ -163,7 +163,7 @@ def test_capped_unlock_window_is_partitioned_without_losing_future_event(tmp_pat
 
     monkeypatch.setattr(pack, "fetch", fetch)
     evidence, _, _ = collect_market_pack(pack, SESSION, [], {CODE}, {CODE: "测试甲"})
-    assert {"start_date": "20261005", "end_date": "20261007"} in requests
+    assert {"start_date": "20261006", "end_date": "20261008"} in requests
     assert any(item.kind == "known_future_unlock" for item in evidence)
 
 

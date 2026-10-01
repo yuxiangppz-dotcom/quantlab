@@ -9,6 +9,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 
 from quantlab.scout.disclosures import disclosure_window
 from quantlab.scout.models import Evidence, web_url
@@ -22,10 +23,14 @@ class ShownEvidence:
     source: str
     title: str
     body: str
+    instrument_ids: tuple[str, ...] = ()
 
     @classmethod
     def from_packet(cls, row: dict) -> ShownEvidence:
-        return cls(*(row[key] for key in ("evidence_id", "source", "title", "body")))
+        return cls(
+            *(row[key] for key in ("evidence_id", "source", "title", "body")),
+            tuple(row.get("instrument_ids") or ()),
+        )
 
 
 def obj(properties: dict) -> dict:
@@ -71,6 +76,7 @@ SELECTION_SCHEMA = obj(
                     "risk": STRING,
                     "invalidation": STRING,
                     "evidence_ids": STRINGS,
+                    "fact_ids": STRINGS,
                 }
             ),
         },
@@ -100,17 +106,115 @@ UNSUPPORTED_MICROSTRUCTURE_CLAIMS = (
     r"缩量.{0,12}(分歧小|分歧减少)|筹码.{0,4}(更轻|较轻)|弹性.{0,4}(更高|较高)",
     r"资金推动|资金承接.{0,4}(强|弱)",
 )
-UNCERTAINTY_MARKERS = re.compile(r"不能|不可|无法|不等于|不代表|未验证|未知|没有.{0,6}证据")
+UNCERTAINTY_MARKERS = re.compile(
+    r"不能|不可|无法|不等于|不代表|未验证|未知|缺少|没有.{0,6}(?:证据|数据)"
+)
+
+
+class SelectionValidationError(ValueError):
+    def __init__(self, code: str, field: str, fragment: str, supported: object = None):
+        super().__init__(
+            "AI selection repeats unverified numeric claims"
+            if code == "unverified_numeric_claim"
+            else "AI treats sampled official notices as an exhaustive disclosure search"
+            if code == "sampled_as_exhaustive"
+            else code
+        )
+        self.code = code
+        self.field = field
+        self.fragment = fragment
+        self.supported = supported
 
 
 def asserts_unsupported_microstructure(text: str) -> bool:
     """Reject affirmative claims while allowing explicit uncertainty or negation."""
-    for clause in re.split(r"[。；，]", text):
+    for clause in re.split(r"[。；，、]|但|然而|不过", text):
         if UNCERTAINTY_MARKERS.search(clause):
             continue
-        if any(re.search(pattern, clause) for pattern in UNSUPPORTED_MICROSTRUCTURE_CLAIMS):
-            return True
+        for pattern in UNSUPPORTED_MICROSTRUCTURE_CLAIMS:
+            match = re.search(pattern, clause)
+            if match:
+                return True
     return False
+
+
+def _rounded_equal(actual: Decimal, stated: Decimal, decimals: int) -> bool:
+    return abs(actual - stated) <= Decimal(5).scaleb(-decimals - 1)
+
+
+def semantic_numeric_issue(
+    field: str,
+    text: str,
+    candidate: dict,
+    cited: list[Evidence | ShownEvidence],
+    fact_ids: list[str] | None = None,
+) -> SelectionValidationError | None:
+    """Check a bounded set of high-impact signed and unit-bearing claims."""
+    metrics = candidate.get("metrics") or {}
+    code = candidate.get("instrument_id")
+    for match in re.finditer(
+        r"fd_amount.{0,6}?(?:约|为)?\s*([0-9]+(?:\.[0-9]+)?)\s*(亿元|万元|元)", text
+    ):
+        if any("fd_amount" in item.body and "unknown" in item.body for item in cited):
+            return SelectionValidationError(
+                "unknown_provider_unit",
+                field,
+                match.group(),
+                "fd_amount unit not specified in cited row",
+            )
+    prior = metrics.get("return_1d")
+    for match in re.finditer(
+        r"(?:昨日|前一日|近?1日).{0,6}?(上涨|下跌|涨|跌)\s*([0-9]+(?:\.[0-9]+)?)\s*%", text
+    ):
+        if not isinstance(prior, (int, float)):
+            return SelectionValidationError(
+                "missing_metric", field, match.group(), "return_1d unknown"
+            )
+        asserted = Decimal(match.group(2))
+        actual = Decimal(str(prior)) * 100
+        direction = 1 if match.group(1) in {"上涨", "涨"} else -1
+        if actual * direction < 0 or not _rounded_equal(
+            abs(actual), asserted, len(match.group(2).partition(".")[2])
+        ):
+            return SelectionValidationError(
+                "metric_direction_or_value", field, match.group(), f"return_1d={prior}"
+            )
+        if fact_ids is not None and f"fact:{code}:market:return_1d" not in fact_ids:
+            return SelectionValidationError(
+                "missing_fact_reference", field, match.group(), f"fact:{code}:market:return_1d"
+            )
+    amount = metrics.get("amount_cny")
+    for match in re.finditer(
+        r"(?:昨日|前一日|当日)?成交额\s*(?:约|为)?\s*([0-9]+(?:\.[0-9]+)?)\s*(亿元|万元|元)", text
+    ):
+        if not isinstance(amount, (int, float)):
+            return SelectionValidationError(
+                "missing_metric", field, match.group(), "amount_cny unknown"
+            )
+        divisor = {"亿元": Decimal(100000000), "万元": Decimal(10000), "元": Decimal(1)}[
+            match.group(2)
+        ]
+        stated = Decimal(match.group(1))
+        actual = Decimal(str(amount)) / divisor
+        if not _rounded_equal(actual, stated, len(match.group(1).partition(".")[2])):
+            return SelectionValidationError(
+                "amount_unit_or_value", field, match.group(), f"amount_cny={amount} CNY"
+            )
+        if fact_ids is not None and f"fact:{code}:market:amount_cny" not in fact_ids:
+            return SelectionValidationError(
+                "missing_fact_reference", field, match.group(), f"fact:{code}:market:amount_cny"
+            )
+    for match in re.finditer(r"[^。；，]{0,35}(?:新获|中标|签订|获得)[^。；，]{0,35}", text):
+        clause = match.group()
+        amount_match = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(亿元|万元|元)", clause)
+        if not amount_match or not re.search(r"订单|合同", clause):
+            continue
+        source = " ".join(x.title + " " + x.body for x in cited)
+        if not re.search(r"订单|合同", source) or amount_match.group(1) not in source:
+            return SelectionValidationError(
+                "unsupported_company_order", field, clause, "no cited order amount"
+            )
+    return None
 
 
 def unsupported_numeric_claims(
@@ -118,17 +222,26 @@ def unsupported_numeric_claims(
 ) -> list[str]:
     """Allow figures found in cited input or program metrics, reject new precision."""
     cleaned = re.sub(r"(?<!\d)\d{6}\.(?:SZ|SH)(?![A-Z])", "", narrative)
+    known_codes = {candidate.get("instrument_id")}
+    summary = candidate.get("source_summary") or {}
+    known_codes.update(peer.get("instrument_id") for peer in summary.get("named_comparators", []))
+    for code in known_codes:
+        if isinstance(code, str) and re.fullmatch(r"\d{6}\.(?:SZ|SH)", code):
+            cleaned = re.sub(rf"(?<!\d){re.escape(code[:6])}(?:\.(?:SZ|SH))?(?!\d)", "", cleaned)
     cleaned = re.sub(r"\bev-[0-9a-f]{16}\b", "", cleaned)
     cleaned = re.sub(r"\d{4}年\d{1,2}月\d{1,2}日?", "", cleaned)
     cleaned = re.sub(r"\d{1,2}月\d{1,2}日至\d{1,2}日?", "", cleaned)
     cleaned = re.sub(r"\d{1,2}月\d{1,2}\s*[—–-]\s*\d{1,2}日?", "", cleaned)
     cleaned = re.sub(r"\d{1,2}月\d{1,2}日?", "", cleaned)
     cleaned = re.sub(r"\d{1,2}月", "", cleaned)
-    cleaned = re.sub(r"\d{1,4}[-/]\d{1,2}(?:[-/]\d{1,2})?", "", cleaned)
+    cleaned = re.sub(r"\b(?:19|20)\d{2}H[12]\b", "", cleaned)
+    cleaned = re.sub(r"(?<!\d)(?:1/3/5|1/3|3/5)日", "", cleaned)
+    cleaned = re.sub(r"\b(?:19|20)\d{2}[-/]\d{1,2}(?:[-/]\d{1,2})?\b", "", cleaned)
+    cleaned = re.sub(r"(?<!\d)\d{1,2}[-/]\d{1,2}(?!\d)", "", cleaned)
     cleaned = re.sub(r"\d{1,2}:\d{2}(?::\d{2})?", "", cleaned)
     tokens = re.findall(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?%?", cleaned)
     source_text = " ".join(item.title + " " + item.body for item in cited)
-    supported = {"1", "3", "5", "10", "20"}  # Fixed windows, not price claims.
+    supported = set()
 
     def add_numbers(value: object, key: str = "") -> None:
         if isinstance(value, dict):
@@ -160,7 +273,17 @@ def unsupported_numeric_claims(
                 supported.update({f"{magnitude:.1f}%", f"{magnitude:.2f}%"})
             if key == "amount_cny":
                 supported.add(f"{magnitude / 1e8:.2f}")
+                supported.add(f"{magnitude / 1e8:g}")
             if key.startswith("net_") and key.endswith("_wan_cny"):
+                supported.add(f"{magnitude / 10000:.2f}")
+                supported.add(f"{magnitude / 10000:g}")
+            if key in {"profit_dedt", "n_income", "revenue", "bz_sales", "bz_profit", "bz_cost"}:
+                supported.add(f"{magnitude / 1e8:.2f}")
+                supported.add(f"{magnitude / 10000:.2f}")
+                supported.add(f"{magnitude / 10000:.0f}")
+            if key == "vol":
+                supported.add(f"{magnitude / 10000:.2f}")
+            if key == "amount":
                 supported.add(f"{magnitude / 10000:.2f}")
 
     add_numbers(candidate.get("metrics") or {})
@@ -172,16 +295,17 @@ def unsupported_numeric_claims(
             pass
     context_text = json.dumps(candidate.get("source_summary") or {}, ensure_ascii=False)
     supported.update(re.findall(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?%?", source_text))
+    for number in re.findall(r"(?<!\d)(\d+(?:\.\d+)?)\s*万元", source_text):
+        supported.add(f"{float(number) / 10000:.2f}")
     supported.update(re.findall(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?%?", context_text))
     supported.update(
-        value[:4]
-        for value in re.findall(r"\b(?:19|20)\d{6}\b", source_text + " " + context_text)
+        value[:4] for value in re.findall(r"\b(?:19|20)\d{6}\b", source_text + " " + context_text)
     )
-    return [
-        token
-        for token in tokens
-        if token not in supported
-    ]
+    # Horizons are legitimate only in a horizon phrase, not as an arbitrary
+    # company amount or fact with the same digits.
+    cleaned = re.sub(r"(?<!\d)(?:1|3|5|10|20)(?:个?交易日|日|个月|年|板|次|期|[DdHh])", "", cleaned)
+    tokens = re.findall(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?%?", cleaned)
+    return [token for token in tokens if token not in supported]
 
 
 class OpenAIResearch:
@@ -607,11 +731,16 @@ def validate_selection(
         narrative = " ".join(row[key] for key in ("thesis", "risk", "invalidation"))
         cited = [item for item in evidence if item.evidence_id in row["evidence_ids"]]
         peers = [
-            {"metrics": other.get("metrics"), "source_summary": other.get("source_summary")}
+            {
+                "instrument_id": other["instrument_id"],
+                "metrics": other.get("metrics"),
+                "source_summary": other.get("source_summary"),
+            }
             for other in candidates
             if other["instrument_id"] != code
             and (
                 other["instrument_id"] in narrative
+                or re.search(rf"(?<!\d){re.escape(other['instrument_id'][:6])}(?!\d)", narrative)
                 or (len(other.get("name") or "") >= 2 and other["name"] in narrative)
             )
         ]
@@ -622,14 +751,51 @@ def validate_selection(
                 "named_comparators": peers,
             },
         }
-        if unsupported_numeric_claims(narrative, numeric_context, cited):
-            raise ValueError("AI selection repeats unverified numeric claims")
+        for field in ("thesis", "risk", "invalidation"):
+            issue = semantic_numeric_issue(
+                field,
+                row[field],
+                numeric_context,
+                cited,
+                row.get("fact_ids") if "fact_ids" in row else None,
+            )
+            if issue:
+                raise issue
+            unverified = unsupported_numeric_claims(row[field], numeric_context, cited)
+            if unverified:
+                raise SelectionValidationError(
+                    "unverified_numeric_claim",
+                    field,
+                    unverified[0],
+                    "not in shown evidence or program facts",
+                )
         if re.search(r"候选最高|全池最高|量比最高|成交额最高|涨幅最高", narrative):
             raise ValueError("AI selection makes an unchecked superlative claim")
-        if re.search(r"唯一.{0,12}(?:披露|公告)|仅有.{0,12}(?:披露|公告)", narrative):
-            raise ValueError(
-                "AI treats sampled official notices as an exhaustive disclosure search"
+        if re.search(r"唯一.{0,16}(?:正向|预增|盈利|回购|订单)", narrative):
+            raise SelectionValidationError(
+                "unverified_comparative_superlative",
+                "thesis",
+                narrative[:160],
+                "full comparison not established",
             )
+        if re.search(r"(?:只有|唯一|仅有).{0,12}(?:披露|公告)", narrative):
+            limited_scope = re.search(
+                r"(?:本次|当前|给定|本轮).{0,8}(?:输入|证据|样本|展示)", narrative
+            )
+            company_scope = re.search(r"(?:该公司|本公司|本股).{0,8}(?:仅有|只有|唯一)", narrative)
+            cited_bodies = sum(
+                item.source.startswith("cninfo:")
+                and "pdf" in item.source
+                and (not company_scope or code in item.instrument_ids)
+                for item in cited
+            )
+            if not limited_scope or cited_bodies != 1:
+                raise SelectionValidationError(
+                    "sampled_as_exhaustive",
+                    "thesis",
+                    narrative[:120],
+                    f"shown cited official PDF bodies={cited_bodies}; sampled search",
+                )
         if asserts_unsupported_microstructure(narrative):
             raise ValueError("AI infers order-book, execution or causal facts from daily data")
         if metrics.get("one_price_session") is False and "一价收盘" in row["thesis"]:
@@ -640,14 +806,42 @@ def validate_selection(
             "信息关联:announcement_index_unverified",
             "信息关联:sentiment",
             "信息关联:theme",
+            "信息关联:third_party_theme_unverified",
+            "信息关联:third_party_theme_membership_unverified",
             "信息关联:supply_chain",
+            "信息关联:direct",
         }
         routes = set(candidate.get("routes", []))
         if row["status"] == "focus" and routes and routes <= weak_routes:
             raise ValueError("Unverified discussion-only candidate cannot be focus")
         # A citation must both have reached the final prompt and be bound to
         # this stock. A source shown for another candidate is not support here.
-        valid = ({f"market:{code}"} | set(candidate.get("evidence_ids", []))) & (
+        named_peer_codes = {peer["instrument_id"] for peer in peers}
+        allowed_fact_ids = set()
+        for fact_candidate in [candidate] + [
+            other for other in candidates if other["instrument_id"] in named_peer_codes
+        ]:
+            fact_code = fact_candidate["instrument_id"]
+            allowed_fact_ids.update(
+                f"fact:{fact_code}:market:{key}" for key in (fact_candidate.get("metrics") or {})
+            )
+            flow = (fact_candidate.get("source_summary") or {}).get("moneyflow") or {}
+            allowed_fact_ids.update(f"fact:{fact_code}:moneyflow:{key}" for key in flow)
+        if not set(row.get("fact_ids") or []) <= allowed_fact_ids:
+            raise SelectionValidationError(
+                "fact_reference_wrong_object",
+                "fact_ids",
+                str(row.get("fact_ids"))[:180],
+                "fact IDs must belong to the selected stock or an explicitly named comparator",
+            )
+        peer_evidence = {
+            item.evidence_id
+            for item in evidence
+            if item.instrument_ids
+            and set(item.instrument_ids) <= named_peer_codes
+            and item.evidence_id in shown_evidence
+        }
+        valid = ({f"market:{code}"} | set(candidate.get("evidence_ids", [])) | peer_evidence) & (
             shown_evidence | {f"market:{code}"}
         )
         if not row["evidence_ids"] or not set(row["evidence_ids"]) <= valid:
@@ -754,11 +948,17 @@ def retain_valid_selection(
                 raise ValueError("AI selected a duplicate stock")
             kept.append(row)
         except (KeyError, TypeError, ValueError) as exc:
+            detail = exc if isinstance(exc, SelectionValidationError) else None
             rejected.append(
                 {
                     "instrument_id": row.get("instrument_id") if isinstance(row, dict) else None,
                     "status": row.get("status") if isinstance(row, dict) else None,
                     "reason": str(exc) if isinstance(exc, ValueError) else type(exc).__name__,
+                    "error_code": detail.code if detail else "selection_validation_failed",
+                    "field": detail.field if detail else "selected",
+                    "fragment": detail.fragment if detail else str(row)[:240],
+                    "supporting_value_or_gap": detail.supported if detail else None,
+                    "handling": "removed_without_preserving_priority",
                 }
             )
     valid = {**original, "selected": kept}

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pathlib import Path
 from uuid import uuid4
 
@@ -26,12 +26,22 @@ def revalidate(source: Path, canonical_dir: Path, output_root: Path) -> Path:
     report = json.loads(raw_report)
     if fingerprint(report) != manifest["report_sha256"]:
         raise ValueError("Source report hash mismatch")
-    if (
-        report["status"] not in {"incomplete", "live_research_unvalidated"}
-        or not report.get("selection_raw")
-        or (report["status"] == "live_research_unvalidated" and report["selection"]["selected"])
+    response_path = source / "ai_responses.json"
+    if not response_path.is_file() or "ai_responses_sha256" not in manifest:
+        raise ValueError("Source AI response or manifest hash missing")
+    raw_responses = json.loads(response_path.read_text(encoding="utf-8"))
+    if fingerprint(raw_responses) != manifest["ai_responses_sha256"]:
+        raise ValueError("Source AI response hash mismatch")
+    if report["status"] not in {"incomplete", "live_research_unvalidated"} or not report.get(
+        "selection_raw"
     ):
-        raise ValueError("Only an incomplete or empty-selection run can be revalidated")
+        raise ValueError("Only a run with archived original model output can be revalidated")
+    if (
+        report["status"] == "live_research_unvalidated"
+        and report["selection"]["selected"]
+        and not report.get("selection_input_packet")
+    ):
+        raise ValueError("A nonempty source selection needs the exact final packet")
     shown_packet = report.get("selection_input_evidence")
     if not isinstance(shown_packet, list) or not shown_packet:
         raise ValueError("Source run did not archive the exact final prompt evidence")
@@ -43,6 +53,9 @@ def revalidate(source: Path, canonical_dir: Path, output_root: Path) -> Path:
     )
     if shown != audited:
         raise ValueError("Archived prompt evidence differs from its audit")
+    exact_packet = report.get("selection_input_packet")
+    if exact_packet and exact_packet.get("evidence") != shown_packet:
+        raise ValueError("Archived final packet differs from exact prompt evidence")
     cutoff = timestamp(report["timing"]["information_cutoff"])
     if any(timestamp(item["retrieved_at"]) > cutoff for item in shown_packet):
         raise ValueError("Saved prompt includes evidence later than input cutoff")
@@ -60,13 +73,29 @@ def revalidate(source: Path, canonical_dir: Path, output_root: Path) -> Path:
         if row.exchange == "SSE" and row.is_open
     ]
     timing = report_timing(calendar, now, date.fromisoformat(report["market"]["session"]), True)
-    if timing["target_session"] != report["timing"]["target_session"]:
-        raise ValueError("Revalidation crossed into a different target session")
+    source_target = report["timing"]["target_session"]
+    same_target_before_open = (
+        exact_packet
+        and source_target is not None
+        and timing["target_session"] == source_target
+        and now < datetime.combine(date.fromisoformat(source_target), time(9, 30), SHANGHAI)
+    )
+    if not same_target_before_open:
+        timing = {
+            **report["timing"],
+            "generated_at": now.isoformat(),
+            "report_kind": "posthoc_engineering_audit",
+            "primary_eligible": False,
+        }
     timing["information_cutoff"] = cutoff.isoformat()
+    old_selection = report.get("selection") or {"selected": []}
     report.update(
         {
+            "schema_version": 3,
             "run_id": f"{now:%Y%m%dT%H%M%S}-{uuid4().hex[:8]}",
-            "status": "live_research_unvalidated",
+            "status": "live_research_unvalidated"
+            if same_target_before_open
+            else "posthoc_engineering_audit",
             "finished_at": now.isoformat(),
             "timing": timing,
             "failure": None,
@@ -81,6 +110,20 @@ def revalidate(source: Path, canonical_dir: Path, output_root: Path) -> Path:
                 "saved original model reasoning; validated before presentation"
             ),
             "revalidated_from_run_id": source.name,
+            "revalidation_provenance": {
+                "source_run_id": source.name,
+                "source_report_sha256": manifest["report_sha256"],
+                "source_ai_responses_sha256": manifest["ai_responses_sha256"],
+                "validator_version": "scout_selection_v3",
+                "schema_version": 3,
+                "old_selected": [
+                    (x["instrument_id"], x["status"]) for x in old_selection.get("selected", [])
+                ],
+                "new_selected": [
+                    (x["instrument_id"], x["status"]) for x in displayed.get("selected", [])
+                ],
+                "full_final_packet_archived": bool(exact_packet),
+            },
             "candidates": hold_candidate_pool(report["candidates"], displayed),
             "coverage": [row for row in report["coverage"] if row["source"] != "AI_pipeline"]
             + [
@@ -109,7 +152,6 @@ def revalidate(source: Path, canonical_dir: Path, output_root: Path) -> Path:
         ],
         report["industry_memberships"],
     )
-    raw_responses = json.loads((source / "ai_responses.json").read_text(encoding="utf-8"))
     return write_report(output_root, report, raw_responses)
 
 
