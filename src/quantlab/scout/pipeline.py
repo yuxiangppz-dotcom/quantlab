@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import Counter
 from dataclasses import asdict
 from datetime import date, datetime, time
 from pathlib import Path
@@ -15,6 +16,7 @@ from quantlab.scout.ai import (
     SELECTION_SCHEMA,
     DeepSeekResearch,
     OpenAIResearch,
+    ShownEvidence,
     ZAIResearch,
     bind_hypotheses,
     retain_valid_selection,
@@ -48,6 +50,12 @@ from quantlab.scout.sources import (
     collect_sources,
     load_manual,
 )
+from quantlab.scout.tushare_upgrade import (
+    TusharePack,
+    collect_deep_pack,
+    collect_market_pack,
+    collect_sw_memberships,
+)
 
 DEFAULT_CONFIG = {
     "provider": "openai",
@@ -66,6 +74,7 @@ DEFAULT_CONFIG = {
     "akshare_hot_rank": False,
     "cninfo_pdf_bodies": False,
     "tushare_kpl_limit": False,
+    "tushare_upgrade": False,
     "tushare_industry": True,
     "tushare_disclosures": True,
     "disclosure_sessions": 3,
@@ -107,7 +116,20 @@ def scoped_leads(items: list[Evidence], universe: set[str]) -> list[dict]:
         ),
     )
     for item in ordered:
-        if item.kind == "attention_rank_unverified":
+        if (
+            item.kind == "attention_rank_unverified"
+            or item.source.startswith("tushare:")
+            and item.kind
+            in {
+                "historical_limit_structure",
+                "third_party_theme_unverified",
+                "third_party_theme_membership_unverified",
+                "company_event_date_only",
+                "known_future_unlock",
+                "trading_status",
+                "moneyflow_context",
+            }
+        ):
             continue
         ids = sorted(set(item.instrument_ids) & universe)
         if not ids:
@@ -188,6 +210,8 @@ def read_config(path: Path | None) -> dict:
         raise ValueError("cninfo_pdf_bodies must be boolean")
     if type(config["tushare_kpl_limit"]) is not bool:
         raise ValueError("tushare_kpl_limit must be boolean")
+    if type(config["tushare_upgrade"]) is not bool:
+        raise ValueError("tushare_upgrade must be boolean")
     for feed in config["rss"]:
         if set(feed) != {"name", "url"}:
             raise ValueError("RSS entry requires only name and url")
@@ -356,6 +380,69 @@ def report_timing(
             "last valid report frozen before target 09:30, by generated_at then run_id"
         ),
     }
+
+
+def candidate_diagnostics(
+    universe: dict,
+    cheap_pool: list[dict],
+    deep_pool: list[dict],
+    selection: dict,
+    evidence: list[Evidence],
+    memberships: dict[str, str],
+) -> dict:
+    """Expose discovery bias and evidence coverage without outcome fitting."""
+    groups = {
+        "eligible": list(universe),
+        "cheap": [row["instrument_id"] for row in cheap_pool],
+        "deep": [row["instrument_id"] for row in deep_pool],
+        "focus": [
+            row["instrument_id"] for row in selection["selected"] if row["status"] == "focus"
+        ],
+        "watch": [
+            row["instrument_id"] for row in selection["selected"] if row["status"] == "watch"
+        ],
+    }
+    company_kinds = {"company_event_date_only", "official_pdf_text_unverified"}
+    company_codes = {
+        code for item in evidence if item.kind in company_kinds for code in item.instrument_ids
+    }
+    result = {}
+    for stage, codes in groups.items():
+        up = unknown = 0
+        returns = Counter()
+        sectors = Counter()
+        for code in codes:
+            item = universe[code]
+            metrics = item.metrics
+            close, upper = metrics.get("close"), metrics.get("up_limit")
+            if close is None or upper is None:
+                unknown += 1
+            elif abs(close - upper) < 0.005:
+                up += 1
+            five = metrics.get("return_5d")
+            if five is None:
+                returns["unknown"] += 1
+            elif five <= 0:
+                returns["nonpositive"] += 1
+            elif five <= 0.1:
+                returns["0_to_10pct"] += 1
+            elif five <= 0.2:
+                returns["10_to_20pct"] += 1
+            else:
+                returns["above_20pct"] += 1
+            sectors[memberships.get(code) or "unknown"] += 1
+        result[stage] = {
+            "count": len(codes),
+            "prior_close_at_known_up_limit": up,
+            "up_limit_unknown": unknown,
+            "prior_close_at_limit_fraction": up / (len(codes) - unknown)
+            if len(codes) > unknown
+            else None,
+            "return_5d_bins": dict(returns),
+            "industry_top": sectors.most_common(5),
+            "company_fact_or_pdf_coverage": sum(code in company_codes for code in codes),
+        }
+    return result
 
 
 def run_scout(
@@ -567,13 +654,53 @@ def run_scout(
     else:
         memberships, sector_coverage = sector_memberships(config, online)
     coverage.append(sector_coverage)
+    upgrade_pack = TusharePack(
+        output_root.parent / "tushare_snapshots",
+        now,
+        online and config["tushare_upgrade"],
+    )
+    if online and config["tushare_upgrade"] and not sectors_path:
+        sw_memberships = collect_sw_memberships(upgrade_pack, set(universe))
+        if sw_memberships:
+            memberships = sw_memberships
+        coverage.append(
+            Coverage(
+                "industry_membership_sw2021",
+                "current_snapshot_partial"
+                if len(sw_memberships) < len(universe)
+                else "current_snapshot",
+                len(sw_memberships),
+                "current SW2021 membership; not historical point-in-time; "
+                "denominator is admitted stocks",
+            )
+        )
     sector_codes = add_sectors(universe, memberships)
+    upgrade_hypotheses: list[dict] = []
+    upgrade_context: dict[str, dict] = {}
+    if online and config["tushare_upgrade"]:
+        recent_sessions = [
+            row.trade_date
+            for row in storage.load_trading_calendar()
+            if row.exchange == "SSE" and row.is_open and row.trade_date <= session
+        ][-5:]
+        upgrade_evidence, upgrade_hypotheses, upgrade_context = collect_market_pack(
+            upgrade_pack,
+            session,
+            recent_sessions,
+            set(universe),
+            {code: row.name for code, row in universe.items()},
+        )
+        evidence.extend(upgrade_evidence)
+        for code, context in upgrade_context.items():
+            universe[code].context["tushare_upgrade"] = context
+    else:
+        coverage.append(Coverage("tushare_upgrade", "not_configured"))
     market_notices, market_notice_coverage = collect_cninfo_market_index(
         config, now, online, set(universe)
     )
     evidence.extend(market_notices)
     coverage.append(market_notice_coverage)
-    early_event_hypotheses = [
+    early_event_hypotheses = upgrade_hypotheses + [
         {
             "instrument_ids": list(item.instrument_ids),
             "relation": "announcement_index_unverified",
@@ -626,7 +753,7 @@ def run_scout(
         reverse=True,
     )[:80]
     hypotheses: list[dict] = []
-    manual_hypotheses = scoped_leads(evidence, set(universe))
+    manual_hypotheses = upgrade_hypotheses + scoped_leads(evidence, set(universe))
     pool = build_pool(
         universe, manual_hypotheses, sector_codes, config["candidate_limit"], attention_codes
     )
@@ -667,12 +794,20 @@ def run_scout(
     cheap_route_diagnostics: dict = {}
     deep_route_diagnostics: dict = {}
     cheap_pool = build_pool(
-        universe, all_hypotheses, sector_codes, config["discovery_limit"],
-        attention_codes, cheap_route_diagnostics,
+        universe,
+        all_hypotheses,
+        sector_codes,
+        config["discovery_limit"],
+        attention_codes,
+        cheap_route_diagnostics,
     )
     pool = build_pool(
-        universe, all_hypotheses, sector_codes, config["candidate_limit"],
-        attention_codes, deep_route_diagnostics,
+        universe,
+        all_hypotheses,
+        sector_codes,
+        config["candidate_limit"],
+        attention_codes,
+        deep_route_diagnostics,
     )
     open_sessions = [
         row.trade_date
@@ -682,7 +817,7 @@ def run_scout(
     expected_target = report_timing(open_sessions, now, session, True)["target_session"]
     input_fingerprint = fingerprint(
         {
-            "prompt_version": "scout_multi_route_v1",
+            "prompt_version": "scout_tushare_upgrade_v3",
             "session": session.isoformat(),
             "target_session": expected_target,
             "config": config,
@@ -695,7 +830,7 @@ def run_scout(
             ],
         }
     )
-    if online and output_root.is_dir():
+    if online and not config["tushare_upgrade"] and output_root.is_dir():
         for prior in sorted(output_root.glob("*/report.json"), reverse=True):
             try:
                 cached = json.loads(prior.read_text(encoding="utf-8"))
@@ -712,12 +847,13 @@ def run_scout(
     raw_responses = []
     prompt_evidence_audit = []
     selection_raw = None
+    selection_input_evidence: list[dict] = []
     selection_validation = {"rejected": [], "validated_before_presentation": False}
     failure = None
     if online:
         search_supported = config["provider"] != "deepseek"
-        evidence_budget = 18_000 if config["provider"] == "deepseek" else 60_000
-        evidence_body_limit = 1_400 if config["provider"] == "deepseek" else 3_000
+        evidence_budget = 24_000 if config["provider"] == "deepseek" else 60_000
+        evidence_body_limit = 1_000 if config["provider"] == "deepseek" else 3_000
         try:
             discovery_evidence = evidence_packet(
                 input_evidence,
@@ -759,8 +895,12 @@ def run_scout(
             )
             all_hypotheses = manual_hypotheses + hypotheses + extra_hypotheses
             cheap_pool = build_pool(
-                universe, all_hypotheses, sector_codes, config["discovery_limit"],
-                attention_codes, cheap_route_diagnostics,
+                universe,
+                all_hypotheses,
+                sector_codes,
+                config["discovery_limit"],
+                attention_codes,
+                cheap_route_diagnostics,
             )
             pool = build_pool(
                 universe,
@@ -779,6 +919,27 @@ def run_scout(
                 )
             )
             if pool:
+                if config["tushare_upgrade"]:
+                    deep_evidence, deep_context = collect_deep_pack(
+                        upgrade_pack,
+                        pool,
+                        [
+                            day
+                            for day in open_sessions
+                            if day >= date.fromisoformat(expected_target)
+                        ],
+                    )
+                    evidence.extend(deep_evidence)
+                    for candidate in pool:
+                        code = candidate["instrument_id"]
+                        if code in deep_context:
+                            candidate.setdefault("context", {}).setdefault(
+                                "tushare_upgrade", {}
+                            ).update(deep_context[code])
+                for candidate in pool:
+                    summary = candidate_source_summary(candidate, memberships)
+                    if summary:
+                        candidate["source_summary"] = summary
                 model_pool = (
                     [{key: value for key, value in row.items() if key != "context"} for row in pool]
                     if config["provider"] == "deepseek"
@@ -854,16 +1015,22 @@ def run_scout(
                 # candidate before the final model prompt is frozen. A title
                 # discovered after selection cannot support that selection.
                 remaining_codes = [
-                    row["instrument_id"] for row in pool
-                    if row["instrument_id"] not in target_codes
+                    row["instrument_id"] for row in pool if row["instrument_id"] not in target_codes
                 ]
                 further_notices, further_coverage = collect_cninfo_announcements(
-                    config, datetime.now(SHANGHAI), True, remaining_codes,
+                    config,
+                    datetime.now(SHANGHAI),
+                    True,
+                    remaining_codes,
                     max_targets=config["candidate_limit"],
                 )
                 coverage.append(further_coverage)
                 further_bodies, further_body_coverage = collect_cninfo_pdf_bodies(
-                    config, datetime.now(SHANGHAI), True, further_notices, max_stocks=10,
+                    config,
+                    datetime.now(SHANGHAI),
+                    True,
+                    further_notices,
+                    max_stocks=10,
                 )
                 coverage.append(further_body_coverage)
                 admitted_further, further_filter = admit_evidence(
@@ -885,7 +1052,7 @@ def run_scout(
                 final_evidence = evidence_packet(
                     evidence,
                     {x["instrument_id"] for x in pool},
-                    max_chars=evidence_budget,
+                    max_chars=(32_000 if config["provider"] == "deepseek" else evidence_budget),
                     max_body_chars=evidence_body_limit,
                 )
                 final_ids = {item["evidence_id"] for item in final_evidence}
@@ -923,7 +1090,7 @@ def run_scout(
                         if any(ref in final_ids for ref in h["evidence_ids"])
                     ],
                     "evidence": final_evidence,
-                    "coverage": [asdict(x) for x in coverage],
+                    "coverage": [asdict(x) for x in coverage + upgrade_pack.coverage()],
                 }
                 prompt_evidence_audit.append(
                     {
@@ -943,11 +1110,14 @@ def run_scout(
                     "披露摘要的positive_net_rows与negative_net_rows都须考虑，不得把截取样本说成全部。"
                     "龙虎榜trade_date是统计窗口截止日；multi_session是多日累计，不能写成当日净额、"
                     "与单日成交额作任何大小/规模比较，或将重叠的单日榜和多日榜解释为连续独立净买。"
-                    "自由文本只作定性判断，不复写阿拉伯数字；精确数值由程序在候选表展示。"
+                    "可以准确引用本次证据或候选行情中的数值，不能引入无来源数值或虚构精度。"
                     "不要声称某指标在候选中最高，除非逐一比较所有候选。"
                     "部分公告有机器提取的PDF正文；逐条核对evidence_id，未提供正文的索引不能声称已读。"
                     "机器提取未经人工核实，公告日期不是精确发布时间，不得倒填为行情日收盘前已知。"
                     "没有订单簿/排队/逐笔数据；一价只能说OHLC相等，收盘等于涨停价只能说收盘状态。"
+                    "历史涨停封板时间与开板次数仅说明已发生的供应商记录，不能推出目标日可买到。"
+                    "预告区间不是确定利润，预增不是超预期；第三方题材成分不是主营业务证明。"
+                    "资金流大单是供应商金额分组，不是机构账户身份。"
                     "不得据成交额、市值或缩量推断次日可买性、封单、投资者分歧、筹码轻重或弹性。"
                     "写出反证与失效观察点，不给交易指令、目标收益或凭空价格。"
                     "搜索引用仅表示发现来源，不等于事实已经独立核实；缺失与日期不明须披露。\n"
@@ -959,10 +1129,12 @@ def run_scout(
                 from quantlab.scout.report import present_selection
 
                 selection_raw = selection
+                selection_input_evidence = final_evidence
                 valid_selection, rejected = retain_valid_selection(
                     selection,
                     pool,
-                    [x for x in evidence if x.evidence_id in shown_ids],
+                    [ShownEvidence.from_packet(x) for x in final_evidence],
+                    market,
                 )
                 selection_validation = {
                     "rejected": rejected,
@@ -998,6 +1170,7 @@ def run_scout(
             ),
         ]
     )
+    coverage.extend(upgrade_pack.coverage())
     finished = datetime.now(SHANGHAI)
     timing = report_timing(
         open_sessions, finished, session, online and status == "live_research_unvalidated"
@@ -1031,7 +1204,7 @@ def run_scout(
         "config": config,
         "config_sha256": fingerprint(config),
         "input_fingerprint": input_fingerprint,
-        "prompt_version": "scout_multi_route_v1",
+        "prompt_version": "scout_tushare_upgrade_v3",
         "market_universe": {code: item.to_dict() for code, item in universe.items()},
         "industry_memberships": memberships,
         "candidates": pool,
@@ -1044,6 +1217,8 @@ def run_scout(
         "discussion_snapshot": discussion_audit,
         "discussion_context": discussion_context,
         "portfolio_review": portfolio_review,
+        "tushare_source_matrix": upgrade_pack.matrix,
+        "tushare_context": upgrade_context,
         "candidate_stages": {
             "method_version": "multi_route_v1",
             "cheap_limit": config["discovery_limit"],
@@ -1055,12 +1230,16 @@ def run_scout(
             "cheap_route_diagnostics": cheap_route_diagnostics,
             "deep_route_diagnostics": deep_route_diagnostics,
         },
+        "candidate_diagnostics": candidate_diagnostics(
+            universe, cheap_pool, pool, result, evidence, memberships
+        ),
         "coverage": [asdict(x) for x in coverage],
         "ai_calls": calls,
         "prompt_evidence_audit": prompt_evidence_audit,
         "failure": failure,
         "selection": result,
         "selection_raw": selection_raw,
+        "selection_input_evidence": selection_input_evidence,
         "selection_validation": selection_validation,
         "selection_presentation": (
             "original model reasoning retained after validation; program cautions appended"
@@ -1185,30 +1364,73 @@ def compact_disclosure_body(body: str, max_chars: int) -> str | None:
     return compact
 
 
+def candidate_source_summary(candidate: dict, memberships: dict[str, str]) -> dict:
+    """Keep per-stock provider context bound to the candidate's own identity."""
+    source = candidate.get("context", {}).get("tushare_upgrade", {})
+    if not source:
+        return {}
+    return {
+        "limit_history": source.get("limit_history", [])[-3:],
+        "themes": source.get("themes", [])[:6],
+        "moneyflow": source.get("moneyflow"),
+        "future_unlocks": source.get("future_unlocks", [])[:3],
+        "trading_status": source.get("trading_status"),
+        "fina_indicator": source.get("fina_indicator", [])[:1],
+        "fina_mainbz": source.get("fina_mainbz", [])[:2],
+        "hot_rank": candidate.get("context", {}).get("hot_rank"),
+        "industry": memberships.get(candidate["instrument_id"]),
+    }
+
+
 def evidence_packet(
     items: list, codes: set[str], max_chars: int = 60000, max_body_chars: int = 3000
 ) -> list[dict]:
     """Bound model input, prefer relevant scoped facts, expose every text truncation."""
     selected, used, seen = [], 2, set()
     relevant = [x for x in items if not x.instrument_ids or set(x.instrument_ids) & codes]
-    relevant.sort(
-        key=lambda x: (
-            x.kind != "official_pdf_text_unverified",
-            x.kind != "search_reference_undated",
-            not bool(x.instrument_ids),
-            x.kind == "public_comment_unverified",
-        )
-    )
-    for item in relevant:
+    priority = {
+        "trading_status": 0,
+        "known_future_unlock": 1,
+        "official_pdf_text_unverified": 2,
+        "company_event_date_only": 3,
+        "historical_limit_structure": 4,
+        "moneyflow_context": 5,
+        "financial_background": 6,
+        "official_announcement_index_unverified": 7,
+        "third_party_theme_membership_unverified": 8,
+        "third_party_theme_unverified": 9,
+        "attention_rank_unverified": 10,
+        "public_comment_unverified": 20,
+    }
+    def sort_key(item: Evidence) -> tuple[int, str]:
+        return (priority.get(item.kind, 12), item.evidence_id)
+    scoped = {
+        code: sorted((x for x in relevant if code in x.instrument_ids), key=sort_key)[:12]
+        for code in sorted(codes)
+    }
+    ordered = [
+        queue[index]
+        for index in range(max((len(queue) for queue in scoped.values()), default=0))
+        for queue in scoped.values()
+        if index < len(queue)
+    ]
+    ordered.extend(sorted((x for x in relevant if not x.instrument_ids), key=sort_key))
+    for item in ordered:
         if item.evidence_id in seen:
             continue
         value = item.to_dict()
+        value.pop("snapshot_refs", None)  # Archived in report, not needed in the model prompt.
+        body_limit = (
+            max_body_chars
+            if item.kind == "official_pdf_text_unverified"
+            else min(max_body_chars, 650)
+        )
         compact = (
-            compact_disclosure_body(item.body, max_body_chars)
+            compact_disclosure_body(item.body, body_limit)
             if max_body_chars <= 1_400 and item.kind == "trading_disclosure"
             else None
         )
-        value["body"] = compact if compact is not None else value["body"][:max_body_chars]
+        value["body"] = compact if compact is not None else value["body"][:body_limit]
         value["body_compacted"] = compact is not None
         value["body_truncated"] = len(item.body) > len(value["body"])
         size = len(json.dumps(value, ensure_ascii=False)) + (2 if selected else 0)

@@ -258,9 +258,21 @@ def add_sectors(
         if breadth >= 0.6 and mean_return > 0.01:
             strong.append((mean_return, sector, members))
     selected = []
+    queues = []
     for _, sector, members in sorted(strong, key=lambda x: (-x[0], x[1])):
-        for candidate in sorted(members, key=lambda x: (-x.score, x.instrument_id))[:2]:
-            candidate.routes.append(f"板块领先:{sector}")
+        ranked = sorted(members, key=lambda x: (-x.score, x.instrument_id))
+        # An independent sector route needs breadth beyond its two price leaders.
+        middle = ranked[len(ranked) // 2]
+        broader = ranked[-1]
+        first = [ranked[0], middle, broader]
+        queue = first + [member for member in ranked if member not in first]
+        queues.append((sector, queue))
+    for index in range(max((len(queue) for _, queue in queues), default=0)):
+        for sector, queue in queues:
+            if index >= len(queue):
+                continue
+            candidate = queue[index]
+            candidate.routes.append(f"板块关联:{sector}")
             selected.append(candidate.instrument_id)
             if len(selected) >= quota:
                 return selected

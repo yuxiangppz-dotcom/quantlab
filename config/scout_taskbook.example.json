@@ -16,6 +16,7 @@
   "tushare_disclosures": true,
   "disclosure_sessions": 3,
   "tushare_announcements": false,
+  "tushare_upgrade": true,
   "tushare_kpl_limit": false,
   "rss": []
 }

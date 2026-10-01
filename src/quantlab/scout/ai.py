@@ -7,10 +7,25 @@ import os
 import re
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from datetime import datetime
 
 from quantlab.scout.disclosures import disclosure_window
 from quantlab.scout.models import Evidence, web_url
+
+
+@dataclass(frozen=True)
+class ShownEvidence:
+    """Exact evidence excerpt shown to the model, retaining the archived source ID."""
+
+    evidence_id: str
+    source: str
+    title: str
+    body: str
+
+    @classmethod
+    def from_packet(cls, row: dict) -> ShownEvidence:
+        return cls(*(row[key] for key in ("evidence_id", "source", "title", "body")))
 
 
 def obj(properties: dict) -> dict:
@@ -96,6 +111,77 @@ def asserts_unsupported_microstructure(text: str) -> bool:
         if any(re.search(pattern, clause) for pattern in UNSUPPORTED_MICROSTRUCTURE_CLAIMS):
             return True
     return False
+
+
+def unsupported_numeric_claims(
+    narrative: str, candidate: dict, cited: list[Evidence | ShownEvidence]
+) -> list[str]:
+    """Allow figures found in cited input or program metrics, reject new precision."""
+    cleaned = re.sub(r"(?<!\d)\d{6}\.(?:SZ|SH)(?![A-Z])", "", narrative)
+    cleaned = re.sub(r"\bev-[0-9a-f]{16}\b", "", cleaned)
+    cleaned = re.sub(r"\d{4}年\d{1,2}月\d{1,2}日?", "", cleaned)
+    cleaned = re.sub(r"\d{1,2}月\d{1,2}日至\d{1,2}日?", "", cleaned)
+    cleaned = re.sub(r"\d{1,2}月\d{1,2}\s*[—–-]\s*\d{1,2}日?", "", cleaned)
+    cleaned = re.sub(r"\d{1,2}月\d{1,2}日?", "", cleaned)
+    cleaned = re.sub(r"\d{1,2}月", "", cleaned)
+    cleaned = re.sub(r"\d{1,4}[-/]\d{1,2}(?:[-/]\d{1,2})?", "", cleaned)
+    cleaned = re.sub(r"\d{1,2}:\d{2}(?::\d{2})?", "", cleaned)
+    tokens = re.findall(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?%?", cleaned)
+    source_text = " ".join(item.title + " " + item.body for item in cited)
+    supported = {"1", "3", "5", "10", "20"}  # Fixed windows, not price claims.
+
+    def add_numbers(value: object, key: str = "") -> None:
+        if isinstance(value, dict):
+            for child_key, child in value.items():
+                add_numbers(child, child_key)
+        elif isinstance(value, list):
+            for child in value:
+                add_numbers(child, key)
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            magnitude = abs(value)
+            supported.update(
+                {
+                    str(value),
+                    str(magnitude),
+                    f"{magnitude:.0f}",
+                    f"{magnitude:.1f}",
+                    f"{magnitude:.2f}",
+                    f"{magnitude:.3f}",
+                    f"{magnitude:.4f}",
+                }
+            )
+            if key.startswith("return_") or key == "breakout_20d":
+                supported.update({f"{magnitude:.1%}", f"{magnitude:.2%}"})
+            if (
+                key.endswith("_pct")
+                or key.endswith("_yoy")
+                or key in {"netprofit_yoy", "float_ratio", "debt_to_assets", "change_ratio"}
+            ):
+                supported.update({f"{magnitude:.1f}%", f"{magnitude:.2f}%"})
+            if key == "amount_cny":
+                supported.add(f"{magnitude / 1e8:.2f}")
+            if key.startswith("net_") and key.endswith("_wan_cny"):
+                supported.add(f"{magnitude / 10000:.2f}")
+
+    add_numbers(candidate.get("metrics") or {})
+    add_numbers(candidate.get("source_summary") or {})
+    for item in cited:
+        try:
+            add_numbers(json.loads(item.body))
+        except (TypeError, ValueError):
+            pass
+    context_text = json.dumps(candidate.get("source_summary") or {}, ensure_ascii=False)
+    supported.update(re.findall(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?%?", source_text))
+    supported.update(re.findall(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?%?", context_text))
+    supported.update(
+        value[:4]
+        for value in re.findall(r"\b(?:19|20)\d{6}\b", source_text + " " + context_text)
+    )
+    return [
+        token
+        for token in tokens
+        if token not in supported
+    ]
 
 
 class OpenAIResearch:
@@ -463,8 +549,48 @@ def bind_hypotheses(result: dict, evidence: list[Evidence], eligible: set[str]) 
     return accepted
 
 
-def validate_selection(result: dict, candidates: list[dict], evidence: list[Evidence]) -> dict:
-    if re.search(r"[0-9]", result["market_view"]):
+def unsupported_market_numbers(
+    text: str,
+    market: dict | None,
+    candidates: list[dict],
+    evidence: list[Evidence | ShownEvidence],
+) -> list[str]:
+    context = {
+        "metrics": market or {},
+        "source_summary": {
+            "candidates": [
+                {"metrics": row.get("metrics"), "source_summary": row.get("source_summary")}
+                for row in candidates
+            ]
+        },
+    }
+    unsupported = unsupported_numeric_claims(text, context, evidence)
+    allowed = {"1", "3", "5", "10", str(len(candidates))}
+    allowed.update(row["instrument_id"].split(".")[0] for row in candidates)
+    if market:
+        for value in market.values():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                allowed.update(
+                    {
+                        str(value),
+                        f"{value:.2f}",
+                        f"{value:.4f}",
+                        f"{value:.2%}",
+                        f"{value:.3%}",
+                        f"{value:.4%}",
+                        f"{value:.1%}",
+                    }
+                )
+    return [token for token in unsupported if token not in allowed]
+
+
+def validate_selection(
+    result: dict,
+    candidates: list[dict],
+    evidence: list[Evidence | ShownEvidence],
+    market: dict | None = None,
+) -> dict:
+    if unsupported_market_numbers(result["market_view"], market, candidates, evidence):
         raise ValueError("AI market view repeats unverified numeric claims")
     allowed_codes = {x["instrument_id"] for x in candidates}
     shown_evidence = {x.evidence_id for x in evidence}
@@ -479,11 +605,31 @@ def validate_selection(result: dict, candidates: list[dict], evidence: list[Evid
         candidate = next(x for x in candidates if x["instrument_id"] == code)
         metrics = candidate.get("metrics") or {}
         narrative = " ".join(row[key] for key in ("thesis", "risk", "invalidation"))
-        numeric_text = re.sub(r"(?<!\d)\d{6}\.(?:SZ|SH)(?![A-Z])", "", narrative)
-        if re.search(r"[0-9]", numeric_text):
+        cited = [item for item in evidence if item.evidence_id in row["evidence_ids"]]
+        peers = [
+            {"metrics": other.get("metrics"), "source_summary": other.get("source_summary")}
+            for other in candidates
+            if other["instrument_id"] != code
+            and (
+                other["instrument_id"] in narrative
+                or (len(other.get("name") or "") >= 2 and other["name"] in narrative)
+            )
+        ]
+        numeric_context = {
+            **candidate,
+            "source_summary": {
+                "own": candidate.get("source_summary"),
+                "named_comparators": peers,
+            },
+        }
+        if unsupported_numeric_claims(narrative, numeric_context, cited):
             raise ValueError("AI selection repeats unverified numeric claims")
         if re.search(r"候选最高|全池最高|量比最高|成交额最高|涨幅最高", narrative):
             raise ValueError("AI selection makes an unchecked superlative claim")
+        if re.search(r"唯一.{0,12}(?:披露|公告)|仅有.{0,12}(?:披露|公告)", narrative):
+            raise ValueError(
+                "AI treats sampled official notices as an exhaustive disclosure search"
+            )
         if asserts_unsupported_microstructure(narrative):
             raise ValueError("AI infers order-book, execution or causal facts from daily data")
         if metrics.get("one_price_session") is False and "一价收盘" in row["thesis"]:
@@ -577,17 +723,20 @@ def validate_selection(result: dict, candidates: list[dict], evidence: list[Evid
 
 
 def retain_valid_selection(
-    original: dict, candidates: list[dict], evidence: list[Evidence]
+    original: dict,
+    candidates: list[dict],
+    evidence: list[Evidence | ShownEvidence],
+    market: dict | None = None,
 ) -> tuple[dict, list[dict]]:
     """Validate model prose before display; remove invalid rows, never preserve their priority."""
     if not isinstance(original.get("market_view"), str) or not isinstance(
         original.get("selected"), list
     ):
         raise ValueError("AI selection has an invalid structure")
-    if re.search(r"[0-9]", original["market_view"]):
+    if unsupported_market_numbers(original["market_view"], market, candidates, evidence):
         raise ValueError("AI market view repeats unverified numeric claims")
     try:
-        validate_selection(original, candidates, evidence)
+        validate_selection(original, candidates, evidence, market)
         return original, []
     except ValueError:
         pass
@@ -599,6 +748,7 @@ def retain_valid_selection(
                 {"market_view": original["market_view"], "selected": [row]},
                 candidates,
                 evidence,
+                market,
             )
             if any(previous["instrument_id"] == row["instrument_id"] for previous in kept):
                 raise ValueError("AI selected a duplicate stock")
@@ -612,5 +762,5 @@ def retain_valid_selection(
                 }
             )
     valid = {**original, "selected": kept}
-    validate_selection(valid, candidates, evidence)
+    validate_selection(valid, candidates, evidence, market)
     return valid, rejected

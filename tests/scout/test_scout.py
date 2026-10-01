@@ -10,7 +10,7 @@ import pytest
 
 from quantlab.data.models import DailyBasic, DailyPriceLimit
 from quantlab.data.storage import ParquetStorage
-from quantlab.scout.ai import bind_hypotheses, source_urls, validate_selection
+from quantlab.scout.ai import ShownEvidence, bind_hypotheses, source_urls, validate_selection
 from quantlab.scout.demo import make_demo_market
 from quantlab.scout.market import add_sectors, latest_completed_session, scan_market
 from quantlab.scout.models import SHANGHAI, Evidence, admit_evidence, fingerprint
@@ -116,7 +116,7 @@ def test_sector_route_and_unknown_turnover(market):
     assert all(x.metrics["up_limit"] is None for x in universe.values())
     codes = add_sectors(universe, {code: "synthetic" for code in universe})
     assert codes
-    assert all("板块领先:synthetic" in universe[x].routes for x in codes)
+    assert all("板块关联:synthetic" in universe[x].routes for x in codes)
 
 
 def test_canonical_optional_fields_keep_original_units(market):
@@ -226,6 +226,82 @@ def test_final_selection_rejects_other_stocks_or_unshown_evidence():
         )["selected"][0]["instrument_id"]
         == "600001.SH"
     )
+
+
+def test_selection_accepts_cited_numbers_but_rejects_unsourced_precision():
+    code = "600001.SH"
+    source = evidence(
+        source="tushare:limit_list_d",
+        title="历史涨停结构",
+        body="历史开板次数2次，交易日20260930；不是未来成交保证。",
+        instrument_ids=(code,),
+    )
+    candidate = {
+        "instrument_id": code,
+        "metrics": {"return_1d": 0.0997, "one_price_session": False},
+        "evidence_ids": [source.evidence_id],
+    }
+    result = selection(ids=[f"market:{code}", source.evidence_id])
+    result["selected"][0]["thesis"] = "历史开板2次，日涨幅9.97%；后续能否延续仍未知"
+    assert validate_selection(result, [candidate], [source]) == result
+    result["selected"][0]["thesis"] = "历史开板7次，日涨幅9.97%；后续能否延续仍未知"
+    with pytest.raises(ValueError, match="numeric"):
+        validate_selection(result, [candidate], [source])
+    result["selected"][0]["thesis"] = "历史开板930次；后续能否延续仍未知"
+    with pytest.raises(ValueError, match="numeric"):
+        validate_selection(result, [candidate], [source])
+
+
+def test_market_view_allows_rounding_of_supplied_market_breadth():
+    result = selection()
+    result["market_view"] = "正收益比例0.5545，中位涨幅0.3856%"
+    candidate = {"instrument_id": "600001.SH", "metrics": {"one_price_session": False}}
+    market = {"positive_fraction": 0.55446194, "median_return_1d": 0.0038560475}
+    assert validate_selection(result, [candidate], [], market) == result
+    result["market_view"] = "正收益比例0.9555，中位涨幅0.3856%"
+    with pytest.raises(ValueError, match="market view"):
+        validate_selection(result, [candidate], [], market)
+
+
+def test_numeric_claim_must_appear_in_actual_prompt_excerpt():
+    code = "600001.SH"
+    item = evidence(body="公告完整正文中后段金额123万元", instrument_ids=(code,))
+    prompt_excerpt = ShownEvidence.from_packet(
+        {**item.to_dict(), "body": "公告正文节选，金额段未进入提示词"}
+    )
+    candidate = {"instrument_id": code, "metrics": {}, "evidence_ids": [item.evidence_id]}
+    result = selection(ids=[f"market:{code}", item.evidence_id])
+    result["selected"][0]["thesis"] = "公告金额123万元，后续仍待观察"
+    with pytest.raises(ValueError, match="numeric"):
+        validate_selection(result, [candidate], [prompt_excerpt])
+
+
+def test_chinese_date_range_is_not_treated_as_financial_number():
+    code = "600001.SH"
+    candidate = {"instrument_id": code, "metrics": {"one_price_session": False}}
+    result = selection(ids=[f"market:{code}"])
+    result["selected"][0]["thesis"] = "9月28—30日有连续行情样本，后续待观察"
+    assert validate_selection(result, [candidate], []) == result
+
+
+def test_named_comparator_can_use_its_program_metric_only():
+    code = "600001.SH"
+    own = {"instrument_id": code, "name": "甲公司", "metrics": {}}
+    peer = {"instrument_id": "600002.SH", "name": "乙公司", "metrics": {"return_1d": 0.0198}}
+    result = selection(ids=[f"market:{code}"])
+    result["selected"][0]["thesis"] = "相较乙公司1日涨幅1.98%，本股仍待观察"
+    assert validate_selection(result, [own, peer], []) == result
+    result["selected"][0]["thesis"] = "相较其他公司1日涨幅1.98%，本股仍待观察"
+    with pytest.raises(ValueError, match="numeric"):
+        validate_selection(result, [own, peer], [])
+
+
+def test_sampled_notice_cannot_be_called_the_only_company_disclosure():
+    code = "600001.SH"
+    result = selection(ids=[f"market:{code}"])
+    result["selected"][0]["thesis"] = "这是近期唯一正式公司级披露，后续仍待观察"
+    with pytest.raises(ValueError, match="exhaustive disclosure"):
+        validate_selection(result, [{"instrument_id": code, "metrics": {}}], [])
 
 
 def test_final_selection_rejects_wrong_one_price_and_sell_only_claims():

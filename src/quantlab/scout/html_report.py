@@ -290,6 +290,35 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
             f"{h(report['selection'].get('no_recommendation_reason') or '具体原因待核实')}"
             "</div>"
         )
+    parts.append("</section>")
+    diagnostics = report.get("candidate_diagnostics") or {}
+    if diagnostics:
+        parts.append(
+            "<h2>候选阶段诊断</h2><section class='panel'>"
+            "<p class='boundary'>已知收盘涨停、未知涨停价及公司事件/公告正文覆盖按本轮"
+            "保存的数据计算；发现分数不是上涨概率。</p>"
+            "<table><thead><tr><th>阶段</th><th>股票</th><th>已知收盘涨停</th>"
+            "<th>涨停价未知</th><th>近5日涨幅&gt;20%</th><th>公司事实覆盖</th>"
+            "</tr></thead><tbody>"
+        )
+        for key, label in (
+            ("eligible", "准入"),
+            ("cheap", "初筛"),
+            ("deep", "深查"),
+            ("focus", "重点"),
+            ("watch", "观察"),
+        ):
+            row = diagnostics.get(key) or {}
+            values = (
+                label,
+                row.get("count", 0),
+                row.get("prior_close_at_known_up_limit", 0),
+                row.get("up_limit_unknown", 0),
+                (row.get("return_5d_bins") or {}).get("above_20pct", 0),
+                row.get("company_fact_or_pdf_coverage", 0),
+            )
+            parts.append("<tr>" + "".join(f"<td>{h(value)}</td>" for value in values) + "</tr>")
+        parts.append("</tbody></table></section>")
     portfolio = report.get("portfolio_review", {})
     if portfolio.get("status") == "provided":
         parts.append("<h2>持仓与自选独立观察</h2><section class='panel'>")
@@ -314,9 +343,7 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
                 "</tr>"
             )
         parts.append("</tbody></table></section>")
-    parts.extend(
-        ["</section><h2 id='coverage'>信息源覆盖</h2><section class='panel'>", "<table><thead><tr>"]
-    )
+    parts.extend(["<h2 id='coverage'>信息源覆盖</h2><section class='panel'>", "<table><thead><tr>"])
     parts.extend(f"<th scope='col'>{label}</th>" for label in ("来源", "状态", "条数", "说明"))
     parts.append("</tr></thead><tbody>")
     for source in report["coverage"]:

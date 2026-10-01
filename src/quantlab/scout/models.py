@@ -43,6 +43,7 @@ class Evidence:
     instrument_ids: tuple[str, ...] = ()
     evidence_id: str = ""
     event_dates: tuple[str, ...] = ()
+    snapshot_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         timestamp(self.retrieved_at)

@@ -118,7 +118,9 @@ def present_selection(model_selection: dict, candidates: list[dict]) -> dict:
                 "instrument_id": row["instrument_id"],
                 "status": row["status"],
                 "thesis": row["thesis"],
-                "risk": row["risk"] + " 程序补充：" + (
+                "risk": row["risk"]
+                + " 程序补充："
+                + (
                     "交易披露仅覆盖上榜样本，统计窗口可能重叠；发布时间可能未知。"
                     if has_disclosure
                     else "本轮没有该股交易披露样本；这不表示不存在反向信息。"
@@ -193,6 +195,54 @@ def observed_facts(candidate: dict, disclosure_context: dict) -> list[str]:
             )
     else:
         facts.append("本轮没有该股龙虎榜统计记录；不能据此推断没有反向信息。")
+    upgrade = candidate.get("source_summary") or candidate.get("context", {}).get(
+        "tushare_upgrade", {}
+    )
+    history = upgrade.get("limit_history") or []
+    if history:
+        last = history[-1]
+        limit_times = last.get("limit_times")
+        open_times = last.get("open_times")
+        limit_count = limit_times if limit_times is not None else "未知"
+        facts.append(
+            f"TuShare历史板单截至{last.get('trade_date') or '未知'}："
+            f"类型{last.get('limit') or '未知'}，连板数{limit_count}，"
+            f"炸/开板次数{open_times if open_times is not None else '未知'}；"
+            "这不说明下一交易日委托队列或可成交性。"
+        )
+    flows = upgrade.get("moneyflow") or {}
+    if flows:
+        parts = []
+        for days in (1, 3, 5):
+            value = flows.get(f"net_{days}d_wan_cny")
+            covered = flows.get(f"coverage_{days}d", 0)
+            parts.append(
+                f"{days}日{value:.2f}万元"
+                if isinstance(value, (int, float))
+                else f"{days}日未知（覆盖{covered}/{days}）"
+            )
+        facts.append("TuShare供应商资金流净额：" + "、".join(parts) + "；不等于机构账户流向。")
+    for item in (upgrade.get("future_unlocks") or [])[:2]:
+        ratio = item.get("float_ratio")
+        facts.append(
+            f"已披露未来解禁：{item.get('float_date') or '日期未知'}；"
+            f"占总股本比例{ratio if ratio is not None else '未知'}%；"
+            "不等于股东实际卖出。"
+        )
+    if upgrade.get("trading_status"):
+        facts.append("TuShare停复牌状态样本：" + str(upgrade["trading_status"]))
+    for item in (upgrade.get("fina_indicator") or [])[:1]:
+        facts.append(
+            f"财务指标：报告期{item.get('end_date') or '未知'}，公告日"
+            f"{item.get('ann_date') or '未知'}；扣非利润"
+            f"{item.get('profit_dedt') if item.get('profit_dedt') is not None else '未知'}"
+            "（供应商原值，单位待核）；其余字段和口径见原始证据。"
+        )
+    if upgrade.get("fina_mainbz"):
+        facts.append(
+            "主营构成已取得，报告期与原币种见原始证据；公开时间未知，"
+            "不按不同维度加总，也不据此推断主题盈利。"
+        )
     return facts
 
 
@@ -422,6 +472,37 @@ def render_report(report: dict) -> str:
                 f"深查 {len(stages['deep_candidates'])} 只；"
                 f"因深查预算未进入 {len(stages['not_deep_reason'])} 只。",
                 "逐只阶段与原因见 report.json 的 candidate_stages。",
+            ]
+        )
+    diagnostics = report.get("candidate_diagnostics", {})
+    if diagnostics:
+        lines.extend(
+            [
+                "",
+                "## 候选阶段诊断",
+                "",
+                "前日收盘涨停按该证券已知涨停价核对；未知值不计作未涨停。",
+                "公司事实覆盖只计算已取得的事件记录或公告正文，不等于人工核实通过。",
+                "",
+                "| 阶段 | 股票数 | 已知收盘涨停 | 涨停价未知 | 近5日涨幅>20% | 公司事件/正文覆盖 |",
+                "|---|---:|---:|---:|---:|---:|",
+            ]
+        )
+        for stage in ("eligible", "cheap", "deep", "focus", "watch"):
+            values = diagnostics.get(stage, {})
+            lines.append(
+                f"| {stage} | {values.get('count', 0)} | "
+                f"{values.get('prior_close_at_known_up_limit', 0)} | "
+                f"{values.get('up_limit_unknown', 0)} | "
+                f"{values.get('return_5d_bins', {}).get('above_20pct', 0)} | "
+                f"{values.get('company_fact_or_pdf_coverage', 0)} |"
+            )
+        lines.extend(
+            [
+                "",
+                "各路径原始/独有/重叠/分配/截断数、行业集中和完整涨幅分布见 "
+                "report.json 的 candidate_stages 与 candidate_diagnostics。",
+                "",
             ]
         )
     portfolio = report.get("portfolio_review", {})
