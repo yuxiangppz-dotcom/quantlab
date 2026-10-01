@@ -9,9 +9,14 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
 
 from quantlab.scout.disclosures import disclosure_window
+from quantlab.scout.facts import (
+    check_core_claim,
+    extract_core_claims,
+    fact_map,
+    validate_declared_claim,
+)
 from quantlab.scout.models import Evidence, web_url
 
 
@@ -77,6 +82,25 @@ SELECTION_SCHEMA = obj(
                     "invalidation": STRING,
                     "evidence_ids": STRINGS,
                     "fact_ids": STRINGS,
+                    "quant_claims": {
+                        "type": "array",
+                        "items": obj(
+                            {
+                                "field": {
+                                    "type": "string",
+                                    "enum": ["thesis", "risk", "invalidation"],
+                                },
+                                "text": STRING,
+                                "fact_id": STRING,
+                                "subject_id": STRING,
+                                "metric": STRING,
+                                "period": STRING,
+                                "value": STRING,
+                                "unit": STRING,
+                                "direction": STRING,
+                            }
+                        ),
+                    },
                 }
             ),
         },
@@ -138,78 +162,101 @@ def asserts_unsupported_microstructure(text: str) -> bool:
     return False
 
 
-def _rounded_equal(actual: Decimal, stated: Decimal, decimals: int) -> bool:
-    return abs(actual - stated) <= Decimal(5).scaleb(-decimals - 1)
-
-
 def semantic_numeric_issue(
     field: str,
     text: str,
     candidate: dict,
     cited: list[Evidence | ShownEvidence],
     fact_ids: list[str] | None = None,
+    candidates: list[dict] | None = None,
+    declared_claims: list[dict] | None = None,
 ) -> SelectionValidationError | None:
-    """Check a bounded set of high-impact signed and unit-bearing claims."""
-    metrics = candidate.get("metrics") or {}
+    """Check typed, subject-bound core facts shown in the actual candidate packet."""
     code = candidate.get("instrument_id")
     for match in re.finditer(
         r"fd_amount.{0,6}?(?:约|为)?\s*([0-9]+(?:\.[0-9]+)?)\s*(亿元|万元|元)", text
     ):
-        if any("fd_amount" in item.body and "unknown" in item.body for item in cited):
-            return SelectionValidationError(
-                "unknown_provider_unit",
-                field,
-                match.group(),
-                "fd_amount unit not specified in cited row",
-            )
-    prior = metrics.get("return_1d")
-    for match in re.finditer(
-        r"(?:昨日|前一日|近?1日).{0,6}?(上涨|下跌|涨|跌)\s*([0-9]+(?:\.[0-9]+)?)\s*%", text
-    ):
-        if not isinstance(prior, (int, float)):
-            return SelectionValidationError(
-                "missing_metric", field, match.group(), "return_1d unknown"
-            )
-        asserted = Decimal(match.group(2))
-        actual = Decimal(str(prior)) * 100
-        direction = 1 if match.group(1) in {"上涨", "涨"} else -1
-        if actual * direction < 0 or not _rounded_equal(
-            abs(actual), asserted, len(match.group(2).partition(".")[2])
-        ):
-            return SelectionValidationError(
-                "metric_direction_or_value", field, match.group(), f"return_1d={prior}"
-            )
-        if fact_ids is not None and f"fact:{code}:market:return_1d" not in fact_ids:
-            return SelectionValidationError(
-                "missing_fact_reference", field, match.group(), f"fact:{code}:market:return_1d"
-            )
-    amount = metrics.get("amount_cny")
-    for match in re.finditer(
-        r"(?:昨日|前一日|当日)?成交额\s*(?:约|为)?\s*([0-9]+(?:\.[0-9]+)?)\s*(亿元|万元|元)", text
-    ):
-        if not isinstance(amount, (int, float)):
-            return SelectionValidationError(
-                "missing_metric", field, match.group(), "amount_cny unknown"
-            )
-        divisor = {"亿元": Decimal(100000000), "万元": Decimal(10000), "元": Decimal(1)}[
-            match.group(2)
-        ]
-        stated = Decimal(match.group(1))
-        actual = Decimal(str(amount)) / divisor
-        if not _rounded_equal(actual, stated, len(match.group(1).partition(".")[2])):
-            return SelectionValidationError(
-                "amount_unit_or_value", field, match.group(), f"amount_cny={amount} CNY"
-            )
-        if fact_ids is not None and f"fact:{code}:market:amount_cny" not in fact_ids:
-            return SelectionValidationError(
-                "missing_fact_reference", field, match.group(), f"fact:{code}:market:amount_cny"
-            )
+        return SelectionValidationError(
+            "unknown_provider_unit",
+            field,
+            match.group(),
+            "fd_amount has no verified unit in the prompt fact table",
+        )
+    own = candidate if code else {**candidate, "instrument_id": "UNKNOWN"}
+    choices = candidates or [own]
+    facts = fact_map(choices)
+    parsed = extract_core_claims(field, text, own, choices)
+    matched_declarations = set()
+    for claim in parsed:
+        issue = check_core_claim(claim, facts)
+        if issue:
+            code_name = issue[0]
+            if code_name == "core_fact_direction_or_value":
+                code_name = (
+                    "amount_unit_or_value"
+                    if claim.metric == "amount_cny"
+                    else "metric_direction_or_value"
+                    if claim.metric.startswith("return_")
+                    else code_name
+                )
+            return SelectionValidationError(code_name, field, claim.text, issue[1])
+        fact_id = (
+            f"fact:{claim.subject_id}:limit:limit_times:{claim.period}"
+            if claim.metric == "limit_times"
+            else f"fact:{claim.subject_id}:moneyflow:{claim.metric}"
+            if claim.metric.startswith("net_")
+            else f"fact:{claim.subject_id}:market:{claim.metric}"
+        )
+        if fact_ids is not None and fact_id not in fact_ids:
+            return SelectionValidationError("missing_fact_reference", field, claim.text, fact_id)
+        if declared_claims is not None:
+            matching = [
+                (index, row)
+                for index, row in enumerate(declared_claims)
+                if row.get("field") == field and row.get("text") == claim.text
+            ]
+            if len(matching) != 1:
+                return SelectionValidationError(
+                    "core_claim_not_declared", field, claim.text, fact_id
+                )
+            index, declaration = matching[0]
+            declared_issue = validate_declared_claim(declaration, claim, facts)
+            if declared_issue:
+                return SelectionValidationError(
+                    declared_issue[0], field, claim.text, declared_issue[1]
+                )
+            matched_declarations.add(index)
+    if declared_claims is not None:
+        for index, declaration in enumerate(declared_claims):
+            if declaration.get("field") == field and index not in matched_declarations:
+                return SelectionValidationError(
+                    "core_claim_not_in_prose", field, str(declaration.get("text"))[:160]
+                )
+    residual = text
+    for claim in parsed:
+        residual = residual.replace(claim.text, "", 1)
+    unparsed = re.search(
+        r"(?:收益|涨幅|跌幅|上涨|下跌|成交额|净流|连续|第\d+板)"
+        r".{0,25}?\d+(?:\.\d+)?\s*(?:%|亿元|万元|元|亿|万|板)",
+        residual,
+    )
+    if unparsed:
+        return SelectionValidationError(
+            "core_claim_unparsed",
+            field,
+            unparsed.group(),
+            "use one explicit period and unit per claim",
+        )
+    for match in re.finditer(r"回购\s*\d+\s*次", text):
+        return SelectionValidationError(
+            "unverified_event_count", field, match.group(), "no typed repurchase count in packet"
+        )
     for match in re.finditer(r"[^。；，]{0,35}(?:新获|中标|签订|获得)[^。；，]{0,35}", text):
         clause = match.group()
         amount_match = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(亿元|万元|元)", clause)
         if not amount_match or not re.search(r"订单|合同", clause):
             continue
-        source = " ".join(x.title + " " + x.body for x in cited)
+        source = " ".join(x.title + " " + x.body for x in cited if code in x.instrument_ids)
         if not re.search(r"订单|合同", source) or amount_match.group(1) not in source:
             return SelectionValidationError(
                 "unsupported_company_order", field, clause, "no cited order amount"
@@ -303,7 +350,7 @@ def unsupported_numeric_claims(
     )
     # Horizons are legitimate only in a horizon phrase, not as an arbitrary
     # company amount or fact with the same digits.
-    cleaned = re.sub(r"(?<!\d)(?:1|3|5|10|20)(?:个?交易日|日|个月|年|板|次|期|[DdHh])", "", cleaned)
+    cleaned = re.sub(r"(?:观察|持有|跟踪)\s*(?:1|3|5|10|20)\s*个?交易日", "", cleaned)
     tokens = re.findall(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?%?", cleaned)
     return [token for token in tokens if token not in supported]
 
@@ -733,6 +780,7 @@ def validate_selection(
         peers = [
             {
                 "instrument_id": other["instrument_id"],
+                "name": other.get("name"),
                 "metrics": other.get("metrics"),
                 "source_summary": other.get("source_summary"),
             }
@@ -751,17 +799,23 @@ def validate_selection(
                 "named_comparators": peers,
             },
         }
+        core_context = [candidate] + peers
         for field in ("thesis", "risk", "invalidation"):
             issue = semantic_numeric_issue(
                 field,
                 row[field],
-                numeric_context,
+                candidate,
                 cited,
                 row.get("fact_ids") if "fact_ids" in row else None,
+                core_context,
+                row.get("quant_claims") if "quant_claims" in row else None,
             )
             if issue:
                 raise issue
-            unverified = unsupported_numeric_claims(row[field], numeric_context, cited)
+            residual = row[field]
+            for checked in extract_core_claims(field, row[field], candidate, core_context):
+                residual = residual.replace(checked.text, "", 1)
+            unverified = unsupported_numeric_claims(residual, numeric_context, cited)
             if unverified:
                 raise SelectionValidationError(
                     "unverified_numeric_claim",
@@ -801,6 +855,7 @@ def validate_selection(
         if metrics.get("one_price_session") is False and "一价收盘" in row["thesis"]:
             raise ValueError("AI mislabels a non-one-price session as one-price")
         weak_routes = {
+            "热度观察",
             "信息关联:public_discussion",
             "信息关联:unverified_user_clue",
             "信息关联:announcement_index_unverified",
@@ -827,6 +882,7 @@ def validate_selection(
             )
             flow = (fact_candidate.get("source_summary") or {}).get("moneyflow") or {}
             allowed_fact_ids.update(f"fact:{fact_code}:moneyflow:{key}" for key in flow)
+            allowed_fact_ids.update(fact_map([fact_candidate]))
         if not set(row.get("fact_ids") or []) <= allowed_fact_ids:
             raise SelectionValidationError(
                 "fact_reference_wrong_object",

@@ -20,7 +20,9 @@ from quantlab.scout.report import (
 )
 
 
-def revalidate(source: Path, canonical_dir: Path, output_root: Path) -> Path:
+def revalidate(
+    source: Path, canonical_dir: Path, output_root: Path, validator_commit: str | None = None
+) -> Path:
     raw_report = (source / "report.json").read_text(encoding="utf-8")
     manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
     report = json.loads(raw_report)
@@ -60,8 +62,13 @@ def revalidate(source: Path, canonical_dir: Path, output_root: Path) -> Path:
     if any(timestamp(item["retrieved_at"]) > cutoff for item in shown_packet):
         raise ValueError("Saved prompt includes evidence later than input cutoff")
     evidence = [ShownEvidence.from_packet(row) for row in shown_packet]
+    packet_candidates = exact_packet["candidates"] if exact_packet else report["candidates"]
+    typed_compatible = report.get("schema_version", 0) >= 4 and all(
+        isinstance(row.get("quant_claims"), list)
+        for row in report["selection_raw"].get("selected", [])
+    )
     selected, rejected = retain_valid_selection(
-        report["selection_raw"], report["candidates"], evidence, report["market"]
+        report["selection_raw"], packet_candidates, evidence, report["market"]
     )
     displayed = screen_notice_risks(
         present_selection(selected, report["candidates"]), report["evidence"]
@@ -76,6 +83,7 @@ def revalidate(source: Path, canonical_dir: Path, output_root: Path) -> Path:
     source_target = report["timing"]["target_session"]
     same_target_before_open = (
         exact_packet
+        and typed_compatible
         and source_target is not None
         and timing["target_session"] == source_target
         and now < datetime.combine(date.fromisoformat(source_target), time(9, 30), SHANGHAI)
@@ -91,7 +99,7 @@ def revalidate(source: Path, canonical_dir: Path, output_root: Path) -> Path:
     old_selection = report.get("selection") or {"selected": []}
     report.update(
         {
-            "schema_version": 3,
+            "schema_version": 4,
             "run_id": f"{now:%Y%m%dT%H%M%S}-{uuid4().hex[:8]}",
             "status": "live_research_unvalidated"
             if same_target_before_open
@@ -105,17 +113,31 @@ def revalidate(source: Path, canonical_dir: Path, output_root: Path) -> Path:
                 "validated_before_presentation": True,
                 "shown_evidence_ids": sorted(shown),
                 "revalidated_from_run_id": source.name,
+                "validator_version": "scout_core_facts_v4",
+                "compatibility": (
+                    "typed_quant_claims_v1"
+                    if typed_compatible
+                    else "legacy_unstructured_model_output"
+                ),
             },
             "selection_presentation": (
-                "saved original model reasoning; validated before presentation"
+                "saved original model output; legacy core numeric prose remains unstructured"
+                if not typed_compatible
+                else "saved original model output; typed core facts validated before presentation"
             ),
             "revalidated_from_run_id": source.name,
             "revalidation_provenance": {
                 "source_run_id": source.name,
                 "source_report_sha256": manifest["report_sha256"],
                 "source_ai_responses_sha256": manifest["ai_responses_sha256"],
-                "validator_version": "scout_selection_v3",
-                "schema_version": 3,
+                "validator_version": "scout_core_facts_v4",
+                "validator_code_commit": validator_commit or "unrecorded",
+                "schema_version": 4,
+                "compatibility": (
+                    "typed_quant_claims_v1"
+                    if typed_compatible
+                    else "legacy_unstructured_model_output"
+                ),
                 "old_selected": [
                     (x["instrument_id"], x["status"]) for x in old_selection.get("selected", [])
                 ],
@@ -180,5 +202,6 @@ if __name__ == "__main__":
     parser.add_argument("--source-run", type=Path, required=True)
     parser.add_argument("--canonical-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--validator-commit", default=None)
     args = parser.parse_args()
-    print(revalidate(args.source_run, args.canonical_dir, args.output_dir))
+    print(revalidate(args.source_run, args.canonical_dir, args.output_dir, args.validator_commit))

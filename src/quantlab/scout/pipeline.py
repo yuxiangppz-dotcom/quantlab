@@ -29,6 +29,7 @@ from quantlab.scout.disclosures import (
     disclosure_window,
 )
 from quantlab.scout.discussion import load_comments
+from quantlab.scout.facts import program_facts
 from quantlab.scout.hot import INTERFACE as HOT_INTERFACE
 from quantlab.scout.hot import SOURCE as HOT_SOURCE
 from quantlab.scout.hot import collect_hot_rank, normalize_hot_rank, save_hot_snapshot
@@ -259,6 +260,7 @@ def build_pool(
 ) -> list:
     """Give each route unique slots, then share spare slots round robin."""
     event_codes: list[str] = []
+    hypothesis_attention: list[str] = []
     theme_groups: dict[str, list[str]] = {}
     ordered_hypotheses = sorted(
         hypotheses,
@@ -303,6 +305,8 @@ def build_pool(
                 theme_groups.setdefault(
                     str(hypothesis.get("theme_id") or hypothesis.get("summary") or relation), []
                 ).append(code)
+            elif route_type == "attention" and code not in hypothesis_attention:
+                hypothesis_attention.append(code)
     momentum_codes = [
         x.instrument_id
         for x in sorted(universe.values(), key=lambda x: (-x.score, x.instrument_id))
@@ -320,7 +324,11 @@ def build_pool(
         )
         if "回撤放量" in x.routes or "温和放量" in x.routes
     ]
-    attention_codes = [code for code in (attention_codes or []) if code in universe]
+    attention_codes = list(
+        dict.fromkeys(
+            code for code in [*(attention_codes or []), *hypothesis_attention] if code in universe
+        )
+    )
     for code in attention_codes:
         if "热度观察" not in universe[code].routes:
             universe[code].routes.append("热度观察")
@@ -874,7 +882,7 @@ def run_scout(
     expected_target = report_timing(open_sessions, now, session, True)["target_session"]
     input_fingerprint = fingerprint(
         {
-            "prompt_version": "scout_tushare_upgrade_v3",
+            "prompt_version": "scout_core_facts_v4",
             "session": session.isoformat(),
             "target_session": expected_target,
             "config": config,
@@ -1145,7 +1153,18 @@ def run_scout(
                                     (row.get("source_summary") or {}).get("moneyflow") or {}
                                 )
                             },
+                            "limit": {
+                                str(item.get("trade_date")): (
+                                    f"fact:{row['instrument_id']}:limit:limit_times:"
+                                    f"{item.get('trade_date')}"
+                                )
+                                for item in (row.get("source_summary") or {}).get(
+                                    "limit_history", []
+                                )
+                                if item.get("trade_date") and item.get("limit_times") is not None
+                            },
                         },
+                        "program_facts": program_facts(row, session.isoformat()),
                     }
                     for row in pool
                 ]
@@ -1184,7 +1203,10 @@ def run_scout(
                     "根据下列证据包做最终比较，不再搜索。最多3只focus，最多5只watch，"
                     "可以为空。规则score只是发现阶段的排序提示，不是上涨概率，不应机械照抄。"
                     "每只必须引用它自己的market:股票代码，引用新闻只能使用给定evidence_id。"
-                    "引用程序量价或资金事实时，把对应的program_fact_ids填入fact_ids；"
+                    "引用收益、成交额、资金流或连板数时，从program_facts选择对应事实ID，"
+                    "在fact_ids和quant_claims逐条填写主体、期间、带符号数值、单位、原句片段；"
+                    "quant_claims的text必须逐字出现在thesis/risk/invalidation对应字段。"
+                    "未核实的核心数字不要写成确定事实；观察期限不是连板或回购次数。"
                     "跨股票比较须写明对方名称或代码，并引用对方在本次输入中可见的证据ID；"
                     "无新增催化不必淘汰量价候选；未确认传闻和纯名称联想只能作为观察线索。"
                     "close_location=1.0只表示收在当日最高价；只有one_price_session=true才是一价行情。"
@@ -1212,15 +1234,19 @@ def run_scout(
                 selection_raw = selection
                 selection_input_evidence = final_evidence
                 selection_input_packet = packet
+                if any("quant_claims" not in row for row in selection.get("selected", [])):
+                    raise ValueError("New selection lacks typed core fact declarations")
                 valid_selection, rejected = retain_valid_selection(
                     selection,
-                    pool,
+                    final_model_pool,
                     [ShownEvidence.from_packet(x) for x in final_evidence],
                     market,
                 )
                 selection_validation = {
                     "rejected": rejected,
                     "validated_before_presentation": True,
+                    "validator_version": "scout_core_facts_v4",
+                    "compatibility": "typed_quant_claims_v1",
                     "shown_evidence_ids": sorted(shown_ids),
                 }
                 result = present_selection(valid_selection, pool)
@@ -1312,7 +1338,7 @@ def run_scout(
         if code not in deep_codes
     }
     report = {
-        "schema_version": 3,
+        "schema_version": 4,
         "run_id": f"{finished:%Y%m%dT%H%M%S}-{uuid4().hex[:8]}",
         "status": status,
         "ai_provider": config["provider"] if online else None,
@@ -1327,7 +1353,7 @@ def run_scout(
         "config": config,
         "config_sha256": fingerprint(config),
         "input_fingerprint": input_fingerprint,
-        "prompt_version": "scout_tushare_upgrade_v3",
+        "prompt_version": "scout_core_facts_v4",
         "market_universe": {code: item.to_dict() for code, item in universe.items()},
         "industry_memberships": memberships,
         "candidates": pool,
@@ -1509,6 +1535,87 @@ def candidate_source_summary(candidate: dict, memberships: dict[str, str]) -> di
     }
 
 
+def compact_limit_history(group: list[Evidence], body_limit: int) -> dict:
+    """Select complete recent records before serialization, never slice JSON mid-row."""
+    source_dates = sorted({day for item in group for day in item.event_dates})
+    units = []
+    entries = []
+    for item in sorted(group, key=lambda row: (row.event_dates, row.evidence_id), reverse=True):
+        try:
+            raw = json.loads(item.body)
+        except ValueError:
+            raw = {"unparsed_source": True}
+        if not isinstance(raw, dict):
+            raw = {"unparsed_source": True}
+        unit = raw.pop("unit_note", None)
+        if unit and unit not in units:
+            units.append(unit)
+        entries.append((item, {"source_id": item.evidence_id, **raw}))
+
+    def payload(records: list[dict], shown: list[str], omitted: list[str]) -> str:
+        return json.dumps(
+            {
+                "unit_notes": units,
+                "records": records,
+                "source_dates": source_dates,
+                "shown_dates": shown,
+                "omitted_dates": omitted,
+                "status": "complete" if not omitted else "records_omitted_for_budget",
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
+    records: list[dict] = []
+    shown: list[str] = []
+    omitted = source_dates.copy()
+    for item, record in entries:
+        dates = list(item.event_dates)
+        proposed_shown = sorted(set(shown + dates))
+        proposed_omitted = [day for day in source_dates if day not in proposed_shown]
+        proposed = payload(records + [record], proposed_shown, proposed_omitted)
+        if len(proposed) > body_limit:
+            essential = {
+                key: record[key]
+                for key in (
+                    "source_id",
+                    "trade_date",
+                    "limit",
+                    "limit_times",
+                    "open_times",
+                    "first_time",
+                    "last_time",
+                    "up_stat",
+                    "close",
+                    "fd_amount",
+                )
+                if key in record
+            }
+            proposed = payload(records + [essential], proposed_shown, proposed_omitted)
+            if len(proposed) > body_limit:
+                break
+            record = essential
+        records.append(record)
+        shown = proposed_shown
+        omitted = proposed_omitted
+    body = payload(records, shown, omitted)
+    if len(body) > body_limit:
+        body = '{"records":[],"omitted":"budget"}'
+        if len(body) > body_limit:
+            body = '{"omitted":true}' if body_limit >= len('{"omitted":true}') else ""
+        shown = []
+        omitted = source_dates
+    return {
+        "body": body,
+        "source_dates": source_dates,
+        "shown_dates": shown,
+        "omitted_dates": omitted,
+        "omitted_source_ids": [
+            item.evidence_id for item, _ in entries if not set(item.event_dates) <= set(shown)
+        ],
+    }
+
+
 def evidence_packet(
     items: list, codes: set[str], max_chars: int = 60000, max_body_chars: int = 3000
 ) -> list[dict]:
@@ -1522,24 +1629,21 @@ def evidence_packet(
             limit_groups.setdefault(item.instrument_ids[0], []).append(item)
         else:
             other_relevant.append(item)
+    summaries = {}
     for code, group in limit_groups.items():
-        rows = []
-        for item in sorted(group, key=lambda x: x.event_dates):
-            try:
-                rows.append({"source_id": item.evidence_id, **json.loads(item.body)})
-            except ValueError:
-                rows.append({"source_id": item.evidence_id, "text": item.body})
+        compacted = compact_limit_history(group, min(max_body_chars, 650))
+        summaries[code] = compacted
         other_relevant.append(
             Evidence(
                 source="scout:limit_history_summary",
                 title="历史涨跌停结构摘要（逐日供应商记录）",
-                body=json.dumps(rows, ensure_ascii=False),
+                body=compacted["body"],
                 url=None,
                 published_at=None,
                 retrieved_at=max(group, key=lambda x: x.retrieved_at).retrieved_at,
                 kind="historical_limit_summary",
                 instrument_ids=(code,),
-                event_dates=tuple(sorted({day for item in group for day in item.event_dates})),
+                event_dates=tuple(compacted["shown_dates"]),
                 snapshot_refs=tuple(sorted({ref for item in group for ref in item.snapshot_refs})),
             )
         )
@@ -1593,6 +1697,24 @@ def evidence_packet(
             if item.kind == "official_pdf_text_unverified"
             else min(max_body_chars, 650)
         )
+        if item.kind == "historical_limit_summary":
+            summary = summaries[item.instrument_ids[0]]
+            value["body"] = item.body
+            value["body_compacted"] = True
+            value["body_truncated"] = False
+            value["source_event_dates"] = summary["source_dates"]
+            value["shown_event_dates"] = summary["shown_dates"]
+            value["omitted_event_dates"] = summary["omitted_dates"]
+            value["omitted_source_ids"] = summary["omitted_source_ids"]
+            if not item.body:
+                continue
+            size = len(json.dumps(value, ensure_ascii=False)) + (2 if selected else 0)
+            if used + size > max_chars or len(selected) >= 100:
+                continue
+            selected.append(value)
+            seen.add(item.evidence_id)
+            used += size
+            continue
         compact = (
             compact_disclosure_body(item.body, body_limit)
             if max_body_chars <= 1_400 and item.kind == "trading_disclosure"

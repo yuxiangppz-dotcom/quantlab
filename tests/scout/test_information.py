@@ -413,6 +413,8 @@ def test_live_mock_reads_new_evidence_and_keeps_calls_bounded(tmp_path, monkeypa
                     "risk": "实际可买性极低",
                     "invalidation": "错误的业务关系判断",
                     "evidence_ids": [f"market:{row['instrument_id']}", ref],
+                    "fact_ids": [],
+                    "quant_claims": [],
                 }
             ],
         }, {"status": "completed"}

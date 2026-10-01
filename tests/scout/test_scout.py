@@ -292,7 +292,7 @@ def test_named_comparator_can_use_its_program_metric_only():
     result["selected"][0]["thesis"] = "相较乙公司1日涨幅1.98%，本股仍待观察"
     assert validate_selection(result, [own, peer], []) == result
     result["selected"][0]["thesis"] = "相较其他公司1日涨幅1.98%，本股仍待观察"
-    with pytest.raises(ValueError, match="numeric"):
+    with pytest.raises(ValueError, match="core_fact_missing"):
         validate_selection(result, [own, peer], [])
 
 
@@ -481,7 +481,9 @@ def test_three_stage_live_flow_archives_evidence(market, tmp_path, monkeypatch):
         packet = json.loads(prompt.split("\n", 1)[1])
         code = packet["candidates"][0]["instrument_id"]
         ref = packet["evidence"][0]["evidence_id"]
-        return selection(code, [f"market:{code}", ref]), {"status": "completed"}
+        selected = selection(code, [f"market:{code}", ref])
+        selected["selected"][0].update({"fact_ids": [], "quant_claims": []})
+        return selected, {"status": "completed"}
 
     with (
         patch("quantlab.scout.pipeline.latest_completed_session", return_value=day),

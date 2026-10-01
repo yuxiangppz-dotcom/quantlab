@@ -131,7 +131,11 @@ def present_selection(model_selection: dict, candidates: list[dict]) -> dict:
                 "evidence_ids": row["evidence_ids"],
                 "opportunity_type": candidate.get("routes", []),
                 "discovery_summary": route_summary + "；" + attention,
-                "reason_provenance": "validated_model_inference_not_independent_fact_check",
+                "reason_provenance": (
+                    "typed_core_numbers_checked_other_model_inference_unverified"
+                    if "quant_claims" in row
+                    else "legacy_core_prose_checked_without_structured_model_claims"
+                ),
                 "evidence_quality": (
                     "external_lead_requires_verification"
                     if any(ref.startswith("ev-") for ref in row["evidence_ids"])
@@ -402,6 +406,14 @@ def render_report(report: dict) -> str:
                 f"### {text(candidate['name'])} {code} · {display_label}",
                 "",
                 f"分级说明：{text(row['thesis'])}",
+                (
+                    f"事实边界：{len(row.get('quant_claims', []))}条核心量化断言与"
+                    "模型实际输入的程序事实逐项核对；其余机会判断仍为模型推断。"
+                    if row.get("reason_provenance")
+                    == "typed_core_numbers_checked_other_model_inference_unverified"
+                    else "事实边界：旧模型输出缺结构化量价声明；本条仅作兼容性核查，"
+                    "不能追认模型当时曾提交新版事实结构。"
+                ),
                 f"机会入口：{text('、'.join(row.get('opportunity_type', candidate['routes'])))}；"
                 f"证据等级：{text(row.get('evidence_quality', '未知'))}；"
                 f"观察期限：{row.get('observation_horizon_sessions', 5)}个交易日。",
