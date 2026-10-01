@@ -82,7 +82,19 @@ def program_facts(candidate: dict, asof_session: str | None = None) -> list[dict
 
 
 def fact_map(candidates: list[dict], asof_session: str | None = None) -> dict[str, dict]:
-    facts = [fact for candidate in candidates for fact in program_facts(candidate, asof_session)]
+    facts = []
+    for candidate in candidates:
+        archived = candidate.get("program_facts")
+        if archived is not None:
+            if not isinstance(archived, list):
+                raise ValueError("Prompt program fact table has invalid structure")
+            visible_asof = archived[0].get("asof_session") if archived else asof_session
+            expected = program_facts(candidate, visible_asof)
+            if archived != expected:
+                raise ValueError("Prompt program fact table differs from visible candidate values")
+            facts.extend(archived)
+        else:
+            facts.extend(program_facts(candidate, asof_session))
     return {fact["fact_id"]: fact for fact in facts}
 
 

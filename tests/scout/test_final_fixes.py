@@ -104,6 +104,10 @@ def test_typed_market_claims_bind_sign_period_unit_and_actual_prompt_source():
     )
     for phrase in right:
         assert semantic_numeric_issue("thesis", phrase, own, []) is None, phrase
+    corrupted = {**own, "program_facts": program_facts(own, "2026-09-30")}
+    corrupted["program_facts"][0] = {**corrupted["program_facts"][0], "value": "999"}
+    with pytest.raises(ValueError, match="differs from visible"):
+        semantic_numeric_issue("thesis", "昨日涨幅为3.45%", corrupted, [])
     unknown = candidate()
     unknown["source_summary"]["moneyflow"] = {}
     assert semantic_numeric_issue("thesis", "近5日资金净流入0万元", unknown, []).code == (
