@@ -35,3 +35,13 @@
 - 本轮一次真实 TuShare + DeepSeek 三阶段运行 `third_round_runs/20261001T155126-df32c0d4`，修复数值词法误拒后只对保存输出离线重校验为 `third_round_runs/20261001T155518-afd585f2`；源与派生哈希均验证，旧 run 未覆盖。行情日 9/30、最终输入截止 10/1 15:50、目标 D 为 10/8；160 廉价候选、24 深查、38 条最终证据；原模型 2 重点/5 观察，两只重点因来源 `fd_amount` 单位未注明而剔除，最终 0 重点/5 观察：000678.SZ、603590.SH、002866.SZ、000011.SZ、000560.SZ。3 次 AI 阶段调用合计 154,178 token。不能把工程筛选声称为选股胜率提升。
 - 前瞻 `tracking/20261001T155518-afd585f2-9f4418a6ff69.json` 为 20 条 H1/H3/H5/H10，均 `d_open_not_yet_due`；独立 `third_round_audit/tracking-summary.json` 为 1 个目标日、0 重点、可计算 0。Astra 脱敏交接包为 `third_round_audit/astra_review_bundle.zip`，约 320 KB，含源/派生关键字段、原 manifest、模型可见输出、精确新 packet 与旧节选、来源映射；没有外发。可信净收益证据仍未达标，PR #192 保持草稿。
 - 工程提交 `f75120caf1b51f39b749aec2dce268334e2f39d6` 已推送到草稿 PR #192；交付文档与本状态随后单独提交，最终 HEAD 用 `git rev-parse HEAD` 读取。未下单、未写原 canonical、未购买权限，未恢复自动优化。恢复检查先看上述交付文件与最新 run/manifest，再查看 `git status --short`；无需重复本轮付费运行。
+
+## 2026-10-01 最终修复任务（进行中）
+
+- 新任务书：`E:/浏览器下载/Scout_Codex_Final_Fixes_Taskbook.md`。起点为任务书指定 `bc5d38f06434c250248a048fd96dd48ee8fd7b01`，工作树起始干净，未发现并发 Scout 或 agent-loop 写入者。补充审查文件 `E:/浏览器下载/SCOUT_THIRD_REVIEW_FINDINGS_20261001.md` 已读取；复现脚本未找到，可按任务书构造等价测试。
+- 范围：仅用已保存报告/模型输出/快照；修复核心数值事实及同行主体绑定、attention 假设入队、历史涨停摘要完整压缩；离线重校验与五股逐项审计。原 run、旧 packet、manifest、前瞻、canonical 不改，不取供应商新数据、不调用模型。先做定点回归和代码，再派生与审计包，最后完整检查、提交、推送草稿 PR #192。
+- 数据根目录仍为 `/home/administrator/projects/quantlab-pr189/data/scout_live_20260929`。本轮新产物写独立 `final_fixes_audit` 与 `final_fixes_revalidations`，不得覆盖第三轮材料。恢复先读本节、工作树 HEAD/status、各 run manifest；不读取或输出本机密钥。
+- 代码已定点修复并推送：`1f81cadff9f19e3292069584b3d02ed0bae27dc3`（有类型核心事实、同行主体、attention 入队、完整涨停摘要），`a1933bb5d41e03b8c610798fea1fc19833cffbc5`（旧输出未结构化片段与验证器出处），`67e9038deb5002542402bb86fd8b137ce85b199a`（核对实际输入中的事实表），`0cc57e331424c17aae09771b748d3125cec56d6d`（报告渲染边界回归）。本地全仓 `uv run pytest -q` 为 148 passed，Ruff、uv lock、git diff 检查通过；`67e9038` 的远端 quality 为 SUCCESS，其后提交在收尾复核。
+- 本轮最终离线派生为 `final_fixes_revalidations/20261001T230128-40951441`：源及派生报告/AI 响应双哈希通过，记录实际验证器 HEAD 与四文件 SHA；5 观察保持，2 原始重点因 `fd_amount` 未知单位继续剔除；旧模型无 `quant_claims`，6 个合写/未解析核心片段列为未结构化核验。状态 `posthoc_engineering_audit`、`primary_eligible=false`，原 20 条前瞻不改变。此前 `20261001T225451-8666a349` 曾误填不存在的验证器提交号，来源声明无效、只保留故障记录，不用于结论；后续中间派生也保留未覆盖。
+- 五股实证审计在 `final_fixes_audit/five_stock_evidence_audit.md`：9/30 前日收于已知涨停价 4/5，未知 0，五只均非一价；输入时点和个股风险逐条列出。新可上传包 `final_fixes_audit/Scout_Final_Fixes_Audit_20261001.zip`，SHA-256 `570fb07f8bbc7ea28c88de469ba617ddb4cf02839dd9463e5519fc89d79d6866`，已复制至 `E:/浏览器下载/Scout_Final_Fixes_Audit_20261001.zip` 并核验。包内 13 文件，密钥模式扫描 0 命中；未自动外发。
+- 工程交付文件 `SCOUT_FINAL_FIXES_DELIVERY.md`。收尾文档提交及最终 HEAD 以 PR #192 最新头读取；本轮建议冻结，待 10/8 及后续前瞻成熟后再看结果。未调用供应商或模型、未购买权限、未下单、未写 canonical、未合并 PR；收益和胜率仍待观察。
