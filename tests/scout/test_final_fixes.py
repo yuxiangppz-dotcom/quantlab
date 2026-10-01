@@ -11,7 +11,7 @@ from quantlab.scout.ai import semantic_numeric_issue, validate_selection
 from quantlab.scout.facts import extract_core_claims, program_facts
 from quantlab.scout.models import SHANGHAI, Candidate, Evidence
 from quantlab.scout.pipeline import build_pool, evidence_packet
-from quantlab.scout.report import present_selection
+from quantlab.scout.report import present_selection, render_report
 
 NOW = datetime(2026, 10, 1, 15, tzinfo=SHANGHAI).isoformat()
 OWN = "600001.SH"
@@ -27,9 +27,16 @@ def candidate(code=OWN, name="甲公司", one_day=0.0345):
             "return_5d": -0.1234,
             "amount_cny": 200_000_000,
             "one_price_session": False,
+            "return_20d": 0.02,
+            "amount_ratio_5d": 1.5,
+            "breakout_20d": 0.01,
+            "close_location": 0.8,
+            "close": 10.0,
+            "up_limit": 11.0,
         },
         "routes": ["量价异动"],
         "evidence_ids": [],
+        "cautions": [],
         "source_summary": {
             "moneyflow": {"net_5d_wan_cny": -12345},
             "limit_history": [{"trade_date": "20260930", "limit_times": 2, "open_times": 1}],
@@ -137,6 +144,21 @@ def test_full_selection_and_presentation_keep_verified_claims_and_reject_wrong_s
     assert shown["reason_provenance"] == (
         "typed_core_numbers_checked_other_model_inference_unverified"
     )
+    document = render_report(
+        {
+            "status": "demo",
+            "market": {"session": "2026-09-30"},
+            "finished_at": NOW,
+            "ai_provider": None,
+            "selection": {"market_view": "待观察", "selected": [shown]},
+            "candidates": [own],
+            "evidence": [],
+            "coverage": [],
+            "limitations": [],
+        }
+    )
+    assert "4条核心量化断言" in document
+    assert "其余机会判断仍为模型推断" in document
     bad = dict(good, thesis="本股昨日下跌6.78%，当日成交额2亿元")
     bad = declared(bad, own, [own, peer])
     with pytest.raises(ValueError, match="metric_direction_or_value"):
