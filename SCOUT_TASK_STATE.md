@@ -25,3 +25,13 @@
 - 前瞻：`tracking/20261001T124559-dae19e79-12bf7e92b4a3.json` 有 8 条 H1/H3/H5/H10，全部 `d_open_not_yet_due`。`tracking-summary.json/.md` 采纳该最新版本，1 个目标日、0 重点、可计算 0。不下单、不虚构成交或净收益。隔离 canonical 仅供读取，旧报告与快照完整保留。
 - 测试：修复行业串股、提示词实际节选、中文日期、股票代码和无依据数值后，`uv run pytest -q` 134 passed；之后增加证据原始快照引用与回归用例，相关 Scout 测试 119 passed、Ruff passed，最终完整检查仍待提交前执行。新接入 TuShare 证据将原始快照路径放在归档 `snapshot_refs`，提示词节省预算不带路径。最新报告生成于该元数据补丁之前，原始快照仍可通过本轮 `tushare_source_matrix` 查到。
 - 交付：P0 提交 `74d4dec`、六包与证据闭环提交 `bfba74ff56e97afc241c2c0f7adb93551aa083a2` 均已推送到草稿 PR #192；PR 正文已更新，远程 `quality` 检查成功。本次最终 `uv run pytest -q` 134 passed、`uv run ruff check .`、`uv lock --check` 和 `git diff --check` 全通过。此状态收尾提交以 `git rev-parse HEAD` 为最新 HEAD。按 `docs/scout_tushare_upgrade_zh.md` 操作；10/8 后再取成熟行情做前瞻观察，不能回填今天的胜率。草稿 PR 保持未合并，效果判定为待观察、未达可信收益证据标准。
+
+## 2026-10-01 第三轮任务（进行中）
+
+- 任务书：`E:/浏览器下载/Scout_Codex_Third_Round_Taskbook.md`。基线 HEAD `cb4c7e38a125c400b740a9a14db9b45e0b82e976`，Scout 工作树干净；未发现并发 Scout 或 agent-loop 写入进程。原报告、失败记录及隔离 canonical 保留。
+- 计划：先修事实校验/诊断与事件路线；再修公告、风险日期、动态财务期和最终证据包；随后用已保存的八只原始选择做逐句审计，补派生完整性及回归；最后仅在必要时执行一轮真实链路，做前瞻更新和完整检查，自审后提交并推送 PR #192。
+- 当前数据根目录：`/home/administrator/projects/quantlab-pr189/data/scout_live_20260929`。第三轮新报告及审计使用新目录，不覆盖旧 run。恢复时先查看此节、`git status --short`、最新 HEAD 与输出目录。无需重新读取本机密钥，不输出凭据。
+- 2026-10-01 续记：A–F 代码与九项针对性回归已完成；`uv run pytest -q` 143 passed，`uv run ruff check .`、`uv lock --check`、`git diff --check` 通过。第三轮工程说明见 `SCOUT_THIRD_ROUND_DELIVERY.md`。八股逐句审计在隔离目录 `third_round_audit/eight_stock_sentence_audit.md`，六份官方 PDF 字节哈希与原机器抽取记录一致；旧源缺逐字完整最终 packet，因此旧源重校验 `third_round_audit/revalidations/20261001T154242-6fecb822` 仅标事后工程审计，不进入主前瞻。
+- 本轮一次真实 TuShare + DeepSeek 三阶段运行 `third_round_runs/20261001T155126-df32c0d4`，修复数值词法误拒后只对保存输出离线重校验为 `third_round_runs/20261001T155518-afd585f2`；源与派生哈希均验证，旧 run 未覆盖。行情日 9/30、最终输入截止 10/1 15:50、目标 D 为 10/8；160 廉价候选、24 深查、38 条最终证据；原模型 2 重点/5 观察，两只重点因来源 `fd_amount` 单位未注明而剔除，最终 0 重点/5 观察：000678.SZ、603590.SH、002866.SZ、000011.SZ、000560.SZ。3 次 AI 阶段调用合计 154,178 token。不能把工程筛选声称为选股胜率提升。
+- 前瞻 `tracking/20261001T155518-afd585f2-9f4418a6ff69.json` 为 20 条 H1/H3/H5/H10，均 `d_open_not_yet_due`；独立 `third_round_audit/tracking-summary.json` 为 1 个目标日、0 重点、可计算 0。Astra 脱敏交接包为 `third_round_audit/astra_review_bundle.zip`，约 320 KB，含源/派生关键字段、原 manifest、模型可见输出、精确新 packet 与旧节选、来源映射；没有外发。可信净收益证据仍未达标，PR #192 保持草稿。
+- 工程提交 `f75120caf1b51f39b749aec2dce268334e2f39d6` 已推送到草稿 PR #192；交付文档与本状态随后单独提交，最终 HEAD 用 `git rev-parse HEAD` 读取。未下单、未写原 canonical、未购买权限，未恢复自动优化。恢复检查先看上述交付文件与最新 run/manifest，再查看 `git status --short`；无需重复本轮付费运行。
