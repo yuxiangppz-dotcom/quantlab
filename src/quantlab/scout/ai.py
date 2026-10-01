@@ -574,3 +574,43 @@ def validate_selection(result: dict, candidates: list[dict], evidence: list[Evid
     if focus > 3 or len(seen) - focus > 5:
         raise ValueError("AI exceeded recommendation limit")
     return result
+
+
+def retain_valid_selection(
+    original: dict, candidates: list[dict], evidence: list[Evidence]
+) -> tuple[dict, list[dict]]:
+    """Validate model prose before display; remove invalid rows, never preserve their priority."""
+    if not isinstance(original.get("market_view"), str) or not isinstance(
+        original.get("selected"), list
+    ):
+        raise ValueError("AI selection has an invalid structure")
+    if re.search(r"[0-9]", original["market_view"]):
+        raise ValueError("AI market view repeats unverified numeric claims")
+    try:
+        validate_selection(original, candidates, evidence)
+        return original, []
+    except ValueError:
+        pass
+    kept = []
+    rejected = []
+    for row in original["selected"]:
+        try:
+            validate_selection(
+                {"market_view": original["market_view"], "selected": [row]},
+                candidates,
+                evidence,
+            )
+            if any(previous["instrument_id"] == row["instrument_id"] for previous in kept):
+                raise ValueError("AI selected a duplicate stock")
+            kept.append(row)
+        except (KeyError, TypeError, ValueError) as exc:
+            rejected.append(
+                {
+                    "instrument_id": row.get("instrument_id") if isinstance(row, dict) else None,
+                    "status": row.get("status") if isinstance(row, dict) else None,
+                    "reason": str(exc) if isinstance(exc, ValueError) else type(exc).__name__,
+                }
+            )
+    valid = {**original, "selected": kept}
+    validate_selection(valid, candidates, evidence)
+    return valid, rejected

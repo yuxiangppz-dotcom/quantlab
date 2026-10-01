@@ -66,7 +66,7 @@ def execution_observation(report: dict) -> tuple[int, str] | None:
 
 
 def present_selection(model_selection: dict, candidates: list[dict]) -> dict:
-    """Keep model priority/citations, but never publish its unverified prose as fact."""
+    """Preserve validated model reasoning and append program-derived cautions."""
     by_code = {row["instrument_id"]: row for row in candidates}
     selected = []
     for row in model_selection["selected"]:
@@ -114,28 +114,22 @@ def present_selection(model_selection: dict, candidates: list[dict]) -> dict:
         )
         selected.append(
             {
+                **row,
                 "instrument_id": row["instrument_id"],
                 "status": row["status"],
-                "thesis": (
-                    "模型列为优先核查；发现路径为" + route_summary + "；" + attention + "。"
-                    if row["status"] == "focus"
-                    else "模型列为一般观察；发现路径为" + route_summary + "；" + attention + "。"
-                ),
-                "risk": (
+                "thesis": row["thesis"],
+                "risk": row["risk"] + " 程序补充：" + (
                     "交易披露仅覆盖上榜样本，统计窗口可能重叠；发布时间可能未知。"
                     if has_disclosure
                     else "本轮没有该股交易披露样本；这不表示不存在反向信息。"
                 )
                 + price_risk
                 + relation_risk,
-                "invalidation": (
-                    "若后续官方原文不支持该公司关联，应撤销事件假设；"
-                    if any(route.startswith("信息关联:") for route in routes)
-                    else "若后续独立证据与该价格观察相反，应重审假设；"
-                )
-                + "固定观察期限内按交易所日历补齐复权价格，不能事后挑最有利终点。",
+                "invalidation": row["invalidation"],
                 "evidence_ids": row["evidence_ids"],
                 "opportunity_type": candidate.get("routes", []),
+                "discovery_summary": route_summary + "；" + attention,
+                "reason_provenance": "validated_model_inference_not_independent_fact_check",
                 "evidence_quality": (
                     "external_lead_requires_verification"
                     if any(ref.startswith("ev-") for ref in row["evidence_ids"])
@@ -150,10 +144,7 @@ def present_selection(model_selection: dict, candidates: list[dict]) -> dict:
             }
         )
     return {
-        "market_view": (
-            "模型仅给出候选研究优先级。以下事实由程序从已采集行情和披露生成；"
-            "原始模型论述单独封存，未通过人工事实审查前不作为报告依据。"
-        ),
+        "market_view": "模型研判，未经人工独立事实核查：" + model_selection["market_view"],
         "selected": selected,
         "no_recommendation_reason": (
             "模型本轮未列重点关注；候选只保留一般观察或证据仍待核实。"

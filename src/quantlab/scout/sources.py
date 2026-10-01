@@ -228,6 +228,7 @@ def collect_cninfo_announcements(
     codes: list[str],
     *,
     post_selection: bool = False,
+    max_targets: int = 8,
 ) -> tuple[list[Evidence], Coverage]:
     """Targeted official index. Its date-only timestamp is never a publication time."""
     name = (
@@ -239,7 +240,7 @@ def collect_cninfo_announcements(
         return [], Coverage(name, "not_configured")
     if not online:
         return [], Coverage(name, "disabled", detail="offline mode")
-    targets = list(dict.fromkeys(codes))[:8]
+    targets = list(dict.fromkeys(codes))[:max_targets]
     if not targets:
         return [], Coverage(name, "empty_unconfirmed", detail="no target stocks")
     try:
@@ -450,7 +451,7 @@ def read_cninfo_pdf(url: str) -> bytes:
 
 
 def collect_cninfo_pdf_bodies(
-    config: dict, now: datetime, online: bool, notices: list[Evidence]
+    config: dict, now: datetime, online: bool, notices: list[Evidence], max_stocks: int = 8
 ) -> tuple[list[Evidence], Coverage]:
     """Extract one relevant initial official PDF per stock before AI ranking.
 
@@ -484,7 +485,7 @@ def collect_cninfo_pdf_bodies(
     failed = empty = oversized = 0
     from pypdf import PdfReader
 
-    for item in list(chosen.values())[:8]:
+    for item in list(chosen.values())[:max_stocks]:
         try:
             raw = read_cninfo_pdf(item.url)
             reader = PdfReader(io.BytesIO(raw), strict=True)

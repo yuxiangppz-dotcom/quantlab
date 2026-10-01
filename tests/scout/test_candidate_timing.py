@@ -50,6 +50,91 @@ def test_unmoved_event_stock_enters_deep_pool_and_overlap_deduplicates():
     assert "热度观察" in rows[0]["routes"]
 
 
+def test_pool_allocates_unique_names_across_overlapping_routes():
+    common = [f"600{i:03d}.SH" for i in range(3)]
+    event_only = [f"600{i:03d}.SH" for i in range(3, 16)]
+    sector_only = "601001.SH"
+    pullback_only = "601002.SH"
+    attention_only = "601003.SH"
+    momentum_only = "601004.SH"
+    universe = {
+        code: _candidate(code, 1 - i / 100, ["趋势突破"] if code == momentum_only else [])
+        for i, code in enumerate(
+            common + event_only + [sector_only, pullback_only, attention_only, momentum_only]
+        )
+    }
+    universe[pullback_only].routes = ["回撤放量"]
+    event = [
+        {"instrument_ids": [code], "relation": "direct", "evidence_ids": ["ev-event"]}
+        for code in common + event_only
+    ]
+    rows = build_pool(
+        universe,
+        event,
+        common + [sector_only],
+        10,
+        common + [attention_only],
+    )
+    codes = [row["instrument_id"] for row in rows]
+    assert len(codes) == len(set(codes)) == 10
+    assert {sector_only, pullback_only, attention_only, momentum_only} <= set(codes)
+
+
+def test_original_model_claim_must_fail_before_presentation():
+    from quantlab.scout.ai import retain_valid_selection, validate_selection
+
+    code = "600001.SH"
+    candidate = _candidate(code, 0.8, ["趋势突破"]).to_dict()
+    original = {
+        "market_view": "待核查",
+        "selected": [
+            {
+                "instrument_id": code,
+                "status": "focus",
+                "thesis": "封单很强，明日容易买到",
+                "risk": "未知",
+                "invalidation": "若走势逆转则失效",
+                "evidence_ids": [f"market:{code}"],
+            }
+        ],
+    }
+    from pytest import raises
+
+    with raises(ValueError, match="order-book, execution or causal"):
+        validate_selection(original, [candidate], [])
+    with raises(ValueError, match="order-book, execution or causal"):
+        validate_selection(present_selection(original, [candidate]), [candidate], [])
+    valid, rejected = retain_valid_selection(original, [candidate], [])
+    assert valid["selected"] == []
+    assert rejected[0]["instrument_id"] == code
+    assert rejected[0]["status"] == "focus"
+
+
+def test_validated_model_reason_is_preserved_in_presentation():
+    from quantlab.scout.ai import retain_valid_selection
+
+    code = "600001.SH"
+    candidate = _candidate(code, 0.8, ["趋势突破"]).to_dict()
+    original = {
+        "market_view": "节后行情方向仍不确定",
+        "selected": [
+            {
+                "instrument_id": code,
+                "status": "watch",
+                "thesis": "观察趋势能否延续，尚无公司级催化证据",
+                "risk": "既有涨幅可能已经反映预期",
+                "invalidation": "若相对强度转弱则重估",
+                "evidence_ids": [f"market:{code}"],
+            }
+        ],
+    }
+    valid, rejected = retain_valid_selection(original, [candidate], [])
+    shown = present_selection(valid, [candidate])
+    assert rejected == []
+    assert shown["selected"][0]["thesis"] == original["selected"][0]["thesis"]
+    assert shown["selected"][0]["invalidation"] == original["selected"][0]["invalidation"]
+
+
 def test_event_recall_uses_entire_admitted_index_not_prompt_first_80():
     now = datetime(2026, 9, 30, 20, tzinfo=SHANGHAI).isoformat()
     items = [

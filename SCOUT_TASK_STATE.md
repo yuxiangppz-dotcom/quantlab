@@ -12,3 +12,11 @@
 - 约束：不输出凭据、不下单、不虚构历史预测、成交或净收益；模型调用限于已有授权与单次实际报告预算。没有足够证据时允许空重点名单。
 - 下一步：10/8 及后续目标日行情成熟后，在隔离 canonical 副本完成授权的数据增量更新，再按文档运行 `--track-run` 与 `--tracking-summary`；不能补造漏日预测。当前功能交付完成，策略效果仍待前瞻样本判断，不自动恢复已暂停的持续优化心跳。
 - 恢复命令：在 Scout 工作树进入仓库，`uv run scout --doctor --config config/scout_taskbook.example.json --canonical-dir /home/administrator/projects/quantlab-pr189/data/scout_live_20260929/canonical --output-dir /home/administrator/projects/quantlab-pr189/data/scout_live_20260929/taskbook_runs`。真实运行需本机私密环境变量；不在状态文件记录值。
+
+## 2026-10-01 TuShare 升级任务（进行中）
+
+- 新任务书：`E:/浏览器下载/Scout_Codex_Tushare_Upgrade_Taskbook.md`。本轮起点 HEAD `babc322b3e0b9552c643a206ad80da08ec5883c6`，Scout 工作树起始干净，检查未发现并发 Scout 或 agent-loop 写入者。旧数据与 10 月 8 日冻结报告保留原位。
+- 已复现并修复：原流程先用模板替换模型论述再验证；现在先验证原始选择，逐条剔除无效选择并记录原因，然后保留可核查的原始机会假设及程序补充风险。原始选择、验证记录和最终展示分别入报告。高度重叠路径使首路径吃满剩余预算；现在按实际新增唯一股票分配基本名额，余量轮询，各阶段保存路径分配诊断及个股首次分配位置。
+- 已调整补证时序：24 只深查中，初始 8 只之外的定向巨潮公告索引及有界 PDF 正文机器抽取，均在最终模型输入冻结前执行；取消最终分级后追加公告却暗示参与判断的旧步骤。具体覆盖随真实运行记录，标题仍不当正文。
+- 针对性用例和旧测试当前 `uv run pytest -q` 为 121 passed，`uv run ruff check .` 与 `uv lock --check` 通过。此处尚未宣称新的选股效果或完成六包接入。
+- 下一条可执行动作：探测现有 5000 积分账号的必做 TuShare 接口，记录脱敏覆盖矩阵；按实际字段接入六包并使数据进入候选、最终输入与报告；随后真实增量运行、前瞻更新、自审和 PR 更新。密钥只从本机配置读取，不入报告或提交。

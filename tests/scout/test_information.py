@@ -431,17 +431,17 @@ def test_live_mock_reads_new_evidence_and_keeps_calls_bounded(tmp_path, monkeypa
         )
     assert stages == [True, True, False]
     assert report["status"] == "live_research_unvalidated"
-    assert report["selection"]["selected"][0]["status"] == "watch"
+    assert report["selection"]["selected"] == []
+    assert report["selection_raw"]["selected"][0]["status"] == "watch"
+    assert report["selection_validation"]["rejected"][0]["reason"].startswith(
+        "AI infers order-book"
+    )
     visible = (tmp_path / "runs" / report["run_id"] / "report.md").read_text()
-    assert "可核查事实" in visible
+    assert "未列重点" in visible
     assert "一字涨停并封至收盘" not in visible
     assert "实际可买性极低" not in visible
     assert "错误的业务关系判断" not in json.dumps(report["selection"], ensure_ascii=False)
-    window_label = report["disclosure_context"]["600007.SH"]["top_list"]["records"][0][
-        "window_label"
-    ]
-    assert window_label in visible
-    assert "本轮没有该股龙虎榜统计记录" not in visible
+    assert report["disclosure_context"]["600007.SH"]["top_list"]["records"]
 
 
 def test_source_request_budget_rejects_large_history(tmp_path):

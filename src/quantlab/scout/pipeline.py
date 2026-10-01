@@ -17,8 +17,8 @@ from quantlab.scout.ai import (
     OpenAIResearch,
     ZAIResearch,
     bind_hypotheses,
+    retain_valid_selection,
     search_evidence,
-    validate_selection,
 )
 from quantlab.scout.disclosures import (
     collect_disclosures,
@@ -223,8 +223,9 @@ def build_pool(
     sector_codes: list[str],
     limit: int,
     attention_codes: list[str] | None = None,
+    diagnostics: dict | None = None,
 ) -> list:
-    """Merge independent routes with bounded capacity and deterministic ordering."""
+    """Give each route unique slots, then share spare slots round robin."""
     event_codes: list[str] = []
     for hypothesis in hypotheses:
         for code in hypothesis["instrument_ids"]:
@@ -260,15 +261,70 @@ def build_pool(
     for code in attention_codes:
         if "热度观察" not in universe[code].routes:
             universe[code].routes.append("热度观察")
-    chosen = []
-    routes = (event_codes, sector_codes, pullback_codes, attention_codes, momentum_codes)
-    # Each route gets an initial share. Unused capacity is filled in the same
-    # fixed order; overlap never counts twice.
-    for codes in tuple(codes[: max(1, limit // 5)] for codes in routes) + routes:
-        for code in codes:
-            if code not in chosen and len(chosen) < limit:
-                chosen.append(code)
-    return [universe[code].to_dict() for code in chosen]
+    routes = {
+        "event": list(dict.fromkeys(event_codes)),
+        "sector": list(dict.fromkeys(code for code in sector_codes if code in universe)),
+        "pullback": list(dict.fromkeys(pullback_codes)),
+        "attention": list(dict.fromkeys(attention_codes)),
+        "momentum": list(dict.fromkeys(momentum_codes)),
+    }
+    chosen: dict[str, tuple[str, int]] = {}
+    cursors = dict.fromkeys(routes, 0)
+
+    def take_one(route: str) -> bool:
+        codes = routes[route]
+        while cursors[route] < len(codes):
+            index = cursors[route]
+            cursors[route] += 1
+            code = codes[index]
+            if code not in chosen:
+                chosen[code] = (route, index + 1)
+                return True
+        return False
+
+    # Quotas count actual new stocks, not the first N raw names. When routes
+    # overlap, scan farther down that route before giving up its reserved slots.
+    per_route = limit // len(routes)
+    for route in routes:
+        for _ in range(per_route):
+            if len(chosen) >= limit or not take_one(route):
+                break
+    while len(chosen) < limit:
+        added = False
+        for route in routes:
+            if len(chosen) >= limit:
+                break
+            added |= take_one(route)
+        if not added:
+            break
+    if diagnostics is not None:
+        membership = {code: set() for codes in routes.values() for code in codes}
+        for route, codes in routes.items():
+            for code in codes:
+                membership[code].add(route)
+        diagnostics.update(
+            {
+                route: {
+                    "raw_unique": len(codes),
+                    "exclusive": sum(len(membership[code]) == 1 for code in codes),
+                    "overlap": sum(len(membership[code]) > 1 for code in codes),
+                    "allocated": sum(first == route for first, _ in chosen.values()),
+                    "not_selected": sum(code not in chosen for code in codes),
+                }
+                for route, codes in routes.items()
+            }
+        )
+    result = []
+    for code, (first_route, route_rank) in chosen.items():
+        result.append(
+            {
+                **universe[code].to_dict(),
+                "allocation_route": first_route,
+                "route_rank": route_rank,
+                "recall_routes": [route for route, codes in routes.items() if code in codes],
+            }
+        )
+    return result
 
 
 def report_timing(
@@ -608,11 +664,15 @@ def run_scout(
         )
     )
     all_hypotheses = manual_hypotheses + extra_hypotheses
+    cheap_route_diagnostics: dict = {}
+    deep_route_diagnostics: dict = {}
     cheap_pool = build_pool(
-        universe, all_hypotheses, sector_codes, config["discovery_limit"], attention_codes
+        universe, all_hypotheses, sector_codes, config["discovery_limit"],
+        attention_codes, cheap_route_diagnostics,
     )
     pool = build_pool(
-        universe, all_hypotheses, sector_codes, config["candidate_limit"], attention_codes
+        universe, all_hypotheses, sector_codes, config["candidate_limit"],
+        attention_codes, deep_route_diagnostics,
     )
     open_sessions = [
         row.trade_date
@@ -651,6 +711,8 @@ def run_scout(
     status = "demo" if demo else "offline_diagnostic"
     raw_responses = []
     prompt_evidence_audit = []
+    selection_raw = None
+    selection_validation = {"rejected": [], "validated_before_presentation": False}
     failure = None
     if online:
         search_supported = config["provider"] != "deepseek"
@@ -697,7 +759,8 @@ def run_scout(
             )
             all_hypotheses = manual_hypotheses + hypotheses + extra_hypotheses
             cheap_pool = build_pool(
-                universe, all_hypotheses, sector_codes, config["discovery_limit"], attention_codes
+                universe, all_hypotheses, sector_codes, config["discovery_limit"],
+                attention_codes, cheap_route_diagnostics,
             )
             pool = build_pool(
                 universe,
@@ -705,6 +768,7 @@ def run_scout(
                 sector_codes,
                 config["candidate_limit"],
                 attention_codes,
+                deep_route_diagnostics,
             )
             coverage.append(
                 Coverage(
@@ -786,6 +850,36 @@ def run_scout(
                         len(found),
                     )
                 )
+                # Complete the bounded official index check for every deep
+                # candidate before the final model prompt is frozen. A title
+                # discovered after selection cannot support that selection.
+                remaining_codes = [
+                    row["instrument_id"] for row in pool
+                    if row["instrument_id"] not in target_codes
+                ]
+                further_notices, further_coverage = collect_cninfo_announcements(
+                    config, datetime.now(SHANGHAI), True, remaining_codes,
+                    max_targets=config["candidate_limit"],
+                )
+                coverage.append(further_coverage)
+                further_bodies, further_body_coverage = collect_cninfo_pdf_bodies(
+                    config, datetime.now(SHANGHAI), True, further_notices, max_stocks=10,
+                )
+                coverage.append(further_body_coverage)
+                admitted_further, further_filter = admit_evidence(
+                    further_notices + further_bodies,
+                    datetime.now(SHANGHAI),
+                    config["lookback_hours"],
+                )
+                evidence.extend(admitted_further)
+                prompt_evidence_audit.append(
+                    {
+                        "stage": "pre_final_official_check",
+                        "target_codes": remaining_codes,
+                        "admitted_evidence_ids": [x.evidence_id for x in admitted_further],
+                        "filtered": further_filter,
+                    }
+                )
                 # Deduplicate by exact evidence ID without fabricating publication timestamps.
                 evidence = list({x.evidence_id: x for x in evidence}.values())
                 final_evidence = evidence_packet(
@@ -864,11 +958,18 @@ def run_scout(
                 shown_ids = {item["evidence_id"] for item in packet["evidence"]}
                 from quantlab.scout.report import present_selection
 
-                result = validate_selection(
-                    present_selection(selection, pool),
+                selection_raw = selection
+                valid_selection, rejected = retain_valid_selection(
+                    selection,
                     pool,
                     [x for x in evidence if x.evidence_id in shown_ids],
                 )
+                selection_validation = {
+                    "rejected": rejected,
+                    "validated_before_presentation": True,
+                    "shown_evidence_ids": sorted(shown_ids),
+                }
+                result = present_selection(valid_selection, pool)
             else:
                 result = {"market_view": "当前没有通过候选条件的股票。", "selected": []}
             status = "live_research_unvalidated"
@@ -885,18 +986,6 @@ def run_scout(
     else:
         calls = []
         coverage.append(Coverage("AI/web", "disabled", detail="No network calls in offline/demo"))
-    if online and config["cninfo_announcements"] and result["selected"]:
-        missing_codes = [
-            row["instrument_id"]
-            for row in result["selected"]
-            if row["instrument_id"] not in target_codes
-        ]
-        if missing_codes:
-            later_notices, later_coverage = collect_cninfo_announcements(
-                config, datetime.now(SHANGHAI), True, missing_codes, post_selection=True
-            )
-            evidence.extend(later_notices)
-            coverage.append(later_coverage)
     from quantlab.scout.report import hold_candidate_pool, screen_notice_risks
 
     result = screen_notice_risks(result, [x.to_dict() for x in evidence])
@@ -963,14 +1052,18 @@ def run_scout(
             "cheap_candidates": [row["instrument_id"] for row in cheap_pool],
             "deep_candidates": [row["instrument_id"] for row in pool],
             "not_deep_reason": not_deep_reason,
+            "cheap_route_diagnostics": cheap_route_diagnostics,
+            "deep_route_diagnostics": deep_route_diagnostics,
         },
         "coverage": [asdict(x) for x in coverage],
         "ai_calls": calls,
         "prompt_evidence_audit": prompt_evidence_audit,
         "failure": failure,
         "selection": result,
+        "selection_raw": selection_raw,
+        "selection_validation": selection_validation,
         "selection_presentation": (
-            "model priority; program-derived facts; raw model prose archived only"
+            "original model reasoning retained after validation; program cautions appended"
             if online
             else "rules only; no model selection"
         ),
