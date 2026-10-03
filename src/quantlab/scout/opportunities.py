@@ -152,8 +152,17 @@ def event_records(
         identity = str(raw.get("event_identity") or raw.get("order_id") or title_identity)
         for code in item.instrument_ids:
             key = fingerprint([code, kind, period, identity])
-            # Index + body of the same document belong to one event, with richer text retained.
-            content_key = fingerprint([code, kind, period, body])
+            # A title/link index has no document content: the collector's common
+            # placeholder must never collapse distinct announcements.
+            document_identity = fingerprint(
+                [code, item.url or [title_identity, item.published_at, item.event_dates]]
+            )
+            is_index = item.kind == "official_announcement_index_unverified"
+            content_key = (
+                fingerprint(["index_document_v2", document_identity])
+                if is_index
+                else fingerprint([code, kind, period, body])
+            )
             index_pair = next(
                 (
                     r
@@ -182,9 +191,20 @@ def event_records(
                     )
                 continue
             # Across URLs/providers, exact content is still a single independent item.
-            body_hash = fingerprint([code, kind, period, body])
+            body_hash = content_key
             same = next(
-                (r for r in [*history, *records.values()] if r["body_hash"] == body_hash), None
+                (
+                    r
+                    for r in [*history, *records.values()]
+                    if r["body_hash"] == body_hash
+                    or (
+                        (is_index or r["title_only"])
+                        and r["instrument_id"] == code
+                        and item.url
+                        and r["url"] == item.url
+                    )
+                ),
+                None,
             )
             if same and same in records.values():
                 same["source_ids"] = sorted(set(same["source_ids"] + [item.evidence_id]))
@@ -236,6 +256,8 @@ def event_records(
                 "record_id": "event-" + content_key[:20],
                 "event_key": key,
                 "body_hash": body_hash,
+                "document_identity": document_identity,
+                "identity_policy": "index_document_v2" if is_index else "full_content_v1",
                 "instrument_id": code,
                 "event_type": kind,
                 "event_period": period,

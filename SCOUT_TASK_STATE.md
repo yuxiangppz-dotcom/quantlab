@@ -1,5 +1,13 @@
 # Scout 本轮任务状态
 
+## 2026-10-04 PR fdfb54b 审查修复（进行中）
+
+- 用户提供 `E:/浏览器下载/Scout_PR192_Review_fdfb54b_20261003.txt`，全文已读。基线、本地和远程 HEAD 均为 `fdfb54b463db4f35d7e8beed4525d37a054a6b42`；起始工作树干净，未发现并发 Scout/agent-loop 写入进程。
+- 本轮仅修 5 项：占位正文误合并公告、同行新增事实上下文丢失、盘后消息反应窗口、空/部分观察分母消失、最终失败输入归档时序。逐项边界回归、自审、提交推送，再完整 pytest/Ruff/锁/diff 与新提交 CI。
+- 不换模型、不改策略阈值、不扩充接口、不执行真实模型/供应商调用；保留全部旧报告、索引及观察，不写 canonical，不恢复自动优化，不合并草稿 PR #192。
+- 运行/失败复现记录新建于 `/home/administrator/projects/quantlab-pr189/data/scout_live_20260929/review_fixes_20261004`。恢复先看本节、最新 HEAD、工作树状态和该目录；交付拟为 `SCOUT_REVIEW_FIXES_DELIVERY.md`。
+- 第 1 项已复现：4 个新回归在基线均失败（`p1-before.log`）。索引按稳定文档 URL 或标题/公开日期标识去重；真实正文转载保留内容去重，同文索引后补正文只作表示增强，不能当新催化。定点与机会回归共 38 passed，Ruff/锁通过；旧索引不改写，后续新记录标记 `index_document_v2`。
+
 ## 2026-10-03 机会选择升级（工程已交付，效果待观察）
 
 - 任务书：`E:/浏览器下载/Scout_Opportunity_Selection_Taskbook_GPT61Sol_20261003.md`，全文已读。指定起点及远程分支均为 `778bd6b47e88f31458f264356992c35da149f3ca`；工作树干净，团队只有主执行者，未发现运行中的 Scout/agent-loop/pytest 写入者。
