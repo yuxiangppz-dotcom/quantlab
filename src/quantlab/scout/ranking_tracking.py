@@ -296,6 +296,48 @@ def _group(rows: list[dict]) -> dict:
     }
 
 
+def _h5_from_frozen(freeze: dict, observation: dict | None, target: str) -> list[dict]:
+    """Frozen identities are the denominator, even for empty/partial observations."""
+    frozen = {row["instrument_id"]: row for row in freeze["rows"]}
+    if len(frozen) != len(freeze["rows"]):
+        raise ValueError("Ranking freeze contains duplicate securities")
+    if observation is None:
+        return [{**row, "status": "observation_not_run"} for row in frozen.values()]
+    if "frozen" in observation and observation["frozen"] != freeze:
+        raise ValueError("Ranking snapshot frozen identity differs from report")
+    if observation.get("d_session") not in {None, target}:
+        raise ValueError("Ranking snapshot target differs from report")
+    eligibility = observation.get("primary_eligibility", "eligible")
+    seen, h5 = set(), {}
+    for mark in observation["rows"]:
+        code, horizon = mark["instrument_id"], mark["horizon_sessions"]
+        if code not in frozen or type(horizon) is not int or horizon not in HORIZONS:
+            raise ValueError("Ranking snapshot contains an outside security or horizon")
+        key = (code, horizon)
+        if key in seen:
+            raise ValueError("Ranking snapshot contains a duplicate security/horizon")
+        seen.add(key)
+        if any(k not in mark or mark[k] != value for k, value in frozen[code].items()):
+            raise ValueError("Ranking snapshot row differs from frozen identity")
+        if eligibility != "eligible":
+            raise ValueError("Ineligible ranking snapshot cannot contain observed rows")
+        if mark["status"] == "observed" and not finite(mark.get("adjusted_price_return")):
+            raise ValueError("Observed ranking price return is missing or invalid")
+        if horizon == 5:
+            h5[code] = mark
+    missing_reason = (
+        eligibility
+        if eligibility != "eligible"
+        else "empty_observation_snapshot"
+        if not observation["rows"]
+        else "h5_observation_missing"
+    )
+    return [
+        {**h5[code], **row} if code in h5 else {**row, "status": missing_reason}
+        for code, row in frozen.items()
+    ]
+
+
 def summarize_ranking(report_root: Path, observation_root: Path, output_path: Path) -> Path:
     reports, excluded = {}, []
     for path in sorted(report_root.glob("*/report.json")):
@@ -344,9 +386,7 @@ def summarize_ranking(report_root: Path, observation_root: Path, output_path: Pa
         observation = snapshots.get(report["run_id"])
         if observation and observation["report_sha256"] != fingerprint(report):
             raise ValueError("Ranking observation belongs to another frozen report")
-        rows = [r for r in observation["rows"] if r["horizon_sessions"] == 5] if observation else []
-        if not observation:
-            rows = [{**r, "status": "observation_not_run"} for r in freeze["rows"]]
+        rows = _h5_from_frozen(freeze, observation, target)
         stock_counts.update(r["instrument_id"] for r in rows)
         version_identity = {
             k: freeze["metadata"].get(k)

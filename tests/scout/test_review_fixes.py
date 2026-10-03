@@ -1,15 +1,18 @@
 """Regression cases for the independent fdfb54b review, using only synthetic inputs."""
 
+import json
+from copy import deepcopy
 from datetime import date, datetime
 from types import SimpleNamespace
 
 import pytest
 
 from quantlab.scout.facts import claim_fact_id, extract_core_claims, program_facts
-from quantlab.scout.models import SHANGHAI, Candidate, Evidence
+from quantlab.scout.models import SHANGHAI, Candidate, Evidence, fingerprint
 from quantlab.scout.opportunities import event_records, nominal_contract_scale, price_reactions
 from quantlab.scout.opportunity_ai import validate_comparisons
 from quantlab.scout.opportunity_demo import synthetic_comparisons
+from quantlab.scout.ranking_tracking import DEFINITION, observe_ranking, summarize_ranking
 
 SESSION = date(2026, 9, 30)
 CUTOFF = datetime(2026, 10, 3, 12, tzinfo=SHANGHAI)
@@ -263,3 +266,136 @@ def test_fully_unknown_publication_cannot_use_retrieval_as_price_anchor():
     result = price_reactions(rows, {"600001.SH"}, ReactionStorage(), SESSION)[0]
     assert result["status"] == "window_or_prices_unknown"
     assert result["start_session"] is None and result["adjusted_close_change"] is None
+
+
+def ranking_case(root):
+    run = root / "runs" / "artificial-review-fixture"
+    run.mkdir(parents=True)
+    packet = {"fixture_only": True}
+    frozen = [
+        {
+            "instrument_id": code,
+            "final_status": "watch",
+            "rank": index + 1,
+            "rank_band": "top" if index == 0 else "middle",
+            "primary_type": "trend_continuation",
+        }
+        for index, code in enumerate(("600001.SH", "600002.SH"))
+    ]
+    freeze = {
+        "version": "opportunity_v1",
+        "status": "complete",
+        "rows": frozen,
+        "input_sha256": fingerprint(packet),
+        "market_asof_session": "2026-09-29",
+        "metadata": {
+            "provider": "fixture",
+            "model": "fixture",
+            "prompt_version": "opportunity_v1",
+            "config_sha256": "fixture",
+        },
+    }
+    report = {
+        "run_id": run.name,
+        "status": "complete",
+        "fixture_only": True,
+        "finished_at": "2026-09-29T19:00:00+08:00",
+        "selection_input_packet": packet,
+        "timing": {
+            "target_session": "2026-09-30",
+            "generated_at": "2026-09-29T19:00:00+08:00",
+            "primary_eligible": True,
+        },
+        "opportunity_freeze": freeze,
+    }
+    (run / "report.json").write_text(json.dumps(report))
+    (run / "manifest.json").write_text(json.dumps({"report_sha256": fingerprint(report)}))
+    marks = root / "marks"
+    marks.mkdir()
+    snapshot = {
+        "run_id": run.name,
+        "report_sha256": fingerprint(report),
+        "frozen": deepcopy(freeze),
+        "definition_version": DEFINITION,
+        "synthetic": False,
+        "observed_at": "2026-10-03T19:00:00+08:00",
+        "primary_eligibility": "eligible",
+        "d_session": "2026-09-30",
+        "rows": [
+            {
+                **r,
+                "horizon_sessions": 5,
+                "status": "observed",
+                "adjusted_price_return": 0.1 if i == 0 else -0.1,
+                "relative_to_peer_price_change": None,
+                "adverse_daily_low_change": -0.05,
+            }
+            for i, r in enumerate(frozen)
+        ],
+    }
+    return run, marks, snapshot
+
+
+def summarize_case(root, marks, snapshot):
+    if snapshot is not None:
+        (marks / "fixture.json").write_text(json.dumps(snapshot))
+    path = summarize_ranking(root / "runs", marks, root / "summary.json")
+    return json.loads(path.read_text())
+
+
+def test_missing_exchange_calendar_preserves_all_frozen_stock_days(tmp_path):
+    run, marks, _ = ranking_case(tmp_path)
+    before = summarize_case(tmp_path, marks, None)
+    assert before["groups"]["watch"]["original_stock_days"] == 2
+    path = observe_ranking(run, tmp_path / "empty-data", marks)
+    assert json.loads(path.read_text())["primary_eligibility"] == "target_not_in_exchange_calendar"
+    after = summarize_case(tmp_path, marks, None)
+    group = after["groups"]["watch"]
+    assert group["original_stock_days"] == 2 and group["valid_stock_days"] == 0
+    assert group["missing_reasons"] == {"target_not_in_exchange_calendar": 2}
+
+
+@pytest.mark.parametrize(
+    "kind,valid,reason",
+    [
+        ("none", 0, "observation_not_run"),
+        ("empty", 0, "empty_observation_snapshot"),
+        ("partial", 1, "h5_observation_missing"),
+        ("full", 2, None),
+    ],
+)
+def test_h5_summary_uses_freeze_as_left_table(tmp_path, kind, valid, reason):
+    _, marks, snapshot = ranking_case(tmp_path)
+    if kind == "none":
+        snapshot = None
+    elif kind == "empty":
+        snapshot["rows"] = []
+    elif kind == "partial":
+        snapshot["rows"].pop()
+    output = summarize_case(tmp_path, marks, snapshot)
+    group = output["groups"]["watch"]
+    assert group["original_stock_days"] == 2 and group["valid_stock_days"] == valid
+    assert group["independent_target_days"] == int(valid == 2)
+    assert group["missing_reasons"] == ({reason: 2 - valid} if reason else {})
+    assert group["mean"] == (0 if valid == 2 else None)
+
+
+@pytest.mark.parametrize(
+    "fault", ["duplicate", "foreign", "rank", "type", "status", "root_identity"]
+)
+def test_h5_snapshot_rejects_duplicate_foreign_or_changed_identity(tmp_path, fault):
+    _, marks, snapshot = ranking_case(tmp_path)
+    if fault == "duplicate":
+        snapshot["rows"].append(deepcopy(snapshot["rows"][0]))
+    elif fault == "foreign":
+        snapshot["rows"][0]["instrument_id"] = "600999.SH"
+    elif fault == "rank":
+        snapshot["rows"][0]["rank"] = 99
+    elif fault == "type":
+        snapshot["rows"][0]["primary_type"] = "event_update"
+    elif fault == "status":
+        snapshot["rows"][0]["final_status"] = "focus"
+    else:
+        snapshot["frozen"]["input_sha256"] = "different-input"
+    with pytest.raises(ValueError):
+        summarize_case(tmp_path, marks, snapshot)
