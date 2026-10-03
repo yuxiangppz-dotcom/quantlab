@@ -2,8 +2,13 @@
 
 from datetime import date, datetime
 
-from quantlab.scout.models import SHANGHAI, Evidence
-from quantlab.scout.opportunities import event_records
+import pytest
+
+from quantlab.scout.facts import claim_fact_id, extract_core_claims, program_facts
+from quantlab.scout.models import SHANGHAI, Candidate, Evidence
+from quantlab.scout.opportunities import event_records, nominal_contract_scale
+from quantlab.scout.opportunity_ai import validate_comparisons
+from quantlab.scout.opportunity_demo import synthetic_comparisons
 
 SESSION = date(2026, 9, 30)
 CUTOFF = datetime(2026, 10, 3, 12, tzinfo=SHANGHAI)
@@ -83,3 +88,107 @@ def test_real_body_syndications_still_merge_but_index_without_url_needs_identity
         CUTOFF,
     )
     assert len(rows) == 2
+
+
+def comparison_case(text):
+    pool = [
+        Candidate(
+            f"600{i:03d}.SH",
+            f"合成{i}",
+            {
+                "return_1d": 0.01,
+                "return_5d": 0.05,
+                "return_20d": 0.20 if i else 0.10,
+                "relative_return_5d": -0.02,
+                "amount_ratio_5d": 1.5,
+                "breakout_20d": 0.02,
+            },
+            0.5,
+        ).to_dict()
+        for i in range(24)
+    ]
+    rows = synthetic_comparisons(pool)
+    for candidate in pool:
+        candidate["opportunity_record"] = {"events": []}
+    peer = pool[0]
+    peer["opportunity_record"]["events"] = [
+        {
+            "record_id": "synthetic-event-peer",
+            "instrument_id": peer["instrument_id"],
+            "nominal_scale": nominal_contract_scale(
+                {
+                    "order_amount_cny": 100,
+                    "annual_revenue_cny": 1000000,
+                    "currency": "CNY",
+                    "denominator_scope": "annual_consolidated_revenue",
+                    "revenue_period": "20251231",
+                }
+            ),
+        }
+    ]
+    for candidate in pool:
+        candidate["program_facts"] = program_facts(candidate)
+    own = pool[-1]
+    row = rows[0]
+    row["difference"] = "600000.SH" + text + "。本例仅检验比较事实，不确认盈利贡献。"
+    row["evidence_ids"].append("market:600000.SH")
+    parsed = extract_core_claims("difference", row["difference"], own, pool)
+    assert len(parsed) == 1 and parsed[0].subject_id == "600000.SH"
+    claim = parsed[0]
+    row["fact_ids"] = [claim_fact_id(claim)]
+    row["quant_claims"] = [
+        {
+            "field": claim.field,
+            "text": claim.text,
+            "subject_id": claim.subject_id,
+            "metric": claim.metric,
+            "period": claim.period,
+            "value": str(claim.value),
+            "unit": claim.unit,
+            "direction": claim.direction,
+            "fact_id": claim_fact_id(claim),
+        }
+    ]
+    return pool, rows
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "近20日涨幅10%",
+        "近5日相对行业价格差-2%",
+        "额比1.5倍",
+        "突破前20日高点幅度2%",
+        "名义合同金额占年收入0.01%",
+    ],
+)
+def test_valid_peer_new_metrics_pass_the_complete_comparison_path(text):
+    pool, rows = comparison_case(text)
+    assert validate_comparisons({"market_view": "合成市场", "comparisons": rows}, pool, [], {})[
+        "selected"
+    ]
+
+
+@pytest.mark.parametrize(
+    "fault", ["subject", "unit", "direction", "value", "missing_fact", "hidden_table"]
+)
+def test_peer_comparison_still_rejects_wrong_or_unshown_facts(fault):
+    pool, rows = comparison_case("近20日涨幅10%")
+    declaration = rows[0]["quant_claims"][0]
+    if fault == "subject":
+        declaration["subject_id"] = pool[-1]["instrument_id"]
+    elif fault == "unit":
+        declaration["unit"] = "times"
+    elif fault == "direction":
+        rows[0]["difference"] = rows[0]["difference"].replace("涨幅10%", "涨幅-10%")
+        declaration.update(text="近20日涨幅-10%", value="-10")
+    elif fault == "value":
+        rows[0]["difference"] = rows[0]["difference"].replace("10%", "20%")
+        declaration.update(text="近20日涨幅20%", value="20")
+    elif fault == "missing_fact":
+        pool[0]["metrics"].pop("return_20d")
+        pool[0]["program_facts"] = program_facts(pool[0])
+    else:
+        pool[0]["program_facts"] = []
+    with pytest.raises(ValueError):
+        validate_comparisons({"market_view": "合成市场", "comparisons": rows}, pool, [], {})

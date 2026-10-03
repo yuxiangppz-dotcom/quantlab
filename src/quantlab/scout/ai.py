@@ -781,12 +781,7 @@ def validate_selection(
         narrative = " ".join(row[key] for key in ("thesis", "risk", "invalidation"))
         cited = [item for item in evidence if item.evidence_id in row["evidence_ids"]]
         peers = [
-            {
-                "instrument_id": other["instrument_id"],
-                "name": other.get("name"),
-                "metrics": other.get("metrics"),
-                "source_summary": other.get("source_summary"),
-            }
+            other
             for other in candidates
             if other["instrument_id"] != code
             and (
@@ -799,9 +794,18 @@ def validate_selection(
             **candidate,
             "source_summary": {
                 "own": candidate.get("source_summary"),
-                "named_comparators": peers,
+                "named_comparators": [
+                    {
+                        key: other.get(key)
+                        for key in ("instrument_id", "name", "metrics", "source_summary")
+                    }
+                    for other in peers
+                ],
             },
         }
+        # Typed facts must use the same complete candidates from the actual
+        # input, including opportunity events and the exact archived fact table.
+        # The legacy free-number fallback above remains limited to its old fields.
         core_context = [candidate] + peers
         for field in ("thesis", "risk", "invalidation"):
             issue = semantic_numeric_issue(
