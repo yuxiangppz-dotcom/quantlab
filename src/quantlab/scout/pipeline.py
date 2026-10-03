@@ -8,6 +8,7 @@ from collections import Counter
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import date, datetime, time
+from hashlib import sha256
 from itertools import zip_longest
 from pathlib import Path
 from uuid import uuid4
@@ -1013,6 +1014,14 @@ def run_scout(
     selection_raw = None
     selection_input_evidence: list[dict] = []
     selection_input_packet: dict = {}
+    selection_input_prompt = None
+    selection_input_schema = None
+    selection_request = {
+        "state": "not_built",
+        "delivery_status": "not_attempted",
+        "response_status": "not_returned",
+        "validation_status": "not_run",
+    }
     final_input_cutoff = now
     selection_validation = {"rejected": [], "validated_before_presentation": False}
     failure = None
@@ -1411,17 +1420,35 @@ def run_scout(
                         "参与条件使用trade_known/trade_unknown。",
                     )
                     prompt = OPPORTUNITY_INSTRUCTION + prompt
-                selection, raw = client.ask(
-                    bounded_prompt(prompt),
-                    OPPORTUNITY_SCHEMA if opportunity_mode else SELECTION_SCHEMA,
+                # Archive construction before validation/transport can raise.
+                # An attempted request is not proof that the provider received it.
+                selection_input_evidence = final_evidence
+                selection_input_packet = packet
+                selection_input_prompt = prompt
+                selection_input_schema = (
+                    OPPORTUNITY_SCHEMA if opportunity_mode else SELECTION_SCHEMA
+                )
+                selection_request.update(
+                    state="built",
+                    packet_sha256=fingerprint(packet),
+                    prompt_sha256=sha256(prompt.encode()).hexdigest(),
+                    schema_sha256=fingerprint(selection_input_schema),
+                )
+                final_prompt = bounded_prompt(prompt)
+                selection_request.update(
+                    state="request_attempted", delivery_status="attempted_delivery_unknown"
+                )
+                selection, raw = client.ask(final_prompt, selection_input_schema)
+                selection_request.update(
+                    state="response_returned",
+                    delivery_status="response_received",
+                    response_status="returned",
                 )
                 raw_responses.append(raw)
                 shown_ids = {item["evidence_id"] for item in packet["evidence"]}
                 from quantlab.scout.report import present_selection
 
                 selection_raw = selection
-                selection_input_evidence = final_evidence
-                selection_input_packet = packet
                 if opportunity_mode:
                     opportunity_result = selection
                     selection = validate_comparisons(
@@ -1444,6 +1471,7 @@ def run_scout(
                     "shown_evidence_ids": sorted(shown_ids),
                 }
                 result = present_selection(valid_selection, pool)
+                selection_request.update(state="validated", validation_status="passed")
             else:
                 result = {"market_view": "当前没有通过候选条件的股票。", "selected": []}
             status = "live_research_unvalidated"
@@ -1453,6 +1481,27 @@ def run_scout(
             failed_response = getattr(client, "failed_response", None)
             if failed_response is not None:
                 raw_responses.append({"validation_failed": True, "response": failed_response})
+            if selection_request["state"] == "request_attempted":
+                selection_request.update(
+                    state="model_response_failed"
+                    if failed_response is not None
+                    else "request_failed",
+                    delivery_status="response_received"
+                    if failed_response is not None
+                    else "attempted_delivery_unknown",
+                    response_status="invalid_public_response"
+                    if failed_response is not None
+                    else "transport_failed_or_unknown",
+                    validation_status="failed_in_adapter"
+                    if failed_response is not None
+                    else "not_run",
+                )
+            elif selection_request["state"] == "response_returned":
+                selection_request.update(
+                    state="output_validation_failed", validation_status="failed"
+                )
+            elif selection_request["state"] == "built":
+                selection_request.update(state="input_rejected")
             if opportunity_mode:
                 opportunity_validation = {"status": "incomplete", "errors": [str(exc)]}
             status = "incomplete"
@@ -1595,6 +1644,9 @@ def run_scout(
         "selection_raw": selection_raw,
         "selection_input_evidence": selection_input_evidence,
         "selection_input_packet": selection_input_packet,
+        "selection_input_prompt": selection_input_prompt,
+        "selection_input_schema": selection_input_schema,
+        "selection_request": selection_request,
         "selection_validation": selection_validation,
         "selection_presentation": (
             "original model reasoning retained after validation; program cautions appended"

@@ -10,6 +10,8 @@
 - 第 2 项已复现：完整 `validate_comparisons` 的 5 种合法同行数字均在旧路径 `core_fact_missing`（`p2-before.log`）。类型校验现在保留实际输入中的完整同行、机会记录和事实表；旧自由数字兜底仍限定原字段。5 个正例及错主体/单位/方向/值/缺事实/缺展示事实表负例通过；相关 54 tests passed，Ruff 通过。
 - 第 3 项已复现：已知盘后消息被给予发布前窗口，且全部已知时点降为日期不确定（`p3-before.log`，7 failed/2 passed）。现在盘前/盘中/盘后/非交易日分别记录，15:00 收盘边界及无发布后交易时段不计算反应；盘中日线明确混合窗口，日期级/未知仍保守。相关 58 tests passed，Ruff 通过。
 - 第 4 项已复现：缺日历或空/部分快照令冻结分母消失，重复/外来/改名次或分级等快照未拒绝（`p4-before.log`，9 failed/2 passed）。H5 汇总改为冻结名单左连接观察，一一核对所有证券/期限与冻结身份；缺日历、空/部分、未运行均保留具体缺失原因。相关 69 tests passed，Ruff 通过；旧快照不改、不回退旧赢家。
+- 第 5 项已实际复现：schema/截断/传输三个失败链路均丢最终输入（`p5-before.log`，3 failed），基线失败完整报告已复制到 `before_failed_requests/`。请求前归档 packet/证据/精确 user prompt/schema 及三种哈希，区分已构建、请求尝试、收到失败公开响应和送达未知；失败仍 incomplete、空选择、不冻结。中间回归曾错误直接比较内存 tuple 与 JSON list，改为 JSON 规范化及哈希双核对，相关原测试产物另存 `intermediate_tuple_list_assertion/`。
+- 最终完整检查：220 passed（11.97 秒），Ruff、uv lock、diff 全通过；全仓测试日志 `full-tests.log`。代码范围止于上述 5 项；后续仅交付对照说明、推送/CI 核验。不执行真实调用。
 
 ## 2026-10-03 机会选择升级（工程已交付，效果待观察）
 

@@ -3,15 +3,19 @@
 import json
 from copy import deepcopy
 from datetime import date, datetime
+from hashlib import sha256
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
+from quantlab.scout.demo import make_demo_market
 from quantlab.scout.facts import claim_fact_id, extract_core_claims, program_facts
-from quantlab.scout.models import SHANGHAI, Candidate, Evidence, fingerprint
+from quantlab.scout.models import SHANGHAI, Candidate, Coverage, Evidence, fingerprint
 from quantlab.scout.opportunities import event_records, nominal_contract_scale, price_reactions
 from quantlab.scout.opportunity_ai import validate_comparisons
-from quantlab.scout.opportunity_demo import synthetic_comparisons
+from quantlab.scout.opportunity_demo import synthetic_analysis, synthetic_comparisons
+from quantlab.scout.pipeline import DEFAULT_CONFIG, run_scout
 from quantlab.scout.ranking_tracking import DEFINITION, observe_ranking, summarize_ranking
 
 SESSION = date(2026, 9, 30)
@@ -399,3 +403,105 @@ def test_h5_snapshot_rejects_duplicate_foreign_or_changed_identity(tmp_path, fau
         snapshot["frozen"]["input_sha256"] = "different-input"
     with pytest.raises(ValueError):
         summarize_case(tmp_path, marks, snapshot)
+
+
+@pytest.mark.parametrize("failure", ["schema", "truncated", "transport"])
+def test_final_request_failure_keeps_exact_built_input_and_public_output(
+    tmp_path, monkeypatch, failure
+):
+    canonical = tmp_path / "synthetic-canonical"
+    day = make_demo_market(canonical)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "synthetic-secret-not-for-archive")
+    submitted = {}
+    config = DEFAULT_CONFIG | {
+        "provider": "deepseek",
+        "opportunity_selection": True,
+        "tushare_news_sources": [],
+        "tushare_industry": False,
+        "tushare_disclosures": False,
+        "tushare_upgrade": False,
+        "cninfo_announcements": False,
+        "akshare_hot_rank": False,
+    }
+    now = datetime.now(SHANGHAI).isoformat()
+    evidence = Evidence(
+        "synthetic",
+        "合成正式订单线索",
+        "规模与盈利贡献未知",
+        "https://example.org/failure",
+        now,
+        now,
+        "company_event_date_only",
+        ("600001.SH",),
+    )
+
+    def ask(client, prompt, schema, search=False):
+        client.calls.append({"status": "started", "search": search})
+        stage = len(client.calls)
+        client.failed_response = None
+        if stage == 1:
+            return {"hypotheses": []}, {"synthetic": True}
+        if stage == 2:
+            packet = json.loads(prompt[prompt.index('{"candidates":') :])
+            return {
+                "hypotheses": [],
+                "opportunities": [
+                    {"instrument_id": c["instrument_id"], "analysis": synthetic_analysis()}
+                    for c in packet["candidates"]
+                ],
+            }, {"synthetic": True}
+        submitted.update(prompt=prompt, schema=schema)
+        if failure == "transport":
+            client.calls[-1]["status"] = "network_error"
+            raise RuntimeError("Synthetic transport failure; delivery unknown")
+        client.calls[-1]["status"] = "schema_error" if failure == "schema" else "length"
+        client.failed_response = {
+            "choices": [
+                {
+                    "finish_reason": "stop" if failure == "schema" else "length",
+                    "message": {"role": "assistant", "content": "invalid synthetic public output"},
+                }
+            ]
+        }
+        raise ValueError(
+            "Synthetic schema validation failure"
+            if failure == "schema"
+            else "Synthetic response incomplete"
+        )
+
+    with (
+        patch("quantlab.scout.pipeline.latest_completed_session", return_value=day),
+        patch(
+            "quantlab.scout.pipeline.collect_sources",
+            return_value=([evidence], [Coverage("synthetic", "synthetic", 1)]),
+        ),
+        patch("quantlab.scout.ai.DeepSeekResearch.ask", new=ask),
+        patch("urllib.request.urlopen", side_effect=AssertionError("Network forbidden")),
+    ):
+        path, report = run_scout(
+            canonical, tmp_path / "synthetic-failure-runs", config, online=True
+        )
+    assert len(report["ai_calls"]) == 3 and submitted
+    assert report["status"] == "incomplete" and report["selection"]["selected"] == []
+    assert "opportunity_freeze" not in report
+    packet = report["selection_input_packet"]
+    assert packet and packet["candidates"] and packet["evidence"]
+    assert report["selection_input_evidence"] == packet["evidence"]
+    assert report["selection_input_prompt"] == submitted["prompt"]
+    assert report["selection_input_schema"] == submitted["schema"]
+    request = report["selection_request"]
+    assert request["packet_sha256"] == fingerprint(packet)
+    assert request["prompt_sha256"] == sha256(submitted["prompt"].encode()).hexdigest()
+    assert request["schema_sha256"] == fingerprint(submitted["schema"])
+    assert request["delivery_status"] == (
+        "attempted_delivery_unknown" if failure == "transport" else "response_received"
+    )
+    assert request["state"] == (
+        "request_failed" if failure == "transport" else "model_response_failed"
+    )
+    saved = json.loads((path / "report.json").read_text())
+    raw = json.loads((path / "ai_responses.json").read_text())
+    assert saved["selection_input_packet"] == json.loads(json.dumps(packet))
+    assert fingerprint(saved["selection_input_packet"]) == request["packet_sha256"]
+    assert bool(raw[-1].get("validation_failed")) == (failure != "transport")
+    assert "synthetic-secret" not in json.dumps(saved) + json.dumps(raw)
