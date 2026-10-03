@@ -1,0 +1,11 @@
+{
+  "provider": "deepseek",
+  "model": "deepseek-flash",
+  "max_output_tokens": 24000,
+  "deepseek_reasoning_effort": "high",
+  "candidate_limit": 8,
+  "tushare_announcements": false,
+  "cninfo_announcements": false,
+  "cninfo_pdf_bodies": false,
+  "tushare_kpl_limit": false
+}

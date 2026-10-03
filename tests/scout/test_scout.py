@@ -3,13 +3,14 @@
 import json
 from dataclasses import replace
 from datetime import datetime, timedelta
+from hashlib import sha256
 from unittest.mock import patch
 
 import pytest
 
 from quantlab.data.models import DailyBasic, DailyPriceLimit
 from quantlab.data.storage import ParquetStorage
-from quantlab.scout.ai import bind_hypotheses, source_urls, validate_selection
+from quantlab.scout.ai import ShownEvidence, bind_hypotheses, source_urls, validate_selection
 from quantlab.scout.demo import make_demo_market
 from quantlab.scout.market import add_sectors, latest_completed_session, scan_market
 from quantlab.scout.models import SHANGHAI, Evidence, admit_evidence, fingerprint
@@ -115,7 +116,7 @@ def test_sector_route_and_unknown_turnover(market):
     assert all(x.metrics["up_limit"] is None for x in universe.values())
     codes = add_sectors(universe, {code: "synthetic" for code in universe})
     assert codes
-    assert all("板块领先:synthetic" in universe[x].routes for x in codes)
+    assert all("板块关联:synthetic" in universe[x].routes for x in codes)
 
 
 def test_canonical_optional_fields_keep_original_units(market):
@@ -198,6 +199,158 @@ def test_final_selection_rejects_unknown_evidence(result):
         validate_selection(result, [{"instrument_id": "600001.SH"}], [])
 
 
+def test_final_selection_rejects_other_stocks_or_unshown_evidence():
+    own = evidence(title="own", instrument_ids=("600001.SH",))
+    other = evidence(title="other", instrument_ids=("600002.SH",))
+    candidates = [
+        {"instrument_id": "600001.SH", "evidence_ids": [own.evidence_id]},
+        {"instrument_id": "600002.SH", "evidence_ids": [other.evidence_id]},
+    ]
+    with pytest.raises(ValueError, match="not shown or bound"):
+        validate_selection(
+            selection(ids=["market:600001.SH", other.evidence_id]),
+            candidates,
+            [own, other],
+        )
+    with pytest.raises(ValueError, match="not shown or bound"):
+        validate_selection(
+            selection(ids=["market:600001.SH", own.evidence_id]),
+            candidates,
+            [other],
+        )
+    assert (
+        validate_selection(
+            selection(ids=["market:600001.SH", own.evidence_id]),
+            candidates,
+            [own, other],
+        )["selected"][0]["instrument_id"]
+        == "600001.SH"
+    )
+
+
+def test_selection_accepts_cited_numbers_but_rejects_unsourced_precision():
+    code = "600001.SH"
+    source = evidence(
+        source="tushare:limit_list_d",
+        title="历史涨停结构",
+        body="历史开板次数2次，交易日20260930；不是未来成交保证。",
+        instrument_ids=(code,),
+    )
+    candidate = {
+        "instrument_id": code,
+        "metrics": {"return_1d": 0.0997, "one_price_session": False},
+        "evidence_ids": [source.evidence_id],
+    }
+    result = selection(ids=[f"market:{code}", source.evidence_id])
+    result["selected"][0]["thesis"] = "历史开板2次，日涨幅9.97%；后续能否延续仍未知"
+    assert validate_selection(result, [candidate], [source]) == result
+    result["selected"][0]["thesis"] = "历史开板7次，日涨幅9.97%；后续能否延续仍未知"
+    with pytest.raises(ValueError, match="numeric"):
+        validate_selection(result, [candidate], [source])
+    result["selected"][0]["thesis"] = "历史开板930次；后续能否延续仍未知"
+    with pytest.raises(ValueError, match="numeric"):
+        validate_selection(result, [candidate], [source])
+
+
+def test_market_view_allows_rounding_of_supplied_market_breadth():
+    result = selection()
+    result["market_view"] = "正收益比例0.5545，中位涨幅0.3856%"
+    candidate = {"instrument_id": "600001.SH", "metrics": {"one_price_session": False}}
+    market = {"positive_fraction": 0.55446194, "median_return_1d": 0.0038560475}
+    assert validate_selection(result, [candidate], [], market) == result
+    result["market_view"] = "正收益比例0.9555，中位涨幅0.3856%"
+    with pytest.raises(ValueError, match="market view"):
+        validate_selection(result, [candidate], [], market)
+
+
+def test_numeric_claim_must_appear_in_actual_prompt_excerpt():
+    code = "600001.SH"
+    item = evidence(body="公告完整正文中后段金额123万元", instrument_ids=(code,))
+    prompt_excerpt = ShownEvidence.from_packet(
+        {**item.to_dict(), "body": "公告正文节选，金额段未进入提示词"}
+    )
+    candidate = {"instrument_id": code, "metrics": {}, "evidence_ids": [item.evidence_id]}
+    result = selection(ids=[f"market:{code}", item.evidence_id])
+    result["selected"][0]["thesis"] = "公告金额123万元，后续仍待观察"
+    with pytest.raises(ValueError, match="numeric"):
+        validate_selection(result, [candidate], [prompt_excerpt])
+
+
+def test_chinese_date_range_is_not_treated_as_financial_number():
+    code = "600001.SH"
+    candidate = {"instrument_id": code, "metrics": {"one_price_session": False}}
+    result = selection(ids=[f"market:{code}"])
+    result["selected"][0]["thesis"] = "9月28—30日有连续行情样本，后续待观察"
+    assert validate_selection(result, [candidate], []) == result
+
+
+def test_named_comparator_can_use_its_program_metric_only():
+    code = "600001.SH"
+    own = {"instrument_id": code, "name": "甲公司", "metrics": {}}
+    peer = {"instrument_id": "600002.SH", "name": "乙公司", "metrics": {"return_1d": 0.0198}}
+    result = selection(ids=[f"market:{code}"])
+    result["selected"][0]["thesis"] = "相较乙公司1日涨幅1.98%，本股仍待观察"
+    assert validate_selection(result, [own, peer], []) == result
+    result["selected"][0]["thesis"] = "相较其他公司1日涨幅1.98%，本股仍待观察"
+    with pytest.raises(ValueError, match="core_fact_missing"):
+        validate_selection(result, [own, peer], [])
+
+
+def test_sampled_notice_cannot_be_called_the_only_company_disclosure():
+    code = "600001.SH"
+    result = selection(ids=[f"market:{code}"])
+    result["selected"][0]["thesis"] = "这是近期唯一正式公司级披露，后续仍待观察"
+    with pytest.raises(ValueError, match="exhaustive disclosure"):
+        validate_selection(result, [{"instrument_id": code, "metrics": {}}], [])
+
+
+def test_final_selection_rejects_wrong_one_price_and_sell_only_claims():
+    candidate = {"instrument_id": "600001.SH", "metrics": {"one_price_session": False}}
+    result = selection()
+    result["selected"][0]["thesis"] = "一价收盘"
+    with pytest.raises(ValueError, match="non-one-price"):
+        validate_selection(result, [candidate], [])
+
+    seat = evidence(
+        source="disclosure:top_inst",
+        kind="trading_disclosure",
+        instrument_ids=("600001.SH",),
+        body=json.dumps(
+            {
+                "records": [
+                    {"trade_date": "2026-01-10", "net_buy": -2},
+                    {"trade_date": "2026-01-10", "net_buy": 3},
+                ]
+            }
+        ),
+    )
+    result["selected"][0]["thesis"] = "明细全部只出现在卖出席位"
+    result["selected"][0]["evidence_ids"] = ["market:600001.SH", seat.evidence_id]
+    candidate["evidence_ids"] = [seat.evidence_id]
+    with pytest.raises(ValueError, match="mixed seat records"):
+        validate_selection(result, [candidate], [seat])
+
+
+@pytest.mark.parametrize(
+    ("claim", "caution"),
+    [
+        ("一字涨停并封至收盘", "日线不能证明一字封板"),
+        ("实际可买性极低", "实际可买性未知"),
+        ("流动性与可成交性更好", "日成交额不等于次日可成交性更好"),
+        ("缩量涨停说明分歧小", "缩量不能证明分歧小"),
+        ("筹码更轻且弹性更高", "成交额不能推断筹码更轻且弹性更高"),
+        ("资金推动逻辑明确", "成交额不能推断资金推动机制"),
+    ],
+)
+def test_selection_rejects_execution_and_causal_claims_without_order_book(claim, caution):
+    result = selection()
+    result["selected"][0]["risk"] = claim
+    with pytest.raises(ValueError, match="order-book, execution or causal"):
+        validate_selection(result, [{"instrument_id": "600001.SH"}], [])
+    result["selected"][0]["risk"] = caution
+    assert validate_selection(result, [{"instrument_id": "600001.SH"}], []) == result
+
+
 def test_search_sources_are_extracted_from_real_tool_metadata():
     raw = {
         "output": [
@@ -224,8 +377,11 @@ def test_offline_is_network_free_immutable_and_no_ai_recommendation(market, tmp_
     assert report["selection"]["selected"] == []
     assert report["candidates"]
     assert "不是推荐" in report["selection"]["market_view"]
-    assert json.loads((path / "manifest.json").read_text())["report_sha256"] == fingerprint(report)
+    manifest = json.loads((path / "manifest.json").read_text())
+    assert manifest["report_sha256"] == fingerprint(report)
+    assert manifest["html_sha256"] == sha256((path / "report.html").read_bytes()).hexdigest()
     assert (path / "report.md").is_file()
+    assert (path / "report.html").is_file()
 
 
 def test_live_missing_key_stops_before_sources(market, tmp_path, monkeypatch):
@@ -310,11 +466,24 @@ def test_three_stage_live_flow_archives_evidence(market, tmp_path, monkeypatch):
         stages.append(search)
         client.calls.append({"search": search, "status": "completed"})
         if search:
-            return {"hypotheses": []}, raw
+            code = "600001.SH"
+            return {
+                "hypotheses": [
+                    {
+                        "summary": "source-linked finding",
+                        "instrument_ids": [code],
+                        "relation": "theme",
+                        "source_urls": ["https://example.org/announcement"],
+                        "counterargument": "unverified",
+                    }
+                ]
+            }, raw
         packet = json.loads(prompt.split("\n", 1)[1])
         code = packet["candidates"][0]["instrument_id"]
         ref = packet["evidence"][0]["evidence_id"]
-        return selection(code, [f"market:{code}", ref]), {"status": "completed"}
+        selected = selection(code, [f"market:{code}", ref])
+        selected["selected"][0].update({"fact_ids": [], "quant_claims": []})
+        return selected, {"status": "completed"}
 
     with (
         patch("quantlab.scout.pipeline.latest_completed_session", return_value=day),
@@ -340,20 +509,74 @@ def test_tracking_starts_strictly_after_publication(market, tmp_path):
         "status": "live_research_unvalidated",
         "finished_at": f"{days[10]}T19:00:00+08:00",
         "baseline": [{"instrument_id": code}],
-        "selection": {"selected": []},
+        "selection": {
+            "selected": [
+                {
+                    "instrument_id": code,
+                    "status": "focus",
+                    "screening_status": "hold_for_official_notice_review",
+                }
+            ]
+        },
     }
     run = tmp_path / "original"
     run.mkdir()
     (run / "report.json").write_text(json.dumps(report))
     (run / "manifest.json").write_text(json.dumps({"report_sha256": fingerprint(report)}))
     path = observe_run(run, root, tmp_path / "marks")
-    first = json.loads(path.read_text())["rows"][0]
+    observation = json.loads(path.read_text())
+    first = observation["rows"][0]
+    assert observation["groups"]["ai_focus"] == [code]
+    assert observation["groups"]["ai_focus_without_notice_hold"] == []
+    assert observation["groups"]["official_notice_hold"] == [code]
     assert first["anchor_session"] == days[11].isoformat()
     assert first["target_session"] == days[12].isoformat()
     assert first["status"] == "observed"
     anchor = storage.load_daily_bars_by_date(days[11])[0].close
     target = storage.load_daily_bars_by_date(days[12])[0].close
     assert first["adjusted_close_return"] == pytest.approx(target / anchor - 1)
+
+
+def test_tracking_distinguishes_future_and_missing_prices(market, tmp_path):
+    root, _ = market
+    storage = ParquetStorage(root)
+    days = sorted({x.trade_date for x in storage.load_trading_calendar() if x.is_open})
+    code = storage.load_daily_bars_by_date(days[0])[0].instrument_id
+    report = {
+        "run_id": "test-future-observation",
+        "status": "live_research_unvalidated",
+        "finished_at": f"{days[10]}T19:00:00+08:00",
+        "baseline": [{"instrument_id": code}],
+        "selection": {"selected": []},
+    }
+    run = tmp_path / "source"
+    run.mkdir()
+    (run / "report.json").write_text(json.dumps(report))
+    (run / "manifest.json").write_text(json.dumps({"report_sha256": fingerprint(report)}))
+
+    def observe_at(day, hour):
+        fixed = datetime.fromisoformat(f"{day}T{hour:02d}:00:00+08:00")
+
+        class FrozenClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed
+
+        with patch("quantlab.scout.tracking.datetime", FrozenClock):
+            path = observe_run(run, root, tmp_path / "marks")
+        return json.loads(path.read_text())["rows"][0]
+
+    before_anchor = observe_at(days[11], 12)
+    assert before_anchor["status"] == "anchor_not_yet_due"
+    assert before_anchor["adjusted_close_return"] is None
+    after_anchor = observe_at(days[11], 19)
+    assert after_anchor["status"] == "target_not_yet_due"
+    assert after_anchor["anchor_price_status"] == "available"
+    assert after_anchor["target_price_status"] == "not_yet_due"
+    storage.adj_factor_path(days[11]).unlink()
+    missing_anchor = observe_at(days[12], 19)
+    assert missing_anchor["status"] == "anchor_price_or_factor_missing"
+    assert missing_anchor["adjusted_close_return"] is None
 
 
 def test_ai_schema_payload_and_citation_validation(monkeypatch):

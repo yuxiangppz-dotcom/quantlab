@@ -12,6 +12,7 @@ from quantlab.scout.demo import make_demo_market, make_demo_sources
 from quantlab.scout.disclosures import (
     collect_disclosures,
     disclosure_context,
+    disclosure_window,
     normalize_snapshot,
     normalized_rows,
 )
@@ -99,6 +100,76 @@ def test_rank_sides_merge_but_different_windows_do_not_sum():
     assert evidence[0].published_at is None
     assert evidence[0].event_dates == (DAY.isoformat(),)
     assert contexts[CODE]["top_inst"]["duplicate_or_indistinguishable_rows"] == 1
+    assert records[0]["window_type"] == "single_session"
+    assert records[1]["window_type"] == "multi_session"
+    assert "累计" in records[1]["window_label"]
+
+
+def test_disclosure_window_keeps_unknown_and_end_date_separate():
+    day = DAY.isoformat()
+    multi = disclosure_window("连续三个交易日内，涨幅偏离值累计达到20%", day)
+    assert multi["window_type"] == "multi_session"
+    assert multi["window_sessions"] == "三"
+    assert "非2026-01-09单日资金" in multi["window_label"]
+    assert disclosure_window("无法判断的原因", day)["window_type"] == "unknown"
+
+
+def test_selection_rejects_overlapping_window_flow_and_numeric_claims():
+    evidence = Evidence(
+        "disclosure:top_list",
+        "累计榜",
+        json.dumps({"records": [{"window_type": "multi_session", "trade_date": DAY.isoformat()}]}),
+        None,
+        None,
+        NOW.isoformat(),
+        instrument_ids=(CODE,),
+    )
+    candidates = [
+        {"instrument_id": CODE, "routes": ["量价异动"], "evidence_ids": [evidence.evidence_id]}
+    ]
+    selected = {
+        "instrument_id": CODE,
+        "status": "watch",
+        "thesis": "龙虎榜连续净买",
+        "risk": "披露样本有限",
+        "invalidation": "量价转弱",
+        "evidence_ids": [f"market:{CODE}", evidence.evidence_id],
+    }
+    result = {"market_view": "行情偏暖", "selected": [selected]}
+    with pytest.raises(ValueError, match="continuous flow"):
+        validate_selection(result, candidates, [evidence])
+    selected["thesis"] = "三日累计榜净买与量价走势一致"
+    selected["risk"] = "披露样本和单日成交不可直接比较，参照600002.SH观察"
+    assert validate_selection(result, candidates, [evidence]) == result
+    selected["risk"] = "龙虎榜净买规模相对当日成交额较小"
+    with pytest.raises(ValueError, match="daily turnover"):
+        validate_selection(result, candidates, [evidence])
+    selected["risk"] = "三日累计净买规模相对当日成交有限"
+    with pytest.raises(ValueError, match="daily turnover"):
+        validate_selection(result, candidates, [evidence])
+    selected["risk"] = "披露样本和单日成交不可直接比较"
+    single = Evidence(
+        "disclosure:top_inst",
+        "单日榜",
+        json.dumps({"records": [{"window_type": "single_session", "trade_date": DAY.isoformat()}]}),
+        None,
+        None,
+        NOW.isoformat(),
+        instrument_ids=(CODE,),
+    )
+    selected["evidence_ids"].append(single.evidence_id)
+    candidates[0]["evidence_ids"].append(single.evidence_id)
+    selected["thesis"] = "三日累计与单日榜两个独立窗口方向一致"
+    with pytest.raises(ValueError, match="overlapping disclosure windows"):
+        validate_selection(result, candidates, [evidence, single])
+    selected["evidence_ids"].remove(single.evidence_id)
+    candidates[0]["evidence_ids"].remove(single.evidence_id)
+    selected["thesis"] = "三日累计榜净买1167万元"
+    with pytest.raises(ValueError, match="numeric claims"):
+        validate_selection(result, candidates, [evidence])
+    selected["thesis"] = "量比最高"
+    with pytest.raises(ValueError, match="superlative"):
+        validate_selection(result, candidates, [evidence])
 
 
 def test_identical_block_rows_are_not_assumed_duplicate_transactions():
@@ -255,6 +326,30 @@ def test_model_evidence_budget_and_stock_scope():
     assert len(json.dumps(packet[0], ensure_ascii=False)) <= 4000
 
 
+def test_compact_disclosure_prompt_counts_both_sides_of_seat_sample():
+    records = [
+        {"trade_date": DAY.isoformat(), "reason": "累计偏离", "exalter": f"seat{i}", "net_buy": net}
+        for i, net in enumerate([-7, -2, 3, 9])
+    ]
+    item = Evidence(
+        "disclosure:top_inst",
+        "seat sample",
+        json.dumps({"dataset": "top_inst", "records": records}),
+        None,
+        None,
+        NOW.isoformat(),
+        kind="trading_disclosure",
+        instrument_ids=(CODE,),
+    )
+    packet = evidence_packet([item], {CODE}, max_chars=4000, max_body_chars=1400)
+    summary = json.loads(packet[0]["body"])
+    assert packet[0]["body_compacted"]
+    assert summary["record_count"] == 4
+    assert summary["groups"][0]["positive_net_rows"] == 2
+    assert summary["groups"][0]["negative_net_rows"] == 2
+    assert {row["net_buy"] for row in summary["groups"][0]["largest_positive"]} == {3, 9}
+
+
 def test_offline_supplements_reach_candidate_report_without_canonical_writes(tmp_path):
     canonical = tmp_path / "canonical"
     day = make_demo_market(canonical)
@@ -271,15 +366,14 @@ def test_offline_supplements_reach_candidate_report_without_canonical_writes(tmp
         )
     candidate = next(x for x in report["candidates"] if x["instrument_id"] == "600007.SH")
     assert set(candidate["context"]) == {"top_list", "top_inst", "block_trade", "discussion"}
-    assert report["source_comparison"]["definition"].startswith("candidate discovery")
+    assert report["candidate_stages"]["method_version"] == "multi_route_v1"
     assert report["selection"]["selected"] == []
     assert report["disclosure_snapshots"]
     assert "评论样本" in (run / "report.md").read_text()
     assert before == {str(p): p.read_bytes() for p in canonical.rglob("*.parquet")}
     universe, _ = scan_market(canonical, day)
-    assert [x["score"] for x in report["baseline"]] == sorted(
-        [x.score for x in universe.values()], reverse=True
-    )[:3]
+    assert report["candidate_stages"]["eligible_universe_count"] == len(universe)
+    assert "baseline" not in report and "source_comparison" not in report
 
 
 def test_live_mock_reads_new_evidence_and_keeps_calls_bounded(tmp_path, monkeypatch):
@@ -310,15 +404,17 @@ def test_live_mock_reads_new_evidence_and_keeps_calls_bounded(tmp_path, monkeypa
         row = next(x for x in packet["candidates"] if x["instrument_id"] == "600007.SH")
         ref = row["context"]["top_inst"]["evidence_id"]
         return {
-            "market_view": "样本存在分歧",
+            "market_view": "错误的市场判断",
             "selected": [
                 {
                     "instrument_id": row["instrument_id"],
                     "status": "watch",
-                    "thesis": "披露待核实",
-                    "risk": "样本有限",
-                    "invalidation": "业务关系不成立",
+                    "thesis": "一字涨停并封至收盘",
+                    "risk": "实际可买性极低",
+                    "invalidation": "错误的业务关系判断",
                     "evidence_ids": [f"market:{row['instrument_id']}", ref],
+                    "fact_ids": [],
+                    "quant_claims": [],
                 }
             ],
         }, {"status": "completed"}
@@ -337,7 +433,17 @@ def test_live_mock_reads_new_evidence_and_keeps_calls_bounded(tmp_path, monkeypa
         )
     assert stages == [True, True, False]
     assert report["status"] == "live_research_unvalidated"
-    assert report["selection"]["selected"][0]["status"] == "watch"
+    assert report["selection"]["selected"] == []
+    assert report["selection_raw"]["selected"][0]["status"] == "watch"
+    assert report["selection_validation"]["rejected"][0]["reason"].startswith(
+        "AI infers order-book"
+    )
+    visible = (tmp_path / "runs" / report["run_id"] / "report.md").read_text()
+    assert "未列重点" in visible
+    assert "一字涨停并封至收盘" not in visible
+    assert "实际可买性极低" not in visible
+    assert "错误的业务关系判断" not in json.dumps(report["selection"], ensure_ascii=False)
+    assert report["disclosure_context"]["600007.SH"]["top_list"]["records"]
 
 
 def test_source_request_budget_rejects_large_history(tmp_path):

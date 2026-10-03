@@ -30,6 +30,56 @@ def latest_completed_session(storage: ParquetStorage, now: datetime) -> date:
     return max(dates)
 
 
+def inspect_market_data(storage: ParquetStorage, now: datetime) -> dict:
+    """Inspect local file coverage without reading bars or connecting to a provider."""
+    local = now.astimezone(SHANGHAI)
+    calendar = storage.load_trading_calendar()
+    calendar_through = max((row.trade_date for row in calendar), default=None)
+    sessions = sorted(
+        {
+            row.trade_date
+            for row in calendar
+            if row.exchange == "SSE"
+            and row.is_open
+            and (row.trade_date < local.date() or local.time() >= time(18))
+            and row.trade_date <= local.date()
+        }
+    )
+    expected = (
+        sessions[-1] if calendar_through and calendar_through >= local.date() and sessions else None
+    )
+    last_partition = None
+    last_21_sessions = None
+    consecutive = 0
+    for day in sessions:
+        if storage.daily_bars_path(day).is_file() and storage.adj_factor_path(day).is_file():
+            last_partition = day
+            consecutive += 1
+            if consecutive >= 21:
+                last_21_sessions = day
+        else:
+            consecutive = 0
+    securities_present = storage.securities_path.is_file()
+    return {
+        "calendar_through": calendar_through.isoformat() if calendar_through else None,
+        "expected_session": expected.isoformat() if expected else None,
+        "latest_daily_and_adjustment_partition": (
+            last_partition.isoformat() if last_partition else None
+        ),
+        "latest_21_session_window": (last_21_sessions.isoformat() if last_21_sessions else None),
+        "sessions_behind": (
+            sum(day > last_21_sessions for day in sessions)
+            if expected and last_21_sessions
+            else None
+        ),
+        "securities_present": securities_present,
+        "live_partition_files_present": bool(
+            securities_present and expected and last_21_sessions == expected
+        ),
+        "note": "File presence only; Scout validates record contents during a research run",
+    }
+
+
 def scan_market(
     canonical_dir: Path, session: date, min_amount: float = 100_000_000
 ) -> tuple[dict[str, Candidate], dict]:
@@ -60,9 +110,11 @@ def scan_market(
     limits = {x.instrument_id: x for x in storage.load_daily_price_limits_by_date(session)}
     candidates: dict[str, Candidate] = {}
     rejected: dict[str, int] = {}
+    rejected_by_code: dict[str, str] = {}
 
     def reject(reason: str) -> None:
         rejected[reason] = rejected.get(reason, 0) + 1
+        rejected_by_code[code] = reason
 
     for security in securities:
         code = security.instrument_id
@@ -123,15 +175,22 @@ def scan_market(
             "return_1d": ret1,
             "return_5d": ret5,
             "return_20d": ret20,
+            "prior_return_19d": closes[-2] / closes[0] - 1,
+            "previous_return_1d": closes[-2] / closes[-3] - 1,
             "amount_cny": last.amount,
             "amount_ratio_5d": amount_ratio,
             "close_location": close_location,
+            "one_price_session": last.high == last.low,
             "breakout_20d": closes[-1] / high20 - 1,
             "close": last.close,
             "turnover_rate_pct": basic.turnover_rate * 100 if basic else None,
             "up_limit": up_limit if finite(up_limit) else None,
         }
-        if any(v is not None and not finite(v) for v in metrics.values()):
+        if any(
+            v is not None and not finite(v)
+            for key, v in metrics.items()
+            if key != "one_price_session"
+        ):
             reject("invalid_metrics")
             continue
         candidates[code] = Candidate(code, security.name, metrics, 0)
@@ -140,7 +199,7 @@ def scan_market(
     if not candidates:
         raise ValueError("No eligible stocks with complete valid history")
     frame = pd.DataFrame({k: v.metrics for k, v in candidates.items()}).T
-    # Transparent heuristic baseline, NOT a fitted model or a probability.
+    # A discovery ordering hint, not a calibrated probability or trading signal.
     scores = (
         sum(
             frame[col].rank(pct=True)
@@ -155,22 +214,43 @@ def scan_market(
             candidate.routes.append("量价异动")
         if m["breakout_20d"] >= 0 and m["return_5d"] > 0:
             candidate.routes.append("趋势突破")
+        if (
+            -0.12 <= m["return_5d"] <= 0.08
+            and -0.08 <= m["return_1d"] <= 0.015
+            and m["amount_ratio_5d"] >= 1.1
+            and m["close_location"] is not None
+            and m["close_location"] >= 0.45
+        ):
+            candidate.routes.append("回撤放量")
+        if (
+            -0.04 <= m["return_5d"] <= 0.12
+            and m["return_1d"] < 0.06
+            and m["amount_ratio_5d"] >= 1.35
+        ):
+            candidate.routes.append("温和放量")
     return candidates, {
         "session": session.isoformat(),
         "history_start": days[0].isoformat(),
         "eligible_count": len(candidates),
         "rejected": rejected,
+        "rejected_by_code": rejected_by_code,
         "daily_basic_count": len(basics),
         "price_limit_count": len(limits),
         "security_master": "current_snapshot_not_historical_PIT",
         "median_return_1d": float(frame.return_1d.median()),
         "positive_fraction": float((frame.return_1d > 0).mean()),
-        "score_definition": "mean percentile rank of 1d/5d return, amount ratio, breakout",
+        "score_definition": (
+            "discovery-only mean percentile rank of 1d/5d return, amount ratio, breakout; "
+            "not a probability"
+        ),
     }
 
 
 def add_sectors(
-    universe: dict[str, Candidate], memberships: dict[str, str], quota: int = 8
+    universe: dict[str, Candidate],
+    memberships: dict[str, str],
+    quota: int = 8,
+    opportunity_mode: bool = False,
 ) -> list[str]:
     """Use current externally supplied memberships; never invent absent sectors."""
     groups: dict[str, list[Candidate]] = {}
@@ -186,9 +266,29 @@ def add_sectors(
         if breadth >= 0.6 and mean_return > 0.01:
             strong.append((mean_return, sector, members))
     selected = []
+    queues = []
     for _, sector, members in sorted(strong, key=lambda x: (-x[0], x[1])):
-        for candidate in sorted(members, key=lambda x: (-x.score, x.instrument_id))[:2]:
-            candidate.routes.append(f"板块领先:{sector}")
+        ranked = (
+            sorted(
+                members,
+                key=lambda x: (-x.metrics["return_5d"], -x.metrics["return_20d"], x.instrument_id),
+            )
+            if opportunity_mode
+            else sorted(members, key=lambda x: (-x.score, x.instrument_id))
+        )
+        # An independent sector route needs breadth beyond its two price leaders.
+        middle = ranked[len(ranked) // 2]
+        broader = ranked[-1]
+        first = [ranked[0], middle, broader]
+        queue = first + [member for member in ranked if member not in first]
+        queues.append((sector, queue))
+    for index in range(max((len(queue) for _, queue in queues), default=0)):
+        for sector, queue in queues:
+            if index >= len(queue):
+                continue
+            candidate = queue[index]
+            if f"板块关联:{sector}" not in candidate.routes:
+                candidate.routes.append(f"板块关联:{sector}")
             selected.append(candidate.instrument_id)
             if len(selected) >= quota:
                 return selected
