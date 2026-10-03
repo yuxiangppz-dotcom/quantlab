@@ -1,5 +1,18 @@
 # Scout 本轮任务状态
 
+## 2026-10-03 机会选择升级（工程完成，提交/CI 收尾中）
+
+- 任务书：`E:/浏览器下载/Scout_Opportunity_Selection_Taskbook_GPT61Sol_20261003.md`，全文已读。指定起点及远程分支均为 `778bd6b47e88f31458f264356992c35da149f3ca`；工作树干净，团队只有主执行者，未发现运行中的 Scout/agent-loop/pytest 写入者。
+- 新范围：A 追加事件索引与价格反应；B 路线内独立召回依据；C 全部深查股机会记录、完整比较与 TopN 相对取舍；D 独立冻结排序与按目标日汇总的前瞻诊断。保留原 H5 定义、旧报告、原模型输出和原前瞻。
+- 本轮只读本地快照、合成数据和模拟模型，不调用付费模型或新增供应商，不写 canonical。沿用现有三阶段调用、160/24 预算与 3/5 展示上限。自动优化保持暂停，PR #192 保持草稿。
+- 恢复：先看本节及 `git status`；开发工作树仍为 `C:/Users/Administrator/.codex/worktrees/scout-ai-assistant/quantlab-review-pr189`。隔离产物目录计划为 `/home/administrator/projects/quantlab-pr189/data/scout_live_20260929/opportunity_upgrade_20261003`，只新建文件。
+- 开发路径：复用事实校验和来源存档，新逻辑用显式配置启用；先实现事件与路线，再实现比较/报告和独立排序跟踪，最后用模拟三阶段集成、真实旧资料兼容审计、全仓检查、自审、提交推送及 CI 核验收尾。
+- A–D 已实现，配置 `config/scout_opportunity.example.json` 显式启用；设计/操作/边界在 `SCOUT_OPPORTUNITY_DESIGN.md`、`SCOUT_OPPORTUNITY_DELIVERY.md`。完整测试已实际 182 passed，Ruff/锁/diff 通过；最后消除旧 prompt 与新增 quant_claims 字段范围的冲突后复核受影响检查。
+- 最终合成 `opportunity_upgrade_20261003/synthetic_v3/runs/20260202T190000-9eb2d073`：180 合格、138 廉价、24 深查、24 完整比较；22 趋势/1 回撤/1 事件，脚本模拟 2 重点/4 观察，三次模拟调用，真实模型/供应商调用 0。96 行合成观察有未到期和人工成熟两份；真实累计排除合成。
+- `local_workspace_v2/local_compatibility_audit.json` 只读核验两份旧 manifest 和报告字节哈希，23/2341 事件映射；不能当新利好数。索引只覆盖局部取得历史。旧最新报告原 20 行仍全未到期；新排名 CLI 对旧结构生成 0 行兼容快照，不补造排名。
+- 开发误拒已修复：旧穷尽公告正则跨逗号匹配量价风险语句，复现记录在 `failure_archive/false_positive_diagnostic.json`；保留反证不删改。未展示 PDF 正文继承、交易条件数字/盘口绕过已加回归。浏览器 `file:` 预览被安全策略拒绝，未声称截图验收；桌面新增独立合成示例，旧预测目录保留。
+- 下一步仅收尾提交、推送及远程 CI；不扩展范围。新配置尚未真实模型验证，H5 效果待未来成熟目标日；当前没有可信净收益优势证据。不得自动恢复持续优化或重复付费挑选名单。
+
 - 目标：按 2026-09-30 的 `Scout_Codex_Development_Taskbook.md`，完成多入口发现、AKShare 热榜快照、AI 证据筛选、冻结盘前报告、1/3/5/10 交易日前瞻观察与累计展示。
 - 起点：`f624a8836f06e2f292aca21e179db92d30c20ded`，分支 `codex/scout-evidence-integrity`，工作树起始干净，PR #192 草稿。未发现并发 Scout 或 agent loop 写入进程。原自动心跳保持暂停。
 - 交付代码 HEAD：`c1cc9089c2d9cc9ca643c45d552b97bc58066575`；前一提交 `a29e895`。两份代码提交均已推送至 PR #192，PR 正文已更新且远程 quality 检查通过。状态文件本身的后续提交以 `git rev-parse HEAD` 读取最新 HEAD。

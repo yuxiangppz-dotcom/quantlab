@@ -13,6 +13,7 @@ from datetime import datetime
 from quantlab.scout.disclosures import disclosure_window
 from quantlab.scout.facts import (
     check_core_claim,
+    claim_fact_id,
     extract_core_claims,
     fact_map,
     validate_declared_claim,
@@ -212,13 +213,7 @@ def semantic_numeric_issue(
                     else code_name
                 )
             return SelectionValidationError(code_name, field, claim.text, issue[1])
-        fact_id = (
-            f"fact:{claim.subject_id}:limit:limit_times:{claim.period}"
-            if claim.metric == "limit_times"
-            else f"fact:{claim.subject_id}:moneyflow:{claim.metric}"
-            if claim.metric.startswith("net_")
-            else f"fact:{claim.subject_id}:market:{claim.metric}"
-        )
+        fact_id = claim_fact_id(claim)
         if fact_ids is not None and fact_id not in fact_ids:
             return SelectionValidationError("missing_fact_reference", field, claim.text, fact_id)
         if declared_claims is not None:
@@ -561,6 +556,7 @@ class DeepSeekResearch:
         self.calls: list[dict] = []
 
     def ask(self, prompt: str, schema: dict, search: bool = False) -> tuple[dict, dict]:
+        self.failed_response = None
         if search:
             raise ValueError("DeepSeek API does not provide Scout web search")
         if len(self.calls) >= 3:
@@ -606,12 +602,24 @@ class DeepSeekResearch:
         if not isinstance(choices, list) or len(choices) != 1:
             raise ValueError("DeepSeek response has no single completion")
         choice = choices[0]
+        content = choice.get("message", {}).get("content")
+        archived = {
+            "id": raw.get("id"),
+            "model": raw.get("model"),
+            "choices": [
+                {
+                    "finish_reason": choice.get("finish_reason"),
+                    "message": {"role": "assistant", "content": content},
+                }
+            ],
+            "usage": raw.get("usage", {}),
+        }
+        self.failed_response = archived
         self.calls[-1].update(
             {"status": choice.get("finish_reason"), "usage": raw.get("usage", {})}
         )
         if choice.get("finish_reason") != "stop":
             raise ValueError("DeepSeek response incomplete; refusing partial selection")
-        content = choice.get("message", {}).get("content")
         if not isinstance(content, str) or not content.strip():
             raise ValueError("DeepSeek response has no JSON content")
         try:
@@ -632,17 +640,7 @@ class DeepSeekResearch:
                 }
             )
             raise ValueError("DeepSeek response failed schema validation") from None
-        archived = {
-            "id": raw.get("id"),
-            "model": raw.get("model"),
-            "choices": [
-                {
-                    "finish_reason": choice["finish_reason"],
-                    "message": {"role": "assistant", "content": content},
-                }
-            ],
-            "usage": raw.get("usage", {}),
-        }
+        self.failed_response = None
         return parsed, archived
 
 
@@ -837,7 +835,7 @@ def validate_selection(
                 narrative[:160],
                 "full comparison not established",
             )
-        if re.search(r"(?:只有|唯一|仅有).{0,12}(?:披露|公告)", narrative):
+        if re.search(r"(?:只有|唯一|仅有)[^。；，]{0,12}(?:披露|公告)", narrative):
             limited_scope = re.search(
                 r"(?:本次|当前|给定|本轮).{0,8}(?:输入|证据|样本|展示)", narrative
             )
@@ -902,8 +900,9 @@ def validate_selection(
             and set(item.instrument_ids) <= named_peer_codes
             and item.evidence_id in shown_evidence
         }
-        valid = ({f"market:{code}"} | set(candidate.get("evidence_ids", [])) | peer_evidence) & (
-            shown_evidence | {f"market:{code}"}
+        market_refs = {f"market:{c}" for c in {code, *named_peer_codes}}
+        valid = (market_refs | set(candidate.get("evidence_ids", [])) | peer_evidence) & (
+            shown_evidence | market_refs
         )
         if not row["evidence_ids"] or not set(row["evidence_ids"]) <= valid:
             raise ValueError("AI selection cites evidence not shown or bound to this stock")

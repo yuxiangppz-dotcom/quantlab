@@ -16,6 +16,7 @@ from quantlab.scout.hot import collect_hot_rank, save_hot_snapshot
 from quantlab.scout.market import inspect_market_data
 from quantlab.scout.models import SHANGHAI
 from quantlab.scout.pipeline import read_config, run_scout
+from quantlab.scout.ranking_tracking import observe_ranking, summarize_ranking
 from quantlab.scout.tracking import observe_run, summarize_tracking
 
 
@@ -36,6 +37,14 @@ def _main() -> int:
     modes.add_argument("--track-run", type=Path, help="Original run directory to observe forward")
     modes.add_argument("--tracking-summary", action="store_true", help="Aggregate frozen reports")
     modes.add_argument(
+        "--track-ranking",
+        type=Path,
+        help="Observe all frozen deep candidates without modifying TopN tracking",
+    )
+    modes.add_argument(
+        "--ranking-summary", action="store_true", help="Date-balanced H5 ranking diagnostics"
+    )
+    modes.add_argument(
         "--hot-snapshot", action="store_true", help="Save one public hot-rank snapshot"
     )
     parser.add_argument("--config", type=Path, default=None)
@@ -52,6 +61,22 @@ def _main() -> int:
     parser.add_argument("--portfolio-file", type=Path, help="Timestamped holdings/watchlist JSON")
     args = parser.parse_args()
     config = read_config(args.config)
+    if args.track_ranking:
+        print(
+            observe_ranking(
+                args.track_ranking, args.canonical_dir, args.output_dir.parent / "ranking_tracking"
+            )
+        )
+        return 0
+    if args.ranking_summary:
+        print(
+            summarize_ranking(
+                args.output_dir,
+                args.output_dir.parent / "ranking_tracking",
+                args.output_dir.parent / "ranking-summary.json",
+            )
+        )
+        return 0
     if args.doctor:
         ai_provider = config["provider"]
         model_name = (

@@ -121,6 +121,14 @@ def render_html_report(report: dict, review: dict | None = None) -> str:
     ]
     if execution:
         parts.append(f"<p class='boundary'>{h(execution[1])}</p>")
+    from quantlab.scout.opportunity_view import render_html as opportunity_html
+
+    parts.append(opportunity_html(report))
+    if report.get("synthetic") or report.get("status") == "demo":
+        parts.append(
+            "<aside class='notice'><strong>合成演示，不是真实预测。"
+            "模拟模型响应只验证工程链路。</strong></aside>"
+        )
     stages = report.get("candidate_stages")
     if stages:
         parts.append(

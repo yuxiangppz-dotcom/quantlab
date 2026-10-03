@@ -69,6 +69,11 @@ def test_deepseek_request_and_private_reasoning_redaction(monkeypatch):
         client.ask("data", DISCOVERY_SCHEMA)
     assert client.calls[-1]["status"] == "schema_error"
     assert client.calls[-1]["schema_path"] == ["hypotheses", "0"]
+    assert (
+        client.failed_response["choices"][0]["message"]["content"] == '{"hypotheses":[{"bad":1}]}'
+    )
+    assert "private-thinking" not in json.dumps(client.failed_response)
+    assert "test-secret" not in json.dumps(client.failed_response)
 
 
 def test_deepseek_config_and_source_grounded_pipeline(tmp_path, monkeypatch):

@@ -110,9 +110,11 @@ def scan_market(
     limits = {x.instrument_id: x for x in storage.load_daily_price_limits_by_date(session)}
     candidates: dict[str, Candidate] = {}
     rejected: dict[str, int] = {}
+    rejected_by_code: dict[str, str] = {}
 
     def reject(reason: str) -> None:
         rejected[reason] = rejected.get(reason, 0) + 1
+        rejected_by_code[code] = reason
 
     for security in securities:
         code = security.instrument_id
@@ -173,6 +175,8 @@ def scan_market(
             "return_1d": ret1,
             "return_5d": ret5,
             "return_20d": ret20,
+            "prior_return_19d": closes[-2] / closes[0] - 1,
+            "previous_return_1d": closes[-2] / closes[-3] - 1,
             "amount_cny": last.amount,
             "amount_ratio_5d": amount_ratio,
             "close_location": close_location,
@@ -229,6 +233,7 @@ def scan_market(
         "history_start": days[0].isoformat(),
         "eligible_count": len(candidates),
         "rejected": rejected,
+        "rejected_by_code": rejected_by_code,
         "daily_basic_count": len(basics),
         "price_limit_count": len(limits),
         "security_master": "current_snapshot_not_historical_PIT",
@@ -242,7 +247,10 @@ def scan_market(
 
 
 def add_sectors(
-    universe: dict[str, Candidate], memberships: dict[str, str], quota: int = 8
+    universe: dict[str, Candidate],
+    memberships: dict[str, str],
+    quota: int = 8,
+    opportunity_mode: bool = False,
 ) -> list[str]:
     """Use current externally supplied memberships; never invent absent sectors."""
     groups: dict[str, list[Candidate]] = {}
@@ -260,7 +268,14 @@ def add_sectors(
     selected = []
     queues = []
     for _, sector, members in sorted(strong, key=lambda x: (-x[0], x[1])):
-        ranked = sorted(members, key=lambda x: (-x.score, x.instrument_id))
+        ranked = (
+            sorted(
+                members,
+                key=lambda x: (-x.metrics["return_5d"], -x.metrics["return_20d"], x.instrument_id),
+            )
+            if opportunity_mode
+            else sorted(members, key=lambda x: (-x.score, x.instrument_id))
+        )
         # An independent sector route needs breadth beyond its two price leaders.
         middle = ranked[len(ranked) // 2]
         broader = ranked[-1]
@@ -272,7 +287,8 @@ def add_sectors(
             if index >= len(queue):
                 continue
             candidate = queue[index]
-            candidate.routes.append(f"板块关联:{sector}")
+            if f"板块关联:{sector}" not in candidate.routes:
+                candidate.routes.append(f"板块关联:{sector}")
             selected.append(candidate.instrument_id)
             if len(selected) >= quota:
                 return selected

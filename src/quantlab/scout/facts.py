@@ -78,6 +78,56 @@ def program_facts(candidate: dict, asof_session: str | None = None) -> list[dict
                 "source_location": f"candidate:{code}:source_summary:limit_history:{index}",
             }
         )
+    for index, event in enumerate(candidate.get("opportunity_record", {}).get("events", [])):
+        scale = event.get("nominal_scale", {})
+        ratio = scale.get("nominal_ratio")
+        if ratio is None:
+            continue
+        numerator, denominator = scale.get("numerator_cny"), scale.get("denominator_cny")
+        if (
+            not isinstance(numerator, (int, float))
+            or not isinstance(denominator, (int, float))
+            or denominator <= 0
+            or numerator <= 0
+            or ratio != numerator / denominator
+        ):
+            raise ValueError("Nominal event scale differs from positive denominator calculation")
+        facts.append(
+            {
+                "fact_id": f"fact:{code}:event:nominal_contract_ratio:{event['record_id']}",
+                "subject_id": code,
+                "metric": "nominal_contract_ratio",
+                "period": event["record_id"],
+                "asof_session": asof_session,
+                "value": str(ratio),
+                "unit": "ratio",
+                "source_location": f"candidate:{code}:opportunity_record:"
+                f"events:{index}:nominal_scale",
+            }
+        )
+    if "opportunity_record" in candidate:
+        for key, period, unit in (
+            ("return_20d", "20d", "ratio"),
+            ("relative_return_1d", "1d", "ratio"),
+            ("relative_return_5d", "5d", "ratio"),
+            ("relative_return_20d", "20d", "ratio"),
+            ("amount_ratio_5d", "5d", "times"),
+            ("breakout_20d", "20d", "ratio"),
+        ):
+            value = metrics.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                facts.append(
+                    {
+                        "fact_id": f"fact:{code}:market:{key}",
+                        "subject_id": code,
+                        "metric": key,
+                        "period": period,
+                        "asof_session": asof_session,
+                        "value": str(value),
+                        "unit": unit,
+                        "source_location": f"candidate:{code}:metrics:{key}",
+                    }
+                )
     return facts
 
 
@@ -122,13 +172,22 @@ def extract_core_claims(
 ) -> list[CoreClaim]:
     """Parse only the four bounded quantitative domains; other prose stays inference."""
     claims = []
+    periods = r"昨日|前一日|当日|近?1日|近?5日|五日|5日|日"
+    if "opportunity_record" in own:
+        periods = r"近?20日|二十日|" + periods
     returns = re.compile(
-        r"(?P<period>昨日|前一日|当日|近?1日|近?5日|五日|5日|日)"
+        rf"(?P<period>{periods})"
         r"(?:累计)?(?P<word>上涨|下跌|涨幅|跌幅|收益率?|涨|跌)"
         r"\s*(?:为|约|达)?\s*(?P<number>[+-]?\d+(?:\.\d+)?)\s*%"
     )
     for match in returns.finditer(text):
-        period = "5d" if "5" in match["period"] or "五" in match["period"] else "1d"
+        period = (
+            "20d"
+            if "20" in match["period"] or "二十" in match["period"]
+            else "5d"
+            if "5" in match["period"] or "五" in match["period"]
+            else "1d"
+        )
         word = match["word"]
         value = Decimal(match["number"])
         direction = "neutral"
@@ -150,6 +209,55 @@ def extract_core_claims(
                 direction,
             )
         )
+    if "opportunity_record" in own:
+        for match in re.finditer(
+            r"近?(?P<days>1|5|20)日相对行业价格差\s*(?:为|约)?\s*(?P<number>[+-]?\d+(?:\.\d+)?)\s*%",
+            text,
+        ):
+            subject = _subject(text, match.start(), own, candidates)
+            claims.append(
+                CoreClaim(
+                    field,
+                    match.group(),
+                    subject,
+                    f"relative_return_{match['days']}d",
+                    f"{match['days']}d",
+                    Decimal(match["number"]),
+                    "%",
+                    "neutral",
+                )
+            )
+        for match in re.finditer(
+            r"(?:额比|量比|成交额相对前5日均值)\s*(?:为|约)?\s*(?P<number>[+-]?\d+(?:\.\d+)?)\s*倍",
+            text,
+        ):
+            claims.append(
+                CoreClaim(
+                    field,
+                    match.group(),
+                    _subject(text, match.start(), own, candidates),
+                    "amount_ratio_5d",
+                    "5d",
+                    Decimal(match["number"]),
+                    "times",
+                    "neutral",
+                )
+            )
+        for match in re.finditer(
+            r"突破前20日高点幅度\s*(?:为|约)?\s*(?P<number>[+-]?\d+(?:\.\d+)?)\s*%", text
+        ):
+            claims.append(
+                CoreClaim(
+                    field,
+                    match.group(),
+                    _subject(text, match.start(), own, candidates),
+                    "breakout_20d",
+                    "20d",
+                    Decimal(match["number"]),
+                    "%",
+                    "neutral",
+                )
+            )
     for match in re.finditer(
         r"(?:昨日|前一日|当日)?成交额\s*(?:约|为)?\s*"
         r"(?P<number>[+-]?\d+(?:\.\d+)?)\s*(?P<unit>亿元|万元|元)",
@@ -213,7 +321,44 @@ def extract_core_claims(
                 "neutral",
             )
         )
+    for match in re.finditer(
+        r"名义合同金额占年收入\s*(?:约|为)?\s*(?P<number>[+-]?\d+(?:\.\d+)?)\s*%", text
+    ):
+        subject = _subject(text, match.start(), own, candidates)
+        events = next(
+            (
+                c.get("opportunity_record", {}).get("events", [])
+                for c in candidates
+                if c["instrument_id"] == subject
+            ),
+            [],
+        )
+        known = [e for e in events if e.get("nominal_scale", {}).get("nominal_ratio") is not None]
+        explicit = [e for e in known if e["record_id"] in text[: match.start()]]
+        event = explicit[-1] if explicit else known[0] if len(known) == 1 else None
+        claims.append(
+            CoreClaim(
+                field,
+                match.group(),
+                subject,
+                "nominal_contract_ratio",
+                event["record_id"] if event else "unknown",
+                Decimal(match["number"]),
+                "%",
+                "neutral",
+            )
+        )
     return claims
+
+
+def claim_fact_id(claim: CoreClaim) -> str:
+    if claim.metric == "nominal_contract_ratio":
+        return f"fact:{claim.subject_id}:event:nominal_contract_ratio:{claim.period}"
+    if claim.metric == "limit_times":
+        return f"fact:{claim.subject_id}:limit:limit_times:{claim.period}"
+    if claim.metric.startswith("net_"):
+        return f"fact:{claim.subject_id}:moneyflow:{claim.metric}"
+    return f"fact:{claim.subject_id}:market:{claim.metric}"
 
 
 def check_core_claim(claim: CoreClaim, facts: dict[str, dict]) -> tuple[str, object] | None:
@@ -222,12 +367,7 @@ def check_core_claim(claim: CoreClaim, facts: dict[str, dict]) -> tuple[str, obj
         claim.direction in {"down", "out"} and claim.value > 0
     ):
         return "core_claim_internal_direction_conflict", claim.text
-    if claim.metric == "limit_times":
-        fact_id = f"fact:{claim.subject_id}:limit:limit_times:{claim.period}"
-    elif claim.metric.startswith("net_"):
-        fact_id = f"fact:{claim.subject_id}:moneyflow:{claim.metric}"
-    else:
-        fact_id = f"fact:{claim.subject_id}:market:{claim.metric}"
+    fact_id = claim_fact_id(claim)
     fact = facts.get(fact_id)
     if fact is None:
         return "core_fact_missing", fact_id
@@ -281,13 +421,7 @@ def validate_declared_claim(
             return "core_claim_structure_mismatch", {"value": str(parsed.value)}
     except (InvalidOperation, TypeError):
         return "core_claim_structure_mismatch", {"value": str(parsed.value)}
-    expected_id = (
-        f"fact:{parsed.subject_id}:limit:limit_times:{parsed.period}"
-        if parsed.metric == "limit_times"
-        else f"fact:{parsed.subject_id}:moneyflow:{parsed.metric}"
-        if parsed.metric.startswith("net_")
-        else f"fact:{parsed.subject_id}:market:{parsed.metric}"
-    )
+    expected_id = claim_fact_id(parsed)
     if declared.get("fact_id") != expected_id or expected_id not in facts:
         return "core_claim_fact_reference_mismatch", expected_id
     return check_core_claim(parsed, facts)

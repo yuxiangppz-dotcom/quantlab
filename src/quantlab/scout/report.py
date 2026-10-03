@@ -341,6 +341,7 @@ def hold_candidate_pool(pool: list[dict], selection: dict) -> list[dict]:
 
 
 def render_report(report: dict) -> str:
+    from quantlab.scout.opportunity_view import markdown as opportunity_markdown
     status = report["status"]
     title = "【合成演示，不是真实荐股】" if status == "demo" else ""
     lines = [
@@ -378,6 +379,7 @@ def render_report(report: dict) -> str:
     execution = execution_observation(report)
     if execution:
         lines.extend([f"**{text(execution[1])}**", ""])
+    lines.extend(opportunity_markdown(report))
     lines.extend(["## AI候选（模型分级，事实由程序列示）", ""])
     held = [
         row
