@@ -8,6 +8,7 @@
 - 运行/失败复现记录新建于 `/home/administrator/projects/quantlab-pr189/data/scout_live_20260929/review_fixes_20261004`。恢复先看本节、最新 HEAD、工作树状态和该目录；交付拟为 `SCOUT_REVIEW_FIXES_DELIVERY.md`。
 - 第 1 项已复现：4 个新回归在基线均失败（`p1-before.log`）。索引按稳定文档 URL 或标题/公开日期标识去重；真实正文转载保留内容去重，同文索引后补正文只作表示增强，不能当新催化。定点与机会回归共 38 passed，Ruff/锁通过；旧索引不改写，后续新记录标记 `index_document_v2`。
 - 第 2 项已复现：完整 `validate_comparisons` 的 5 种合法同行数字均在旧路径 `core_fact_missing`（`p2-before.log`）。类型校验现在保留实际输入中的完整同行、机会记录和事实表；旧自由数字兜底仍限定原字段。5 个正例及错主体/单位/方向/值/缺事实/缺展示事实表负例通过；相关 54 tests passed，Ruff 通过。
+- 第 3 项已复现：已知盘后消息被给予发布前窗口，且全部已知时点降为日期不确定（`p3-before.log`，7 failed/2 passed）。现在盘前/盘中/盘后/非交易日分别记录，15:00 收盘边界及无发布后交易时段不计算反应；盘中日线明确混合窗口，日期级/未知仍保守。相关 58 tests passed，Ruff 通过。
 
 ## 2026-10-03 机会选择升级（工程已交付，效果待观察）
 

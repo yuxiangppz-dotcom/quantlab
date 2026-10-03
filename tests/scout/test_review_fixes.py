@@ -1,12 +1,13 @@
 """Regression cases for the independent fdfb54b review, using only synthetic inputs."""
 
 from datetime import date, datetime
+from types import SimpleNamespace
 
 import pytest
 
 from quantlab.scout.facts import claim_fact_id, extract_core_claims, program_facts
 from quantlab.scout.models import SHANGHAI, Candidate, Evidence
-from quantlab.scout.opportunities import event_records, nominal_contract_scale
+from quantlab.scout.opportunities import event_records, nominal_contract_scale, price_reactions
 from quantlab.scout.opportunity_ai import validate_comparisons
 from quantlab.scout.opportunity_demo import synthetic_comparisons
 
@@ -192,3 +193,73 @@ def test_peer_comparison_still_rejects_wrong_or_unshown_facts(fault):
         pool[0]["program_facts"] = []
     with pytest.raises(ValueError):
         validate_comparisons({"market_view": "合成市场", "comparisons": rows}, pool, [], {})
+
+
+class ReactionStorage:
+    """Two daily closes suffice to expose pre-publication price leakage."""
+
+    def __init__(self, first=date(2026, 9, 29), last=SESSION, closed=()):
+        self.closes = {first: 10.0, last: 11.0}
+        self.closed = closed
+
+    def load_trading_calendar(self):
+        return [
+            SimpleNamespace(trade_date=day, exchange="SSE", is_open=True) for day in self.closes
+        ] + [SimpleNamespace(trade_date=day, exchange="SSE", is_open=False) for day in self.closed]
+
+    def load_daily_bars_by_date(self, day):
+        return [SimpleNamespace(instrument_id="600001.SH", close=self.closes[day])]
+
+    def load_adj_factors_by_date(self, day):
+        return [SimpleNamespace(instrument_id="600001.SH", adj_factor=1.0)]
+
+
+@pytest.mark.parametrize(
+    "published,asof,expected_start,status,value",
+    [
+        ("2026-09-30T08:00:00+08:00", SESSION, "2026-09-29", "preopen_daily_observation", 0.1),
+        ("2026-09-30T10:30:00+08:00", SESSION, "2026-09-29", "intraday_daily_window_mixed", 0.1),
+        ("2026-09-30T19:00:00+08:00", SESSION, "2026-09-30", "post_event_not_observed", None),
+        ("2026-09-30T15:00:00+08:00", SESSION, "2026-09-30", "post_event_not_observed", None),
+        ("2026-09-29T19:00:00+08:00", SESSION, "2026-09-29", "after_close_daily_observation", 0.1),
+        (None, SESSION, "2026-09-29", "date_bounded_observation_timing_uncertain", 0.1),
+    ],
+)
+def test_reaction_respects_known_publication_time(published, asof, expected_start, status, value):
+    evidence = index_source("重大订单公告", "https://example.org/time", published_at=published)
+    rows, _ = event_records([evidence], [], SESSION, CUTOFF)
+    result = price_reactions(rows, {"600001.SH"}, ReactionStorage(), asof)[0]
+    assert result["start_session"] == expected_start and result["status"] == status
+    assert (
+        result["adjusted_close_change"] == pytest.approx(value)
+        if value is not None
+        else (result["adjusted_close_change"] is None)
+    )
+
+
+@pytest.mark.parametrize("asof,expected", [(date(2026, 9, 25), None), (date(2026, 9, 28), 0.1)])
+def test_nontrading_publication_waits_for_a_later_trading_session(asof, expected):
+    evidence = index_source(
+        "重大订单公告", "https://example.org/weekend", published_at="2026-09-26T12:00:00+08:00"
+    )
+    rows, _ = event_records([evidence], [], SESSION, CUTOFF)
+    storage = ReactionStorage(date(2026, 9, 25), date(2026, 9, 28), (date(2026, 9, 26),))
+    result = price_reactions(rows, {"600001.SH"}, storage, asof)[0]
+    assert result["start_session"] == "2026-09-25"
+    assert result["status"] == (
+        "nontrading_day_daily_observation" if expected else "post_event_not_observed"
+    )
+    assert (
+        result["adjusted_close_change"] == pytest.approx(expected)
+        if expected is not None
+        else (result["adjusted_close_change"] is None)
+    )
+
+
+def test_fully_unknown_publication_cannot_use_retrieval_as_price_anchor():
+    rows, _ = event_records(
+        [index_source("重大订单公告", None, event_dates=())], [], SESSION, CUTOFF
+    )
+    result = price_reactions(rows, {"600001.SH"}, ReactionStorage(), SESSION)[0]
+    assert result["status"] == "window_or_prices_unknown"
+    assert result["start_session"] is None and result["adjusted_close_change"] is None

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter, defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pathlib import Path
 from statistics import mean
 
@@ -462,14 +462,12 @@ def historical_limit_context(universe: dict[str, Candidate], sessions: list[date
 def price_reactions(
     events: list[dict], codes: set[str], storage: ParquetStorage, session: date
 ) -> list[dict]:
-    """Date-bounded observable reaction; acquisition time never anchors market reaction."""
-    days = sorted(
-        {
-            x.trade_date
-            for x in storage.load_trading_calendar()
-            if x.exchange == "SSE" and x.is_open and x.trade_date <= session
-        }
-    )
+    """Daily price bounds respect known publication times, never acquisition times."""
+    calendar = {
+        x.trade_date: x.is_open for x in storage.load_trading_calendar() if x.exchange == "SSE"
+    }
+    open_days = sorted(day for day, is_open in calendar.items() if is_open)
+    days = [day for day in open_days if day <= session]
     cache = {}
 
     def close(code: str, day: date) -> float | None:
@@ -479,7 +477,11 @@ def price_reactions(
             cache[day] = {
                 key: value * factors[key]
                 for key, value in bars.items()
-                if key in factors and value > 0 and factors[key] > 0
+                if key in factors
+                and finite(value)
+                and finite(factors[key])
+                and value > 0
+                and factors[key] > 0
             }
         return cache[day].get(code)
 
@@ -488,10 +490,50 @@ def price_reactions(
         if row["instrument_id"] not in codes:
             continue
         source_day = date.fromisoformat(row["source_date"]) if row["source_date"] else None
-        prior = [d for d in days if source_day and d < source_day]
-        anchor = prior[-1] if prior and source_day <= session else None
+        published = (
+            timestamp(row["published_at"]).astimezone(SHANGHAI) if row.get("published_at") else None
+        )
+        phase = "date_only" if source_day else "unknown"
+        first_post_session = None
+        has_post_session = False
+        if published:
+            source_day = published.date()
+            if calendar.get(source_day) is False:
+                phase = "nontrading_day"
+            elif calendar.get(source_day) is None:
+                phase = "known_timestamp_calendar_unknown"
+            else:
+                phase = (
+                    "after_close"
+                    if published.time() >= time(15)
+                    else ("preopen" if published.time() < time(9, 30) else "intraday")
+                )
+            # Daily close is the only available price anchor. For intraday
+            # publication this includes pre-publication prices, explicitly mixed.
+            prior = [d for d in days if datetime.combine(d, time(15), SHANGHAI) <= published]
+            post = [d for d in open_days if datetime.combine(d, time(15), SHANGHAI) > published]
+            first_post_session = post[0] if post else None
+            has_post_session = any(day <= session for day in post)
+            anchor = prior[-1] if prior else None
+        else:
+            prior = [d for d in days if source_day and d < source_day]
+            anchor = prior[-1] if prior and source_day <= session else None
+            has_post_session = anchor is not None
         start = close(row["instrument_id"], anchor) if anchor else None
-        end = close(row["instrument_id"], session) if anchor else None
+        end = close(row["instrument_id"], session) if anchor and has_post_session else None
+        status = (
+            "post_event_not_observed"
+            if published and not has_post_session
+            else (
+                "window_or_prices_unknown"
+                if not start or not end
+                else "intraday_daily_window_mixed"
+                if phase == "intraday"
+                else f"{phase}_daily_observation"
+                if published
+                else "date_bounded_observation_timing_uncertain"
+            )
+        )
         output.append(
             {
                 "event_id": row["record_id"],
@@ -499,13 +541,17 @@ def price_reactions(
                 "start_session": anchor.isoformat() if anchor else None,
                 "end_session": session.isoformat(),
                 "adjusted_close_change": end / start - 1 if start and end else None,
-                "status": "date_bounded_observation_timing_uncertain"
-                if start and end
-                else "window_or_prices_unknown",
+                "status": status,
+                "publication_phase": phase,
+                "first_post_event_session": first_post_session.isoformat()
+                if first_post_session
+                else None,
                 "note": (
-                    "Previous exchange close before source date to as-of close; "
-                    "not causal reaction or evidence of unpriced news. "
-                    "Publication time may be unknown."
+                    "Latest daily close at/before known publication to as-of close; "
+                    "intraday daily windows contain pre-publication prices, not minute reactions. "
+                    "Date-only publication uses previous-date close with uncertain timing. "
+                    "No later trading session means post-event reaction is not observed. "
+                    "Not causal reaction or evidence of unpriced news."
                 ),
             }
         )
