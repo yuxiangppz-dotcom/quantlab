@@ -211,7 +211,7 @@ def read_config(path: Path | None) -> dict:
     ] not in {"low", "high", "max"}:
         raise ValueError("deepseek_reasoning_effort must be low, high or max")
     for name, lower, upper in (
-        ("max_output_tokens", 1000, 32768 if config["provider"] == "deepseek" else 16000),
+        ("max_output_tokens", 1000, 65536 if config["provider"] == "deepseek" else 16000),
         ("max_tool_calls", 1, 10),
         ("lookback_hours", 1, 168),
         ("candidate_limit", 8, 40),

@@ -181,3 +181,12 @@ def test_discovery_cannot_bind_a_source_omitted_from_its_prompt(tmp_path, monkey
     assert report["hypotheses"] == []
     assert report["prompt_evidence_audit"][0]["stage"] == "discovery"
     assert report["prompt_evidence_audit"][0]["body_truncated_count"] > 0
+
+
+def test_deepseek_bounded_long_output_config(tmp_path):
+    config_path = tmp_path / "long-output.json"
+    config_path.write_text('{"provider":"deepseek","max_output_tokens":65536}')
+    assert read_config(config_path)["max_output_tokens"] == 65536
+    config_path.write_text('{"provider":"deepseek","max_output_tokens":65537}')
+    with pytest.raises(ValueError, match="max_output_tokens"):
+        read_config(config_path)
