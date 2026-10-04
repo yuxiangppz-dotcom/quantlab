@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from copy import deepcopy
 from datetime import date
 
 from jsonschema import validate
@@ -109,6 +110,17 @@ possible_update只说明内容变化，不证明实质变化。旧预告、例�
 next_observation_date无已知来源日程时为null，假设节点需明确标记；不要虚构时间。
 重复传播不是独立证据，未展示或省略的材料不能引用。按原文保留风险，不为通过校验删除反证。
 """
+
+
+def investigation_schema(candidates: list[dict]) -> dict:
+    """Bind investigation coverage to this run, independently of final display caps."""
+    schema = deepcopy(INVESTIGATION_SCHEMA)
+    rows = schema["properties"]["opportunities"]
+    rows["minItems"] = rows["maxItems"] = len(candidates)
+    rows["items"]["properties"]["instrument_id"] = enum(
+        [row["instrument_id"] for row in candidates]
+    )
+    return schema
 
 
 def check_coverage(rows: list[dict], candidates: list[dict]) -> None:

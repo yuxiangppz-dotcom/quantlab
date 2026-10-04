@@ -7,6 +7,8 @@
 
 - 首轮真实 run `20261004T231642-0b289a61` incomplete：调查输出 finish_reason=length，累计两次调用 105392 token；未发最终请求、空名单。AKShare 100 条成功、财联社新闻接口失败；原始输出保留。官方模型文档 https://api-docs.deepseek.com/quick_start/pricing/?tab=case-studies 确认模型支持更长输出，程序可配置上限有界放宽至 65536，默认配置不变，仅本轮本地配置调整。新增边界回归，全仓 221 passed（15.16 秒），Ruff/锁/diff 通过；为解决截断再执行一次正常链路，不按名单挑结果。
 
+- 第二轮 `20261004T232155-90b75146` 两次调用均 stop，94551 token，但 investigation 仅8/24，coverage 校验拦截，未进入最终。调查提示去掉最终3/5分级限制，明确 hypotheses最多12 与 opportunities全量24不同，并绑定运行池长度和证券枚举 schema；重复仍由原覆盖校验拒绝。新增真实漏评形状回归，全仓222 passed（14.70秒）、Ruff/锁/diff通过。编辑时换行转义曾引发语法采集失败，已修复并完整复测。第三次仅为故障修复验证；保留原失败，不作成功名单挑选。
+
 ## 2026-10-04 PR fdfb54b 审查修复（工程完成，效果待观察）
 
 - 用户提供 `E:/浏览器下载/Scout_PR192_Review_fdfb54b_20261003.txt`，全文已读。基线、本地和远程 HEAD 均为 `fdfb54b463db4f35d7e8beed4525d37a054a6b42`；起始工作树干净，未发现并发 Scout/agent-loop 写入进程。

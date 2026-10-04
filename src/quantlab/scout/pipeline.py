@@ -61,10 +61,10 @@ from quantlab.scout.opportunity_ai import (
     INSTRUCTION as OPPORTUNITY_INSTRUCTION,
 )
 from quantlab.scout.opportunity_ai import (
-    INVESTIGATION_SCHEMA,
     OPPORTUNITY_SCHEMA,
     check_coverage,
     freeze_comparisons,
+    investigation_schema,
     validate_comparisons,
 )
 from quantlab.scout.portfolio import load_portfolio_review
@@ -1180,13 +1180,17 @@ def run_scout(
                 )
                 if opportunity_mode:
                     investigate_prompt = (
-                        OPPORTUNITY_INSTRUCTION
-                        + "调查阶段须为全部深查股票填写opportunities。\n"
+                        "当前仅为调查阶段，不进行重点/观察选择或最终排名。"
+                        "hypotheses最多12条；该限制不适用于opportunities。"
+                        f"opportunities必须恰有{len(pool)}条，每个candidates证券一次，"
+                        "不能只写拟入选股。全部分析字段简短但完整；证据不足也填未知及缺口。"
+                        "首次采集不等于新事件；旧预告、例行活动不等于新增催化；"
+                        "量价股明确price_only假设；规模和经济关系缺失保持未知。"
                         + investigate_prompt
                     )
                 investigation, raw = client.ask(
                     bounded_prompt(investigate_prompt),
-                    INVESTIGATION_SCHEMA if opportunity_mode else DISCOVERY_SCHEMA,
+                    investigation_schema(pool) if opportunity_mode else DISCOVERY_SCHEMA,
                     search=search_supported,
                 )
                 raw_responses.append(raw)

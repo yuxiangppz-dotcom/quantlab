@@ -607,3 +607,28 @@ def test_opportunity_relative_and_trend_numbers_are_typed_not_generic_tokens():
     assert all(claim_fact_id(c) in facts and check_core_claim(c, facts) is None for c in parsed)
     wrong = extract_core_claims("difference", text.replace("-2%", "2%"), own, [own])[1]
     assert check_core_claim(wrong, facts)[0] == "core_fact_direction_or_value"
+
+
+def test_investigation_run_schema_requires_full_pool():
+    from jsonschema import ValidationError, validate
+
+    from quantlab.scout.opportunity_ai import investigation_schema
+
+    codes = [f"{i:06d}.SZ" for i in range(24)]
+    schema = investigation_schema([{"instrument_id": code} for code in codes])
+    analysis = {
+        "novelty": "unknown", "event_ids": [], "incremental_change": "unknown",
+        "economic_link": "unknown", "exposure": "unknown", "importance": "unknown",
+        "scale_fact_ids": [], "h5_mechanism": "unknown", "next_observation_date": None,
+        "next_node_basis": "unknown", "next_node_is_hypothesis": False,
+    }
+    rows = [{"instrument_id": code, "analysis": analysis} for code in codes]
+    validate({"hypotheses": [], "opportunities": rows}, schema)
+    with pytest.raises(ValidationError):
+        validate({"hypotheses": [], "opportunities": rows[:8]}, schema)
+    with pytest.raises(ValidationError):
+        validate({"hypotheses": [], "opportunities": rows + rows[:1]}, schema)
+    with pytest.raises(ValidationError):
+        validate({"hypotheses": [], "opportunities": rows[:-1] + [
+            {"instrument_id": "999999.SH", "analysis": analysis}
+        ]}, schema)
