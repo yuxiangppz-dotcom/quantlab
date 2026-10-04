@@ -1,17 +1,19 @@
 # Scout 本轮任务状态
 
-## 2026-10-04 PR fdfb54b 审查修复（进行中）
+## 2026-10-04 PR fdfb54b 审查修复（工程完成，效果待观察）
 
 - 用户提供 `E:/浏览器下载/Scout_PR192_Review_fdfb54b_20261003.txt`，全文已读。基线、本地和远程 HEAD 均为 `fdfb54b463db4f35d7e8beed4525d37a054a6b42`；起始工作树干净，未发现并发 Scout/agent-loop 写入进程。
 - 本轮仅修 5 项：占位正文误合并公告、同行新增事实上下文丢失、盘后消息反应窗口、空/部分观察分母消失、最终失败输入归档时序。逐项边界回归、自审、提交推送，再完整 pytest/Ruff/锁/diff 与新提交 CI。
 - 不换模型、不改策略阈值、不扩充接口、不执行真实模型/供应商调用；保留全部旧报告、索引及观察，不写 canonical，不恢复自动优化，不合并草稿 PR #192。
-- 运行/失败复现记录新建于 `/home/administrator/projects/quantlab-pr189/data/scout_live_20260929/review_fixes_20261004`。恢复先看本节、最新 HEAD、工作树状态和该目录；交付拟为 `SCOUT_REVIEW_FIXES_DELIVERY.md`。
+- 运行/失败复现记录新建于 `/home/administrator/projects/quantlab-pr189/data/scout_live_20260929/review_fixes_20261004`。恢复先看本节、最新 HEAD、工作树状态和该目录；交付说明为 `SCOUT_REVIEW_FIXES_DELIVERY.md`。
 - 第 1 项已复现：4 个新回归在基线均失败（`p1-before.log`）。索引按稳定文档 URL 或标题/公开日期标识去重；真实正文转载保留内容去重，同文索引后补正文只作表示增强，不能当新催化。定点与机会回归共 38 passed，Ruff/锁通过；旧索引不改写，后续新记录标记 `index_document_v2`。
 - 第 2 项已复现：完整 `validate_comparisons` 的 5 种合法同行数字均在旧路径 `core_fact_missing`（`p2-before.log`）。类型校验现在保留实际输入中的完整同行、机会记录和事实表；旧自由数字兜底仍限定原字段。5 个正例及错主体/单位/方向/值/缺事实/缺展示事实表负例通过；相关 54 tests passed，Ruff 通过。
 - 第 3 项已复现：已知盘后消息被给予发布前窗口，且全部已知时点降为日期不确定（`p3-before.log`，7 failed/2 passed）。现在盘前/盘中/盘后/非交易日分别记录，15:00 收盘边界及无发布后交易时段不计算反应；盘中日线明确混合窗口，日期级/未知仍保守。相关 58 tests passed，Ruff 通过。
 - 第 4 项已复现：缺日历或空/部分快照令冻结分母消失，重复/外来/改名次或分级等快照未拒绝（`p4-before.log`，9 failed/2 passed）。H5 汇总改为冻结名单左连接观察，一一核对所有证券/期限与冻结身份；缺日历、空/部分、未运行均保留具体缺失原因。相关 69 tests passed，Ruff 通过；旧快照不改、不回退旧赢家。
 - 第 5 项已实际复现：schema/截断/传输三个失败链路均丢最终输入（`p5-before.log`，3 failed），基线失败完整报告已复制到 `before_failed_requests/`。请求前归档 packet/证据/精确 user prompt/schema 及三种哈希，区分已构建、请求尝试、收到失败公开响应和送达未知；失败仍 incomplete、空选择、不冻结。中间回归曾错误直接比较内存 tuple 与 JSON list，改为 JSON 规范化及哈希双核对，相关原测试产物另存 `intermediate_tuple_list_assertion/`。
 - 最终完整检查：220 passed（11.97 秒），Ruff、uv lock、diff 全通过；全仓测试日志 `full-tests.log`。代码范围止于上述 5 项；后续仅交付对照说明、推送/CI 核验。不执行真实调用。
+
+- 五项代码提交均已推送，代码 HEAD `f0692c5d5d394b07a85e070aa6303e65e9029650`；各提交远程 CI SUCCESS，最终远程 220 passed。文档、桌面副本与精确最终版本回执收尾，不再扩展功能；PR 保持草稿，真实效果待观察。
 
 ## 2026-10-03 机会选择升级（工程已交付，效果待观察）
 
