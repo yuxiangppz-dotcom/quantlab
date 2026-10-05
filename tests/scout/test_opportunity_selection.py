@@ -293,7 +293,7 @@ def test_three_stage_integration_freezes_all_deep_and_keeps_small_topn(example):
     assert report["opportunity_freeze"]["input_sha256"] == fingerprint(
         report["selection_input_packet"]
     )
-    html = (run / "report.html").read_text()
+    html = (run / "audit_report.html").read_text()
     assert "合成演示，不是真实预测" in html and "全部深查股比较" in html
 
 

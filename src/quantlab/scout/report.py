@@ -341,6 +341,12 @@ def hold_candidate_pool(pool: list[dict], selection: dict) -> list[dict]:
 
 
 def render_report(report: dict) -> str:
+    from quantlab.scout.concise_report import markdown
+
+    return markdown(report)
+
+
+def render_audit_report(report: dict) -> str:
     from quantlab.scout.opportunity_view import markdown as opportunity_markdown
     status = report["status"]
     title = "【合成演示，不是真实荐股】" if status == "demo" else ""
@@ -623,7 +629,7 @@ def render_report(report: dict) -> str:
 
 
 def write_report(root: Path, report: dict, raw: list[dict]) -> Path:
-    from quantlab.scout.html_report import render_html_report
+    from quantlab.scout.html_report import render_audit_html_report, render_html_report
 
     markdown = render_report(report)
     html = render_html_report(report)
@@ -634,6 +640,9 @@ def write_report(root: Path, report: dict, raw: list[dict]) -> Path:
             json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8"
         )
     (run_dir / "report.md").write_text(markdown, encoding="utf-8")
+    (run_dir / "audit_report.md").write_text(render_audit_report(report), encoding="utf-8")
+    audit_html = render_audit_html_report(report)
+    (run_dir / "audit_report.html").write_text(audit_html, encoding="utf-8")
     html_path = run_dir / "report.html"
     html_path.write_text(html, encoding="utf-8")
     (run_dir / "manifest.json").write_text(
@@ -642,6 +651,7 @@ def write_report(root: Path, report: dict, raw: list[dict]) -> Path:
                 "report_sha256": fingerprint(report),
                 "ai_responses_sha256": fingerprint(raw),
                 "html_sha256": sha256(html_path.read_bytes()).hexdigest(),
+                "audit_html_sha256": sha256(audit_html.encode()).hexdigest(),
             },
             indent=2,
         )

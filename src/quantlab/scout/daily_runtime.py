@@ -8,7 +8,6 @@ import json
 import os
 import secrets
 import subprocess
-import sys
 import threading
 from contextlib import contextmanager
 from datetime import date, datetime
@@ -62,6 +61,37 @@ def verify_release(settings):
         if version(name) != expected:
             raise ValueError("fixed_dependency_changed:" + name)
     return manifest
+
+
+def prediction_settings(settings):
+    """A presentation release may retain an already accepted immutable engine."""
+    verify_release(settings)
+    if not settings.get("prediction_release_root"):
+        return settings
+    root = Path(settings["prediction_release_root"])
+    digest = hashlib.sha256((root / "daily-manifest.json").read_bytes()).hexdigest()
+    if digest != settings["prediction_manifest_sha256"]:
+        raise ValueError("fixed_prediction_manifest_changed")
+    engine = read(root / "daily-settings.json")
+    if engine.get("prediction_release_root"):
+        raise ValueError("nested_prediction_release_not_supported")
+    for key in ("canonical_dir", "output_root", "state_root"):
+        if engine[key] != settings[key]:
+            raise ValueError("prediction_workspace_mismatch:" + key)
+    verify_release(engine)
+    return engine
+
+
+def display_report(state):
+    """Derive the user view from the intact archived report, never regenerate a model."""
+    from quantlab.scout.html_report import render_html_report
+
+    source = Path(state.get("report_json") or Path(state["report_path"]).with_name("report.json"))
+    report = read(source)
+    manifest = read(source.parent / "manifest.json")
+    if fingerprint(report) != manifest["report_sha256"]:
+        raise ValueError("Original report integrity check failed")
+    return render_html_report(report).encode()
 
 
 def precheck(settings, now=None):
@@ -179,7 +209,7 @@ def supervise(settings, state_path):
     with log.open("xb") as stream:
         process = subprocess.Popen(
             [
-                sys.executable,
+                str(Path(settings["release_root"]) / ".venv/bin/python"),
                 "-m",
                 "quantlab.scout.daily_runtime",
                 "--worker",
@@ -249,7 +279,9 @@ poll();setInterval(poll,2000);if(new URLSearchParams(location.search).has('start
 
 
 def serve(settings, port):
-    verify_release(settings)
+    view_manifest = verify_release(settings)
+    view_root = settings["release_root"]
+    settings = prediction_settings(settings)
     state_root = Path(settings["state_root"])
     token = secrets.token_urlsafe(24)
     mutex = threading.Lock()
@@ -259,15 +291,16 @@ def serve(settings, port):
         if current_path and current_path.exists():
             current = read(current_path)
             if current["status"] in {"claimed", "running"}:
-                return current
+                return {**current, "presentation_version": view_manifest["commit"]}
         try:
             key, details = precheck(settings)
             path = state_root / "jobs" / key / "state.json"
-            return (
+            value = (
                 read(path)
                 if path.exists()
                 else {**details, "status": "ready", "message": "检查通过，等待生成"}
             )
+            return {**value, "presentation_version": view_manifest["commit"]}
         except ValueError:
             return {
                 "status": "precheck_failed",
@@ -292,9 +325,13 @@ def serve(settings, port):
             elif path == "/state":
                 self.send(json.dumps(state(), ensure_ascii=False).encode())
             elif path == "/report":
-                report = state().get("report_path")
+                current = state()
+                report = current.get("report_path")
                 if report and Path(report).is_file():
-                    self.send(Path(report).read_bytes(), "text/html; charset=utf-8")
+                    try:
+                        self.send(display_report(current), "text/html; charset=utf-8")
+                    except (ValueError, KeyError, OSError):
+                        self.send(b'{"status":"report_integrity_failed"}', status_code=409)
                 else:
                     self.send(b"{}", status_code=404)
             else:
@@ -324,6 +361,7 @@ def serve(settings, port):
                 "url": f"http://127.0.0.1:{server.server_port}",
                 "pid": os.getpid(),
                 "release": settings["release_root"],
+                "presentation_release": view_root,
             },
         )
         server.serve_forever()

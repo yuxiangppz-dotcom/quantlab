@@ -11,7 +11,8 @@ from quantlab.scout.ai import semantic_numeric_issue, validate_selection
 from quantlab.scout.facts import extract_core_claims, program_facts
 from quantlab.scout.models import SHANGHAI, Candidate, Evidence
 from quantlab.scout.pipeline import build_pool, evidence_packet
-from quantlab.scout.report import present_selection, render_report
+from quantlab.scout.report import present_selection
+from quantlab.scout.report import render_audit_report as render_report
 
 NOW = datetime(2026, 10, 1, 15, tzinfo=SHANGHAI).isoformat()
 OWN = "600001.SH"

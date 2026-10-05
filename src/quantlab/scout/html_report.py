@@ -29,6 +29,12 @@ def official_notices(report: dict, code: str) -> list[dict]:
 
 
 def render_html_report(report: dict, review: dict | None = None) -> str:
+    from quantlab.scout.concise_report import html
+
+    return html(report, review)
+
+
+def render_audit_html_report(report: dict, review: dict | None = None) -> str:
     """Render only archived, already checked facts; never execute model/source text."""
     if review is not None:
         validate_post_run_review(report, review)

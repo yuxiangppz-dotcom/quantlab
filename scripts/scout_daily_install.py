@@ -18,6 +18,11 @@ def main():
     parser.add_argument("--state-dir", type=Path, required=True)
     parser.add_argument("--releases-dir", type=Path, required=True)
     parser.add_argument("--desktop-dir", type=Path, required=True)
+    parser.add_argument(
+        "--prediction-release",
+        type=Path,
+        help="Retain an accepted immutable prediction engine for a presentation-only upgrade",
+    )
     args = parser.parse_args()
     git = ["git"] + ([f"--git-dir={args.git_dir}"] if args.git_dir else [])
     commit = subprocess.check_output(git + ["rev-parse", "HEAD"], text=True).strip()
@@ -41,6 +46,25 @@ def main():
         "output_root": str(args.output_dir),
         "state_root": str(args.state_dir),
     }
+    prediction_commit = commit
+    if args.prediction_release:
+        settings.update(
+            prediction_release_root=str(args.prediction_release),
+            prediction_manifest_sha256=hashlib.sha256(
+                (args.prediction_release / "daily-manifest.json").read_bytes()
+            ).hexdigest(),
+        )
+        from quantlab.scout.daily_runtime import verify_release
+
+        engine_settings = json.loads((args.prediction_release / "daily-settings.json").read_text())
+        prediction_commit = verify_release(engine_settings)["commit"]
+        if engine_settings.get("prediction_release_root") or any(
+            engine_settings[key] != settings[key]
+            for key in ("canonical_dir", "output_root", "state_root")
+        ):
+            raise ValueError(
+                "Prediction engine must use the same isolated workspace without nesting"
+            )
     (release / "daily-settings.json").write_text(json.dumps(settings, ensure_ascii=False, indent=2))
     files = {
         str(p.relative_to(release)): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -83,7 +107,10 @@ $taskUrl = 'http://127.0.0.1:8766'
 $taskReady = $false
 try {{
     $taskState = Invoke-RestMethod "$taskUrl/state" -TimeoutSec 2
-    if ($taskState.version -and $taskState.version -ne '{commit}') {{
+    $taskServerVersion = if ($taskState.presentation_version) {{
+        $taskState.presentation_version
+    }} else {{ $taskState.version }}
+    if ($taskServerVersion -and $taskServerVersion -ne '{commit}') {{
         throw '另一个固定版本正在提供服务；请先关闭旧服务后重新打开。'
     }}
     $taskReady = $true
@@ -116,7 +143,10 @@ Start-Process "$taskUrl/?start=1"
     (args.desktop_dir / "操作说明.md").write_text(
         "# Scout 日常预测\n\n双击 **一键预测.cmd**。\n"
         "入口自动检查交易日和行情，显示进度并打开报告。\n\n"
-        f"固定版本：{commit}。日常运行只用独立发布目录，开发工作树修改不影响该版本。\n\n"
+        f"报告展示固定版本：{commit}。\n"
+        f"预测引擎固定版本：{prediction_commit}。\n"
+        "日常运行只用独立发布目录，开发工作树修改不影响该版本。\n\n"
+        "报告只显示入选股票、选择理由、主要风险及失效条件。完整证据和诊断另存审计文件。\n\n"
         "- 重复点击复用同一本日任务，包括失败记录，不再次付费。\n"
         "- 假日显示下一目标日与行情截至日；这不是当天可交易推荐。\n"
         "- 行情过期会在请求前停下。更新孤立行情副本后重新打开；不写原始数据。\n"

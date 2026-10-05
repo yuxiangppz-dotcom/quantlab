@@ -101,3 +101,32 @@ def test_worker_failure_preserves_status_without_followup(tmp_path, monkeypatch)
     runtime.worker(config, path)
     assert runtime.read(path)["status"] == "failed"
     assert runtime.claim(config)[2] is False
+
+
+def test_presentation_release_keeps_engine_key_and_detects_engine_change(tmp_path, monkeypatch):
+    for name in ("engine", "view"):
+        (tmp_path / name).mkdir()
+    engine = settings(tmp_path / "engine")
+    runtime.atomic(tmp_path / "engine/release/daily-settings.json", engine)
+    view = settings(tmp_path / "view")
+    view.update(
+        prediction_release_root=engine["release_root"],
+        prediction_manifest_sha256=hashlib.sha256(
+            (tmp_path / "engine/release/daily-manifest.json").read_bytes()
+        ).hexdigest(),
+    )
+    for key in ("canonical_dir", "output_root", "state_root"):
+        view[key] = engine[key]
+    manifest_path = tmp_path / "view/release/daily-manifest.json"
+    manifest = runtime.read(manifest_path)
+    manifest["settings_sha256"] = fingerprint(view)
+    runtime.atomic(manifest_path, manifest)
+    assert runtime.prediction_settings(view) == engine
+    ready(monkeypatch)
+    path, _, created = runtime.claim(engine)
+    assert created
+    runtime.update(path, "done", status="completed")
+    assert runtime.claim(runtime.prediction_settings(view))[2] is False
+    (tmp_path / "engine/release/fixed.txt").write_text("changed")
+    with pytest.raises(ValueError, match="release_changed"):
+        runtime.prediction_settings(view)

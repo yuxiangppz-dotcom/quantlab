@@ -369,7 +369,7 @@ def test_offline_supplements_reach_candidate_report_without_canonical_writes(tmp
     assert report["candidate_stages"]["method_version"] == "multi_route_v1"
     assert report["selection"]["selected"] == []
     assert report["disclosure_snapshots"]
-    assert "评论样本" in (run / "report.md").read_text()
+    assert "评论样本" in (run / "audit_report.md").read_text()
     assert before == {str(p): p.read_bytes() for p in canonical.rglob("*.parquet")}
     universe, _ = scan_market(canonical, day)
     assert report["candidate_stages"]["eligible_universe_count"] == len(universe)
@@ -438,7 +438,7 @@ def test_live_mock_reads_new_evidence_and_keeps_calls_bounded(tmp_path, monkeypa
     assert report["selection_validation"]["rejected"][0]["reason"].startswith(
         "AI infers order-book"
     )
-    visible = (tmp_path / "runs" / report["run_id"] / "report.md").read_text()
+    visible = (tmp_path / "runs" / report["run_id"] / "audit_report.md").read_text()
     assert "未列重点" in visible
     assert "一字涨停并封至收盘" not in visible
     assert "实际可买性极低" not in visible

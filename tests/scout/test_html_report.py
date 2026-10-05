@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from quantlab.scout.html_report import render_html_report
+from quantlab.scout.html_report import render_audit_html_report as render_html_report
 from quantlab.scout.models import SHANGHAI, Evidence
 from quantlab.scout.report import execution_observation
 

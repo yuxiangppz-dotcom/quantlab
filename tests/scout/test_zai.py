@@ -158,4 +158,4 @@ def test_glm_configuration_and_mock_live_run(tmp_path, monkeypatch):
     assert report["ai_model"] == "glm-5.3"
     assert len(report["ai_calls"]) == 3
     assert "test-secret" not in (path / "report.json").read_text()
-    assert "zai / glm-5.3" in (path / "report.md").read_text()
+    assert "zai / glm-5.3" in (path / "audit_report.md").read_text()
