@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from copy import deepcopy
+from datetime import date
 from decimal import Decimal
 
 from jsonschema import Draft202012Validator
@@ -371,12 +372,21 @@ def validate_output(output, packet):
             if asserts_unsupported_microstructure(prose):
                 error(code, field, "unsupported_microstructure_assertion")
         node = row["analysis"]["next_observation_date"]
-        if node and not row["analysis"]["next_node_is_hypothesis"]:
+        if node:
+            try:
+                date.fromisoformat(node)
+            except ValueError:
+                error(code, "next_observation_date", "invalid_calendar_date")
             source = " ".join(
-                e["body"] for e in packet["evidence"] if code in e.get("instrument_ids", [])
+                e.get("title", "") + " " + e["body"]
+                for e in packet["evidence"]
+                if code in e.get("instrument_ids", [])
             )
             if node not in source and node.replace("-", "") not in source:
                 error(code, "next_observation_date", "node_not_in_shown_source")
+    if isinstance(output.get("market_view"), str):
+        if re.search(r"\d|\[\[", output["market_view"]):
+            error("all", "market_view", "market_view_qualitative_only")
     return errors
 
 

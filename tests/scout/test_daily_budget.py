@@ -78,3 +78,23 @@ def test_deadline_and_reservation_are_checked_before_send():
     with pytest.raises(DailyBudgetError):
         client.ask("x", {})
     assert fake.calls == []
+
+
+def test_second_adapter_failure_collects_all_schema_errors_without_third_call(tmp_path):
+    class Invalid(Fake):
+        def ask(self, prompt, schema):
+            self.calls.append(prompt)
+            self.failed_response = {
+                "choices": [{"finish_reason": "length", "message": {"content": '{"x": 1}'}}],
+                "usage": {"total_tokens": 20},
+            }
+            raise ValueError("adapter invalid")
+
+    client = DailyResearch(Invalid([]), journal=tmp_path)
+    schema = {"type": "object", "required": ["first", "second"]}
+    with pytest.raises(DailyValidationError) as exc:
+        client.ask("original", schema)
+    assert len(client.calls) == 2
+    assert sum(e["code"] == "schema" for e in exc.value.errors) == 2
+    assert any(e.get("finish_reason") == "length" for e in exc.value.errors)
+    assert (tmp_path / "02-errors.json").exists()
