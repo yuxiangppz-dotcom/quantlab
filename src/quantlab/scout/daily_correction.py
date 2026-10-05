@@ -149,6 +149,7 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
             "core_fact_clause_requires_neutral_label",
             "fund_improvement_requires_cross_time_facts",
             "fund_consistency_requires_structured_claim",
+            "unbound_quantitative_interpretation",
         }:
             suffix = (
                 ["analysis", field]

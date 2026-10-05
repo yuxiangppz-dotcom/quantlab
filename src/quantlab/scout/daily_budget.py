@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from hashlib import sha256
 from types import MappingProxyType
 
 from jsonschema import Draft202012Validator
@@ -86,6 +87,12 @@ class DailyResearch:
             "prompt": prompt,
             "schema": schema,
             "prompt_sha256": fingerprint(prompt),
+            "prompt_text_sha256": sha256(prompt.encode()).hexdigest(),
+            "schema_sha256": fingerprint(schema),
+            "schema_id": schema.get("$id"),
+            "decision_prompt_version": "scout_decision_v2"
+            if "[SCOUT_DECISION_V2]" in prompt
+            else "legacy",
             "reserved_tokens": reservation,
             "delivery_status": "attempted_delivery_unknown",
         }

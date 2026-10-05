@@ -26,6 +26,7 @@ from quantlab.scout.ai import (
     retain_valid_selection,
     search_evidence,
 )
+from quantlab.scout.daily_contract import VERSION as DAILY_VERSION
 from quantlab.scout.disclosures import (
     collect_disclosures,
     disclosure_context,
@@ -1126,7 +1127,13 @@ def run_scout(
             )
             if daily_mode:
                 from quantlab.scout.daily_stages import discovery_contract
+                from quantlab.scout.decision_contract import SHARED
 
+                discovery_prompt = (
+                    SHARED
+                    + "[STAGE_DISCOVERY_V2]仅发现来源线索，不给最终等级。\n"
+                    + discovery_prompt
+                )
                 discovery, raw = client.ask(bounded_prompt(discovery_prompt), discovery_contract())
             else:
                 discovery, raw = client.ask(
@@ -1740,7 +1747,7 @@ def run_scout(
         "config": config,
         "config_sha256": fingerprint(config),
         "input_fingerprint": input_fingerprint,
-        "prompt_version": "daily_facts_v6"
+        "prompt_version": DAILY_VERSION
         if daily_mode
         else OPPORTUNITY_VERSION
         if opportunity_mode

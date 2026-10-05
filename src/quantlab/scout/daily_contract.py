@@ -21,11 +21,22 @@ from quantlab.scout.daily_semantics import (
 from quantlab.scout.daily_semantics import (
     INSTRUCTION as SEMANTIC_INSTRUCTION,
 )
+from quantlab.scout.decision_contract import (
+    RULE_SCHEMA,
+    RULES,
+    SCHEMA_VERSION,
+    SELECTION,
+    SHARED,
+    focus_errors,
+    legacy_errors,
+    rule_errors,
+    rule_text,
+)
 from quantlab.scout.facts import program_facts
 from quantlab.scout.models import fingerprint
 from quantlab.scout.opportunity_ai import OPPORTUNITY_SCHEMA
 
-VERSION = "daily_facts_v7_semantics"
+VERSION = "daily_facts_v8_decision_v2"
 FIELDS = ("thesis", "risk", "invalidation", "difference", "independent_basis", "unknowns")
 ANALYSIS_FIELDS = (
     "incremental_change",
@@ -58,7 +69,7 @@ primary_type=insufficient_evidence时rank=null且final_status=unselected；其�
 next_observation_date只有实际来源日程才填，否则null。
 只输出符合所给schema的数据JSON，不要输出schema定义或多余的type/properties键。
 """
-INSTRUCTION += SEMANTIC_INSTRUCTION
+INSTRUCTION = SHARED + INSTRUCTION + SEMANTIC_INSTRUCTION + SELECTION
 
 
 def compact(value):
@@ -219,6 +230,8 @@ def research_packet(packet):
                     note[destination].append(value)
     return {
         "version": VERSION,
+        "schema_version": SCHEMA_VERSION,
+        "research_rules": RULES,
         "timing": packet["timing"],
         "market": market,
         "candidates": candidates,
@@ -288,6 +301,12 @@ def referenced_facts(row):
             row.get("fact_ids", [])
             + row["analysis"]["scale_fact_ids"]
             + [ref for claim in row.get("semantic_claims", []) for ref in claim["fact_ids"]]
+            + (
+                [row["invalidation_rule"]["reference_id"]]
+                if row.get("invalidation_rule")
+                and row["invalidation_rule"]["reference_id"].startswith("fact:")
+                else []
+            )
             + [ref for text in texts for ref in REF.findall(text)]
         )
     )
@@ -295,11 +314,14 @@ def referenced_facts(row):
 
 def selection_schema(candidates, packet=None):
     schema = deepcopy(OPPORTUNITY_SCHEMA)
+    schema["$id"] = "urn:quantlab:" + SCHEMA_VERSION + ":selection"
     schema["properties"]["market_view"] = {"type": "string", "minLength": 1, "maxLength": 400}
     rows = schema["properties"]["comparisons"]
     rows.update(minItems=len(candidates), maxItems=len(candidates))
     props = rows["items"]["properties"]
     props["semantic_claims"] = deepcopy(CLAIM_SCHEMA)
+    props["invalidation_rule"] = deepcopy(RULE_SCHEMA)
+    rows["items"]["required"] += ["semantic_claims", "invalidation_rule"]
     props["instrument_id"] = {
         "type": "string",
         "enum": [row["instrument_id"] for row in candidates],
@@ -445,6 +467,14 @@ def validate_output(output, packet):
             if ref not in facts or facts[ref]["subject_id"] != code:
                 error(code, "scale_fact_ids", "scale_requires_declared_own_fact:" + ref)
         own_events = {e["record_id"]: e for e in candidates[code]["events"]}
+        rule = row.get("invalidation_rule")
+        if Draft202012Validator(RULE_SCHEMA).is_valid(rule):
+            for issue in rule_errors(rule, code, row["primary_type"], facts, own_events):
+                error(code, "invalidation_rule", issue)
+        for field, issue in focus_errors(row, facts, own_events):
+            error(code, field, issue)
+        for field, issue in legacy_errors(row, candidates[code], packet["evidence"]):
+            error(code, field, issue)
         for event_id in row["analysis"]["event_ids"]:
             if event_id not in own_events:
                 error(code, "event_ids", "event_not_shown_for_subject:" + event_id)
@@ -619,6 +649,7 @@ def render_output(output, packet):
         row["semantic_summary"] = [
             render_claim(claim, facts, format_fact) for claim in row.get("semantic_claims", [])
         ]
+        row["invalidation_observation"] = rule_text(row.get("invalidation_rule"))
     result["render_version"] = VERSION
     result["raw_output_sha256"] = fingerprint(output)
     return result

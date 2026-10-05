@@ -21,7 +21,7 @@ def test_daily_pipeline_three_calls_exact_input_facts_and_immutable_reports(tmp_
             result = {"hypotheses": []}
         else:
             packet = (
-                json.loads(prompt.split("\n", 1)[-1])
+                json.loads(prompt[prompt.index('{"version"') :])
                 if len(prompts) == 2
                 else json.loads(prompt[prompt.index('{"version"') :])
             )

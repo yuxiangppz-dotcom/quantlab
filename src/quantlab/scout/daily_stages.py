@@ -12,11 +12,15 @@ from quantlab.scout.daily_contract import (
     research_packet,
     unpack_facts,
 )
+from quantlab.scout.daily_semantics import INSTRUCTION as SEMANTIC_INSTRUCTION
+from quantlab.scout.daily_semantics import prose_errors
+from quantlab.scout.decision_contract import INVESTIGATION, SCHEMA_VERSION, SHARED
 from quantlab.scout.opportunity_ai import investigation_schema
 
 
 def discovery_contract():
     schema = deepcopy(DISCOVERY_SCHEMA)
+    schema["$id"] = "urn:quantlab:" + SCHEMA_VERSION + ":discovery"
     rows = schema["properties"]["hypotheses"]
     rows["maxItems"] = 12
     props = rows["items"]["properties"]
@@ -53,6 +57,7 @@ def packet_for_pool(pool, evidence, market, background, coverage, timing, hypoth
 
 def investigation_contract(pool, packet=None):
     schema = deepcopy(investigation_schema(pool))
+    schema["$id"] = "urn:quantlab:" + SCHEMA_VERSION + ":investigation"
     hypotheses = schema["properties"]["hypotheses"]
     hypotheses["maxItems"] = 12
     # Fresh dicts avoid changing aliased STRING objects in the old schema.
@@ -156,6 +161,8 @@ def investigation_errors(output, packet, schema):
                 )
         for key, value in row["analysis"].items():
             if isinstance(value, str):
+                for issue in prose_errors(value, facts, (code,)):
+                    errors.append({"path": [code, key], "code": issue, "actual": value})
                 for ref in REF.findall(value):
                     if ref not in facts or facts[ref]["subject_id"] not in allowed:
                         errors.append({"path": [code, key], "code": "unknown_fact:" + ref})
@@ -172,7 +179,10 @@ def investigation_errors(output, packet, schema):
 
 def investigation_prompt(packet):
     return (
-        "你负责判断，程序负责数字格式；量化值仅用[[fact_id]]引用统一facts表，不能自行写数字。"
+        SHARED
+        + INVESTIGATION
+        + SEMANTIC_INSTRUCTION
+        + "你负责判断，程序负责数字格式；量化值仅用[[fact_id]]引用统一facts表，不能自行写数字。"
         "当前仅调查，不输出最终排名或分级。保留反证和来源缺口；首次采集不等于市场新消息，标题不是正文。"
         "event_ids只填本股events的record_id（event-开头），绝不能填ev-来源ID；"
         "若本股events为空，event_ids必须[]；不得自行生成或猜测ID。"
