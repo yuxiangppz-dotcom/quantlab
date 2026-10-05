@@ -1,4 +1,11 @@
 # Scout 本轮任务状态
+## 2026-10-05 免费云端接入（进行中）
+
+- 用户已明确同意私有GitHub Actions＋Cloudflare＋Server酱免费基础设施方案，并已登录Cloudflare。起点 b0c9cdde0b8bcc78d402789601b48eac9c3ef5f0；工作树干净，无并发写入者，只有旧本机只读服务。不购买云资源。
+- 继续沿用已验收9fe617e3预测引擎、固定配置/schema/提示词及预算，仅新增交付适配；源仓库公开，运行仓库须私有。免费Workers仅承载认证、简洁报告、持久协调与有限归档，Python研究运行在GitHub标准Linux runner。
+- 设计采用SQLite Durable Object持久单日领取及独占运行，不依赖GitHub缓存去重；内容哈希分块归档与存储上限；未知中断不自动再调用模型；先存报告再一次微信通知。Cloudflare Access校验主体/签名/受众，未配置拒绝报告访问。
+- 已创建并核验本人私有运行仓库 quantlab-scout-runtime（尚未上传工作流或密钥）；用户本人已创建单账户、10/12到期的受限部署令牌，存本机0600文件，不输出或提交。Workers API认证成功；Access API返回403/9999，明确原因是新账号尚未Enable Access，正在dashboard完成免费开通入口。调度仍关闭。
+
 ## 2026-10-05 云端接入配置（微信实收通过，服务器待提供）
 
 - 用户新直接委托“帮我配置云发送微信，需要我操作再叫我”；起点79d5f47effdc8c6ed2cb82d9560616f2c4c38ddf。工作树干净，无并发开发者；仅旧本机展示与本轮只读手机预览服务。
@@ -155,3 +162,5 @@
 - 本轮最终离线派生为 `final_fixes_revalidations/20261001T230128-40951441`：源及派生报告/AI 响应双哈希通过，记录实际验证器 HEAD 与四文件 SHA；5 观察保持，2 原始重点因 `fd_amount` 未知单位继续剔除；旧模型无 `quant_claims`，6 个合写/未解析核心片段列为未结构化核验。状态 `posthoc_engineering_audit`、`primary_eligible=false`，原 20 条前瞻不改变。此前 `20261001T225451-8666a349` 曾误填不存在的验证器提交号，来源声明无效、只保留故障记录，不用于结论；后续中间派生也保留未覆盖。
 - 五股实证审计在 `final_fixes_audit/five_stock_evidence_audit.md`：9/30 前日收于已知涨停价 4/5，未知 0，五只均非一价；输入时点和个股风险逐条列出。新可上传包 `final_fixes_audit/Scout_Final_Fixes_Audit_20261001.zip`，SHA-256 `570fb07f8bbc7ea28c88de469ba617ddb4cf02839dd9463e5519fc89d79d6866`，已复制至 `E:/浏览器下载/Scout_Final_Fixes_Audit_20261001.zip` 并核验。包内 13 文件，密钥模式扫描 0 命中；未自动外发。
 - 工程交付文件 `SCOUT_FINAL_FIXES_DELIVERY.md`。收尾文档提交及最终 HEAD 以 PR #192 最新头读取；本轮建议冻结，待 10/8 及后续前瞻成熟后再看结果。未调用供应商或模型、未购买权限、未下单、未写 canonical、未合并 PR；收益和胜率仍待观察。
+
+- 当前验证：全仓287 tests passed（16.24秒，后增恢复字节上限后复查中）；Node 7 tests passed，包括实际workerd SQLite重启、真实RSA JWT、未知通知不重发；Wrangler dry-run通过。Miniflare5初版旧构造/自动模块/持久路径不兼容导致3次失败，已按已安装官方类型改显式模块、稳定worker名和resourcePersistencePath。真实已保存7候选手机HTML经workerd导入/重启字节核对与匿名403通过，记录 C:/Users/Administrator/.codex/tmp/scout-free-real-replay-20261005-v1/replay-proof.json；没有新增模型、数据或微信调用。

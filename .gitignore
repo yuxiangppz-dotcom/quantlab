@@ -34,3 +34,5 @@ htmlcov/
 cloud.env
 web-secrets.env
 /deploy/scout_cloud/data/
+node_modules/
+.wrangler/

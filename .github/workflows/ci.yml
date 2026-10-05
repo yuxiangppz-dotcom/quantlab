@@ -45,6 +45,18 @@ jobs:
       - name: Ruff
         run: uv run ruff check .
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Free cloud auth, durable storage and deployment dry-run
+        working-directory: deploy/scout_free
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npm run build
+
       - name: Cloud deployment image smoke (no provider or model calls)
         shell: bash
         run: |
