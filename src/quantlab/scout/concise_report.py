@@ -11,6 +11,16 @@ from quantlab.scout.review import validate_post_run_review
 VIEW_VERSION = "research_cards_v2"
 
 
+def information_cutoff(report):
+    timing = report.get("timing") or {}
+    return (
+        timing.get("information_cutoff")
+        or timing.get("information_cutoff_at")
+        or report.get("selection_input_packet", {}).get("timing", {}).get("information_cutoff")
+        or "未归档"
+    )
+
+
 def source_gap_note(report):
     gaps = sorted(
         {
@@ -146,7 +156,7 @@ def markdown(report):
         f"目标交易日：{safe(timing.get('target_session') or '未知')} · "
         f"行情截至：{safe(report['market']['session'])}",
         f"生成时间：{safe(report['finished_at'])}",
-        f"信息截点：{safe(timing.get('information_cutoff') or timing.get('information_cutoff_at') or report.get('selection_input_packet', {}).get('timing', {}).get('information_cutoff') or '未归档')}",
+        f"信息截点：{safe(information_cutoff(report))}",
         safe(source_gap_note(report)),
         "",
         "研究候选，效果待前瞻观察。",
@@ -220,7 +230,7 @@ def html(report, review=None):
         f"<p>目标交易日 {h(timing.get('target_session') or '未知')} · "
         f"行情截至 {h(report['market']['session'])}</p>",
         f"<p>生成时间 {h(report['finished_at'])}</p>"
-        f"<p>信息截点 {h(timing.get('information_cutoff') or timing.get('information_cutoff_at') or '未归档')}</p>"
+        f"<p>信息截点 {h(information_cutoff(report))}</p>"
         f"<p>{h(source_gap_note(report))}</p><p>研究候选，效果待前瞻观察。</p></header>",
     ]
     if report.get("synthetic") or report["status"] == "demo":
