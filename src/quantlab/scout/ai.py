@@ -542,6 +542,8 @@ class DeepSeekResearch:
         model: str = "deepseek-flash",
         max_output_tokens: int = 16000,
         reasoning_effort: str = "high",
+        call_limit: int = 3,
+        request_timeout: int = 120,
     ):
         self.key = os.environ.get("DEEPSEEK_API_KEY", "")
         if not self.key:
@@ -553,13 +555,15 @@ class DeepSeekResearch:
         self.model = model
         self.max_output_tokens = max_output_tokens
         self.reasoning_effort = reasoning_effort
+        self.call_limit = call_limit
+        self.request_timeout = request_timeout
         self.calls: list[dict] = []
 
     def ask(self, prompt: str, schema: dict, search: bool = False) -> tuple[dict, dict]:
         self.failed_response = None
         if search:
             raise ValueError("DeepSeek API does not provide Scout web search")
-        if len(self.calls) >= 3:
+        if len(self.calls) >= self.call_limit:
             raise ValueError("Three-call run budget exhausted")
         instructions = (
             SYSTEM
@@ -587,7 +591,7 @@ class DeepSeekResearch:
         )
         self.calls.append({"search": False, "status": "started", "model": self.model})
         try:
-            with urllib.request.urlopen(request, timeout=120) as response:
+            with urllib.request.urlopen(request, timeout=self.request_timeout) as response:
                 raw_bytes = response.read(5_000_001)
         except urllib.error.HTTPError as exc:
             self.calls[-1]["status"] = f"http_{exc.code}"

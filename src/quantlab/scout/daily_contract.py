@@ -131,6 +131,8 @@ def research_packet(packet):
                         "publication_precision",
                         "relation",
                         "nominal_scale",
+                        "previous_record_id",
+                        "previous_content_excerpt",
                     )
                     if k in event
                 }
@@ -148,6 +150,10 @@ def research_packet(packet):
                 "omitted_event_ids": record.get("omitted_event_ids", []),
                 "source_gaps": (row.get("source_summary") or {}).get("gaps", []),
                 "trading_status": (row.get("source_summary") or {}).get("trading_status"),
+                "source_summary": {
+                    k: (row.get("source_summary") or {}).get(k)
+                    for k in ("themes", "trading_status")
+                },
             }
         )
     # Do not concatenate path-bearing per-query diagnostics. Preserve every status/count.
@@ -299,18 +305,47 @@ def validate_output(output, packet):
         for ref in row["fact_ids"]:
             if ref not in facts or facts[ref]["subject_id"] not in allowed:
                 error(code, "fact_ids", "unknown_or_wrong_subject_fact:" + ref)
+        for ref in row["analysis"]["scale_fact_ids"]:
+            if ref not in facts or facts[ref]["subject_id"] != code or ref not in row["fact_ids"]:
+                error(code, "scale_fact_ids", "scale_requires_declared_own_fact:" + ref)
         own_events = {e["record_id"]: e for e in candidates[code]["events"]}
         for event_id in row["analysis"]["event_ids"]:
             if event_id not in own_events:
                 error(code, "event_ids", "event_not_shown_for_subject:" + event_id)
         if row["primary_type"] == "event_update" and not row["analysis"]["event_ids"]:
             error(code, "event_ids", "event_identity_required")
+        analysis = row["analysis"]
+        selected_events = [own_events[e] for e in analysis["event_ids"] if e in own_events]
+        if row["primary_type"] == "event_update" and analysis["novelty"] in {
+            "routine_schedule",
+            "long_term_background",
+            "repeated_content",
+            "price_only",
+        }:
+            error(code, "novelty", "event_requires_increment")
+        if analysis["novelty"] in {"new_event", "material_update"} and (
+            not selected_events
+            or all(
+                e.get("novelty") in {"routine_schedule", "long_term_background", "repeated_content"}
+                for e in selected_events
+            )
+        ):
+            error(code, "novelty", "old_or_routine_cannot_be_new")
+        if analysis["novelty"] == "material_update" and not any(
+            e.get("previous_record_id") for e in selected_events
+        ):
+            error(code, "novelty", "update_without_prior")
         if row["primary_type"] == "event_update" and row["final_status"] == "focus":
             selected_events = [
                 own_events[e] for e in row["analysis"]["event_ids"] if e in own_events
             ]
             if not any(not e.get("title_only", True) for e in selected_events):
                 error(code, "event_ids", "focus_event_requires_shown_body")
+            if (
+                analysis["novelty"] not in {"new_event", "material_update"}
+                or analysis["exposure"] == "unknown"
+            ):
+                error(code, "novelty", "focus_event_requires_increment_and_exposure")
         evidence = {e["evidence_id"]: e for e in packet["evidence"]}
         for ref in row["evidence_ids"]:
             if ref == f"market:{code}":
