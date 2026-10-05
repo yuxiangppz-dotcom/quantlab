@@ -2,11 +2,15 @@
 
 import argparse
 import json
+from copy import deepcopy
 from pathlib import Path
 
 from quantlab.scout.daily_budget import DailyResearch
 from quantlab.scout.daily_contract import (
+    ANALYSIS_FIELDS,
+    FIELDS,
     INSTRUCTION,
+    REF,
     VERSION,
     compact,
     render_output,
@@ -14,6 +18,7 @@ from quantlab.scout.daily_contract import (
     selection_schema,
     validate_output,
 )
+from quantlab.scout.daily_correction import get_at, patch_plan
 from quantlab.scout.models import fingerprint
 
 
@@ -96,6 +101,37 @@ def main():
     )
     own["fact_ids"] = [ref]
     own["thesis"] = "仅演练程序格式：[[" + ref + "]]"
+    schema = selection_schema(packet["candidates"])
+    plan = patch_plan(raw_output, errors, schema)
+    if plan:
+        fixture = {"patches": []}
+        for name, target in sorted(plan["targets"].items()):
+            item = {"path": name, "op": target["op"]}
+            path = target["path"]
+            if target["op"] == "replace":
+                row = raw_output["comparisons"][path[1]]
+                if path[-1] == "fact_ids":
+                    texts = [row[f] for f in FIELDS] + [row["analysis"][f] for f in ANALYSIS_FIELDS]
+                    texts += list(row["trade_conditions"].values())
+                    item["value"] = list(
+                        dict.fromkeys(row["fact_ids"] + [r for t in texts for r in REF.findall(t)])
+                    )
+                elif path[-1] == "comparator_id":
+                    issue = next(
+                        e
+                        for e in errors
+                        if e.get("path") == [row["instrument_id"], "comparator_id"]
+                    )
+                    item["value"] = issue["allowed_comparator_ids"][0]
+                else:
+                    refs = REF.findall(get_at(raw_output, path))
+                    item["value"] = (
+                        "；".join("[[" + ref + "]]" for ref in refs)
+                        if refs
+                        else "仅离线定向修正演练；原判断和反证完整另存，不是预测"
+                    )
+                assert get_at(raw_output, path) is not None or path[-1] == "comparator_id"
+            fixture["patches"].append(item)
 
     class Replay:
         model = "offline-real-sample-fixture"
@@ -124,12 +160,24 @@ def main():
         (args.output / "original-response.json").write_bytes(args.response.read_bytes())
     research = DailyResearch(Replay(), journal=args.output / "requests")
     prompt = INSTRUCTION + compact(packet)
-    schema = selection_schema(packet["candidates"])
     before_study = {**packet, "investigation_opportunities": []}
     precheck = research.check_input(
         INSTRUCTION + compact(before_study), schema, extra_chars=45000, extra_bytes=100000
     )
     result, _ = research.ask(prompt, schema, validator=lambda v: validate_output(v, packet))
+    unpatched_fields_preserved = None
+    if plan:
+        masked_before, masked_after = deepcopy(raw_output), deepcopy(result)
+        for target in plan["targets"].values():
+            path = target["path"]
+            if target["op"] == "remove":
+                del get_at(masked_before, path[:-1])[path[-1]]
+                assert path[-1] not in get_at(masked_after, path[:-1])
+            else:
+                get_at(masked_before, path[:-1])[path[-1]] = "authorized-field-mask"
+                get_at(masked_after, path[:-1])[path[-1]] = "authorized-field-mask"
+        assert masked_before == masked_after
+        unpatched_fields_preserved = True
     rendered = render_output(result, packet)
     originals = {e["evidence_id"]: e["body"] for e in source["selection_input_packet"]["evidence"]}
     assert all(originals[e["evidence_id"]] == e["body"] for e in packet["evidence"])
@@ -150,6 +198,7 @@ def main():
         "new_prompt_bytes": len(prompt.encode()),
         "pre_investigation_reserved_bound": precheck,
         "source_bodies_unchanged": True,
+        "unpatched_fields_preserved": unpatched_fields_preserved,
         "legacy_contract_errors": errors,
         "replay_budget": research.summary(),
         "fixture_validation": "passed",

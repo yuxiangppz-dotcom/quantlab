@@ -15,7 +15,7 @@ from quantlab.scout.facts import program_facts
 from quantlab.scout.models import fingerprint
 from quantlab.scout.opportunity_ai import OPPORTUNITY_SCHEMA
 
-VERSION = "daily_facts_v3"
+VERSION = "daily_facts_v4"
 FIELDS = ("thesis", "risk", "invalidation", "difference", "independent_basis", "unknowns")
 ANALYSIS_FIELDS = (
     "incremental_change",
@@ -43,7 +43,8 @@ fact_ids列出实际用于判断的事实。事实卡含主体、期间、值和
 例行日程、重复内容、长期背景或单纯价格异动不能作为event_update的增量事件。
 只引用本股、指定比较对象及其行业的事实和来源。未知交易条件写“未知：…”；
 没有盘口与逐笔数据，不推断次日可买性、封单强弱或成交保障。
-next_observation_date只有实际来源日程才填，否则null。只输出schema JSON。
+next_observation_date只有实际来源日程才填，否则null。
+只输出符合所给schema的数据JSON，不要输出schema定义或多余的type/properties键。
 """
 
 
@@ -458,6 +459,7 @@ def semantic_shape(schema):
             "uniqueItems",
             "minimum",
             "maximum",
+            "additionalProperties",
         }
     }
 
@@ -465,7 +467,7 @@ def semantic_shape(schema):
 def daily_microstructure_assertion(text, field):
     # Typed unknown fields list missing dimensions, rather than claiming their values.
     # Keep an explicit positive-assertion guard even under an "unknown" heading.
-    if field in {"unknowns", "trade_unknown"} and text.lstrip().startswith("未知"):
+    if field in {"unknowns", "trade_unknown"}:
         return bool(
             re.search(
                 r"封单(?:较|很|特别)?强(?!弱)|(?:可以|能够|保证|必然|容易).{0,4}(?:成交|买到)"

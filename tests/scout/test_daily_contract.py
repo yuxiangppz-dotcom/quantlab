@@ -1,5 +1,8 @@
 from copy import deepcopy
 
+import pytest
+
+from quantlab.scout.daily_budget import DailyResearch, DailyValidationError
 from quantlab.scout.daily_contract import (
     compact,
     format_fact,
@@ -9,6 +12,7 @@ from quantlab.scout.daily_contract import (
     unpack_facts,
     validate_output,
 )
+from quantlab.scout.daily_correction import apply_patch_output, patch_plan
 
 
 def inputs():
@@ -162,6 +166,8 @@ def test_real_unknown_lists_and_fixed_horizon_are_not_factual_assertions():
     row["trade_conditions"]["unknown"] = row["unknowns"]
     row["analysis"]["h5_mechanism"] = "等待H5趋势验证"
     assert validate_output(result, packet) == []
+    row["unknowns"] = "无封单、承接与可成交性数据"
+    assert validate_output(result, packet) == []
     row["unknowns"] = "未知：封单很强，可以成交"
     assert any(
         e["code"] == "unsupported_microstructure_assertion" for e in validate_output(result, packet)
@@ -216,3 +222,107 @@ def test_unknown_financial_units_are_not_formatted_as_money():
             "metric": "profit_dedt",
         }
     )
+
+
+def test_directed_patch_preserves_valid_decisions_and_counterevidence(tmp_path):
+    packet, previous = inputs(), output()
+    previous["comparisons"][0]["risk"] = "资金净流出，需留意资金反证"
+    before = deepcopy(previous)
+    patch = {
+        "patches": [
+            {
+                "path": "/comparisons/0/risk",
+                "op": "replace",
+                "value": "资金反证仍待核验，不忽略风险",
+            }
+        ]
+    }
+
+    class Replay:
+        model = "offline-fixture"
+
+        def __init__(self):
+            self.calls = []
+
+        def ask(self, prompt, schema):
+            self.calls.append(prompt)
+            value = previous if len(self.calls) == 1 else patch
+            return value, {"usage": {"total_tokens": 0}}
+
+    client = DailyResearch(Replay(), journal=tmp_path)
+    result, _ = client.ask(
+        "fixed real-input shape",
+        selection_schema(packet["candidates"]),
+        validator=lambda value: validate_output(value, packet),
+    )
+    expected = deepcopy(before)
+    expected["comparisons"][0]["risk"] = patch["patches"][0]["value"]
+    assert result == expected and previous == before
+    assert client.repairs == 1 and len(client.calls) == 2
+    assert client.summary()["correction"]["mode"] == "single_directed_model_patch"
+    assert (tmp_path / "02-assembled-output.json").is_file()
+
+
+def test_patch_cannot_change_unreported_selection_or_duplicate_path():
+    packet, previous = inputs(), output()
+    previous["comparisons"][0]["risk"] = "资金净流出"
+    before = deepcopy(previous)
+    plan = patch_plan(
+        previous, validate_output(previous, packet), selection_schema(packet["candidates"])
+    )
+    assert plan is not None
+    malicious = {
+        "patches": [{"path": "/comparisons/0/final_status", "op": "replace", "value": "unselected"}]
+    }
+    result, errors = apply_patch_output(previous, malicious, plan)
+    assert result is None and errors and previous == before
+    duplicate = {
+        "patches": [
+            {"path": "/comparisons/0/risk", "op": "replace", "value": "反证待核验"},
+            {"path": "/comparisons/0/risk", "op": "replace", "value": "反证仍未知"},
+        ]
+    }
+    result, errors = apply_patch_output(previous, duplicate, plan)
+    assert result is None and errors[0]["code"] == "duplicate_patch_path"
+
+
+def test_patch_cannot_delete_referenced_counterfact_to_pass_validation():
+    packet, previous = inputs(), output()
+    ref = previous["comparisons"][0]["fact_ids"][0]
+    previous["comparisons"][0]["risk"] = "净流出风险；[[" + ref + "]]"
+    plan = patch_plan(
+        previous, validate_output(previous, packet), selection_schema(packet["candidates"])
+    )
+    assert plan is not None
+    removed = {"patches": [{"path": "/comparisons/0/risk", "op": "replace", "value": "反证未知"}]}
+    result, errors = apply_patch_output(previous, removed, plan)
+    assert result is None and errors
+    removed = {"patches": [{"path": "/comparisons/0/fact_ids", "op": "replace", "value": []}]}
+    result, errors = apply_patch_output(previous, removed, plan)
+    assert result is None and errors
+
+
+def test_invalid_patch_ends_the_only_repair_without_full_regeneration():
+    packet, previous = inputs(), output()
+    previous["comparisons"][0]["risk"] = "资金净流出"
+
+    class Invalid:
+        model = "offline-fixture"
+
+        def __init__(self):
+            self.calls = []
+
+        def ask(self, prompt, schema):
+            self.calls.append(prompt)
+            return (previous if len(self.calls) == 1 else {"patches": []}), {
+                "usage": {"total_tokens": 0}
+            }
+
+    client = DailyResearch(Invalid())
+    with pytest.raises(DailyValidationError):
+        client.ask(
+            "fixed",
+            selection_schema(packet["candidates"]),
+            validator=lambda v: validate_output(v, packet),
+        )
+    assert len(client.calls) == 2 and client.repairs == 1

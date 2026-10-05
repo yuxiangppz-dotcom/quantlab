@@ -10,6 +10,7 @@ from jsonschema import Draft202012Validator
 
 from quantlab.scout.ai import SYSTEM
 from quantlab.scout.daily_contract import compact
+from quantlab.scout.daily_correction import apply_patch_output, patch_plan
 from quantlab.scout.models import fingerprint
 
 POLICY = {
@@ -48,6 +49,7 @@ class DailyResearch:
         self.failed_response = None
         self.last_errors = []
         self.stage = 0
+        self.correction = None
 
     @property
     def calls(self):
@@ -209,7 +211,41 @@ class DailyResearch:
                 }
             )
         )
-        result, raw, errors = self._attempt(correction, schema, validator)
+        plan = patch_plan(previous, errors, schema)
+        if plan is not None and validator is not None:
+            correction += (
+                "\n本次只输出patches补丁JSON，不输出comparisons或完整报告。"
+                "只能修改授权path；索引与证券对应原回复，不能重排数组。"
+                "未授权字段由程序逐字保留；补丁合并后仍校验完整报告。"
+                "日期与资金方向只用已有事实/事件卡展示，不在修改段落里自行写数字。\n"
+                + compact({"authorized_fields": plan["context"]})
+            )
+
+            def patch_validation(value):
+                assembled, patch_errors = apply_patch_output(previous, value, plan)
+                return patch_errors or validator(assembled)
+
+            patch, raw, errors = self._attempt(correction, plan["schema"], patch_validation)
+            result, patch_errors = apply_patch_output(previous, patch, plan)
+            self.correction = {
+                "mode": "single_directed_model_patch",
+                "stage": self.stage,
+                "previous_output_sha256": fingerprint(previous),
+                "patch_sha256": fingerprint(patch),
+                "assembled_output_sha256": fingerprint(result) if result is not None else None,
+                "authorized_paths": sorted(plan["targets"]),
+                "changed_paths": [p["path"] for p in patch.get("patches", [])]
+                if not patch_errors
+                else [],
+            }
+            self._save(
+                len(self.requests),
+                "assembled-output",
+                {"provenance": self.correction, "output": result},
+            )
+        else:
+            result, raw, errors = self._attempt(correction, schema, validator)
+            self.correction = {"mode": "single_full_correction", "stage": self.stage}
         if errors:
             raise DailyValidationError(errors)
         self.failed_response = None
@@ -223,4 +259,5 @@ class DailyResearch:
             "charged_or_reserved_tokens": self.spent,
             "errors": self.last_errors,
             "request_hashes": [r["prompt_sha256"] for r in self.requests],
+            "correction": self.correction,
         }

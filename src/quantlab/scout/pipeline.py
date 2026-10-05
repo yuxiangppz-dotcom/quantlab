@@ -1564,6 +1564,14 @@ def run_scout(
                         "validated_before_presentation": True,
                         "validator_version": VERSION,
                         "raw_output_sha256": fingerprint(selection),
+                        "selection_origin": "single_directed_model_patch"
+                        if client.correction
+                        and client.correction.get("stage") == 3
+                        and client.correction.get("mode") == "single_directed_model_patch"
+                        else "single_model_response",
+                        "model_patch_provenance": client.correction
+                        if client.correction and client.correction.get("stage") == 3
+                        else None,
                     }
                 else:
                     if opportunity_mode:
@@ -1722,7 +1730,7 @@ def run_scout(
         "config": config,
         "config_sha256": fingerprint(config),
         "input_fingerprint": input_fingerprint,
-        "prompt_version": "daily_facts_v3"
+        "prompt_version": "daily_facts_v4"
         if daily_mode
         else OPPORTUNITY_VERSION
         if opportunity_mode
