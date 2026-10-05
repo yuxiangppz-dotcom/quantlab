@@ -46,6 +46,10 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
     if len(indices) != len(rows):
         return None
     targets = {}
+    invalid_refs = {}
+    for error in errors:
+        if error["code"].startswith("unknown_or_wrong_subject_fact:"):
+            invalid_refs.setdefault(error["path"][0], set()).add(error["code"].split(":", 1)[1])
 
     def add(path, op="replace"):
         path = tuple(path)
@@ -99,6 +103,25 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
         if code.startswith("placeholder_not_declared:"):
             if not add([*base, "fact_ids"]):
                 return None
+        elif code.startswith("scale_requires_declared_own_fact:"):
+            if not add([*base, "analysis", "scale_fact_ids"]):
+                return None
+        elif code.startswith("unknown_or_wrong_subject_fact:"):
+            ref = code.split(":", 1)[1]
+            if "fact_ids" in rows[index]:
+                add([*base, "fact_ids"])
+            if ref in rows[index]["analysis"]["scale_fact_ids"]:
+                add([*base, "analysis", "scale_fact_ids"])
+            for key in (*FIELDS, *ANALYSIS_FIELDS, "trade_known", "trade_unknown"):
+                suffix = (
+                    ["analysis", key]
+                    if key in ANALYSIS_FIELDS
+                    else ["trade_conditions", key.removeprefix("trade_")]
+                    if key.startswith("trade_")
+                    else [key]
+                )
+                if ref in REF.findall(get_at(previous, [*base, *suffix])):
+                    add([*base, *suffix])
         elif code == "same_type_unselected_required":
             if not add([*base, "comparator_id"]):
                 return None
@@ -149,6 +172,7 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
             row = rows[path[1]] if len(path) >= 3 and path[0] == array_key else None
             peer_changed = row and pointer([array_key, path[1], "comparator_id"]) in targets
             old_peer = row.get("comparator_id") if peer_changed else None
+            bad_refs = invalid_refs.get(row["instrument_id"], set()) if row else set()
 
             def prior_peer_ref(ref, old_peer=old_peer):
                 return old_peer and (
@@ -157,10 +181,14 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
                 )
 
             if row and path[-1] == "fact_ids":
-                keep = [r for r in row["fact_ids"] if not prior_peer_ref(r)]
+                keep = [r for r in row["fact_ids"] if not prior_peer_ref(r) and r not in bad_refs]
                 properties["value"]["allOf"] = [{"contains": {"const": ref}} for ref in keep]
             elif isinstance(get_at(previous, path), str):
-                keep = [r for r in REF.findall(get_at(previous, path)) if not prior_peer_ref(r)]
+                keep = [
+                    r
+                    for r in REF.findall(get_at(previous, path))
+                    if not prior_peer_ref(r) and r not in bad_refs
+                ]
                 properties["value"]["allOf"] = [
                     {"pattern": re.escape("[[" + ref + "]]")} for ref in keep
                 ]

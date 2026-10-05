@@ -1280,7 +1280,7 @@ def run_scout(
                     # The schema caps hypotheses/URLs, strings, events and candidate count.
                     client.check_input(
                         INSTRUCTION + compact(study_packet),
-                        selection_schema(pool),
+                        selection_schema(pool, study_packet),
                         extra_chars=45000,
                         extra_bytes=100000,
                     )
@@ -1519,7 +1519,7 @@ def run_scout(
                 selection_input_packet = packet
                 selection_input_prompt = prompt
                 selection_input_schema = (
-                    selection_schema(pool)
+                    selection_schema(packet["candidates"], packet)
                     if daily_mode
                     else OPPORTUNITY_SCHEMA
                     if opportunity_mode
@@ -1740,7 +1740,7 @@ def run_scout(
         "config": config,
         "config_sha256": fingerprint(config),
         "input_fingerprint": input_fingerprint,
-        "prompt_version": "daily_facts_v5"
+        "prompt_version": "daily_facts_v6"
         if daily_mode
         else OPPORTUNITY_VERSION
         if opportunity_mode

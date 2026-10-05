@@ -60,7 +60,7 @@ def main():
     schema = (
         investigation_contract(packet["candidates"], packet)
         if args.stage == "investigation"
-        else selection_schema(packet["candidates"])
+        else selection_schema(packet["candidates"], packet)
     )
     validator = (
         (lambda v: investigation_errors(v, packet, schema))
@@ -142,6 +142,13 @@ def main():
                     item["value"] = list(
                         dict.fromkeys(row["fact_ids"] + [r for t in texts for r in REF.findall(t)])
                     )
+                    bad = {
+                        e["actual"]
+                        for e in errors
+                        if e["code"].startswith("unknown_or_wrong_subject_fact:")
+                        and e["path"][0] == row["instrument_id"]
+                    }
+                    item["value"] = [r for r in item["value"] if r not in bad]
                 elif path[-1] == "comparator_id":
                     issue = next(
                         e
@@ -151,6 +158,14 @@ def main():
                     item["value"] = issue["allowed_comparator_ids"][0]
                 else:
                     refs = REF.findall(get_at(raw_output, path))
+                    if path[0] == "comparisons":
+                        bad = {
+                            e["actual"]
+                            for e in errors
+                            if e["code"].startswith("unknown_or_wrong_subject_fact:")
+                            and e["path"][0] == row["instrument_id"]
+                        }
+                        refs = [r for r in refs if r not in bad]
                     item["value"] = (
                         "；".join("[[" + ref + "]]" for ref in refs)
                         if refs

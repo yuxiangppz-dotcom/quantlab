@@ -403,3 +403,48 @@ def test_investigation_patch_collects_enum_and_subject_errors_without_rewriting(
     expected["opportunities"][0]["analysis"]["event_ids"] = []
     expected["opportunities"][0]["analysis"]["scale_fact_ids"] = []
     assert result == expected and previous == before
+
+
+def test_only_own_and_declared_peer_short_ticker_are_not_quantitative_assertions():
+    packet, result = inputs(), output()
+    row = result["comparisons"][0]
+    row["comparator_id"] = "000002.SZ"
+    row["difference"] = "000001与000002的日线结构不同，效果待观察"
+    assert validate_output(result, packet) == []
+    for value in ["上涨000002%", "第三股000003", "交易量12345678"]:
+        row["difference"] = value
+        assert any(
+            e["code"] == "quantitative_prose_requires_fact_placeholder"
+            for e in validate_output(result, packet)
+        )
+
+
+def test_invalid_subject_reference_patch_keeps_valid_counterfacts_and_decisions():
+    packet, previous = inputs(), output()
+    row = previous["comparisons"][0]
+    own = row["fact_ids"][0]
+    wrong = "fact:000003.SZ:market:return_1d"
+    packet["facts"][wrong] = ["000003.SZ", *packet["facts"][own][1:]]
+    row["risk"] = "本股反证[[" + own + "]]；错误主体[[" + wrong + "]]"
+    row["analysis"]["scale_fact_ids"] = [wrong]
+    before = deepcopy(previous)
+    errors = validate_output(previous, packet)
+    plan = patch_plan(previous, errors, selection_schema(packet["candidates"], packet))
+    assert plan is not None
+    patch = {
+        "patches": [
+            {
+                "path": "/comparisons/0/risk",
+                "op": "replace",
+                "value": "本股反证[[" + own + "]]；其他主体无法支持本股",
+            },
+            {"path": "/comparisons/0/fact_ids", "op": "replace", "value": [own]},
+            {"path": "/comparisons/0/analysis/scale_fact_ids", "op": "replace", "value": []},
+        ]
+    }
+    result, errors = apply_patch_output(previous, patch, plan)
+    assert errors == [] and validate_output(result, packet) == []
+    assert previous == before and result["comparisons"][0]["rank"] == row["rank"]
+    patch["patches"][0]["value"] = "丢弃全部反证"
+    result, errors = apply_patch_output(previous, patch, plan)
+    assert result is None and errors

@@ -16,7 +16,7 @@ from quantlab.scout.facts import program_facts
 from quantlab.scout.models import fingerprint
 from quantlab.scout.opportunity_ai import OPPORTUNITY_SCHEMA
 
-VERSION = "daily_facts_v5"
+VERSION = "daily_facts_v6"
 FIELDS = ("thesis", "risk", "invalidation", "difference", "independent_basis", "unknowns")
 ANALYSIS_FIELDS = (
     "incremental_change",
@@ -32,6 +32,7 @@ market_view只写定性概述，不写数字、日期或任何占位符。每项
 只有fact:开头的事实ID能写成[[fact_id]]；ev-来源ID仅进evidence_ids，不能做事实占位符。
 analysis.event_ids只填本股events.record_id（event-开头），不是source_ids或ev-来源ID。
 analysis.scale_fact_ids须为本股实际引用的事实；next_observation_date无来源就null。
+行业统计可以在正文引用，但不能放进本股scale_fact_ids；没有本股规模依据则该数组为[]。
 资金方向由程序事实展示。不要自行写“净流入”“净流出”：写“资金反证：[[对应资金事实ID]]”，不能丢弃负向事实。
 每个候选必须输出一次comparisons；只用给定主要类型，证据不足不排名、不入选。
 primary_type=insufficient_evidence时rank=null且final_status=unselected；其余候选连续整数排名。
@@ -281,7 +282,7 @@ def referenced_facts(row):
     )
 
 
-def selection_schema(candidates):
+def selection_schema(candidates, packet=None):
     schema = deepcopy(OPPORTUNITY_SCHEMA)
     schema["properties"]["market_view"] = {"type": "string", "minLength": 1, "maxLength": 400}
     rows = schema["properties"]["comparisons"]
@@ -326,6 +327,26 @@ def selection_schema(candidates):
             "else": {"properties": {"rank": {"type": "integer", "minimum": 1}}},
         }
     ]
+    if packet is not None:
+        for candidate in candidates:
+            code = candidate["instrument_id"]
+            own = [key for key, values in packet["facts"].items() if values[0] == code]
+            rows["items"]["allOf"].append(
+                {
+                    "if": {"properties": {"instrument_id": {"const": code}}},
+                    "then": {
+                        "properties": {
+                            "analysis": {
+                                "properties": {
+                                    "scale_fact_ids": {"items": {"enum": own}}
+                                    if own
+                                    else {"maxItems": 0}
+                                }
+                            }
+                        }
+                    },
+                }
+            )
     return schema
 
 
@@ -333,7 +354,9 @@ def validate_output(output, packet):
     """Collect the complete schema and semantic error list without stopping at row one."""
     errors = [
         {"path": list(e.path), "code": "schema", "detail": e.message[:300]}
-        for e in Draft202012Validator(selection_schema(packet["candidates"])).iter_errors(output)
+        for e in Draft202012Validator(selection_schema(packet["candidates"], packet)).iter_errors(
+            output
+        )
     ]
     if not isinstance(output, dict) or not isinstance(output.get("comparisons"), list):
         return errors
@@ -394,7 +417,15 @@ def validate_output(output, packet):
         used_facts = referenced_facts(row)
         for ref in used_facts:
             if ref not in facts or facts[ref]["subject_id"] not in allowed:
-                error(code, "fact_ids", "unknown_or_wrong_subject_fact:" + ref)
+                error(
+                    code,
+                    "fact_ids",
+                    "unknown_or_wrong_subject_fact:" + ref,
+                    actual=ref,
+                    allowed_fact_ids=[
+                        key for key, f in facts.items() if f["subject_id"] in allowed
+                    ],
+                )
         for ref in row["analysis"]["scale_fact_ids"]:
             if ref not in facts or facts[ref]["subject_id"] != code:
                 error(code, "scale_fact_ids", "scale_requires_declared_own_fact:" + ref)
@@ -455,6 +486,15 @@ def validate_output(output, packet):
             for subject in (code, peer):
                 if subject:
                     prose = prose.replace(subject, "证券")
+                    # Exchange suffix is optional in prose, but only this row's
+                    # own/declared peer ID is an identity, never an arbitrary number.
+                    prose = re.sub(
+                        r"(?<!\d)"
+                        + re.escape(subject.split(".")[0])
+                        + r"(?![\d.%元万亿倍手笔天日个])",
+                        "证券",
+                        prose,
+                    )
             if re.search(r"\d|净流[入出]", prose):
                 error(code, field, "quantitative_prose_requires_fact_placeholder", actual=text)
             if daily_microstructure_assertion(prose, field):
