@@ -13,12 +13,15 @@ from quantlab.scout.daily_contract import (
     REF,
     VERSION,
     compact,
+    compact_fact_refs,
+    remap_generated_refs,
     render_output,
     research_packet,
     selection_schema,
     validate_output,
 )
 from quantlab.scout.daily_correction import get_at, patch_plan
+from quantlab.scout.daily_stages import investigation_contract, investigation_errors
 from quantlab.scout.models import fingerprint
 
 
@@ -27,25 +30,45 @@ def main():
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--response", type=Path, help="Archived public response for truncated runs")
+    parser.add_argument("--stage", choices=["selection", "investigation"], default="selection")
+    parser.add_argument("--request", type=Path, help="Exact archived investigation request")
     args = parser.parse_args()
     original_bytes = args.source.read_bytes()
     source = json.loads(original_bytes)
     saved_packet = source["selection_input_packet"]
+    saved_request = None
+    if args.stage == "investigation":
+        saved_request = json.loads(args.request.read_bytes())
+        saved_prompt = saved_request["prompt"]
+        saved_packet = json.loads(saved_prompt[saved_prompt.index('{"version"') :])
     packet = (
         json.loads(json.dumps(saved_packet))
         if "fact_columns" in saved_packet
         else research_packet(saved_packet)
     )
+    packet, aliases = compact_fact_refs(packet)
     packet["version"] = VERSION
     raw_output = source["selection_raw"]
-    errors = validate_output(raw_output, packet)
     public_response = json.loads(args.response.read_bytes()) if args.response else None
-    if raw_output is None and public_response:
+    if public_response:
         try:
             raw_output = json.loads(public_response["choices"][0]["message"]["content"])
-            errors = validate_output(raw_output, packet)
         except (ValueError, TypeError):
             pass
+    original_output_hash = fingerprint(raw_output)
+    raw_output = remap_generated_refs(raw_output, aliases)
+    schema = (
+        investigation_contract(packet["candidates"], packet)
+        if args.stage == "investigation"
+        else selection_schema(packet["candidates"])
+    )
+    validator = (
+        (lambda v: investigation_errors(v, packet, schema))
+        if args.stage == "investigation"
+        else (lambda v: validate_output(v, packet))
+    )
+    errors = validator(raw_output)
+    subjects = {key: value[0] for key, value in packet["facts"].items()}
     fixture = {
         "comparisons": [
             {"instrument_id": c["instrument_id"], "analysis": {}} for c in packet["candidates"]
@@ -101,16 +124,19 @@ def main():
     )
     own["fact_ids"] = [ref]
     own["thesis"] = "仅演练程序格式：[[" + ref + "]]"
-    schema = selection_schema(packet["candidates"])
-    plan = patch_plan(raw_output, errors, schema)
+    plan = patch_plan(raw_output, errors, schema, fact_subjects=subjects)
     if plan:
         fixture = {"patches": []}
         for name, target in sorted(plan["targets"].items()):
             item = {"path": name, "op": target["op"]}
             path = target["path"]
             if target["op"] == "replace":
-                row = raw_output["comparisons"][path[1]]
-                if path[-1] == "fact_ids":
+                row = raw_output[path[0]][path[1]]
+                if path[-1] == "relation":
+                    item["value"] = "sentiment"
+                elif path[-1] in {"event_ids", "scale_fact_ids"}:
+                    item["value"] = []
+                elif path[-1] == "fact_ids":
                     texts = [row[f] for f in FIELDS] + [row["analysis"][f] for f in ANALYSIS_FIELDS]
                     texts += list(row["trade_conditions"].values())
                     item["value"] = list(
@@ -164,7 +190,7 @@ def main():
     precheck = research.check_input(
         INSTRUCTION + compact(before_study), schema, extra_chars=45000, extra_bytes=100000
     )
-    result, _ = research.ask(prompt, schema, validator=lambda v: validate_output(v, packet))
+    result, _ = research.ask(prompt, schema, validator=validator, fact_subjects=subjects)
     unpatched_fields_preserved = None
     if plan:
         masked_before, masked_after = deepcopy(raw_output), deepcopy(result)
@@ -178,22 +204,27 @@ def main():
                 get_at(masked_after, path[:-1])[path[-1]] = "authorized-field-mask"
         assert masked_before == masked_after
         unpatched_fields_preserved = True
-    rendered = render_output(result, packet)
-    originals = {e["evidence_id"]: e["body"] for e in source["selection_input_packet"]["evidence"]}
+    rendered = result if args.stage == "investigation" else render_output(result, packet)
+    originals = {e["evidence_id"]: e["body"] for e in saved_packet["evidence"]}
     assert all(originals[e["evidence_id"]] == e["body"] for e in packet["evidence"])
     assert args.source.read_bytes() == original_bytes
-    assert validate_output(result, packet) == []
+    assert validator(result) == []
     audit = {
         "kind": "offline_real_sample_replay_not_prediction",
         "paid_requests": 0,
         "source_sha256": fingerprint(source),
-        "original_output_sha256": fingerprint(raw_output),
+        "original_output_sha256": original_output_hash,
+        "stage": args.stage,
+        "reference_translation_only": True,
+        "original_request_sha256": fingerprint(saved_request) if saved_request else None,
         "original_response_sha256": fingerprint(public_response) if public_response else None,
         "packet_sha256": fingerprint(packet),
         "candidate_count": len(packet["candidates"]),
         "evidence_count": len(packet["evidence"]),
         "facts_count": len(packet["facts"]),
-        "original_prompt_chars": len(source["selection_input_prompt"]),
+        "original_prompt_chars": len(
+            saved_request["prompt"] if saved_request else source["selection_input_prompt"]
+        ),
         "new_prompt_chars": len(prompt),
         "new_prompt_bytes": len(prompt.encode()),
         "pre_investigation_reserved_bound": precheck,

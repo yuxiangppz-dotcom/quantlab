@@ -157,7 +157,7 @@ class DailyResearch:
         self._save(len(self.requests), "errors", errors)
         return result, raw, errors
 
-    def ask(self, prompt, schema, search=False, validator=None):
+    def ask(self, prompt, schema, search=False, validator=None, fact_subjects=None):
         if search:
             raise ValueError("Daily input uses collected sources only")
         self.stage += 1
@@ -198,10 +198,10 @@ class DailyResearch:
         )
         correction = (
             prompt + "\n这是唯一一次定向纠错。保留反证，不改变预算或来源。"
-            "按全部错误清单纠正并输出完整schema JSON。\n"
+            "按全部错误清单纠正并输出符合schema的数据JSON，不输出schema定义。\n"
             "保留此前未报错的分级和比较决定，不另选一套名单。比较对象必须同类型且unselected。"
             "禁止词净流入/净流出改用对应资金事实占位符，保留资金反证；H5等固定期限可保留。"
-            "新使用的占位符务必加入该行fact_ids。只有报错处需要修复，并维护全局排名一致性。\n"
+            "事实清单由程序汇总，不需要重复输出fact_ids。只有报错处需要修复，并维护全局排名一致性。\n"
             + compact(
                 {
                     "error_columns": ["path", "code", "detail", "context"],
@@ -211,7 +211,7 @@ class DailyResearch:
                 }
             )
         )
-        plan = patch_plan(previous, errors, schema)
+        plan = patch_plan(previous, errors, schema, fact_subjects=fact_subjects)
         if plan is not None and validator is not None:
             correction += (
                 "\n本次只输出patches补丁JSON，不输出comparisons或完整报告。"

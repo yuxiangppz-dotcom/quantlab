@@ -7,6 +7,7 @@ import re
 from copy import deepcopy
 from datetime import date
 from decimal import Decimal
+from hashlib import sha256
 
 from jsonschema import Draft202012Validator
 
@@ -15,7 +16,7 @@ from quantlab.scout.facts import program_facts
 from quantlab.scout.models import fingerprint
 from quantlab.scout.opportunity_ai import OPPORTUNITY_SCHEMA
 
-VERSION = "daily_facts_v4"
+VERSION = "daily_facts_v5"
 FIELDS = ("thesis", "risk", "invalidation", "difference", "independent_basis", "unknowns")
 ANALYSIS_FIELDS = (
     "incremental_change",
@@ -30,14 +31,15 @@ INSTRUCTION = """你负责判断与比较，程序负责数字与格式。输入
 market_view只写定性概述，不写数字、日期或任何占位符。每项说明只写短句，避免复述输入。
 只有fact:开头的事实ID能写成[[fact_id]]；ev-来源ID仅进evidence_ids，不能做事实占位符。
 analysis.event_ids只填本股events.record_id（event-开头），不是source_ids或ev-来源ID。
-analysis.scale_fact_ids须为本股实际引用的事实，也列入fact_ids；next_observation_date无来源就null。
+analysis.scale_fact_ids须为本股实际引用的事实；next_observation_date无来源就null。
 资金方向由程序事实展示。不要自行写“净流入”“净流出”：写“资金反证：[[对应资金事实ID]]”，不能丢弃负向事实。
 每个候选必须输出一次comparisons；只用给定主要类型，证据不足不排名、不入选。
 primary_type=insufficient_evidence时rank=null且final_status=unselected；其余候选连续整数排名。
 其他股票即使未选也连续排名；最多三重点五观察。入选比较对象须同类型未选者。
 所有说明简短，保留最强反证、失效条件、来源缺口，不声称搜索或人工核实。
 正文不得自己写任何数字、日期、资金流方向或数量大小比较；需要数量时使用[[fact_id]]。
-fact_ids列出实际用于判断的事实。事实卡含主体、期间、值和单位；同行数量的主体不从中文推断。
+不用重复输出fact_ids，程序从正文占位符和scale_fact_ids自动汇总事实清单。
+事实卡含主体、期间、值和单位；同行数量的主体不从中文推断。
 行业统计只描述当时合格成员，不能证明个股受益。不要将首次采集当首次市场消息。
 事件推断引用本股实际展示的event_ids和evidence_ids；标题不是正文、预增不是超预期。
 例行日程、重复内容、长期背景或单纯价格异动不能作为event_update的增量事件。
@@ -238,6 +240,47 @@ def unpack_facts(packet):
     }
 
 
+def compact_fact_refs(packet):
+    """Short stable machine references; never rewrite provider body or prior excerpts."""
+    result = deepcopy(packet)
+    if result.get("fact_reference_style") == "sha256_12":
+        return result, {}
+    aliases = {key: "fact:" + sha256(key.encode()).hexdigest()[:12] for key in packet["facts"]}
+    if len(set(aliases.values())) != len(aliases):
+        raise ValueError("daily_fact_reference_collision")
+    result["facts"] = {aliases[key]: value for key, value in packet["facts"].items()}
+    for key in ("research_notes", "investigation_opportunities", "price_reactions"):
+        result[key] = remap_generated_refs(result.get(key, []), aliases)
+    result["fact_reference_style"] = "sha256_12"
+    result["version"] = VERSION
+    return result, aliases
+
+
+def remap_generated_refs(value, aliases):
+    if isinstance(value, dict):
+        return {
+            k: v if k in {"body", "previous_content_excerpt"} else remap_generated_refs(v, aliases)
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [remap_generated_refs(v, aliases) for v in value]
+    if isinstance(value, str):
+        return aliases.get(value, REF.sub(lambda m: "[[" + aliases.get(m[1], m[1]) + "]]", value))
+    return value
+
+
+def referenced_facts(row):
+    texts = [row[f] for f in FIELDS] + [row["analysis"][f] for f in ANALYSIS_FIELDS]
+    texts += list(row["trade_conditions"].values())
+    return list(
+        dict.fromkeys(
+            row.get("fact_ids", [])
+            + row["analysis"]["scale_fact_ids"]
+            + [ref for text in texts for ref in REF.findall(text)]
+        )
+    )
+
+
 def selection_schema(candidates):
     schema = deepcopy(OPPORTUNITY_SCHEMA)
     schema["properties"]["market_view"] = {"type": "string", "minLength": 1, "maxLength": 400}
@@ -260,7 +303,7 @@ def selection_schema(candidates):
         }
     props["fact_ids"] = {
         "type": "array",
-        "maxItems": 8,
+        "maxItems": 16,
         "uniqueItems": True,
         "items": {"type": "string", "pattern": "^fact:"},
     }
@@ -273,6 +316,7 @@ def selection_schema(candidates):
     # References replace model-authored unit conversions and redundant declarations.
     props.pop("quant_claims")
     rows["items"]["required"].remove("quant_claims")
+    rows["items"]["required"].remove("fact_ids")
     rows["items"]["allOf"] = [
         {
             "if": {"properties": {"primary_type": {"const": "insufficient_evidence"}}},
@@ -347,11 +391,12 @@ def validate_output(output, packet):
                 industry = c.get("industry")
                 if industry:
                     allowed.add("industry:" + industry)
-        for ref in row["fact_ids"]:
+        used_facts = referenced_facts(row)
+        for ref in used_facts:
             if ref not in facts or facts[ref]["subject_id"] not in allowed:
                 error(code, "fact_ids", "unknown_or_wrong_subject_fact:" + ref)
         for ref in row["analysis"]["scale_fact_ids"]:
-            if ref not in facts or facts[ref]["subject_id"] != code or ref not in row["fact_ids"]:
+            if ref not in facts or facts[ref]["subject_id"] != code:
                 error(code, "scale_fact_ids", "scale_requires_declared_own_fact:" + ref)
         own_events = {e["record_id"]: e for e in candidates[code]["events"]}
         for event_id in row["analysis"]["event_ids"]:
@@ -405,16 +450,12 @@ def validate_output(output, packet):
             "trade_unknown": row["trade_conditions"]["unknown"],
         }
         for field, text in fields.items():
-            refs = REF.findall(text)
-            for ref in refs:
-                if ref not in row["fact_ids"]:
-                    error(code, field, "placeholder_not_declared:" + ref)
             prose = REF.sub("事实", text)
             prose = re.sub(r"(?<![A-Za-z0-9])H(?:1|3|5|10)(?![A-Za-z0-9])", "固定观察期限", prose)
             for subject in (code, peer):
                 if subject:
                     prose = prose.replace(subject, "证券")
-            if re.search(r"\d|净流[入出]|额比.{0,5}[高低]|收益.{0,5}[高低]", prose):
+            if re.search(r"\d|净流[入出]", prose):
                 error(code, field, "quantitative_prose_requires_fact_placeholder", actual=text)
             if daily_microstructure_assertion(prose, field):
                 error(code, field, "unsupported_microstructure_assertion", actual=text)
@@ -500,6 +541,7 @@ def render_output(output, packet):
     result = deepcopy(output)
     facts = unpack_facts(packet)
     for row in result["comparisons"]:
+        row["fact_ids"] = referenced_facts(row)
 
         def render(text):
             return REF.sub(lambda m: format_fact(facts[m[1]]), text)

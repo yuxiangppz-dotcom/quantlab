@@ -1042,6 +1042,7 @@ def run_scout(
     selection_input_packet: dict = {}
     selection_input_prompt = None
     selection_input_schema = None
+    selection_fact_aliases = {}
     selection_request = {
         "state": "not_built",
         "delivery_status": "not_attempted",
@@ -1283,7 +1284,7 @@ def run_scout(
                         extra_chars=45000,
                         extra_bytes=100000,
                     )
-                    study_schema = investigation_contract(pool)
+                    study_schema = investigation_contract(pool, study_packet)
                     progress("研究输入预算预检通过，调查全部候选")
                     investigation, raw = client.ask(
                         investigation_prompt(study_packet),
@@ -1291,6 +1292,9 @@ def run_scout(
                         validator=lambda value: investigation_errors(
                             value, study_packet, study_schema
                         ),
+                        fact_subjects={
+                            ref: values[0] for ref, values in study_packet["facts"].items()
+                        },
                     )
                 else:
                     investigation, raw = client.ask(
@@ -1499,9 +1503,14 @@ def run_scout(
                     )
                     prompt = OPPORTUNITY_INSTRUCTION + prompt
                 if daily_mode:
-                    from quantlab.scout.daily_contract import INSTRUCTION, compact, research_packet
+                    from quantlab.scout.daily_contract import (
+                        INSTRUCTION,
+                        compact,
+                        compact_fact_refs,
+                        research_packet,
+                    )
 
-                    packet = research_packet(packet)
+                    packet, selection_fact_aliases = compact_fact_refs(research_packet(packet))
                     prompt = INSTRUCTION + compact(packet)
                     progress("比较与分级：程序事实引用，完整校验")
                 # Archive construction before validation/transport can raise.
@@ -1533,6 +1542,7 @@ def run_scout(
                         final_prompt,
                         selection_input_schema,
                         validator=lambda value: validate_output(value, packet),
+                        fact_subjects={ref: values[0] for ref, values in packet["facts"].items()},
                     )
                 else:
                     selection, raw = client.ask(final_prompt, selection_input_schema)
@@ -1730,7 +1740,7 @@ def run_scout(
         "config": config,
         "config_sha256": fingerprint(config),
         "input_fingerprint": input_fingerprint,
-        "prompt_version": "daily_facts_v4"
+        "prompt_version": "daily_facts_v5"
         if daily_mode
         else OPPORTUNITY_VERSION
         if opportunity_mode
@@ -1776,6 +1786,7 @@ def run_scout(
         "selection_input_packet": selection_input_packet,
         "selection_input_prompt": selection_input_prompt,
         "selection_input_schema": selection_input_schema,
+        "selection_fact_aliases": selection_fact_aliases,
         "selection_request": selection_request,
         "selection_validation": selection_validation,
         "selection_presentation": (

@@ -5,7 +5,9 @@ import pytest
 from quantlab.scout.daily_budget import DailyResearch, DailyValidationError
 from quantlab.scout.daily_contract import (
     compact,
+    compact_fact_refs,
     format_fact,
+    remap_generated_refs,
     render_output,
     research_packet,
     selection_schema,
@@ -13,6 +15,7 @@ from quantlab.scout.daily_contract import (
     validate_output,
 )
 from quantlab.scout.daily_correction import apply_patch_output, patch_plan
+from quantlab.scout.daily_stages import investigation_contract, investigation_errors
 
 
 def inputs():
@@ -156,7 +159,49 @@ def test_real_failure_shape_cannot_treat_evidence_id_as_fact_or_event():
     errors = validate_output(result, packet)
     assert any(e["code"] == "market_view_qualitative_only" for e in errors)
     assert any(e["code"] == "event_not_shown_for_subject:ev-one" for e in errors)
-    assert any(e["code"] == "placeholder_not_declared:ev-one" for e in errors)
+    assert any(e["code"] == "unknown_or_wrong_subject_fact:ev-one" for e in errors)
+
+
+def test_short_references_keep_every_fact_and_provider_text_unchanged():
+    packet = inputs()
+    packet["evidence"][0]["body"] += "原文[[fact:000001.SZ:market:return_1d]]"
+    before = deepcopy(packet)
+    short, aliases = compact_fact_refs(packet)
+    assert len(short["facts"]) == len(packet["facts"])
+    assert all(len(ref) == 17 for ref in short["facts"])
+    assert all(short["facts"][aliases[key]] == value for key, value in packet["facts"].items())
+    assert short["evidence"] == packet["evidence"] and packet == before
+    assert compact_fact_refs(short)[0] == short
+    assert compact_fact_refs(inputs())[1] == aliases
+
+
+def test_program_collects_short_own_peer_and_industry_refs_without_duplicate_list():
+    packet = inputs()
+    result = output()
+    row = result["comparisons"][0]
+    peer = "fact:000002.SZ:market:return_5d"
+    industry = "fact:industry:示例行业:positive_fraction_1d"
+    row["risk"] = "同行反证：[[" + peer + "]]"
+    row["difference"] = "行业背景：[[" + industry + "]]"
+    for item in result["comparisons"]:
+        item.pop("fact_ids")
+    packet, aliases = compact_fact_refs(packet)
+    result = remap_generated_refs(result, aliases)
+    before = deepcopy(result)
+    assert validate_output(result, packet) == []
+    view = render_output(result, packet)
+    assert set(view["comparisons"][0]["fact_ids"]) == {
+        aliases[peer],
+        aliases[industry],
+        aliases["fact:000001.SZ:market:return_1d"],
+    }
+    assert "-1.00%" in view["comparisons"][0]["risk"]
+    assert result == before
+    result["comparisons"][1]["risk"] = "[[" + aliases["fact:000001.SZ:market:return_1d"] + "]]"
+    assert any(
+        e["code"].startswith("unknown_or_wrong_subject_fact:")
+        for e in validate_output(result, packet)
+    )
 
 
 def test_real_unknown_lists_and_fixed_horizon_are_not_factual_assertions():
@@ -326,3 +371,35 @@ def test_invalid_patch_ends_the_only_repair_without_full_regeneration():
             validator=lambda v: validate_output(v, packet),
         )
     assert len(client.calls) == 2 and client.repairs == 1
+
+
+def test_investigation_patch_collects_enum_and_subject_errors_without_rewriting():
+    packet, _ = compact_fact_refs(inputs())
+    schema = investigation_contract(packet["candidates"], packet)
+    previous = {
+        "hypotheses": [],
+        "opportunities": [
+            {"instrument_id": r["instrument_id"], "analysis": deepcopy(r["analysis"])}
+            for r in output()["comparisons"]
+        ],
+    }
+    previous["opportunities"][0]["analysis"]["event_ids"] = ["event-wrong-subject"]
+    previous["opportunities"][0]["analysis"]["scale_fact_ids"] = [
+        next(k for k, v in packet["facts"].items() if v[0] == "000002.SZ")
+    ]
+    before = deepcopy(previous)
+    errors = investigation_errors(previous, packet, schema)
+    assert any(e["code"].startswith("event_not_shown") for e in errors)
+    assert any(e["code"].startswith("scale_requires_own_fact") for e in errors)
+    plan = patch_plan(previous, errors, schema)
+    assert plan and set(plan["targets"]) == {
+        "/opportunities/0/analysis/event_ids",
+        "/opportunities/0/analysis/scale_fact_ids",
+    }
+    patch = {"patches": [{"path": p, "op": "replace", "value": []} for p in plan["targets"]]}
+    result, errors = apply_patch_output(previous, patch, plan)
+    assert errors == [] and investigation_errors(result, packet, schema) == []
+    expected = deepcopy(before)
+    expected["opportunities"][0]["analysis"]["event_ids"] = []
+    expected["opportunities"][0]["analysis"]["scale_fact_ids"] = []
+    assert result == expected and previous == before
