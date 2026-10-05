@@ -1,0 +1,179 @@
+from copy import deepcopy
+
+from quantlab.scout.daily_contract import (
+    compact,
+    format_fact,
+    render_output,
+    research_packet,
+    selection_schema,
+    unpack_facts,
+    validate_output,
+)
+
+
+def inputs():
+    candidates = []
+    for code, value in (("000001.SZ", 0.02), ("000002.SZ", -0.01)):
+        candidates.append(
+            {
+                "instrument_id": code,
+                "name": code,
+                "metrics": {"return_1d": value, "return_5d": value, "amount_cny": 200000000},
+                "source_summary": {"industry": "示例行业"},
+                "opportunity_record": {
+                    "events": [],
+                    "industry_context": {},
+                    "pullback_qualified": False,
+                    "type_hints": [],
+                },
+            }
+        )
+    packet = research_packet(
+        {
+            "timing": {"asof_session": "2026-09-30"},
+            "market": {"session": "2026-09-30", "rejected_by_code": {"x": "drop"}},
+            "candidates": candidates,
+            "coverage": [
+                {
+                    "source": "test",
+                    "status": "failed",
+                    "count": 0,
+                    "detail": "snapshot=/home/private",
+                }
+            ],
+            "industry_background": {
+                "industries": {"示例行业": {"positive_fraction_1d": 0.5, "eligible_count": 2}}
+            },
+            "evidence": [
+                {
+                    "evidence_id": "ev-one",
+                    "instrument_ids": ["000001.SZ"],
+                    "body": "反证：存在风险",
+                    "snapshot_refs": ["/private"],
+                }
+            ],
+            "hypotheses": [
+                {
+                    "summary": "待核实经营线索",
+                    "counterargument": "缺少新增订单",
+                    "instrument_ids": ["000001.SZ"],
+                    "evidence_ids": ["ev-one"],
+                },
+                {
+                    "summary": "待核实经营线索",
+                    "counterargument": "缺少新增订单",
+                    "instrument_ids": ["000002.SZ"],
+                    "evidence_ids": ["ev-hidden"],
+                },
+            ],
+        }
+    )
+    return packet
+
+
+def output():
+    rows = []
+    for i, code in enumerate(("000001.SZ", "000002.SZ"), 1):
+        ref = f"fact:{code}:market:return_1d"
+        rows.append(
+            {
+                "instrument_id": code,
+                "primary_type": "trend_continuation",
+                "type_labels": ["trend_continuation"],
+                "rank": i,
+                "final_status": "focus" if i == 1 else "unselected",
+                "comparator_id": "000002.SZ" if i == 1 else None,
+                "comparison_strength": "medium",
+                "evidence_reliability": "program_facts",
+                "trade_conditions": {"known": "日线事实已归档", "unknown": "未知：封单和排队"},
+                "thesis": "当时日线：[[" + ref + "]]",
+                "risk": "没有新增经营证据",
+                "invalidation": "假设需未来行情验证",
+                "difference": "独立依据仍是量价假设",
+                "independent_basis": "程序事实支持量价假设",
+                "unknowns": "未知：可成交性",
+                "analysis": {
+                    "novelty": "price_only",
+                    "event_ids": [],
+                    "incremental_change": "没有核实新事件",
+                    "economic_link": "未知",
+                    "exposure": "price_only",
+                    "importance": "需观察",
+                    "scale_fact_ids": [],
+                    "h5_mechanism": "待验证",
+                    "next_observation_date": None,
+                    "next_node_basis": "未取得日程",
+                    "next_node_is_hypothesis": False,
+                },
+                "evidence_ids": ["market:" + code],
+                "fact_ids": [ref],
+            }
+        )
+    return {"market_view": "仅研究观察，不确定性仍高", "comparisons": rows}
+
+
+def test_research_input_keeps_counterevidence_and_gaps_without_paths():
+    packet = inputs()
+    body = compact(packet)
+    assert "反证：存在风险" in body
+    assert "failed" in body
+    assert "/home/" not in body and "snapshot_refs" not in body
+    assert "rejected_by_code" not in body
+    assert len(packet["research_notes"]) == 1
+    assert packet["research_notes"][0]["counterargument"] == "缺少新增订单"
+    assert packet["research_notes"][0]["omitted_source_ids"] == ["ev-hidden"]
+    facts = unpack_facts(packet)
+    assert facts["fact:industry:示例行业:positive_fraction_1d"]["period"] == "1d"
+    assert facts["fact:industry:示例行业:eligible_count"]["unit"] == "count"
+
+
+def test_explicit_peer_and_industry_references_render_with_subject_and_period():
+    packet, result = inputs(), output()
+    row = result["comparisons"][0]
+    peer = "fact:000002.SZ:market:return_5d"
+    industry = "fact:industry:示例行业:positive_fraction_1d"
+    row["fact_ids"] += [peer, industry]
+    row["difference"] = "同行[[" + peer + "]]；行业[[" + industry + "]]"
+    before = deepcopy(result)
+    assert validate_output(result, packet) == []
+    view = render_output(result, packet)
+    assert "000002.SZ · 5d" in view["comparisons"][0]["difference"]
+    assert "-1.00%" in view["comparisons"][0]["difference"]
+    assert "industry:示例行业 · 1d" in view["comparisons"][0]["difference"]
+    assert result == before
+
+
+def test_all_rows_errors_collected_without_favorable_substitution():
+    packet, result = inputs(), output()
+    result["comparisons"][0]["thesis"] = "上涨20%"
+    result["comparisons"][0]["fact_ids"].append("fact:foreign:wrong")
+    result["comparisons"][1]["risk"] = "封单强，可以成交"
+    result["comparisons"][1]["quant_claims"] = []  # Extra legacy field also diagnosed.
+    errors = validate_output(result, packet)
+    assert any(e["code"] == "schema" for e in errors)
+    assert any(e["code"] == "quantitative_prose_requires_fact_placeholder" for e in errors)
+    assert any(e["code"].startswith("unknown_or_wrong_subject_fact") for e in errors)
+    assert any(e["path"] == ["000002.SZ", "risk"] for e in errors)
+
+
+def test_subject_and_period_cannot_be_replaced_by_model():
+    packet, result = inputs(), output()
+    result["comparisons"][1]["thesis"] = "[[fact:000001.SZ:market:return_1d]]"
+    result["comparisons"][1]["fact_ids"] = ["fact:000001.SZ:market:return_1d"]
+    assert any(
+        e["code"].startswith("unknown_or_wrong_subject_fact")
+        for e in validate_output(result, packet)
+    )
+    assert selection_schema(packet["candidates"])["properties"]["comparisons"]["maxItems"] == 2
+
+
+def test_unknown_financial_units_are_not_formatted_as_money():
+    assert "单位待核实" in format_fact(
+        {
+            "value": "100",
+            "unit": "provider_unit_unknown",
+            "subject_id": "stock",
+            "period": "20260630",
+            "metric": "profit_dedt",
+        }
+    )
