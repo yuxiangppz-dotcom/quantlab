@@ -262,6 +262,7 @@ def read_config(path: Path | None) -> dict:
         or config["provider"] != "deepseek"
         or config["max_output_tokens"] != 32768
         or config["max_input_chars"] != 180000
+        or config["deepseek_reasoning_effort"] != "low"
     ):
         raise ValueError("Daily delivery uses the fixed opportunity/DeepSeek budgets")
     if config["opportunity_selection"] and (
@@ -1721,7 +1722,7 @@ def run_scout(
         "config": config,
         "config_sha256": fingerprint(config),
         "input_fingerprint": input_fingerprint,
-        "prompt_version": "daily_facts_v1"
+        "prompt_version": "daily_facts_v2"
         if daily_mode
         else OPPORTUNITY_VERSION
         if opportunity_mode

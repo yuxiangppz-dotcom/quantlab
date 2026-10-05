@@ -126,6 +126,8 @@ def investigation_prompt(packet):
     return (
         "你负责判断，程序负责数字格式；量化值仅用[[fact_id]]引用统一facts表，不能自行写数字。"
         "当前仅调查，不输出最终排名或分级。保留反证和来源缺口；首次采集不等于市场新消息，标题不是正文。"
+        "event_ids只填本股events的record_id（event-开头），绝不能填ev-来源ID；"
+        "scale_fact_ids只填本股facts中的事实ID。未知日程为null，所有说明保持短句。"
         "opportunities覆盖全部候选；hypotheses最多十二条，两个数组限制不同。"
         "说明简短，量化值不自行改写，只使用事实引用。\n" + compact(packet)
     )

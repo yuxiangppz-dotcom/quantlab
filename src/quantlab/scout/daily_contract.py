@@ -15,7 +15,7 @@ from quantlab.scout.facts import program_facts
 from quantlab.scout.models import fingerprint
 from quantlab.scout.opportunity_ai import OPPORTUNITY_SCHEMA
 
-VERSION = "daily_facts_v1"
+VERSION = "daily_facts_v2"
 FIELDS = ("thesis", "risk", "invalidation", "difference", "independent_basis", "unknowns")
 ANALYSIS_FIELDS = (
     "incremental_change",
@@ -27,6 +27,10 @@ ANALYSIS_FIELDS = (
 REF = re.compile(r"\[\[([^\[\]]+)\]\]")
 FACT_COLUMNS = ("subject_id", "metric", "period", "value", "unit", "source_ann_date")
 INSTRUCTION = """你负责判断与比较，程序负责数字与格式。输入facts是唯一量化事实表。
+market_view只写定性概述，不写数字、日期或任何占位符。每项说明只写短句，避免复述输入。
+只有fact:开头的事实ID能写成[[fact_id]]；ev-来源ID仅进evidence_ids，不能做事实占位符。
+analysis.event_ids只填本股events.record_id（event-开头），不是source_ids或ev-来源ID。
+analysis.scale_fact_ids须为本股实际引用的事实，也列入fact_ids；next_observation_date无来源就null。
 每个候选必须输出一次comparisons；只用给定主要类型，证据不足不排名、不入选。
 其他股票即使未选也连续排名；最多三重点五观察。入选比较对象须同类型未选者。
 所有说明简短，保留最强反证、失效条件、来源缺口，不声称搜索或人工核实。
@@ -241,9 +245,27 @@ def selection_schema(candidates):
         "enum": [row["instrument_id"] for row in candidates],
     }
     for key in FIELDS:
-        props[key] = {"type": "string", "minLength": 1, "maxLength": 260}
+        props[key] = {"type": "string", "minLength": 1, "maxLength": 120}
     for key in ANALYSIS_FIELDS:
-        props["analysis"]["properties"][key] = {"type": "string", "minLength": 1, "maxLength": 180}
+        props["analysis"]["properties"][key] = {"type": "string", "minLength": 1, "maxLength": 80}
+    for field in ("known", "unknown"):
+        props["trade_conditions"]["properties"][field] = {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+        }
+    props["fact_ids"] = {
+        "type": "array",
+        "maxItems": 8,
+        "uniqueItems": True,
+        "items": {"type": "string", "pattern": "^fact:"},
+    }
+    props["evidence_ids"] = {
+        "type": "array",
+        "maxItems": 5,
+        "uniqueItems": True,
+        "items": {"type": "string"},
+    }
     # References replace model-authored unit conversions and redundant declarations.
     props.pop("quant_claims")
     rows["items"]["required"].remove("quant_claims")

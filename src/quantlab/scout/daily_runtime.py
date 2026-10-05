@@ -222,6 +222,7 @@ PAGE = """<!doctype html><html lang="zh"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Scout 日常预测</title>
 <style>body{font:16px/1.7 system-ui;background:#f3f5fa;color:#16243a;margin:0}
 main{max-width:860px;margin:7vh auto;padding:32px;background:white;border-radius:18px}
+[hidden]{display:none!important}button:disabled{background:#8595ab;cursor:default}
 h1{margin-top:0}button,a{padding:12px 18px;border-radius:9px}button{background:#244e86;color:white;
 border:0;font-size:17px;cursor:pointer}a{display:inline-block}pre{white-space:pre-wrap;
 background:#f5f7fb;padding:18px;border-radius:10px}.muted{color:#637289}</style>

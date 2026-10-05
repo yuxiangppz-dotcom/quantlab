@@ -2,7 +2,7 @@
   "provider": "deepseek",
   "model": "deepseek-flash",
   "max_output_tokens": 32768,
-  "deepseek_reasoning_effort": "high",
+  "deepseek_reasoning_effort": "low",
   "candidate_limit": 24,
   "discovery_limit": 160,
   "opportunity_selection": true,

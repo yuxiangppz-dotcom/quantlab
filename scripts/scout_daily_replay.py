@@ -7,6 +7,7 @@ from pathlib import Path
 from quantlab.scout.daily_budget import DailyResearch
 from quantlab.scout.daily_contract import (
     INSTRUCTION,
+    VERSION,
     compact,
     render_output,
     research_packet,
@@ -20,13 +21,25 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--response", type=Path, help="Archived public response for truncated runs")
     args = parser.parse_args()
     original_bytes = args.source.read_bytes()
     source = json.loads(original_bytes)
-    packet = research_packet(source["selection_input_packet"])
+    saved_packet = source["selection_input_packet"]
+    packet = (
+        json.loads(json.dumps(saved_packet))
+        if "fact_columns" in saved_packet
+        else research_packet(saved_packet)
+    )
+    packet["version"] = VERSION
     raw_output = source["selection_raw"]
     errors = validate_output(raw_output, packet)
-    fixture = json.loads(json.dumps(raw_output))
+    public_response = json.loads(args.response.read_bytes()) if args.response else None
+    fixture = {
+        "comparisons": [
+            {"instrument_id": c["instrument_id"], "analysis": {}} for c in packet["candidates"]
+        ]
+    }
     for row in fixture["comparisons"]:
         row.pop("quant_claims", None)
         row.update(
@@ -88,12 +101,21 @@ def main():
         def ask(self, prompt, schema):
             self.calls.append({"offline": True})
             value = next(self.outputs)
+            if value is None and public_response:
+                self.failed_response = {
+                    **public_response,
+                    "usage": {"total_tokens": 0},
+                    "offline_replay": True,
+                }
+                raise ValueError("Replayed real truncated response")
             return value, {
                 "choices": [{"finish_reason": "stop", "message": {"content": compact(value)}}],
                 "usage": {"total_tokens": 0},
             }
 
     args.output.mkdir(parents=True, exist_ok=False)
+    if public_response:
+        (args.output / "original-response.json").write_bytes(args.response.read_bytes())
     research = DailyResearch(Replay(), journal=args.output / "requests")
     prompt = INSTRUCTION + compact(packet)
     schema = selection_schema(packet["candidates"])
@@ -112,6 +134,7 @@ def main():
         "paid_requests": 0,
         "source_sha256": fingerprint(source),
         "original_output_sha256": fingerprint(raw_output),
+        "original_response_sha256": fingerprint(public_response) if public_response else None,
         "packet_sha256": fingerprint(packet),
         "candidate_count": len(packet["candidates"]),
         "evidence_count": len(packet["evidence"]),

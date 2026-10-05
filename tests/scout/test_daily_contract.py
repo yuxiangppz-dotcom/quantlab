@@ -143,6 +143,18 @@ def test_explicit_peer_and_industry_references_render_with_subject_and_period():
     assert result == before
 
 
+def test_real_failure_shape_cannot_treat_evidence_id_as_fact_or_event():
+    packet, result = inputs(), output()
+    result["market_view"] = "行业[[fact:industry:示例行业:positive_fraction_1d]]"
+    row = result["comparisons"][0]
+    row["analysis"]["event_ids"] = ["ev-one"]
+    row["thesis"] = "公告[[ev-one]]"
+    errors = validate_output(result, packet)
+    assert any(e["code"] == "market_view_qualitative_only" for e in errors)
+    assert any(e["code"] == "event_not_shown_for_subject:ev-one" for e in errors)
+    assert any(e["code"] == "placeholder_not_declared:ev-one" for e in errors)
+
+
 def test_all_rows_errors_collected_without_favorable_substitution():
     packet, result = inputs(), output()
     result["comparisons"][0]["thesis"] = "上涨20%"
