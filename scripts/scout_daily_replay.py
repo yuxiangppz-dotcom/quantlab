@@ -35,6 +35,12 @@ def main():
     raw_output = source["selection_raw"]
     errors = validate_output(raw_output, packet)
     public_response = json.loads(args.response.read_bytes()) if args.response else None
+    if raw_output is None and public_response:
+        try:
+            raw_output = json.loads(public_response["choices"][0]["message"]["content"])
+            errors = validate_output(raw_output, packet)
+        except (ValueError, TypeError):
+            pass
     fixture = {
         "comparisons": [
             {"instrument_id": c["instrument_id"], "analysis": {}} for c in packet["candidates"]

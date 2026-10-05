@@ -168,11 +168,46 @@ class DailyResearch:
         self.repairs += 1
         # The full response/error list is archived. Resend only the original facts
         # and a compact complete error matrix, never previous replies/history.
-        matrix = [[e.get("path", []), e["code"], e.get("detail", "")[:120]] for e in errors]
+        matrix = [
+            [
+                e.get("path", []),
+                e["code"],
+                e.get("detail", "")[:120],
+                {k: v for k, v in e.items() if k not in {"path", "code", "detail"}},
+            ]
+            for e in errors
+        ]
+        decision_keys = (
+            "instrument_id",
+            "primary_type",
+            "rank",
+            "final_status",
+            "comparator_id",
+            "fact_ids",
+        )
+        decisions = (
+            [
+                [r.get(k) for k in decision_keys]
+                for r in (previous or {}).get("comparisons", [])
+                if isinstance(r, dict)
+            ]
+            if isinstance(previous, dict)
+            else []
+        )
         correction = (
             prompt + "\n这是唯一一次定向纠错。保留反证，不改变预算或来源。"
             "按全部错误清单纠正并输出完整schema JSON。\n"
-            + compact({"error_columns": ["path", "code", "detail"], "errors": matrix})
+            "保留此前未报错的分级和比较决定，不另选一套名单。比较对象必须同类型且unselected。"
+            "禁止词净流入/净流出改用对应资金事实占位符，保留资金反证；H5等固定期限可保留。"
+            "新使用的占位符务必加入该行fact_ids。只有报错处需要修复，并维护全局排名一致性。\n"
+            + compact(
+                {
+                    "error_columns": ["path", "code", "detail", "context"],
+                    "errors": matrix,
+                    "decision_columns": list(decision_keys),
+                    "previous_decisions": decisions,
+                }
+            )
         )
         result, raw, errors = self._attempt(correction, schema, validator)
         if errors:

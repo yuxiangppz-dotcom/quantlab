@@ -1722,7 +1722,7 @@ def run_scout(
         "config": config,
         "config_sha256": fingerprint(config),
         "input_fingerprint": input_fingerprint,
-        "prompt_version": "daily_facts_v2"
+        "prompt_version": "daily_facts_v3"
         if daily_mode
         else OPPORTUNITY_VERSION
         if opportunity_mode

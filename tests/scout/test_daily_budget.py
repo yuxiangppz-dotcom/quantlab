@@ -67,6 +67,38 @@ def test_unknown_delivery_is_retained_and_never_retried(tmp_path):
     assert receipt["token_charge_unknown"] and receipt["charged_tokens"] > 32768
 
 
+def test_directed_repair_retains_decisions_and_actual_error_context():
+    previous = {
+        "comparisons": [
+            {
+                "instrument_id": "000001.SZ",
+                "primary_type": "trend_continuation",
+                "rank": 1,
+                "final_status": "focus",
+                "comparator_id": "000002.SZ",
+                "fact_ids": ["fact:000001.SZ:market:return_5d"],
+                "long_unused_history": "must not resend this",
+            }
+        ]
+    }
+    errors = [
+        {
+            "path": ["000001.SZ", "comparator_id"],
+            "code": "same_type_unselected_required",
+            "actual": "000002.SZ",
+            "allowed_comparator_ids": ["000003.SZ"],
+        }
+    ]
+    fake = Fake([previous, {}])
+    client = DailyResearch(fake)
+    client.ask("fixed-input", {}, validator=lambda value: errors if value else [])
+    repair = fake.calls[1]
+    assert "previous_decisions" in repair and "trend_continuation" in repair
+    assert "000003.SZ" in repair and "allowed_comparator_ids" in repair
+    assert "must not resend this" not in repair
+    assert len(fake.calls) == 2 and client.repairs == 1
+
+
 def test_deadline_and_reservation_are_checked_before_send():
     fake = Fake([{}])
     client = DailyResearch(fake, started_clock=time.monotonic() - 1801)

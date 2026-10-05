@@ -15,7 +15,7 @@ from quantlab.scout.facts import program_facts
 from quantlab.scout.models import fingerprint
 from quantlab.scout.opportunity_ai import OPPORTUNITY_SCHEMA
 
-VERSION = "daily_facts_v2"
+VERSION = "daily_facts_v3"
 FIELDS = ("thesis", "risk", "invalidation", "difference", "independent_basis", "unknowns")
 ANALYSIS_FIELDS = (
     "incremental_change",
@@ -31,13 +31,16 @@ market_view只写定性概述，不写数字、日期或任何占位符。每项
 只有fact:开头的事实ID能写成[[fact_id]]；ev-来源ID仅进evidence_ids，不能做事实占位符。
 analysis.event_ids只填本股events.record_id（event-开头），不是source_ids或ev-来源ID。
 analysis.scale_fact_ids须为本股实际引用的事实，也列入fact_ids；next_observation_date无来源就null。
+资金方向由程序事实展示。不要自行写“净流入”“净流出”：写“资金反证：[[对应资金事实ID]]”，不能丢弃负向事实。
 每个候选必须输出一次comparisons；只用给定主要类型，证据不足不排名、不入选。
+primary_type=insufficient_evidence时rank=null且final_status=unselected；其余候选连续整数排名。
 其他股票即使未选也连续排名；最多三重点五观察。入选比较对象须同类型未选者。
 所有说明简短，保留最强反证、失效条件、来源缺口，不声称搜索或人工核实。
 正文不得自己写任何数字、日期、资金流方向或数量大小比较；需要数量时使用[[fact_id]]。
 fact_ids列出实际用于判断的事实。事实卡含主体、期间、值和单位；同行数量的主体不从中文推断。
 行业统计只描述当时合格成员，不能证明个股受益。不要将首次采集当首次市场消息。
 事件推断引用本股实际展示的event_ids和evidence_ids；标题不是正文、预增不是超预期。
+例行日程、重复内容、长期背景或单纯价格异动不能作为event_update的增量事件。
 只引用本股、指定比较对象及其行业的事实和来源。未知交易条件写“未知：…”；
 没有盘口与逐笔数据，不推断次日可买性、封单强弱或成交保障。
 next_observation_date只有实际来源日程才填，否则null。只输出schema JSON。
@@ -269,6 +272,15 @@ def selection_schema(candidates):
     # References replace model-authored unit conversions and redundant declarations.
     props.pop("quant_claims")
     rows["items"]["required"].remove("quant_claims")
+    rows["items"]["allOf"] = [
+        {
+            "if": {"properties": {"primary_type": {"const": "insufficient_evidence"}}},
+            "then": {
+                "properties": {"rank": {"type": "null"}, "final_status": {"const": "unselected"}}
+            },
+            "else": {"properties": {"rank": {"type": "integer", "minimum": 1}}},
+        }
+    ]
     return schema
 
 
@@ -282,13 +294,16 @@ def validate_output(output, packet):
         return errors
     candidates = {c["instrument_id"]: c for c in packet["candidates"]}
     facts = unpack_facts(packet)
-    shape = deepcopy(selection_schema(packet["candidates"])["properties"]["comparisons"]["items"])
+    shape = semantic_shape(
+        selection_schema(packet["candidates"])["properties"]["comparisons"]["items"]
+    )
+    shape["properties"]["instrument_id"]["enum"] = list(candidates)
     shape["additionalProperties"] = True
     rows = [r for r in output["comparisons"] if Draft202012Validator(shape).is_valid(r)]
     by_code = {r["instrument_id"]: r for r in rows}
 
-    def error(code, field, detail):
-        errors.append({"path": [code, field], "code": detail})
+    def error(code, field, detail, **context):
+        errors.append({"path": [code, field], "code": detail, **context})
 
     if len(by_code) != len(candidates):
         error("all", "comparisons", "duplicate_or_missing_subject")
@@ -318,7 +333,13 @@ def validate_output(output, packet):
         if peer is not None and (peer not in by_code or peer == code):
             error(code, "comparator_id", "comparator_not_shown")
         if row["final_status"] != "unselected" and comparators and peer not in comparators:
-            error(code, "comparator_id", "same_type_unselected_required")
+            error(
+                code,
+                "comparator_id",
+                "same_type_unselected_required",
+                allowed_comparator_ids=sorted(comparators),
+                actual=peer,
+            )
         allowed = {code, peer}
         for c in candidates.values():
             if c["instrument_id"] in allowed:
@@ -388,11 +409,14 @@ def validate_output(output, packet):
                 if ref not in row["fact_ids"]:
                     error(code, field, "placeholder_not_declared:" + ref)
             prose = REF.sub("事实", text)
-            prose = re.sub(r"\bH(?:1|3|5|10)\b", "固定观察期限", prose)
+            prose = re.sub(r"(?<![A-Za-z0-9])H(?:1|3|5|10)(?![A-Za-z0-9])", "固定观察期限", prose)
+            for subject in (code, peer):
+                if subject:
+                    prose = prose.replace(subject, "证券")
             if re.search(r"\d|净流[入出]|额比.{0,5}[高低]|收益.{0,5}[高低]", prose):
-                error(code, field, "quantitative_prose_requires_fact_placeholder")
-            if asserts_unsupported_microstructure(prose):
-                error(code, field, "unsupported_microstructure_assertion")
+                error(code, field, "quantitative_prose_requires_fact_placeholder", actual=text)
+            if daily_microstructure_assertion(prose, field):
+                error(code, field, "unsupported_microstructure_assertion", actual=text)
         node = row["analysis"]["next_observation_date"]
         if node:
             try:
@@ -410,6 +434,46 @@ def validate_output(output, packet):
         if re.search(r"\d|\[\[", output["market_view"]):
             error("all", "market_view", "market_view_qualitative_only")
     return errors
+
+
+def semantic_shape(schema):
+    """Check safe field types, not constraints that would hide the row's other errors."""
+    if isinstance(schema, list):
+        return [semantic_shape(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    return {
+        key: semantic_shape(value)
+        for key, value in schema.items()
+        if key
+        not in {
+            "allOf",
+            "enum",
+            "const",
+            "pattern",
+            "minLength",
+            "maxLength",
+            "minItems",
+            "maxItems",
+            "uniqueItems",
+            "minimum",
+            "maximum",
+        }
+    }
+
+
+def daily_microstructure_assertion(text, field):
+    # Typed unknown fields list missing dimensions, rather than claiming their values.
+    # Keep an explicit positive-assertion guard even under an "unknown" heading.
+    if field in {"unknowns", "trade_unknown"} and text.lstrip().startswith("未知"):
+        return bool(
+            re.search(
+                r"封单(?:较|很|特别)?强(?!弱)|(?:可以|能够|保证|必然|容易).{0,4}(?:成交|买到)"
+                r"|(?:承接|流动性)(?:强|充足)",
+                text,
+            )
+        )
+    return asserts_unsupported_microstructure(text)
 
 
 def format_fact(fact):

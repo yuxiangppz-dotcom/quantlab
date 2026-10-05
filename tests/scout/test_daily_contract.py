@@ -155,6 +155,19 @@ def test_real_failure_shape_cannot_treat_evidence_id_as_fact_or_event():
     assert any(e["code"] == "placeholder_not_declared:ev-one" for e in errors)
 
 
+def test_real_unknown_lists_and_fixed_horizon_are_not_factual_assertions():
+    packet, result = inputs(), output()
+    row = result["comparisons"][0]
+    row["unknowns"] = "未知：盘口、逐笔、封单、排队、次日可成交性"
+    row["trade_conditions"]["unknown"] = row["unknowns"]
+    row["analysis"]["h5_mechanism"] = "等待H5趋势验证"
+    assert validate_output(result, packet) == []
+    row["unknowns"] = "未知：封单很强，可以成交"
+    assert any(
+        e["code"] == "unsupported_microstructure_assertion" for e in validate_output(result, packet)
+    )
+
+
 def test_all_rows_errors_collected_without_favorable_substitution():
     packet, result = inputs(), output()
     result["comparisons"][0]["thesis"] = "上涨20%"
@@ -177,6 +190,20 @@ def test_subject_and_period_cannot_be_replaced_by_model():
         for e in validate_output(result, packet)
     )
     assert selection_schema(packet["candidates"])["properties"]["comparisons"]["maxItems"] == 2
+
+
+def test_schema_failure_does_not_hide_other_safe_row_errors():
+    packet, result = inputs(), output()
+    row = result["comparisons"][0]
+    row["primary_type"] = "insufficient_evidence"
+    row["type_labels"] = ["insufficient_evidence"]
+    row["thesis"] = "净流出" + "不确定" * 50
+    row["risk"] = "封单强，可以成交"
+    errors = validate_output(result, packet)
+    codes = {e["code"] for e in errors}
+    assert "schema" in codes and "insufficient_cannot_rank_or_select" in codes
+    assert "quantitative_prose_requires_fact_placeholder" in codes
+    assert "unsupported_microstructure_assertion" in codes
 
 
 def test_unknown_financial_units_are_not_formatted_as_money():
