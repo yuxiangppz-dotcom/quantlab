@@ -4,8 +4,8 @@ import {pbkdf2Sync} from 'node:crypto';
 import {ScoutStore} from './worker.mjs';
 import {sessionAllowed,nextPath} from './password.mjs';
 const password='synthetic-password-only-abcdefghijklmnopqrstuvwxyz';
-const salt='01'.repeat(16), hash=pbkdf2Sync(password,Buffer.from(salt,'hex'),300000,32,'sha256').toString('hex');
-const env={AUTH_MODE:'password',VIEWER_PASSWORD_HASH:`pbkdf2_sha256$300000$${salt}$${hash}`,SESSION_SECRET:'session-secret-synthetic-abcdefghijklmnopqrstuvwxyz'};
+const salt='01'.repeat(16), hash=pbkdf2Sync(password,Buffer.from(salt,'hex'),100000,32,'sha256').toString('hex');
+const env={AUTH_MODE:'password',VIEWER_PASSWORD_HASH:`pbkdf2_sha256$100000$${salt}$${hash}`,SESSION_SECRET:'session-secret-synthetic-abcdefghijklmnopqrstuvwxyz'};
 test('password login: PBKDF2 parity, signed cookie, CSRF, rate and redirect boundaries',async()=>{
   const data=new Map(); const kv={get:k=>data.get(k),put:(k,v)=>data.set(k,structuredClone(v))};
   const store=new ScoutStore({storage:{kv}},env);

@@ -11,12 +11,12 @@ test('real workerd SQLite survives restart, rejects anonymous access and renders
   const modulePath=name=>new URL(name,import.meta.url).pathname.replace(/^\/([A-Z]:)/,'$1');
   const password='synthetic-workerd-password-123456789';
   const salt='02'.repeat(16);
-  const passwordHash=pbkdf2Sync(password,Buffer.from(salt,'hex'),300000,32,'sha256').toString('hex');
+  const passwordHash=pbkdf2Sync(password,Buffer.from(salt,'hex'),100000,32,'sha256').toString('hex');
   const options=convertV4MiniflareOptions({name:'scout',modules:[{type:'ESModule',path:modulePath('./worker.mjs')},
     {type:'ESModule',path:modulePath('./auth.mjs')},{type:'ESModule',path:modulePath('./password.mjs')}],
     compatibilityDate:'2026-10-01',durableObjects:{SCOUT:{className:'ScoutStore',useSQLite:true}},
     durableObjectsPersist:path,bindings:{SCOUT_API_TOKEN:'synthetic-token-abcdefghijklmnopqrstuvwxyz',SCHEDULE_ENABLED:'false',AUTH_MODE:'password',SESSION_SECRET:'synthetic-runtime-session-secret-abcdefghijklmnopqrstuvwxyz',
-      VIEWER_PASSWORD_HASH:`pbkdf2_sha256$300000$${salt}$${passwordHash}`}});
+      VIEWER_PASSWORD_HASH:`pbkdf2_sha256$100000$${salt}$${passwordHash}`}});
   options.resourcePersistencePath=path;
   let mf=new Miniflare(options);
   const request=(url,init={})=>mf.dispatchFetch('https://scout.example'+url,{...init,

@@ -6,7 +6,7 @@ const mac=async (value,key)=>{
   return hex(await crypto.subtle.sign('HMAC',secret,enc.encode(value)));
 };
 export function passwordConfigured(env) {
-  return env.AUTH_MODE==='password' && /^pbkdf2_sha256\$300000\$[a-f0-9]{32}\$[a-f0-9]{64}$/.test(env.VIEWER_PASSWORD_HASH||'') &&
+  return env.AUTH_MODE==='password' && /^pbkdf2_sha256\$100000\$[a-f0-9]{32}\$[a-f0-9]{64}$/.test(env.VIEWER_PASSWORD_HASH||'') &&
     typeof env.SESSION_SECRET==='string' && env.SESSION_SECRET.length>=48;
 }
 export async function verifyPassword(value, hash) {

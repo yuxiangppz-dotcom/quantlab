@@ -14,7 +14,7 @@ GitHub Free 私库标准 runner 2000分钟/月由账号共享。免费 Workers �
 
 Cloudflare配置 `APP_COMMIT` 必须与GitHub变量一致、`SCHEDULE_ENABLED=false` 起步、`AUTH_MODE=password`。Cloudflare secret `SCOUT_API_TOKEN` 与GitHub同名随机令牌一致；`SERVERCHAN_SENDKEY` 只在Cloudflare，GitHub runner不持有。
 
-手机查看密码随机生成，仅在本机受限交付文件保存明文。Cloudflare只保存 `VIEWER_PASSWORD_HASH`（PBKDF2 SHA256、300000轮、16字节随机盐）与独立 `SESSION_SECRET`（至少48字符）。慢密码校验在DO中执行；每IP每15分钟最多5次尝试。手机使用12小时签名Cookie，Secure/HttpOnly/SameSite=Lax；登录POST核对同源Origin，输入有界，跳转仅限站内报告。API必须独立bearer，手机Cookie不能启动研究任务或读取原始档案。
+手机查看密码随机生成，仅在本机受限交付文件保存明文。Cloudflare只保存 `VIEWER_PASSWORD_HASH`（PBKDF2 SHA256、100000轮、16字节随机盐）与独立 `SESSION_SECRET`（至少48字符）。慢密码校验在DO中执行；每IP每15分钟最多5次尝试。手机使用12小时签名Cookie，Secure/HttpOnly/SameSite=Lax；登录POST核对同源Origin，输入有界，跳转仅限站内报告。API必须独立bearer，手机Cookie不能启动研究任务或读取原始档案。
 
 用户本人选择独立密码方案：实际Access Free开通页要求银行卡、地址及超额扣费授权，未提交开通。可选Access认证代码仍保留，但本次部署不使用Access，不需要相关边缘Bypass策略。首次部署仅需本人账户Workers脚本权限；部署令牌只保存在本机受限文件，不进入GitHub日常任务，禁止Global API Key。
 
