@@ -72,3 +72,39 @@ def test_failed_empty_view_does_not_suggest_model_found_no_opportunity():
     saved["selection"]["selected"] = []
     for view in (render_report(saved), render_html_report(saved)):
         assert "未通过校验" in view and "重点股" not in view
+
+
+def test_six_card_items_and_source_gaps_shared_by_markdown_html_without_audit_dump():
+    from quantlab.scout.concise_report import card_content
+
+    saved = report()
+    saved["timing"]["information_cutoff"] = "2026-10-05T18:00:00+08:00"
+    saved["coverage"] = [
+        {"source": "news:cls", "status": "failed"},
+        {"source": "akshare:hot", "status": "failed"},
+        {"source": "local:comments", "status": "not_configured"},
+    ]
+    row = saved["selection"]["selected"][0]
+    row.update(
+        primary_type="trend_continuation",
+        comparator_id="c",
+        difference="仅有已归档日线差异，经营证据仍不足",
+        analysis={"h5_mechanism": "若行业内相对表现保持才可能延续，仍未验证"},
+        trade_conditions={"known": "日线已知", "unknown": "目标日价格及执行条件待确认"},
+    )
+    assert len(card_content(saved, row)) == 6
+    before = deepcopy(saved)
+    for view in (render_report(saved), render_html_report(saved)):
+        for required in (
+            "news:cls",
+            "akshare:hot",
+            "local:comments",
+            "2026-10-05T18:00",
+            "后续假设",
+            "比较对象 c",
+            "执行条件待确认",
+            "尚无可核查的失效规则",
+        ):
+            assert required in view
+        assert "候选阶段诊断" not in view
+    assert saved == before
