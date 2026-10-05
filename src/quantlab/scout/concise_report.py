@@ -26,8 +26,10 @@ def selected_groups(report):
 def reason_text(row, field):
     from quantlab.scout.daily_contract import format_fact
 
-    # The comparison retains the original model risk without verbose audit cautions.
+    # Program risks are a separate field; the original comparison cannot hide them.
     value = row.get("comparison", {}).get(field, row.get(field)) or "待核查"
+    if field == "risk":
+        value = " ".join(dict.fromkeys([value, *filter(None, row.get("program_risks", []))]))
     labels = {
         "return_1d": "近1日涨幅",
         "return_5d": "近5日涨幅",

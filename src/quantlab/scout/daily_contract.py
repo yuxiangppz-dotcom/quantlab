@@ -12,11 +12,20 @@ from hashlib import sha256
 from jsonschema import Draft202012Validator
 
 from quantlab.scout.ai import asserts_unsupported_microstructure
+from quantlab.scout.daily_semantics import (
+    CLAIM_SCHEMA,
+    claim_errors,
+    prose_errors,
+    render_claim,
+)
+from quantlab.scout.daily_semantics import (
+    INSTRUCTION as SEMANTIC_INSTRUCTION,
+)
 from quantlab.scout.facts import program_facts
 from quantlab.scout.models import fingerprint
 from quantlab.scout.opportunity_ai import OPPORTUNITY_SCHEMA
 
-VERSION = "daily_facts_v6"
+VERSION = "daily_facts_v7_semantics"
 FIELDS = ("thesis", "risk", "invalidation", "difference", "independent_basis", "unknowns")
 ANALYSIS_FIELDS = (
     "incremental_change",
@@ -49,6 +58,7 @@ primary_type=insufficient_evidence时rank=null且final_status=unselected；其�
 next_observation_date只有实际来源日程才填，否则null。
 只输出符合所给schema的数据JSON，不要输出schema定义或多余的type/properties键。
 """
+INSTRUCTION += SEMANTIC_INSTRUCTION
 
 
 def compact(value):
@@ -277,6 +287,7 @@ def referenced_facts(row):
         dict.fromkeys(
             row.get("fact_ids", [])
             + row["analysis"]["scale_fact_ids"]
+            + [ref for claim in row.get("semantic_claims", []) for ref in claim["fact_ids"]]
             + [ref for text in texts for ref in REF.findall(text)]
         )
     )
@@ -288,6 +299,7 @@ def selection_schema(candidates, packet=None):
     rows = schema["properties"]["comparisons"]
     rows.update(minItems=len(candidates), maxItems=len(candidates))
     props = rows["items"]["properties"]
+    props["semantic_claims"] = deepcopy(CLAIM_SCHEMA)
     props["instrument_id"] = {
         "type": "string",
         "enum": [row["instrument_id"] for row in candidates],
@@ -415,6 +427,9 @@ def validate_output(output, packet):
                 if industry:
                     allowed.add("industry:" + industry)
         used_facts = referenced_facts(row)
+        if Draft202012Validator(CLAIM_SCHEMA).is_valid(row.get("semantic_claims", [])):
+            for issue in claim_errors(row.get("semantic_claims", []), facts, allowed):
+                error(code, "semantic_claims", issue["code"], claim_index=issue["index"])
         for ref in used_facts:
             if ref not in facts or facts[ref]["subject_id"] not in allowed:
                 error(
@@ -481,6 +496,8 @@ def validate_output(output, packet):
             "trade_unknown": row["trade_conditions"]["unknown"],
         }
         for field, text in fields.items():
+            for issue in prose_errors(text, facts, (code, peer)):
+                error(code, field, issue, actual=text)
             prose = REF.sub("事实", text)
             prose = re.sub(r"(?<![A-Za-z0-9])H(?:1|3|5|10)(?![A-Za-z0-9])", "固定观察期限", prose)
             for subject in (code, peer):
@@ -573,7 +590,12 @@ def format_fact(fact):
             if fact["unit"] == "provider_unit_unknown"
             else f"{value:.2f} {fact['unit']}"
         )
-    return f"{fact['subject_id']} · {fact['period']} · {fact['metric']}：{number}"
+    result = f"{fact['subject_id']} · {fact['period']} · {fact['metric']}：{number}"
+    if fact["metric"].startswith("relative_return_"):
+        result += "（相对本次合格行业成员均值，非指数及历史完整行业）"
+    if fact["metric"].startswith("net_"):
+        result += "（供应商主动买卖净额，累计窗口可能重叠，不代表机构账户）"
+    return result
 
 
 def render_output(output, packet):
@@ -594,6 +616,9 @@ def render_output(output, packet):
             row["trade_conditions"][field] = render(row["trade_conditions"][field])
         row["quant_claims"] = []  # Legacy field: daily validation uses explicit references.
         row["fact_cards"] = [facts[ref] for ref in row["fact_ids"]]
+        row["semantic_summary"] = [
+            render_claim(claim, facts, format_fact) for claim in row.get("semantic_claims", [])
+        ]
     result["render_version"] = VERSION
     result["raw_output_sha256"] = fingerprint(output)
     return result

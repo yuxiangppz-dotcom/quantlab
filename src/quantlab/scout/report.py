@@ -128,6 +128,20 @@ def present_selection(model_selection: dict, candidates: list[dict]) -> dict:
                 + price_risk
                 + relation_risk,
                 "invalidation": row["invalidation"],
+                "program_risks": list(
+                    dict.fromkeys(
+                        [
+                            *row.get("program_risks", []),
+                            price_risk,
+                            "当日为一价行情，委托队列及目标日成交未知。"
+                            if m.get("one_price_session")
+                            else "",
+                            "交易状态存在停牌线索，须独立确认。"
+                            if row.get("screening_status") == "hold_for_official_notice_review"
+                            else "",
+                        ]
+                    )
+                ),
                 "evidence_ids": row["evidence_ids"],
                 "opportunity_type": candidate.get("routes", []),
                 "discovery_summary": route_summary + "；" + attention,
@@ -348,6 +362,7 @@ def render_report(report: dict) -> str:
 
 def render_audit_report(report: dict) -> str:
     from quantlab.scout.opportunity_view import markdown as opportunity_markdown
+
     status = report["status"]
     title = "【合成演示，不是真实荐股】" if status == "demo" else ""
     lines = [

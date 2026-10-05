@@ -146,6 +146,9 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
         elif code in {
             "quantitative_prose_requires_fact_placeholder",
             "unsupported_microstructure_assertion",
+            "core_fact_clause_requires_neutral_label",
+            "fund_improvement_requires_cross_time_facts",
+            "fund_consistency_requires_structured_claim",
         }:
             suffix = (
                 ["analysis", field]
