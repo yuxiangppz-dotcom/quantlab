@@ -223,6 +223,7 @@ def execute(settings, client, *, app_commit, now=None, run=tick):
     if result["status"] == "published":
         metadata = result["report"]
         folder = root / "reports" / metadata["run_id"]
+        markdown = (folder / "report.md").read_text(encoding="utf-8")
         client.request(
             "/api/publish",
             method="POST",
@@ -230,6 +231,8 @@ def execute(settings, client, *, app_commit, now=None, run=tick):
             | {
                 "metadata": metadata,
                 "html": (folder / "report.html").read_text(encoding="utf-8"),
+                "markdown": markdown,
+                "markdown_sha256": sha(markdown.encode()),
             },
         )
     state = (

@@ -160,3 +160,21 @@ test('deployment repair push is bounded per release, preserves unknown original 
     assert.equal(calls,1);
   } finally {globalThis.fetch=original;}
 });
+
+
+test('WeChat report text is an immutable hashed companion and contains candidates without requiring the history website',async()=>{
+  const ctx=context(),store=new ScoutStore(ctx,{...env,SERVERCHAN_SENDKEY:'SCTsynthetic123456789'});
+  const saved=await report();await store.fetch(req('/api/publish',saved));
+  const markdown='# 研究候选\n目标2026-10-08，行情截至2026-09-30\n合成股票：合成理由，效果待观察。';
+  const companion={...saved,markdown,markdown_sha256:await digest(encoder.encode(markdown))};
+  assert.equal((await store.fetch(req('/api/publish',{...companion,markdown:'tampered'}))).status,400);
+  assert.equal(ctx.data.has('report-text:synthetic-report'),false);
+  assert.equal((await store.fetch(req('/api/publish',companion))).status,200);
+  assert.deepEqual(ctx.data.get('report:synthetic-report'),{metadata:saved.metadata,html:saved.html});
+  const changed=markdown+'changed';
+  assert.equal((await store.fetch(req('/api/publish',{...companion,markdown:changed,markdown_sha256:await digest(encoder.encode(changed))}))).status,400);
+  const original=globalThis.fetch;
+  globalThis.fetch=async(url,options)=>{const payload=JSON.parse(options.body);assert.ok(payload.desp.includes(markdown));return Response.json({code:0});};
+  try {assert.equal((await (await store.fetch(req('/api/push-test',{run_id:'synthetic-report'}))).json()).status,'provider_accepted');}
+  finally {globalThis.fetch=original;}
+});

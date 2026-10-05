@@ -162,3 +162,32 @@ def test_cloud_client_identifies_its_own_automation_transport():
 
     client = free.Client("https://scout.example", "x" * 48, opener=Opener())
     assert client.request("/api/snapshot") == {"snapshot": None}
+
+
+def test_complete_report_text_reaches_durable_cloud_before_notification(tmp_path):
+    class DeliveryCloud(MemoryCloud):
+        def request(self, path, **kwargs):
+            if path == "/api/publish":
+                self.report = kwargs["value"]
+            if path == "/api/notify":
+                assert self.report["markdown"] == "synthetic candidate and reason"
+                assert self.report["markdown_sha256"] == free.sha(self.report["markdown"].encode())
+                assert self.paths.index("/api/publish") < self.paths.index("/api/finish")
+            return super().request(path, **kwargs)
+
+    root = initialize(tmp_path / "scout")
+    cloud = DeliveryCloud()
+
+    def publish_saved_fixture(settings, now, **kwargs):
+        folder = root / "reports" / "synthetic-run"
+        folder.mkdir(parents=True)
+        (folder / "report.html").write_text("synthetic html")
+        (folder / "report.md").write_text("synthetic candidate and reason")
+        return {"status": "published", "report": {"run_id": "synthetic-run"}}
+
+    result = free.execute(
+        {"canonical_dir": str(root / "market")}, cloud, app_commit="a" * 40,
+        now=datetime(2026, 10, 8, 8, 3, tzinfo=SHANGHAI), run=publish_saved_fixture,
+    )
+    assert result["status"] == "published"
+    assert cloud.paths[-1] == "/api/notify"

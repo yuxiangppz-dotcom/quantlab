@@ -16,6 +16,7 @@ test('real workerd SQLite survives restart, rejects anonymous access and renders
   const options=convertV4MiniflareOptions({name:'scout',outboundService:async request=>{
     pushCalls++;assert.equal(request.method,'POST');
     assert.equal(new URL(request.url).host,'sctapi.ftqq.com');
+    const payload=await request.json();assert.match(payload.desp,/synthetic full phone report/);
     return pushStatus===200?Response.json({code:0}):new Response(null,{status:302,headers:{location:'https://attacker.example/'}});
   },modules:[{type:'ESModule',path:modulePath('./worker.mjs')},
     {type:'ESModule',path:modulePath('./auth.mjs')},{type:'ESModule',path:modulePath('./password.mjs')}],
@@ -32,7 +33,8 @@ test('real workerd SQLite survives restart, rejects anonymous access and renders
     const html='<html><h1>synthetic restart proof</h1></html>';
     const bytes=new TextEncoder().encode(html);
     const hash=Buffer.from(await crypto.subtle.digest('SHA-256',bytes)).toString('hex');
-    const value={import_only:true,html,metadata:{run_id:'restart-fixture',generated_at:'2026-10-05T18:00:00+08:00',
+    const markdown='synthetic full phone report';
+    const value={import_only:true,html,markdown,markdown_sha256:Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(markdown))).toString('hex'),metadata:{run_id:'restart-fixture',generated_at:'2026-10-05T18:00:00+08:00',
       target_session:'2026-10-08',asof_session:'2026-09-30',source_report_sha256:'a'.repeat(64),html_sha256:hash}};
     assert.equal((await request('/api/publish',{method:'POST',body:JSON.stringify(value)})).status,200);
     await mf.dispose(); mf=new Miniflare(options);

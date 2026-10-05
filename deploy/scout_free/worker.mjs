@@ -170,6 +170,15 @@ export class ScoutStore {
           !/^\d{4}-\d{2}-\d{2}$/.test(m.target_session) || !/^\d{4}-\d{2}-\d{2}$/.test(m.asof_session) ||
           !Number.isFinite(Date.parse(m.generated_at)) || typeof value.html!=='string' ||
           (await digest(new TextEncoder().encode(value.html)))!==m.html_sha256) throw Error('report');
+      let textRecord=null;
+      if (value.markdown!==undefined) {
+        if (typeof value.markdown!=='string' || value.markdown.length>16000 ||
+            new TextEncoder().encode(value.markdown).length>60000 || !HASH.test(value.markdown_sha256) ||
+            await digest(new TextEncoder().encode(value.markdown))!==value.markdown_sha256) throw Error('report_text');
+        textRecord={markdown:value.markdown,sha256:value.markdown_sha256};
+        const previous=this.kv.get(`report-text:${m.run_id}`);
+        if (previous && JSON.stringify(previous)!==JSON.stringify(textRecord)) throw Error('report_text_immutable');
+      }
       const record={metadata:m,html:value.html};
       const existing=this.kv.get(`report:${m.run_id}`);
       if (existing && JSON.stringify(existing)!==JSON.stringify(record)) throw Error('report_immutable');
@@ -179,6 +188,14 @@ export class ScoutStore {
         if (used+size>MAX_BYTES) return response({error:'archive_full'},507);
         this.ctx.storage.transactionSync(()=>{
           this.kv.put(`report:${m.run_id}`,record);this.kv.put('bytes',used+size);
+        });
+      }
+      // A separate immutable companion preserves the original HTML record during upgrades.
+      if (textRecord && !this.kv.get(`report-text:${m.run_id}`)) {
+        const size=new TextEncoder().encode(JSON.stringify(textRecord)).length, used=this.kv.get('bytes')||0;
+        if (used+size>MAX_BYTES) return response({error:'archive_full'},507);
+        this.ctx.storage.transactionSync(()=>{
+          this.kv.put(`report-text:${m.run_id}`,textRecord);this.kv.put('bytes',used+size);
         });
       }
       const latest=this.kv.get('latest');
@@ -206,11 +223,12 @@ export class ScoutStore {
     }
     if (method==='POST' && (path==='/api/notify' || path==='/api/notify-import' || path==='/api/push-test')) {
       const value=await this.json(request,2000);
-      let key, title, message, link;
+      let key, title, message, link, runId;
       const origin=new URL(request.url).origin;
       if (path==='/api/notify-import' || path==='/api/push-test') {
         if (this.env.SCHEDULE_ENABLED==='true' || this.kv.get('active') || !ID.test(value.run_id)) throw Error('import_notification');
         const report=this.kv.get(`report:${value.run_id}`);
+        runId=value.run_id;
         if (!report) throw Error('missing_report');
         if (path==='/api/push-test' && !/^[a-f0-9]{40}$/.test(this.env.APP_COMMIT||'')) throw Error('release');
         key=path==='/api/push-test'?`push:test:${this.env.APP_COMMIT}`:`push:import:${value.run_id}`;
@@ -220,7 +238,7 @@ export class ScoutStore {
       } else {
         const job=this.kv.get(`job:${value.day}`);
         if (!job || job.owner!==value.owner || !['published','failed'].includes(job.status)) throw Error('notification');
-        key=`push:${job.day}`;
+        key=`push:${job.day}`;runId=job.status==='published'?job.run_id:null;
         title=`Scout ${job.day} ${job.status==='published'?'选股报告已生成':'预测未完成'}`;
         message=job.status==='published'?'研究候选，效果待前瞻观察。':'本次未发布新候选，旧报告保留。';
         link=job.status==='published'?`${origin}/reports/${job.run_id}`:`${origin}/`;
@@ -228,7 +246,8 @@ export class ScoutStore {
       const existing=this.kv.get(key);
       if (existing) return response(existing);
       if (!/^SCT[A-Za-z0-9]{10,200}$/.test(this.env.SERVERCHAN_SENDKEY||'')) return response({status:'not_configured'});
-      const payload={title,desp:`${message}\n\n[查看手机报告](${link})\n\n需要登录。`};
+      const text=runId?this.kv.get(`report-text:${runId}`):null;
+      const payload={title,desp:`${message}\n\n${text?text.markdown+'\n\n':''}[历史网页报告](${link})\n\n网页需查看密码；本条消息详情中的正文可直接阅读。`};
       const receipt={status:'delivery_unknown',attempted_at:new Date().toISOString()};
       this.kv.put(key,receipt); // Durable intent BEFORE network send.
       try {
