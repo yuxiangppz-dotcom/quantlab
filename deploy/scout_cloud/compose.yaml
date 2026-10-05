@@ -1,0 +1,45 @@
+name: scout-cloud
+services:
+  web:
+    image: ${SCOUT_IMAGE:-quantlab-scout:cloud-v1}
+    build: .
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    env_file: [web-secrets.env]
+    environment:
+      SCOUT_PUBLIC_URL: https://${SCOUT_DOMAIN:?Configure your domain}
+    volumes: [./data/scout:/data/scout:ro]
+    tmpfs: [/tmp]
+    expose: ["8080"]
+    depends_on:
+      scheduler:
+        condition: service_started
+  scheduler:
+    image: ${SCOUT_IMAGE:-quantlab-scout:cloud-v1}
+    command: [/app/.venv/bin/python, -m, quantlab.scout.cloud_runner, --loop]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    env_file: [cloud.env]
+    environment:
+      SCOUT_PUBLIC_URL: https://${SCOUT_DOMAIN:?Configure your domain}
+    volumes: [./data/scout:/data/scout]
+    tmpfs: [/tmp]
+    stop_grace_period: 46m
+  gateway:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    environment:
+      SCOUT_DOMAIN: ${SCOUT_DOMAIN:?Configure your domain}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [web]
+volumes:
+  caddy-data:
+  caddy-config:
