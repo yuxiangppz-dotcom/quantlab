@@ -196,16 +196,25 @@ export class ScoutStore {
       this.ctx.storage.transactionSync(()=>{this.kv.put(`job:${job.day}`,result);this.kv.delete('active');});
       return response(result);
     }
-    if (method==='POST' && (path==='/api/notify' || path==='/api/notify-import')) {
+    if (method==='GET' && path==='/api/push-health') {
+      // Authenticated, read-only upstream probe: no key, no send, no user-chosen URL.
+      try {
+        const upstream=await fetch('https://sctapi.ftqq.com/',{method:'GET',redirect:'manual',
+          headers:{'user-agent':'QuantLab-Scout-Cloud/1.0'},signal:AbortSignal.timeout(10000)});
+        return response({upstream_http:upstream.status,content_type:upstream.headers.get('content-type')});
+      } catch (error) {return response({error_type:String(error?.name||'Error').slice(0,40)},502);}
+    }
+    if (method==='POST' && (path==='/api/notify' || path==='/api/notify-import' || path==='/api/push-test')) {
       const value=await this.json(request,2000);
       let key, title, message, link;
       const origin=new URL(request.url).origin;
-      if (path==='/api/notify-import') {
+      if (path==='/api/notify-import' || path==='/api/push-test') {
         if (this.env.SCHEDULE_ENABLED==='true' || this.kv.get('active') || !ID.test(value.run_id)) throw Error('import_notification');
         const report=this.kv.get(`report:${value.run_id}`);
         if (!report) throw Error('missing_report');
-        key=`push:import:${value.run_id}`;
-        title=`Scout ${report.metadata.target_session} 手机报告已上线`;
+        if (path==='/api/push-test' && !/^[a-f0-9]{40}$/.test(this.env.APP_COMMIT||'')) throw Error('release');
+        key=path==='/api/push-test'?`push:test:${this.env.APP_COMMIT}`:`push:import:${value.run_id}`;
+        title=path==='/api/push-test'?'Scout 云端微信修复验证':`Scout ${report.metadata.target_session} 手机报告已上线`;
         message=`这是已保存的研究候选，行情截至 ${report.metadata.asof_session}，并非新预测。效果待前瞻观察。`;
         link=`${origin}/reports/${value.run_id}`;
       } else {
@@ -224,11 +233,15 @@ export class ScoutStore {
       this.kv.put(key,receipt); // Durable intent BEFORE network send.
       try {
         const sent=await fetch(`https://sctapi.ftqq.com/${this.env.SERVERCHAN_SENDKEY}.send`,{
-          method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload),
+          method:'POST',headers:{'content-type':'application/json','user-agent':'QuantLab-Scout-Cloud/1.0'},body:JSON.stringify(payload),
           redirect:'error',signal:AbortSignal.timeout(20000)});
-        if (sent.ok) receipt.status=(await sent.json()).code===0?'provider_accepted':'rejected';
-        else if (sent.status>=400 && sent.status<500) receipt.status='rejected';
-      } catch { /* Delivery remains unknown; no automatic resend. */ }
+        receipt.upstream_http=sent.status;
+        if (sent.ok) {
+          const provider=await sent.json();
+          receipt.status=provider.code===0?'provider_accepted':'rejected';
+          if (Number.isInteger(provider.code)) receipt.provider_code=provider.code;
+        } else if (sent.status>=400 && sent.status<500) receipt.status='rejected';
+      } catch (error) {receipt.error_type=String(error?.name||'Error').slice(0,40); /* Never log URLs or credentials. */ }
       this.kv.put(key,receipt);return response(receipt);
     }
     if (method==='GET' && !path.startsWith('/api/')) {

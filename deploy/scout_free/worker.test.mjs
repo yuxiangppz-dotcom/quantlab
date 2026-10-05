@@ -137,3 +137,25 @@ test('saved-report link delivery is durable, restricted and never reclassifies a
     assert.equal(calls,1);assert.equal(ctx.data.has('job:2026-10-08'),false);
   } finally {globalThis.fetch=original;}
 });
+
+
+test('deployment repair push is bounded per release, preserves unknown original send and records safe diagnostics',async()=>{
+  const ctx=context(),store=new ScoutStore(ctx,{...env,SERVERCHAN_SENDKEY:'SCTsynthetic123456789'});
+  await store.fetch(req('/api/publish',await report()));
+  ctx.data.set('push:import:synthetic-report',{status:'delivery_unknown'});
+  const original=globalThis.fetch;let calls=0;
+  globalThis.fetch=async(url,options)=>{
+    assert.equal(options.headers['user-agent'],'QuantLab-Scout-Cloud/1.0');
+    calls++;return Response.json({code:0});
+  };
+  try {
+    const value={run_id:'synthetic-report'};
+    const first=await (await store.fetch(req('/api/push-test',value))).json();
+    assert.equal(first.status,'provider_accepted');assert.equal(first.upstream_http,200);
+    assert.deepEqual(await (await store.fetch(req('/api/push-test',value))).json(),first);
+    assert.equal(calls,1);assert.equal(ctx.data.get('push:import:synthetic-report').status,'delivery_unknown');
+    store.env={...store.env,SCHEDULE_ENABLED:'true'};
+    assert.equal((await store.fetch(req('/api/push-test',value))).status,400);
+    assert.equal(calls,1);
+  } finally {globalThis.fetch=original;}
+});
