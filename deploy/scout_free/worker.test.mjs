@@ -146,6 +146,7 @@ test('deployment repair push is bounded per release, preserves unknown original 
   const original=globalThis.fetch;let calls=0;
   globalThis.fetch=async(url,options)=>{
     assert.equal(options.headers['user-agent'],'QuantLab-Scout-Cloud/1.0');
+    assert.equal(options.redirect,'manual');
     calls++;return Response.json({code:0});
   };
   try {

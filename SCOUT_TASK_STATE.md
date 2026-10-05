@@ -18,6 +18,8 @@
 - 实际公网密码登录303、带有效Cookie报告200且HTML SHA逐字一致、篡改Cookie303、匿名API403。私有GitHub Actions真实固定Docker构建/执行check 37318307960 SUCCESS（模型/供应商调用0）。原本导入的7股仍为9/30行情、10/8目标，并非新预测。
 - Cloudflare发送保存报告链接结果delivery_unknown，用户明确未收到；原发送意图保留不重发。新增受认证保护、无key无发送的固定上游健康探针，以及调度关闭/无活跃任务时每封版一次的“云端微信修复验证”消息；发送加明确Scout UA，回执只记录安全HTTP/错误类型，不记录key/URL/原始响应。调度保持关闭，微信实收未达标前不宣称完成。
 
+- 微信根因已离线实际workerd复现：发送fetch的redirect:error在运行环境报TypeError，尚未调用模拟上游便delivery_unknown；改为manual后实际workerd上游收到POST并provider_accepted，302不跟随且reject，旧意图不修改。4fe4ea4真实上游只读探针200；修复验证仍TypeError，原失败回执完整保留。下一版仅修实际传输，不提高预测预算，不增加策略；需真实微信修复验证后才开启日常调度。
+
 ## 2026-10-05 云端接入配置（微信实收通过，服务器待提供）
 
 - 用户新直接委托“帮我配置云发送微信，需要我操作再叫我”；起点79d5f47effdc8c6ed2cb82d9560616f2c4c38ddf。工作树干净，无并发开发者；仅旧本机展示与本轮只读手机预览服务。

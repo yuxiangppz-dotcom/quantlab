@@ -12,10 +12,15 @@ test('real workerd SQLite survives restart, rejects anonymous access and renders
   const password='synthetic-workerd-password-123456789';
   const salt='02'.repeat(16);
   const passwordHash=pbkdf2Sync(password,Buffer.from(salt,'hex'),100000,32,'sha256').toString('hex');
-  const options=convertV4MiniflareOptions({name:'scout',modules:[{type:'ESModule',path:modulePath('./worker.mjs')},
+  let pushCalls=0,pushStatus=200;
+  const options=convertV4MiniflareOptions({name:'scout',outboundService:async request=>{
+    pushCalls++;assert.equal(request.method,'POST');
+    assert.equal(new URL(request.url).host,'sctapi.ftqq.com');
+    return pushStatus===200?Response.json({code:0}):new Response(null,{status:302,headers:{location:'https://attacker.example/'}});
+  },modules:[{type:'ESModule',path:modulePath('./worker.mjs')},
     {type:'ESModule',path:modulePath('./auth.mjs')},{type:'ESModule',path:modulePath('./password.mjs')}],
     compatibilityDate:'2026-10-01',durableObjects:{SCOUT:{className:'ScoutStore',useSQLite:true}},
-    durableObjectsPersist:path,bindings:{SCOUT_API_TOKEN:'synthetic-token-abcdefghijklmnopqrstuvwxyz',SCHEDULE_ENABLED:'false',AUTH_MODE:'password',SESSION_SECRET:'synthetic-runtime-session-secret-abcdefghijklmnopqrstuvwxyz',
+    durableObjectsPersist:path,bindings:{SCOUT_API_TOKEN:'synthetic-token-abcdefghijklmnopqrstuvwxyz',SCHEDULE_ENABLED:'false',APP_COMMIT:'a'.repeat(40),SERVERCHAN_SENDKEY:'SCTsynthetic123456789',AUTH_MODE:'password',SESSION_SECRET:'synthetic-runtime-session-secret-abcdefghijklmnopqrstuvwxyz',
       VIEWER_PASSWORD_HASH:`pbkdf2_sha256$100000$${salt}$${passwordHash}`}});
   options.resourcePersistencePath=path;
   let mf=new Miniflare(options);
@@ -40,6 +45,11 @@ test('real workerd SQLite survives restart, rejects anonymous access and renders
     assert.equal(await report.text(),html);
     assert.equal((await mf.dispatchFetch('https://scout.example/reports/restart-fixture',{redirect:'manual'})).status,303);
     assert.equal((await request('/api/publish',{method:'POST',body:JSON.stringify({...value,html:'tampered'})})).status,400);
+    const push=await request('/api/push-test',{method:'POST',body:JSON.stringify({run_id:value.metadata.run_id})});
+    assert.equal((await push.json()).status,'provider_accepted');assert.equal(pushCalls,1);
+    pushStatus=302;
+    const redirect=await request('/api/notify-import',{method:'POST',body:JSON.stringify({run_id:value.metadata.run_id})});
+    assert.equal((await redirect.json()).status,'rejected');assert.equal(pushCalls,2);
   } finally {
     await mf.dispose();
     assert.equal(dirname(resolve(path)),resolve(tmpdir()));

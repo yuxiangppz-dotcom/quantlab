@@ -234,13 +234,13 @@ export class ScoutStore {
       try {
         const sent=await fetch(`https://sctapi.ftqq.com/${this.env.SERVERCHAN_SENDKEY}.send`,{
           method:'POST',headers:{'content-type':'application/json','user-agent':'QuantLab-Scout-Cloud/1.0'},body:JSON.stringify(payload),
-          redirect:'error',signal:AbortSignal.timeout(20000)});
+          redirect:'manual',signal:AbortSignal.timeout(20000)});
         receipt.upstream_http=sent.status;
         if (sent.ok) {
           const provider=await sent.json();
           receipt.status=provider.code===0?'provider_accepted':'rejected';
           if (Number.isInteger(provider.code)) receipt.provider_code=provider.code;
-        } else if (sent.status>=400 && sent.status<500) receipt.status='rejected';
+        } else if (sent.status>=300 && sent.status<500) receipt.status='rejected';
       } catch (error) {receipt.error_type=String(error?.name||'Error').slice(0,40); /* Never log URLs or credentials. */ }
       this.kv.put(key,receipt);return response(receipt);
     }
