@@ -250,6 +250,39 @@ def execute(settings, client, *, app_commit, now=None, run=tick):
     return {"status": state, "target_session": job["day"]}
 
 
+def sealed_identity(settings):
+    """Read installed engine identity in its own interpreter, with zero data calls."""
+    import subprocess
+
+    from quantlab.scout.daily_runtime import prediction_settings, verify_release
+
+    engine = prediction_settings(settings)
+    root = Path(engine["release_root"])
+    code = (
+        "import json,hashlib; "
+        "from quantlab.scout.daily_contract import VERSION,INSTRUCTION,selection_schema; "
+        "from quantlab.scout.models import fingerprint; "
+        "print(json.dumps(dict(prompt_version=VERSION,"
+        "prompt_text_sha256=hashlib.sha256(INSTRUCTION.encode()).hexdigest(),"
+        "schema_id=selection_schema([]).get('$id'),"
+        "schema_sha256=fingerprint(selection_schema([])))))"
+    )
+    result = subprocess.run(
+        [str(root / ".venv/bin/python"), "-c", code],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    identity = json.loads(result.stdout)
+    return {
+        "application_commit": verify_release(settings)["commit"],
+        "engine_commit": verify_release(engine)["commit"],
+        **identity,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--settings", type=Path, default=Path("/app/daily-settings.json"))
@@ -261,7 +294,11 @@ def main():
         client = Client(os.environ["SCOUT_PUBLIC_URL"], os.environ["SCOUT_API_TOKEN"])
         if args.check:
             client.request("/api/snapshot")
-            result = {"status": "archive_connected", "provider_model_calls": 0}
+            result = {
+                "status": "archive_connected",
+                "provider_model_calls": 0,
+                "installed_release": sealed_identity(read(args.settings)),
+            }
         else:
             app = read(Path("/bundle.json"))["app_commit"]
             result = execute(read(args.settings), client, app_commit=app)

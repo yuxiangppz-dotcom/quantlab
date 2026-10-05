@@ -100,3 +100,42 @@ def test_candidate_reorder_preserves_subject_bound_semantics_and_original():
     before = deepcopy(result)
     packet["candidates"].reverse()
     assert validate_output(result, packet) == [] and result == before
+
+
+def test_missing_or_malformed_new_fields_do_not_hide_old_semantic_errors():
+    packet, result = inputs(), output()
+    row = result["comparisons"][0]
+    del row["invalidation_rule"]
+    del row["semantic_claims"]
+    row.update(final_status="focus", thesis="多日相对收益走强：[[fact:000001.SZ:market:return_5d]]")
+    errors = validate_output(result, packet)
+    assert {
+        "schema",
+        "core_fact_clause_requires_neutral_label",
+        "focus_requires_observable_invalidation",
+    } <= {e["code"] for e in errors}
+    row["invalidation_rule"] = "bad-shape"
+    row["semantic_claims"] = [{"kind": "relative_return"}]
+    assert validate_output(result, packet)
+
+
+def test_denied_exhaustive_claim_remains_valid_counterevidence():
+    packet, result = inputs(), output()
+    result["comparisons"][0]["risk"] = "抽样不证明只有本股有公告；其他反向信息未知"
+    assert validate_output(result, packet) == []
+
+
+def test_unknown_financial_unit_cannot_support_company_scale():
+    packet, result = inputs(), output()
+    ref = "fact:financial-unit-unknown"
+    packet["facts"][ref] = [
+        "000001.SZ",
+        "profit_dedt",
+        "20260630",
+        "100",
+        "provider_unit_unknown",
+        None,
+    ]
+    result["comparisons"][0]["analysis"]["scale_fact_ids"] = [ref]
+    errors = validate_output(result, packet)
+    assert any(e["code"] == "scale_unit_unverified:" + ref for e in errors)

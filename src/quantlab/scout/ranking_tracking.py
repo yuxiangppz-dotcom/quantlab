@@ -11,6 +11,7 @@ from statistics import mean, median
 from quantlab.data.storage import ParquetStorage
 from quantlab.scout.models import SHANGHAI, fingerprint, finite
 from quantlab.scout.opportunities import TYPE_LABELS, VERSION, load_event_history
+from quantlab.scout.selection_control import observe_control, summarize_control
 from quantlab.scout.tracking import HORIZONS, _eligible_target, _write_snapshot
 
 DEFINITION = "all_deep_rank_d_open_h_close_adjusted_v1"
@@ -75,7 +76,7 @@ def observe_ranking(
         return _write_snapshot(result, output_root)
     index = days.index(target)
     asof = date.fromisoformat(freeze["market_asof_session"])
-    needed = {asof, *days[index : index + max(HORIZONS)]}
+    needed = {asof, *days[max(0, index - 5) : index + max(HORIZONS)]}
     if index:
         needed.add(days[index - 1])
     bars = {d: {b.instrument_id: b for b in storage.load_daily_bars_by_date(d)} for d in needed}
@@ -193,6 +194,54 @@ def observe_ranking(
             )
     later_events = load_event_history(run_dir.parent.parent / "event_index", now)
     result["event_followups"] = []
+    result["research_invalidation_observations"] = []
+    for row in freeze["rows"]:
+        rule = row.get("invalidation_rule")
+        if not rule:
+            continue
+        if rule["rule_id"] == "event_cancelled_v1":
+            result["research_invalidation_observations"].append(
+                {
+                    "instrument_id": row["instrument_id"],
+                    "rule": rule,
+                    "status": "unknown_official_event_state_requires_review",
+                    "action": "none_no_order_authority",
+                }
+            )
+            continue
+        # The discovery benchmark includes this stock. Keep the complete frozen
+        # eligible membership instead of silently substituting today's universe.
+        members = [row["instrument_id"], *row["reference_ids"]]
+        for offset in range(5):
+            end_index = index + offset
+            end = days[end_index] if end_index < len(days) else None
+            start = days[end_index - 5] if end_index >= 5 and end else None
+            values = {}
+            for code in members:
+                opening, state1 = price(code, start, "close")
+                closing, state2 = price(code, end, "close")
+                if state1 == state2 == "available":
+                    values[code] = closing / opening - 1
+            complete = len(values) == len(members) and bool(row["industry"])
+            relative = values[row["instrument_id"]] - mean(values.values()) if complete else None
+            result["research_invalidation_observations"].append(
+                {
+                    "instrument_id": row["instrument_id"],
+                    "rule": rule,
+                    "observation_session": end.isoformat() if end else None,
+                    "window": "5d",
+                    "benchmark": "frozen_eligible_industry_members_including_own",
+                    "relative_return": relative,
+                    "members_original": len(members),
+                    "members_valid": len(values),
+                    "status": "unknown_missing_prices_or_classification"
+                    if relative is None
+                    else "reassess_research"
+                    if relative <= 0
+                    else "not_invalidated_by_this_rule",
+                    "action": "research_observation_only_no_order_authority",
+                }
+            )
     for row in freeze["rows"]:
         parents = set(row["event_ids"])
         related = []
@@ -236,6 +285,10 @@ def observe_ranking(
             if r["adjusted_price_return"] == row["adjusted_price_return"]
         ]
         row["h5_actual_rank"] = mean(positions)
+    if freeze.get("score_control"):
+        result["score_control"] = observe_control(
+            freeze["score_control"], [r for r in result["rows"] if r["horizon_sessions"] == 5]
+        )
     stages = freeze["stages"]
     cheap, deep = set(stages["cheap_candidates"]), set(stages["deep_candidates"])
     eligible_h5 = [observation(c, 5) for c in freeze["eligible_ids"]]
@@ -370,6 +423,7 @@ def summarize_ranking(report_root: Path, observation_root: Path, output_path: Pa
         if key not in snapshots or item["observed_at"] > snapshots[key]["observed_at"]:
             snapshots[key] = item
     date_groups, stock_counts, versions = [], Counter(), Counter()
+    control_dates = []
     names = (
         "focus",
         "watch",
@@ -394,6 +448,15 @@ def summarize_ranking(report_root: Path, observation_root: Path, output_path: Pa
         }
         version_id = fingerprint(version_identity)
         versions.update([version_id])
+        if freeze.get("score_control"):
+            control_dates.append(
+                {
+                    "target_day": target,
+                    "run_id": report["run_id"],
+                    "version_id": version_id,
+                    **observe_control(freeze["score_control"], rows),
+                }
+            )
         for name in names:
             group = [
                 r
@@ -458,6 +521,11 @@ def summarize_ranking(report_root: Path, observation_root: Path, output_path: Pa
             {"target_day": d, "run_id": r["run_id"]} for d, r in sorted(reports.items())
         ],
         "groups": summary,
+        "score_control_by_version": {
+            key: summarize_control([d for d in control_dates if d["version_id"] == key])
+            for key in sorted({d["version_id"] for d in control_dates})
+        },
+        "score_control_per_target_day": control_dates,
         "per_target_day": date_groups,
         "unique_stock_count": len(stock_counts),
         "repeat_stock_days": sum(max(0, n - 1) for n in stock_counts.values()),
@@ -516,6 +584,28 @@ def summarize_ranking(report_root: Path, observation_root: Path, output_path: Pa
                 "20个成熟目标日是初步诊断点，当前不是有效性证明。",
             ]
         )
+        if result["score_control_by_version"]:
+            lines.extend(
+                [
+                    "",
+                    "## 同池 AI / 发现分数对照",
+                    "",
+                    "同一深查池、同一k、目标日复权开盘至H5复权收盘；共同基准为完整池等权观察。",
+                    "日线及涨停开盘不代表成交；此处不计算策略净收益。",
+                    "",
+                ]
+            )
+            for version, diagnostic in result["score_control_by_version"].items():
+                difference = pct(diagnostic["mean_ai_minus_score_price_change"])
+                uncertainty = diagnostic["uncertainty"]
+                lines.extend(
+                    [
+                        f"- 版本 {version[:12]}：信号日期{diagnostic['signal_date_count']}，"
+                        f"弃选{diagnostic['abstention_dates']}，完整配对{diagnostic['paired_complete_dates']}；"
+                        f"AI减score价格观察差 {difference}。",
+                        f"  日期块{diagnostic['complete_block_count']}；{uncertainty}。",
+                    ]
+                )
         with markdown.open("x", encoding="utf-8") as handle:
             handle.write("\n".join(lines) + "\n")
     return path

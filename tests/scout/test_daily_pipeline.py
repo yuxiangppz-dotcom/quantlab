@@ -68,7 +68,12 @@ def test_daily_pipeline_three_calls_exact_input_facts_and_immutable_reports(tmp_
     assert report["status"] == "live_research_unvalidated", report.get("failure")
     assert report["opportunity"]["validation"]["status"] == "complete"
     assert report["daily_delivery"]["requests"] == 3
+    assert all("[SCOUT_DECISION_V2]" in prompt for prompt in prompts)
+    assert report["prompt_version"] == "daily_facts_v8_decision_v2"
+    assert report["selection_input_schema"]["$id"].endswith(":selection")
     assert report["daily_delivery"]["charged_or_reserved_tokens"] == 300
     assert "rejected_by_code" not in report["selection_input_packet"]["market"]
     assert report["selection_input_packet"]["fact_columns"][0] == "subject_id"
     assert (path / "report.html").exists() and report["opportunity_freeze"]["status"] == "complete"
+    control = report["opportunity_freeze"]["score_control"]
+    assert control["abstention"] and len(control["rows"]) == 2

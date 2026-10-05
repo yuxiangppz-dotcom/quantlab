@@ -22,15 +22,24 @@ def information_cutoff(report):
 
 
 def source_gap_note(report):
+    labels = {
+        "tushare:cls": "财联社新闻",
+        "RSS/Atom": "RSS新闻订阅",
+        "comment_import": "评论样本",
+        "licensed_social_stream": "社交评论源",
+    }
     gaps = sorted(
         {
-            str(c.get("source", "未知来源"))
+            labels.get(c.get("source"), str(c.get("source", "未知来源")))
             for c in report.get("coverage", [])
             if c.get("status")
-            in {"failed", "unavailable", "not_configured", "unsupported", "error"}
-            and any(
-                k in str(c.get("source", "")).lower()
-                for k in ("news", "hot", "comment", "新闻", "热榜", "评论")
+            in {"failed", "unavailable", "not_configured", "unsupported", "not_connected", "error"}
+            and (
+                c.get("source") in labels
+                or any(
+                    k in str(c.get("source", "")).lower()
+                    for k in ("news", "hot", "comment", "新闻", "热榜", "评论")
+                )
             )
         }
     )
@@ -171,7 +180,7 @@ def markdown(report):
                 + safe(report["display_replay"]["source_run_id"])
                 + " · 展示 "
                 + VIEW_VERSION
-                + "。**",
+                + "；原等级未重评，不表示通过新版契约。**",
                 "",
             ]
         )
@@ -241,7 +250,7 @@ def html(report, review=None):
             + h(report["display_replay"]["source_run_id"])
             + " · 展示 "
             + VIEW_VERSION
-            + "。</p>"
+            + "；原等级未重评，不表示通过新版契约。</p>"
         )
     for label, rows in selected_groups(report):
         if not rows:

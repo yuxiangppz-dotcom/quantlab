@@ -95,7 +95,7 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
         if array_key == "opportunities":
             if code.startswith("event_not_shown:") and add([*base, "analysis", "event_ids"]):
                 continue
-            if code.startswith("scale_requires_own_fact:") and add(
+            if code.startswith(("scale_requires_own_fact:", "scale_unit_unverified:")) and add(
                 [*base, "analysis", "scale_fact_ids"]
             ):
                 continue
@@ -103,7 +103,7 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
         if code.startswith("placeholder_not_declared:"):
             if not add([*base, "fact_ids"]):
                 return None
-        elif code.startswith("scale_requires_declared_own_fact:"):
+        elif code.startswith(("scale_requires_declared_own_fact:", "scale_unit_unverified:")):
             if not add([*base, "analysis", "scale_fact_ids"]):
                 return None
         elif code.startswith("unknown_or_wrong_subject_fact:"):

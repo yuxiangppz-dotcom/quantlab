@@ -102,7 +102,11 @@ def investigation_contract(pool, packet=None):
         for candidate in pool:
             code = candidate["instrument_id"]
             events = [e["record_id"] for e in by_code[code]["events"]]
-            own_facts = [key for key, f in facts.items() if f["subject_id"] == code]
+            own_facts = [
+                key
+                for key, f in facts.items()
+                if f["subject_id"] == code and f["unit"] != "provider_unit_unknown"
+            ]
             row["allOf"].append(
                 {
                     "if": {"properties": {"instrument_id": {"const": code}}},
@@ -158,6 +162,10 @@ def investigation_errors(output, packet, schema):
             if ref not in facts or facts[ref]["subject_id"] != code:
                 errors.append(
                     {"path": [code, "scale_fact_ids"], "code": "scale_requires_own_fact:" + ref}
+                )
+            elif facts[ref]["unit"] == "provider_unit_unknown":
+                errors.append(
+                    {"path": [code, "scale_fact_ids"], "code": "scale_unit_unverified:" + ref}
                 )
         for key, value in row["analysis"].items():
             if isinstance(value, str):

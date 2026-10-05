@@ -340,6 +340,9 @@ def freeze_comparisons(
     rows: list[dict], packet: dict, report_meta: dict, universe: dict, memberships: dict
 ) -> dict:
     """Identity and memberships freeze at report time; no future classification refill."""
+    from quantlab.scout.decision_contract import RULES
+    from quantlab.scout.selection_control import freeze_control
+
     ordered = sorted((r for r in rows if r["rank"] is not None), key=lambda r: r["rank"])
     sizes = [len(ordered) // 3 + int(i < len(ordered) % 3) for i in range(3)]
     bands, cursor = {}, 0
@@ -375,6 +378,10 @@ def freeze_comparisons(
                 ),
                 "invalidation": row["invalidation"],
                 "event_ids": row["analysis"]["event_ids"],
+                "invalidation_rule": row.get("invalidation_rule"),
+                "invalidation_definition": RULES.get(
+                    (row.get("invalidation_rule") or {}).get("rule_id")
+                ),
             }
         )
     return {
@@ -389,4 +396,7 @@ def freeze_comparisons(
         "market_asof_session": packet["timing"]["asof_session"],
         "eligible_ids": sorted(universe),
         "memberships": {c: memberships[c] for c in universe if c in memberships},
+        "score_control": freeze_control(
+            rows, universe, packet["candidates"], packet.get("coverage", [])
+        ),
     }

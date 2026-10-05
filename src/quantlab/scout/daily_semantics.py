@@ -116,19 +116,22 @@ def prose_errors(text, facts, identities=()):
         if re.sub(r"[\s：:、/（）()·与及和]", "", residual):
             errors.append("core_fact_clause_requires_neutral_label")
     # These claims cannot be established by same-asof overlapping snapshots.
-    if re.search(r"(?:资金|净额).{0,8}(?:持续改善|逐日改善|连续改善|不断改善)", text):
+    asserted = "；".join(
+        c
+        for c in re.split(r"[。；;，,\n]", text)
+        if not re.search(r"若|如果|需|待|未知|不能|尚未|缺|不代表|不证明", c)
+    )
+    if re.search(r"(?:资金|净额).{0,8}(?:持续改善|逐日改善|连续改善|不断改善)", asserted):
         errors.append("fund_improvement_requires_cross_time_facts")
-    if re.search(r"(?:资金|窗口).{0,8}(?:多窗口一致|窗口一致|多窗口同向|多窗同向)", text):
+    if re.search(r"(?:资金|窗口).{0,8}(?:多窗口一致|窗口一致|多窗口同向|多窗同向)", asserted):
         errors.append("fund_consistency_requires_structured_claim")
     # Core observations cannot be moved into a new unbound sentence. Conditional
     # forward mechanisms and explicit unknowns may mention the missing dimension.
     for clause in re.split(r"[。；;，,\n]", REF.sub("", text)):
         if re.search(r"若|如果|需|待|未知|不能|尚未|缺|不代表|不证明", clause):
             continue
-        if re.search(
-            r"(?:相对收益|超额收益|跑赢行业|资金|净额|量比).{0,6}"
-            r"(?:走强|改善|一致|同向|放大|增强|强于|更强)", clause
-        ):
+        clause = clause.replace("资金反证", "").replace("资金事实", "")
+        if re.search(r"相对收益|超额收益|跑赢行业|资金|净额|量比", clause):
             errors.append("unbound_quantitative_interpretation")
     return list(dict.fromkeys(errors))
 

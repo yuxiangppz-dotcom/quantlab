@@ -296,17 +296,18 @@ def remap_generated_refs(value, aliases):
 def referenced_facts(row):
     texts = [row[f] for f in FIELDS] + [row["analysis"][f] for f in ANALYSIS_FIELDS]
     texts += list(row["trade_conditions"].values())
+    claims = row.get("semantic_claims", [])
+    if not Draft202012Validator(CLAIM_SCHEMA).is_valid(claims):
+        claims = []
+    rule = row.get("invalidation_rule")
+    if not Draft202012Validator(RULE_SCHEMA).is_valid(rule):
+        rule = None
     return list(
         dict.fromkeys(
             row.get("fact_ids", [])
             + row["analysis"]["scale_fact_ids"]
-            + [ref for claim in row.get("semantic_claims", []) for ref in claim["fact_ids"]]
-            + (
-                [row["invalidation_rule"]["reference_id"]]
-                if row.get("invalidation_rule")
-                and row["invalidation_rule"]["reference_id"].startswith("fact:")
-                else []
-            )
+            + [ref for claim in claims for ref in claim["fact_ids"]]
+            + ([rule["reference_id"]] if rule and rule["reference_id"].startswith("fact:") else [])
             + [ref for text in texts for ref in REF.findall(text)]
         )
     )
@@ -364,7 +365,11 @@ def selection_schema(candidates, packet=None):
     if packet is not None:
         for candidate in candidates:
             code = candidate["instrument_id"]
-            own = [key for key, values in packet["facts"].items() if values[0] == code]
+            own = [
+                key
+                for key, values in packet["facts"].items()
+                if values[0] == code and values[4] != "provider_unit_unknown"
+            ]
             rows["items"]["allOf"].append(
                 {
                     "if": {"properties": {"instrument_id": {"const": code}}},
@@ -400,6 +405,10 @@ def validate_output(output, packet):
         selection_schema(packet["candidates"])["properties"]["comparisons"]["items"]
     )
     shape["properties"]["instrument_id"]["enum"] = list(candidates)
+    # New fields must not hide all other errors in saved legacy responses.
+    for field in ("semantic_claims", "invalidation_rule"):
+        shape["properties"].pop(field, None)
+        shape["required"].remove(field)
     shape["additionalProperties"] = True
     rows = [r for r in output["comparisons"] if Draft202012Validator(shape).is_valid(r)]
     by_code = {r["instrument_id"]: r for r in rows}
@@ -466,12 +475,17 @@ def validate_output(output, packet):
         for ref in row["analysis"]["scale_fact_ids"]:
             if ref not in facts or facts[ref]["subject_id"] != code:
                 error(code, "scale_fact_ids", "scale_requires_declared_own_fact:" + ref)
+            elif facts[ref]["unit"] == "provider_unit_unknown":
+                error(code, "scale_fact_ids", "scale_unit_unverified:" + ref)
         own_events = {e["record_id"]: e for e in candidates[code]["events"]}
         rule = row.get("invalidation_rule")
         if Draft202012Validator(RULE_SCHEMA).is_valid(rule):
             for issue in rule_errors(rule, code, row["primary_type"], facts, own_events):
                 error(code, "invalidation_rule", issue)
-        for field, issue in focus_errors(row, facts, own_events):
+        safe_rule = rule if Draft202012Validator(RULE_SCHEMA).is_valid(rule) else None
+        for field, issue in focus_errors(
+            {**row, "invalidation_rule": safe_rule}, facts, own_events
+        ):
             error(code, field, issue)
         for field, issue in legacy_errors(row, candidates[code], packet["evidence"]):
             error(code, field, issue)
