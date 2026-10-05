@@ -12,7 +12,8 @@ const hash=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().en
 assert.equal(hash,metadata.html_sha256);
 const modulePath=name=>new URL(name,import.meta.url).pathname.replace(/^\/([A-Z]:)/,'$1');
 const options=convertV4MiniflareOptions({name:'scout-real-replay',modules:[
-  {type:'ESModule',path:modulePath('./worker.mjs')},{type:'ESModule',path:modulePath('./auth.mjs')}],
+  {type:'ESModule',path:modulePath('./worker.mjs')},{type:'ESModule',path:modulePath('./auth.mjs')},
+  {type:'ESModule',path:modulePath('./password.mjs')}],
   compatibilityDate:'2026-10-01',durableObjects:{SCOUT:{className:'ScoutStore',useSQLite:true}},
   bindings:{SCOUT_API_TOKEN:'local-replay-synthetic-token-abcdefghijklmnopqrstuvwxyz',SCHEDULE_ENABLED:'false'}});
 options.resourcePersistencePath=join(output,'persist');

@@ -112,3 +112,28 @@ test('finish does not erase previous failures; notification intents survive unkn
     assert.equal(ctx.data.get('job:'+job.day).status,'failed');
   } finally { globalThis.fetch=original; }
 });
+
+
+test('saved-report link delivery is durable, restricted and never reclassifies an import as a forecast',async()=>{
+  const ctx=context(), store=new ScoutStore(ctx,{...env,SERVERCHAN_SENDKEY:'SCTsynthetic123456789'});
+  const original=globalThis.fetch;let calls=0;
+  globalThis.fetch=async(url,options)=>{
+    calls++;const payload=JSON.parse(options.body);
+    assert.match(payload.desp,/并非新预测/);
+    assert.match(payload.desp,/https:\/\/scout.example\/reports\/synthetic-report/);
+    assert.equal(ctx.data.get('push:import:synthetic-report').status,'delivery_unknown');
+    return Response.json({code:0});
+  };
+  try {
+    assert.equal((await store.fetch(req('/api/notify-import',{run_id:'missing'}))).status,400);
+    await store.fetch(req('/api/publish',await report()));
+    const value={run_id:'synthetic-report'};
+    const first=await (await store.fetch(req('/api/notify-import',value))).json();
+    assert.equal(first.status,'provider_accepted');
+    assert.deepEqual(await (await store.fetch(req('/api/notify-import',value))).json(),first);
+    assert.equal(calls,1);
+    store.env={...store.env,SCHEDULE_ENABLED:'true'};
+    assert.equal((await store.fetch(req('/api/notify-import',value))).status,400);
+    assert.equal(calls,1);assert.equal(ctx.data.has('job:2026-10-08'),false);
+  } finally {globalThis.fetch=original;}
+});

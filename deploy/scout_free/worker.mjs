@@ -1,4 +1,5 @@
 import {digest, serviceAllowed, viewerAllowed} from './auth.mjs';
+import {nextPath,passwordConfigured,sessionAllowed,sessionValue,verifyPassword} from './password.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
@@ -21,8 +22,15 @@ export default {
   async fetch(request, env) {
     try {
       const path = new URL(request.url).pathname;
+      if (env.AUTH_MODE==='password' && path==='/login') {
+        if (!passwordConfigured(env)) return response('登录尚未配置。',503,'text/plain;charset=utf-8');
+        return await env.SCOUT.get(env.SCOUT.idFromName('scout-v1')).fetch(request);
+      }
       if (path.startsWith('/api/')) {
         if (!(await serviceAllowed(request,env))) return response({error:'unauthorized'},403);
+      } else if (env.AUTH_MODE==='password') {
+        if (!(await sessionAllowed(request,env))) return new Response(null,{status:303,headers:{
+          ...headers,location:'/login?next='+encodeURIComponent(nextPath(path))}});
       } else if (!(await viewerAllowed(request,env))) {
         return response('请通过 Cloudflare Access 登录后查看报告。',403,'text/plain;charset=utf-8');
       }
@@ -50,6 +58,36 @@ export class ScoutStore {
   }
   async route(request) {
     const url=new URL(request.url), path=url.pathname, method=request.method;
+    if (path==='/login' && this.env.AUTH_MODE==='password') {
+      if (!passwordConfigured(this.env)) return response('登录尚未配置。',503,'text/plain');
+      if (method==='GET') {
+        const next=nextPath(url.searchParams.get('next'));
+        return new Response(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Scout 手机报告登录</title><style>body{font:17px/1.7 system-ui;max-width:450px;margin:60px auto;padding:20px}input,button{font:inherit;width:100%;box-sizing:border-box;margin:12px 0;padding:12px}button{background:#172b3b;color:white;border:0;border-radius:8px}</style><h1>Scout 手机报告</h1><form method="post" action="/login"><input type="hidden" name="next" value="${escape(next)}"><label>查看密码<input type="password" name="password" required maxlength="128" autocomplete="current-password"></label><button>登录查看报告</button></form></html>`,{headers:{...headers,
+          'content-type':'text/html;charset=utf-8','content-security-policy':headers['content-security-policy'].replace("form-action 'none'","form-action 'self'")}});
+      }
+      if (method!=='POST' || request.headers.get('origin')!==url.origin) return response('不接受此登录请求。',403,'text/plain;charset=utf-8');
+      const source=request.body?.getReader();
+      if (!source) return response('缺少密码。',400,'text/plain');
+      const chunks=[];let size=0;
+      while (true) {
+        const {done,value}=await source.read();if(done)break;
+        size+=value.byteLength;if(size>4096){await source.cancel();return response('登录请求过大。',413,'text/plain');}
+        chunks.push(value);
+      }
+      const all=new Uint8Array(size);let offset=0;for(const chunk of chunks){all.set(chunk,offset);offset+=chunk.byteLength;}
+      const form=new URLSearchParams(new TextDecoder().decode(all));
+      const now=Date.now();
+      const id=await digest(new TextEncoder().encode(request.headers.get('cf-connecting-ip')||'unknown'));
+      const rate=this.kv.get('login:'+id)||{until:now+15*60000,count:0};
+      if (rate.until<=now){rate.until=now+15*60000;rate.count=0;}
+      if (rate.count>=5) return response('尝试过多，请15分钟后再试。',429,'text/plain;charset=utf-8');
+      rate.count++;this.kv.put('login:'+id,rate);
+      // Slow password work stays in DO (30s CPU limit), not the 10ms Free Worker.
+      if (!(await verifyPassword(form.get('password'),this.env.VIEWER_PASSWORD_HASH))) return response('密码不正确。',401,'text/plain;charset=utf-8');
+      this.kv.put('login:'+id,{until:now+15*60000,count:0});
+      return new Response(null,{status:303,headers:{...headers,location:nextPath(form.get('next')),
+        'set-cookie':`__Host-scout=${await sessionValue(this.env)}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=43200`}});
+    }
     if (method==='POST' && path==='/api/claim') {
       const value=await this.json(request,2000), now=chinaTime(this.now());
       if (this.env.SCHEDULE_ENABLED!=='true') return response({status:'schedule_disabled'});
@@ -158,18 +196,32 @@ export class ScoutStore {
       this.ctx.storage.transactionSync(()=>{this.kv.put(`job:${job.day}`,result);this.kv.delete('active');});
       return response(result);
     }
-    if (method==='POST' && path==='/api/notify') {
-      const value=await this.json(request,2000), job=this.kv.get(`job:${value.day}`);
-      if (!job || job.owner!==value.owner || !['published','failed'].includes(job.status)) throw Error('notification');
-      const existing=this.kv.get(`push:${job.day}`);
+    if (method==='POST' && (path==='/api/notify' || path==='/api/notify-import')) {
+      const value=await this.json(request,2000);
+      let key, title, message, link;
+      const origin=new URL(request.url).origin;
+      if (path==='/api/notify-import') {
+        if (this.env.SCHEDULE_ENABLED==='true' || this.kv.get('active') || !ID.test(value.run_id)) throw Error('import_notification');
+        const report=this.kv.get(`report:${value.run_id}`);
+        if (!report) throw Error('missing_report');
+        key=`push:import:${value.run_id}`;
+        title=`Scout ${report.metadata.target_session} 手机报告已上线`;
+        message=`这是已保存的研究候选，行情截至 ${report.metadata.asof_session}，并非新预测。效果待前瞻观察。`;
+        link=`${origin}/reports/${value.run_id}`;
+      } else {
+        const job=this.kv.get(`job:${value.day}`);
+        if (!job || job.owner!==value.owner || !['published','failed'].includes(job.status)) throw Error('notification');
+        key=`push:${job.day}`;
+        title=`Scout ${job.day} ${job.status==='published'?'选股报告已生成':'预测未完成'}`;
+        message=job.status==='published'?'研究候选，效果待前瞻观察。':'本次未发布新候选，旧报告保留。';
+        link=job.status==='published'?`${origin}/reports/${job.run_id}`:`${origin}/`;
+      }
+      const existing=this.kv.get(key);
       if (existing) return response(existing);
       if (!/^SCT[A-Za-z0-9]{10,200}$/.test(this.env.SERVERCHAN_SENDKEY||'')) return response({status:'not_configured'});
-      const origin=new URL(request.url).origin;
-      const link=job.status==='published'?`${origin}/reports/${job.run_id}`:`${origin}/`;
-      const payload={title:`Scout ${job.day} ${job.status==='published'?'选股报告已生成':'预测未完成'}`,
-        desp:`${job.status==='published'?'研究候选，效果待前瞻观察。':'本次未发布新候选，旧报告保留。'}\n\n[查看手机报告](${link})\n\n需要登录。`};
+      const payload={title,desp:`${message}\n\n[查看手机报告](${link})\n\n需要登录。`};
       const receipt={status:'delivery_unknown',attempted_at:new Date().toISOString()};
-      this.kv.put(`push:${job.day}`,receipt); // Durable intent BEFORE network send.
+      this.kv.put(key,receipt); // Durable intent BEFORE network send.
       try {
         const sent=await fetch(`https://sctapi.ftqq.com/${this.env.SERVERCHAN_SENDKEY}.send`,{
           method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload),
@@ -177,7 +229,7 @@ export class ScoutStore {
         if (sent.ok) receipt.status=(await sent.json()).code===0?'provider_accepted':'rejected';
         else if (sent.status>=400 && sent.status<500) receipt.status='rejected';
       } catch { /* Delivery remains unknown; no automatic resend. */ }
-      this.kv.put(`push:${job.day}`,receipt);return response(receipt);
+      this.kv.put(key,receipt);return response(receipt);
     }
     if (method==='GET' && !path.startsWith('/api/')) {
       const reportPath=path.match(/^\/reports\/([A-Za-z0-9][A-Za-z0-9_-]{0,79})$/);
