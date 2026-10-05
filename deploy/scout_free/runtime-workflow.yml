@@ -42,7 +42,7 @@ jobs:
           parts=urlsplit(origin)
           assert parts.scheme=='https' and parts.hostname and not parts.username
           assert parts.path in ('','/') and not parts.query and not parts.fragment
-          req=Request(origin.rstrip('/')+'/api/state',headers={'Authorization':'Bearer '+os.environ['SCOUT_API_TOKEN']})
+          req=Request(origin.rstrip('/')+'/api/state',headers={'Authorization':'Bearer '+os.environ['SCOUT_API_TOKEN'],'User-Agent':'QuantLab-Scout-Cloud/1.0'})
           class NoRedirect(HTTPRedirectHandler):
               def redirect_request(self,*args,**kwargs): return None
           try:

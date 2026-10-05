@@ -1,6 +1,7 @@
 """Durable archive boundaries and crash/duplicate suppression on ephemeral runners."""
 
 import gzip
+import io
 from datetime import datetime
 
 import pytest
@@ -148,3 +149,16 @@ def test_late_job_never_contacts_archive_or_provider(tmp_path):
         == "outside_morning_window"
     )
     assert not cloud.paths
+
+
+def test_cloud_client_identifies_its_own_automation_transport():
+    class Opener:
+        def open(self, request, *, timeout):
+            assert request.get_header("User-agent") == "QuantLab-Scout-Cloud/1.0"
+            assert request.get_header("Authorization") == "Bearer " + "x" * 48
+            assert request.full_url == "https://scout.example/api/snapshot"
+            assert timeout == 30
+            return io.BytesIO(b'{"snapshot":null}')
+
+    client = free.Client("https://scout.example", "x" * 48, opener=Opener())
+    assert client.request("/api/snapshot") == {"snapshot": None}

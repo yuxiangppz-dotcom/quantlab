@@ -63,7 +63,10 @@ class Client:
             if self.calls >= 8000:
                 raise ValueError("archive_request_budget")
             self.calls += 1
-        headers = {"Authorization": "Bearer " + self.token}
+        headers = {
+            "Authorization": "Bearer " + self.token,
+            "User-Agent": "QuantLab-Scout-Cloud/1.0",
+        }
         if job:
             headers.update({"X-Scout-Day": job["day"], "X-Scout-Owner": job["owner"]})
         data = binary if binary is not None else encoded(value) if value is not None else None
