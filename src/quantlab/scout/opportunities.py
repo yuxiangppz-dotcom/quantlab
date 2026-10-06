@@ -29,11 +29,12 @@ EVENT_KINDS = {
 }
 EVENT_TERMS = (
     ("routine_schedule", ("说明会", "股东大会", "披露日程")),
-    ("risk_notice", ("风险提示", "异常波动", "诉讼", "澄清")),
+    ("risk_notice", ("风险提示", "异常波动", "诉讼", "澄清", "终止", "解除")),
     ("framework", ("框架协议", "意向协议")),
     ("order", ("订单", "合同", "中标")),
     ("earnings", ("业绩预告", "业绩快报", "年度报告", "半年度报告")),
     ("asset_change", ("收购", "重组", "资产出售")),
+    ("cooperation", ("合作", "战略协议")),
     ("capital_action", ("回购", "增持", "减持")),
     ("policy", ("政策", "补贴", "关税")),
 )
@@ -283,6 +284,27 @@ def event_records(
                     key=timestamp,
                 ),
                 "retrieved_at": item.retrieved_at,
+                "source_published_at": item.published_at,
+                "collected_at": item.retrieved_at,
+                "effective_date": source_date.isoformat() if source_date else None,
+                "available_by_cutoff": True,
+                "visibility_basis": "publication_and_collection_before_cutoff"
+                if item.published_at
+                else "observed_in_this_collection_only",
+                "official_source": item.source.startswith("cninfo:")
+                or item.source.startswith("tushare:")
+                and item.kind
+                in {"company_event_date_only", "official_announcement_index_unverified"},
+                "next_session_timely": (
+                    timestamp(item.published_at) > datetime.combine(session, time(15), SHANGHAI)
+                    if item.published_at
+                    else bool(source_date and source_date > session)
+                ),
+                "republication_cluster": fingerprint(
+                    [
+                        item.url or [kind, period, body],
+                    ]
+                ),
                 "novelty": novelty,
                 "previous_record_id": prior["record_id"] if prior else None,
                 "previous_content_excerpt": prior["content_excerpt"][:500] if prior else None,
@@ -583,8 +605,16 @@ def model_record(
         "relation",
         "title_only",
         "nominal_scale",
+        "source_published_at",
+        "collected_at",
+        "effective_date",
+        "available_by_cutoff",
+        "visibility_basis",
+        "next_session_timely",
+        "official_source",
+        "republication_cluster",
     )
-    events = [{k: r[k] for k in keys} for r in rows[:3]]
+    events = [{k: r.get(k) for k in keys} for r in rows[:3]]
     if visible_evidence is not None:
         for event in events:
             shown = [e for e in visible_evidence if e["evidence_id"] in event["source_ids"]]

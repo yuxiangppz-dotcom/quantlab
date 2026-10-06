@@ -24,5 +24,7 @@
   "tushare_upgrade": true,
   "tushare_kpl_limit": false,
   "rss": [],
-  "daily_delivery": true
+  "daily_delivery": true,
+  "next_session_selection": true,
+  "experiment_profile": "fused"
 }

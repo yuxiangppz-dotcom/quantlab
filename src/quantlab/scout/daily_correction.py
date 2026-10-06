@@ -5,7 +5,7 @@ from copy import deepcopy
 
 from jsonschema import Draft202012Validator
 
-from quantlab.scout.daily_contract import ANALYSIS_FIELDS, FIELDS, REF, semantic_shape
+from quantlab.scout.daily_contract import FIELDS, REF, analysis_fields, semantic_shape
 
 
 def pointer(path):
@@ -91,6 +91,7 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
         if len(path) != 2 or path[0] not in indices:
             return None
         index, field = indices[path[0]], path[1]
+        current_analysis_fields = analysis_fields(rows[index])
         base = [array_key, index]
         if array_key == "opportunities":
             if code.startswith("event_not_shown:") and add([*base, "analysis", "event_ids"]):
@@ -112,10 +113,10 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
                 add([*base, "fact_ids"])
             if ref in rows[index]["analysis"]["scale_fact_ids"]:
                 add([*base, "analysis", "scale_fact_ids"])
-            for key in (*FIELDS, *ANALYSIS_FIELDS, "trade_known", "trade_unknown"):
+            for key in (*FIELDS, *current_analysis_fields, "trade_known", "trade_unknown"):
                 suffix = (
                     ["analysis", key]
-                    if key in ANALYSIS_FIELDS
+                    if key in current_analysis_fields
                     else ["trade_conditions", key.removeprefix("trade_")]
                     if key.startswith("trade_")
                     else [key]
@@ -129,10 +130,10 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
                 add([*base, "fact_ids"])
             # Changing the peer requires revising explicit references to that peer.
             peer = rows[index].get("comparator_id")
-            for key in (*FIELDS, *ANALYSIS_FIELDS, "trade_known", "trade_unknown"):
+            for key in (*FIELDS, *current_analysis_fields, "trade_known", "trade_unknown"):
                 suffix = (
                     ["analysis", key]
-                    if key in ANALYSIS_FIELDS
+                    if key in current_analysis_fields
                     else ["trade_conditions", key.removeprefix("trade_")]
                     if key.startswith("trade_")
                     else [key]
@@ -153,7 +154,7 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
         }:
             suffix = (
                 ["analysis", field]
-                if field in ANALYSIS_FIELDS
+                if field in current_analysis_fields
                 else ["trade_conditions", field.removeprefix("trade_")]
                 if field in {"trade_known", "trade_unknown"}
                 else [field]

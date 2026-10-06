@@ -27,9 +27,7 @@ from quantlab.scout.decision_contract import (
     SCHEMA_VERSION,
     SELECTION,
     SHARED,
-    focus_errors,
     legacy_errors,
-    rule_errors,
     rule_text,
 )
 from quantlab.scout.facts import program_facts
@@ -72,6 +70,28 @@ next_observation_date只有实际来源日程才填，否则null。
 INSTRUCTION = SHARED + INSTRUCTION + SEMANTIC_INSTRUCTION + SELECTION
 
 
+def selection_instruction(packet):
+    if packet.get("prediction_objective") != "next_session":
+        return INSTRUCTION
+    from quantlab.scout.nextday_contract import SELECTION as NEXT_SELECTION
+    from quantlab.scout.nextday_contract import SHARED as NEXT_SHARED
+
+    facts_only = INSTRUCTION[len(SHARED) :].split(SEMANTIC_INSTRUCTION, 1)[0]
+    facts_only = facts_only.replace("入选比较对象须同类型未选者。", "比较对象须来自冻结相近集合。")
+    facts_only = facts_only.replace(
+        "primary_type=insufficient_evidence时rank=null且final_status=unselected；"
+        "其余候选连续整数排名。",
+        "not_rankable不排名不入选，rankable连续研究排名。",
+    )
+    encoding = (
+        "facts各行按fact_columns读取；fact_dictionaries给subject_id/metric/period/unit列的索引字典。"
+        "这些列为整数时按字典还原，不能当事实数值；value保持原值。"
+        "technical_fact_indices是facts插入顺序从零计的技术事实索引；"
+        "fact_metadata补充非空公告日和缺数状态。\n"
+    )
+    return NEXT_SHARED + facts_only + encoding + SEMANTIC_INSTRUCTION + NEXT_SELECTION
+
+
 def compact(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
 
@@ -92,19 +112,8 @@ def clean_paths(value):
 def fact_table(candidates, market, background):
     facts = {}
     for candidate in candidates:
-        for fact in program_facts(candidate, market["session"]):
-            item = {
-                k: fact[k]
-                for k in (
-                    "fact_id",
-                    "subject_id",
-                    "metric",
-                    "period",
-                    "asof_session",
-                    "value",
-                    "unit",
-                )
-            }
+        for fact in candidate.get("program_facts", program_facts(candidate, market["session"])):
+            item = dict(fact)
             facts[item["fact_id"]] = item
         summary = candidate.get("source_summary") or {}
         # Financial source fields stay in their actual reported period. Unknown units
@@ -146,6 +155,7 @@ def fact_table(candidates, market, background):
 
 def research_packet(packet):
     """Keep evidence once, retain omissions explicitly, avoid full-universe diagnostics."""
+    nextday = packet.get("prediction_objective") == "next_session"
     candidates = []
     for row in packet["candidates"]:
         record = row.get("opportunity_record", {})
@@ -166,6 +176,16 @@ def research_packet(packet):
                         "nominal_scale",
                         "previous_record_id",
                         "previous_content_excerpt",
+                        "official_source",
+                        "published_at",
+                        "source_published_at",
+                        "first_seen_at",
+                        "collected_at",
+                        "effective_date",
+                        "available_by_cutoff",
+                        "visibility_basis",
+                        "republication_cluster",
+                        "next_session_timely",
                     )
                     if k in event
                 }
@@ -187,6 +207,26 @@ def research_packet(packet):
                     k: (row.get("source_summary") or {}).get(k)
                     for k in ("themes", "trading_status")
                 },
+                **(
+                    {
+                        "technical_state": (
+                            row.get("technical_snapshot")
+                            or row.get("context", {}).get("technical_snapshot", {})
+                        ).get("technical_state", "unknown"),
+                        "technical_gaps": [
+                            k
+                            for k, v in (
+                                row.get("technical_snapshot")
+                                or row.get("context", {}).get("technical_snapshot", {})
+                            )
+                            .get("metrics", {})
+                            .items()
+                            if v.get("status") != "available"
+                        ],
+                    }
+                    if nextday
+                    else {}
+                ),
             }
         )
     # Do not concatenate path-bearing per-query diagnostics. Preserve every status/count.
@@ -205,6 +245,13 @@ def research_packet(packet):
         "industries": {k: v for k, v in background.get("industries", {}).items() if k in subjects}
     }
     facts = fact_table(packet["candidates"], market, scoped_background)
+    unknown_unit_counts = {}
+    if nextday:
+        for identity, fact in list(facts.items()):
+            if fact["unit"] == "provider_unit_unknown":
+                subject = fact["subject_id"]
+                unknown_unit_counts[subject] = unknown_unit_counts.get(subject, 0) + 1
+                del facts[identity]
     notes = {}
     shown_ids = {e["evidence_id"] for e in packet.get("evidence", [])}
     for hypothesis in packet.get("hypotheses", []):
@@ -228,7 +275,7 @@ def research_packet(packet):
                 )
                 if value not in note[destination]:
                     note[destination].append(value)
-    return {
+    result = {
         "version": VERSION,
         "schema_version": SCHEMA_VERSION,
         "research_rules": RULES,
@@ -249,16 +296,115 @@ def research_packet(packet):
         "price_reactions": packet.get("price_reactions", []),
         "investigation_opportunities": clean_paths(packet.get("investigation_opportunities", [])),
     }
+    if nextday:
+        from quantlab.scout.nextday_contract import RULES as NEXT_RULES
+        from quantlab.scout.nextday_contract import SCHEMA_VERSION as NEXT_SCHEMA
+        from quantlab.scout.nextday_contract import VERSION as NEXT_VERSION
+
+        result.update(
+            version=NEXT_VERSION,
+            schema_version=NEXT_SCHEMA,
+            prediction_objective="next_session",
+            research_rules=NEXT_RULES,
+            experiment_profile=packet.get("experiment_profile", "fused"),
+            omitted_unknown_unit_facts=unknown_unit_counts,
+        )
+        # Metadata can be inferred from the declared fact family/version; don't
+        # repeat the 120-session dependencies on every number in model input.
+        result["technical_fact_refs"] = [
+            k for k, f in facts.items() if f.get("calculation_version")
+        ]
+        result["technical_version"] = next(
+            (f["calculation_version"] for f in facts.values() if f.get("calculation_version")), None
+        )
+        result["fact_metadata"] = {
+            k: {"status": f.get("status", "unknown")}
+            for k, f in facts.items()
+            if f.get("value") is None
+        }
+        result["benchmark_definitions"] = {
+            "relative_return": (
+                "individual_minus_same_period_mean_of_frozen_eligible_industry_members"
+            ),
+            "technical_prices": "D0_factor_anchor_adjusted_research_prices_not_executable_prices",
+            "data_units": "amount_CNY_volume_shares_turnover_ratio_circ_mv_CNY",
+        }
+        result["opportunity_hypotheses"] = clean_paths(packet.get("opportunity_hypotheses", []))
+        # Comparator set is frozen from industry/type overlap and score proximity,
+        # before final model ranking; an equally strong selected peer is allowed.
+        for candidate in candidates:
+            peers = [
+                c
+                for c in candidates
+                if c["instrument_id"] != candidate["instrument_id"]
+                and (
+                    (candidate["industry"] and c["industry"] == candidate["industry"])
+                    or set(c["source_summary"].get("themes") or [])
+                    & set(candidate["source_summary"].get("themes") or [])
+                    or any(
+                        {c["instrument_id"], candidate["instrument_id"]}
+                        <= set(h.get("instrument_ids", []))
+                        for h in result["opportunity_hypotheses"]
+                    )
+                )
+            ]
+            candidate["comparable_ids"] = [c["instrument_id"] for c in peers]
+        profile = result["experiment_profile"]
+        if profile == "event_only":
+            result["facts"] = {
+                k: v
+                for k, v in result["facts"].items()
+                if ":technical:" not in k and ":market:" not in k
+            }
+            for candidate in candidates:
+                candidate["technical_state"] = "unknown"
+                candidate["technical_gaps"] = ["disabled_by_fixed_event_only_profile"]
+        elif profile == "technical_only":
+            result["facts"] = {
+                k: v for k, v in result["facts"].items()
+                if ":technical:" in k or ":market:" in k or v[0].startswith("industry:")
+            }
+            result["evidence"] = []
+            result["opportunity_hypotheses"] = []
+            result["research_notes"] = []
+            result["investigation_opportunities"] = []
+            for candidate in candidates:
+                candidate["events"] = []
+                candidate["type_hints"] = [
+                    t for t in candidate["type_hints"] if t != "event_update"
+                ]
+                candidate["source_summary"]["themes"] = []
+        result["technical_fact_refs"] = [
+            k for k in result["technical_fact_refs"] if k in result["facts"]
+        ]
+        result["fact_metadata"] = {
+            k: v for k, v in result["fact_metadata"].items() if k in result["facts"]
+        }
+    return result
 
 
 def unpack_facts(packet):
-    if packet["fact_columns"] != list(FACT_COLUMNS):
+    if packet["fact_columns"] not in (list(FACT_COLUMNS), list(FACT_COLUMNS[:-1])):
         raise ValueError("Unknown daily fact table columns")
+    technical = set(packet.get("technical_fact_refs", []))
+    indices = set(packet.get("technical_fact_indices", []))
+    technical.update(ref for index, ref in enumerate(packet["facts"]) if index in indices)
     return {
         ref: {
             "fact_id": ref,
             "asof_session": packet["market"]["session"],
-            **dict(zip(FACT_COLUMNS, values, strict=True)),
+            **{
+                key: packet.get("fact_dictionaries", {}).get(key, [])[value]
+                if key in packet.get("fact_dictionaries", {}) and isinstance(value, int)
+                else value
+                for key, value in zip(packet["fact_columns"], values, strict=True)
+            },
+            **packet.get("fact_metadata", {}).get(ref, {}),
+            **(
+                {"calculation_version": packet.get("technical_version"), "status": "available"}
+                if ref in technical and values[3] is not None
+                else {}
+            ),
         }
         for ref, values in packet["facts"].items()
     }
@@ -272,11 +418,41 @@ def compact_fact_refs(packet):
     aliases = {key: "fact:" + sha256(key.encode()).hexdigest()[:12] for key in packet["facts"]}
     if len(set(aliases.values())) != len(aliases):
         raise ValueError("daily_fact_reference_collision")
-    result["facts"] = {aliases[key]: value for key, value in packet["facts"].items()}
+    result["facts"] = {aliases[key]: value for key, value in result["facts"].items()}
+    if "fact_metadata" in result:
+        result["fact_metadata"] = {
+            aliases[key]: value for key, value in result["fact_metadata"].items()
+        }
+    if "technical_fact_refs" in result:
+        result["technical_fact_refs"] = [aliases[key] for key in result["technical_fact_refs"]]
     for key in ("research_notes", "investigation_opportunities", "price_reactions"):
         result[key] = remap_generated_refs(result.get(key, []), aliases)
     result["fact_reference_style"] = "sha256_12"
-    result["version"] = VERSION
+    result["version"] = packet.get("version", VERSION)
+    if result.get("prediction_objective") == "next_session":
+        dictionaries = {
+            key: sorted({values[index] for values in result["facts"].values()})
+            for index, key in enumerate(FACT_COLUMNS)
+            if key in {"subject_id", "metric", "period", "unit"}
+        }
+        for index, key in enumerate(FACT_COLUMNS):
+            if key in dictionaries:
+                lookup = {value: i for i, value in enumerate(dictionaries[key])}
+                for values in result["facts"].values():
+                    values[index] = lookup[values[index]]
+        result["fact_encoding"] = "typed_dictionary_v1"
+        result["fact_dictionaries"] = dictionaries
+        technical = set(result.pop("technical_fact_refs", []))
+        result["technical_fact_indices"] = [
+            i for i, ref in enumerate(result["facts"]) if ref in technical
+        ]
+        for ref, values in result["facts"].items():
+            ann_date = values.pop()
+            if ann_date is not None:
+                result.setdefault("fact_metadata", {}).setdefault(ref, {})["source_ann_date"] = (
+                    ann_date
+                )
+        result["fact_columns"] = list(FACT_COLUMNS[:-1])
     return result, aliases
 
 
@@ -294,22 +470,40 @@ def remap_generated_refs(value, aliases):
 
 
 def referenced_facts(row):
-    texts = [row[f] for f in FIELDS] + [row["analysis"][f] for f in ANALYSIS_FIELDS]
+    texts = [row[f] for f in FIELDS] + [row["analysis"][f] for f in analysis_fields(row)]
+    texts += [row.get(k, "") for k in ("technical_interpretation", "price_reaction")]
     texts += list(row["trade_conditions"].values())
     claims = row.get("semantic_claims", [])
     if not Draft202012Validator(CLAIM_SCHEMA).is_valid(claims):
         claims = []
     rule = row.get("invalidation_rule")
-    if not Draft202012Validator(RULE_SCHEMA).is_valid(rule):
+    if not isinstance(rule, dict):
         rule = None
     return list(
         dict.fromkeys(
             row.get("fact_ids", [])
+            + row.get("technical_fact_ids", [])
+            + (row.get("next_session_condition") or {}).get("fact_ids", [])
             + row["analysis"]["scale_fact_ids"]
             + [ref for claim in claims for ref in claim["fact_ids"]]
-            + ([rule["reference_id"]] if rule and rule["reference_id"].startswith("fact:") else [])
+            + (
+                [rule["reference_id"]]
+                if rule
+                and isinstance(rule.get("reference_id"), str)
+                and rule["reference_id"].startswith("fact:")
+                else []
+            )
             + [ref for text in texts for ref in REF.findall(text)]
         )
+    )
+
+
+def analysis_fields(row):
+    return tuple(
+        "next_session_thesis"
+        if f == "h5_mechanism" and "next_session_thesis" in row["analysis"]
+        else f
+        for f in ANALYSIS_FIELDS
     )
 
 
@@ -386,11 +580,29 @@ def selection_schema(candidates, packet=None):
                     },
                 }
             )
+    if packet and packet.get("prediction_objective") == "next_session":
+        from quantlab.scout.nextday_contract import adapt_schema
+
+        schema = adapt_schema(schema)
     return schema
 
 
 def validate_output(output, packet):
     """Collect the complete schema and semantic error list without stopping at row one."""
+    nextday = packet.get("prediction_objective") == "next_session"
+    if nextday:
+        from quantlab.scout.nextday_contract import (
+            RESEARCH_RULES,
+            focus_errors,
+            rule_errors,
+            rule_schema,
+        )
+
+        active_rule_schema = rule_schema(RESEARCH_RULES)
+    else:
+        from quantlab.scout.decision_contract import focus_errors, rule_errors
+
+        active_rule_schema = RULE_SCHEMA
     errors = [
         {"path": list(e.path), "code": "schema", "detail": e.message[:300]}
         for e in Draft202012Validator(selection_schema(packet["candidates"], packet)).iter_errors(
@@ -402,15 +614,46 @@ def validate_output(output, packet):
     candidates = {c["instrument_id"]: c for c in packet["candidates"]}
     facts = unpack_facts(packet)
     shape = semantic_shape(
-        selection_schema(packet["candidates"])["properties"]["comparisons"]["items"]
+        selection_schema(packet["candidates"], packet)["properties"]["comparisons"]["items"]
     )
     shape["properties"]["instrument_id"]["enum"] = list(candidates)
     # New fields must not hide all other errors in saved legacy responses.
-    for field in ("semantic_claims", "invalidation_rule"):
+    optional_shape = ["semantic_claims", "invalidation_rule"]
+    if nextday:
+        optional_shape += [
+            "next_session_condition",
+            "technical_fact_ids",
+            "participation_cancel_rule",
+            "opportunity_ids",
+            "ranking_state",
+            "participation_status",
+            "technical_interpretation",
+            "price_reaction",
+        ]
+    for field in optional_shape:
         shape["properties"].pop(field, None)
         shape["required"].remove(field)
     shape["additionalProperties"] = True
     rows = [r for r in output["comparisons"] if Draft202012Validator(shape).is_valid(r)]
+    if nextday:
+        # Schema errors retain the original path. A safe semantic projection of
+        # malformed new fields lets us collect independent body/reference errors.
+        rows = [deepcopy(row) for row in rows]
+        new_properties = selection_schema(packet["candidates"], packet)["properties"][
+            "comparisons"
+        ]["items"]["properties"]
+        for row in rows:
+            for key in optional_shape[2:]:
+                if not Draft202012Validator(new_properties[key]).is_valid(row.get(key)):
+                    defaults = {
+                        "technical_fact_ids": [],
+                        "opportunity_ids": [],
+                        "ranking_state": "not_rankable" if row["rank"] is None else "rankable",
+                        "participation_status": "observe_only",
+                        "technical_interpretation": "未知",
+                        "price_reaction": "未知",
+                    }
+                    row[key] = defaults.get(key)
     by_code = {r["instrument_id"]: r for r in rows}
 
     def error(code, field, detail, **context):
@@ -428,8 +671,15 @@ def validate_output(output, packet):
         code = row["instrument_id"]
         peer = row["comparator_id"]
         insufficient = row["primary_type"] == "insufficient_evidence"
-        if insufficient != (row["rank"] is None) or (
-            insufficient and row["final_status"] != "unselected"
+        cannot_rank = row.get("ranking_state") == "not_rankable" if nextday else insufficient
+        if (
+            nextday
+            and (insufficient or row["evidence_reliability"] == "insufficient")
+            and not cannot_rank
+        ):
+            error(code, "ranking_state", "insufficient_requires_not_rankable")
+        if cannot_rank != (row["rank"] is None) or (
+            cannot_rank and row["final_status"] != "unselected"
         ):
             error(code, "rank", "insufficient_cannot_rank_or_select")
         if row["primary_type"] not in row["type_labels"]:
@@ -439,15 +689,17 @@ def validate_output(output, packet):
             for r in rows
             if r["instrument_id"] != code
             and r["primary_type"] == row["primary_type"]
-            and r["final_status"] == "unselected"
+            and (nextday or r["final_status"] == "unselected")
         }
+        if nextday:
+            comparators = set(candidates[code].get("comparable_ids", []))
         if peer is not None and (peer not in by_code or peer == code):
             error(code, "comparator_id", "comparator_not_shown")
         if row["final_status"] != "unselected" and comparators and peer not in comparators:
             error(
                 code,
                 "comparator_id",
-                "same_type_unselected_required",
+                "frozen_comparable_required" if nextday else "same_type_unselected_required",
                 allowed_comparator_ids=sorted(comparators),
                 actual=peer,
             )
@@ -472,6 +724,8 @@ def validate_output(output, packet):
                         key for key, f in facts.items() if f["subject_id"] in allowed
                     ],
                 )
+            elif facts[ref].get("value") is None:
+                error(code, "fact_ids", "null_fact_cannot_support_quantitative_claim:" + ref)
         for ref in row["analysis"]["scale_fact_ids"]:
             if ref not in facts or facts[ref]["subject_id"] != code:
                 error(code, "scale_fact_ids", "scale_requires_declared_own_fact:" + ref)
@@ -479,14 +733,58 @@ def validate_output(output, packet):
                 error(code, "scale_fact_ids", "scale_unit_unverified:" + ref)
         own_events = {e["record_id"]: e for e in candidates[code]["events"]}
         rule = row.get("invalidation_rule")
-        if Draft202012Validator(RULE_SCHEMA).is_valid(rule):
-            for issue in rule_errors(rule, code, row["primary_type"], facts, own_events):
+        if Draft202012Validator(active_rule_schema).is_valid(rule):
+            for issue in rule_errors(
+                rule,
+                code,
+                row["primary_type"],
+                facts,
+                own_events,
+                **({"focus": row["final_status"] == "focus"} if nextday else {}),
+            ):
                 error(code, "invalidation_rule", issue)
-        safe_rule = rule if Draft202012Validator(RULE_SCHEMA).is_valid(rule) else None
+        safe_rule = rule if Draft202012Validator(active_rule_schema).is_valid(rule) else None
         for field, issue in focus_errors(
-            {**row, "invalidation_rule": safe_rule}, facts, own_events
+            {**row, "invalidation_rule": safe_rule},
+            facts,
+            own_events,
+            **({"candidate": candidates[code]} if nextday else {}),
         ):
             error(code, field, issue)
+        if nextday:
+            from quantlab.scout.nextday_contract import CANCEL_RULES
+
+            cancel = row.get("participation_cancel_rule")
+            if Draft202012Validator(rule_schema(CANCEL_RULES)).is_valid(cancel):
+                for issue in rule_errors(
+                    cancel, code, row["primary_type"], facts, own_events, cancellation=True
+                ):
+                    error(code, "participation_cancel_rule", issue)
+            for ref in row.get("technical_fact_ids", []):
+                fact = facts.get(ref, {})
+                if fact.get("subject_id") != code or not fact.get("calculation_version"):
+                    error(
+                        code, "technical_fact_ids", "technical_requires_own_calculated_fact:" + ref
+                    )
+            opportunities = {
+                h["hypothesis_id"]: h
+                for h in packet.get("opportunity_hypotheses", [])
+                if "hypothesis_id" in h
+            }
+            for identity in row.get("opportunity_ids", []):
+                if identity not in opportunities or code not in opportunities[identity].get(
+                    "instrument_ids", []
+                ):
+                    error(code, "opportunity_ids", "opportunity_not_shown_for_subject:" + identity)
+            trading_status = candidates[code].get("trading_status")
+            trading_status = (
+                trading_status.get("status") if isinstance(trading_status, dict) else trading_status
+            )
+            if (
+                row.get("participation_status") != "restricted"
+                and trading_status == "hold_for_official_notice_review"
+            ):
+                error(code, "participation_status", "known_halt_requires_restricted")
         for field, issue in legacy_errors(row, candidates[code], packet["evidence"]):
             error(code, field, issue)
         for event_id in row["analysis"]["event_ids"]:
@@ -535,7 +833,12 @@ def validate_output(output, packet):
                 error(code, "evidence_ids", "source_not_shown_or_wrong_subject:" + ref)
         fields = {
             **{f: row[f] for f in FIELDS},
-            **{f: row["analysis"][f] for f in ANALYSIS_FIELDS},
+            **{f: row["analysis"][f] for f in analysis_fields(row)},
+            **(
+                {k: row[k] for k in ("technical_interpretation", "price_reaction")}
+                if nextday
+                else {}
+            ),
             "trade_known": row["trade_conditions"]["known"],
             "trade_unknown": row["trade_conditions"]["unknown"],
         }
@@ -543,7 +846,9 @@ def validate_output(output, packet):
             for issue in prose_errors(text, facts, (code, peer)):
                 error(code, field, issue, actual=text)
             prose = REF.sub("事实", text)
-            prose = re.sub(r"(?<![A-Za-z0-9])H(?:1|3|5|10)(?![A-Za-z0-9])", "固定观察期限", prose)
+            prose = re.sub(
+                r"(?<![A-Za-z0-9])[HD](?:1|2|3|5|10)(?![A-Za-z0-9])", "固定观察期限", prose
+            )
             for subject in (code, peer):
                 if subject:
                     prose = prose.replace(subject, "证券")
@@ -621,6 +926,8 @@ def daily_microstructure_assertion(text, field):
 
 
 def format_fact(fact):
+    if fact.get("value") is None:
+        return f"{fact['subject_id']} · {fact['period']} · {fact['metric']}：未知/数据不足"
     value = Decimal(fact["value"])
     if fact["unit"] == "ratio":
         number = f"{value * 100:+.2f}%"
@@ -654,7 +961,7 @@ def render_output(output, packet):
 
         for field in FIELDS:
             row[field] = render(row[field])
-        for field in ANALYSIS_FIELDS:
+        for field in analysis_fields(row):
             row["analysis"][field] = render(row["analysis"][field])
         for field in ("known", "unknown"):
             row["trade_conditions"][field] = render(row["trade_conditions"][field])
@@ -663,7 +970,21 @@ def render_output(output, packet):
         row["semantic_summary"] = [
             render_claim(claim, facts, format_fact) for claim in row.get("semantic_claims", [])
         ]
-        row["invalidation_observation"] = rule_text(row.get("invalidation_rule"))
-    result["render_version"] = VERSION
+        if packet.get("prediction_objective") == "next_session":
+            from quantlab.scout.nextday_contract import current_rule_state
+            from quantlab.scout.nextday_contract import rule_text as next_rule_text
+
+            row["invalidation_observation"] = next_rule_text(row.get("invalidation_rule"))
+            row["invalidation_state_at_cutoff"] = current_rule_state(
+                row.get("invalidation_rule"), facts
+            )
+            row["participation_cancel_observation"] = next_rule_text(
+                row.get("participation_cancel_rule")
+            )
+            for field in ("technical_interpretation", "price_reaction"):
+                row[field] = render(row[field])
+        else:
+            row["invalidation_observation"] = rule_text(row.get("invalidation_rule"))
+    result["render_version"] = packet.get("version", VERSION)
     result["raw_output_sha256"] = fingerprint(output)
     return result

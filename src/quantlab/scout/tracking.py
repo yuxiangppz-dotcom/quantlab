@@ -49,6 +49,10 @@ def _write_snapshot(result: dict, output_root: Path) -> Path:
 
 def observe_run(run_dir: Path, canonical_dir: Path, output_root: Path) -> Path:
     report, report_sha256 = _checked_report(run_dir)
+    if report.get("nextday_freeze"):
+        from quantlab.scout.nextday_tracking import observe_nextday
+
+        return observe_nextday(run_dir, canonical_dir, output_root)
     if output_root.resolve().is_relative_to(canonical_dir.resolve()):
         raise ValueError("Outcome output cannot be inside canonical data")
     if report.get("timing") is not None:
@@ -167,6 +171,8 @@ def summarize_tracking(report_root: Path, observation_root: Path, output_path: P
         except (ValueError, KeyError, json.JSONDecodeError):
             continue
         timing = report.get("timing")
+        if report.get("nextday_freeze"):
+            continue
         if not timing or not timing.get("primary_eligible") or not timing.get("target_session"):
             continue
         try:

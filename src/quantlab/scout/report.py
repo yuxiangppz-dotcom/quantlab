@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime
 from hashlib import sha256
 from pathlib import Path
 
-from quantlab.scout.models import fingerprint
+from quantlab.scout.models import SHANGHAI, fingerprint
 
 
 def text(value: object) -> str:
@@ -671,4 +672,19 @@ def write_report(root: Path, report: dict, raw: list[dict]) -> Path:
             indent=2,
         )
     )
+    if report.get("nextday_freeze"):
+        (run_dir / "publication.json").write_text(
+            json.dumps(
+                {
+                    "run_id": report["run_id"],
+                    "source_report_sha256": fingerprint(report),
+                    "status": "local_saved",
+                    "published_at": datetime.now(SHANGHAI).isoformat(),
+                    "medium": "local_saved_report_only",
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
     return run_dir

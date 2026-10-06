@@ -367,6 +367,14 @@ def test_scheduler_single_target_duplicate_and_late_data_never_repays(volume, mo
     monkeypatch.delenv("SERVERCHAN_SENDKEY", raising=False)
     monkeypatch.setattr(runner, "prediction_settings", lambda value: value)
     folder = saved_run(volume)
+    original_read = runner.read
+    monkeypatch.setattr(
+        runner,
+        "read",
+        lambda path: (
+            {} if str(path) == "sealed-app/config/scout_daily.fixed.json" else original_read(path)
+        ),
+    )
     state_path = volume / "runtime/jobs/single/state.json"
     atomic(
         state_path,

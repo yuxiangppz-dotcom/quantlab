@@ -17,7 +17,7 @@ from quantlab.data.models import (
 )
 from quantlab.data.storage import ParquetStorage
 from quantlab.scout.cloud_artifacts import guarded
-from quantlab.scout.daily_runtime import atomic, read
+from quantlab.scout.daily_runtime import atomic, exclusive, read
 from quantlab.scout.market import latest_completed_session
 from quantlab.scout.models import fingerprint
 
@@ -170,7 +170,7 @@ def refresh_calendar(root, fetcher, now):
     rows = fetcher.fetch(
         "trade_cal",
         exchange="SSE",
-        start_date=(now.date() - timedelta(days=90)).strftime("%Y%m%d"),
+        start_date=(now.date() - timedelta(days=365)).strftime("%Y%m%d"),
         end_date=(now.date() + timedelta(days=45)).strftime("%Y%m%d"),
     )
     merged = {(r.exchange, r.trade_date): r for r in calendar}
@@ -185,9 +185,7 @@ def refresh_calendar(root, fetcher, now):
     return storage
 
 
-def refresh_market(root, fetcher, now):
-    root = guarded(root)
-    storage = ParquetStorage(root / "market")
+def _refresh_master(storage, fetcher):
     securities = []
     for state in ("L", "D", "P"):
         for row in fetcher.fetch("stock_basic", exchange="", list_status=state):
@@ -210,6 +208,18 @@ def refresh_market(root, fetcher, now):
     if not securities:
         raise ValueError("Securities master empty")
     storage.save_securities(securities)
+
+
+def _methods(storage):
+    return {
+        "daily": (storage.daily_bars_path, storage.save_daily_bars_by_date),
+        "adj_factor": (storage.adj_factor_path, storage.save_adj_factors_by_date),
+        "daily_basic": (storage.daily_basic_path, storage.save_daily_basic_by_date),
+        "stk_limit": (storage.daily_price_limit_path, storage.save_daily_price_limits_by_date),
+    }
+
+
+def _window(storage, now, sessions):
     asof = latest_completed_session(storage, now)
     days = sorted(
         {
@@ -217,26 +227,182 @@ def refresh_market(root, fetcher, now):
             for r in storage.load_trading_calendar()
             if r.exchange == "SSE" and r.is_open and r.trade_date <= asof
         }
-    )[-21:]
-    if len(days) != 21:
-        raise ValueError("Calendar lacks a complete 21-session research window")
-    methods = {
-        "daily": (storage.daily_bars_path, storage.save_daily_bars_by_date),
-        "adj_factor": (storage.adj_factor_path, storage.save_adj_factors_by_date),
-        "daily_basic": (storage.daily_basic_path, storage.save_daily_basic_by_date),
-        "stk_limit": (storage.daily_price_limit_path, storage.save_daily_price_limits_by_date),
-    }
+    )[-sessions:]
+    if len(days) != sessions:
+        raise ValueError(f"Calendar lacks a complete {sessions}-session research window")
+    return asof, days
+
+
+def _path(root, method, day):
+    path = method(day)
+    if not path.resolve().is_relative_to(root.resolve()):
+        raise ValueError("Partition points outside isolated cloud volume")
+    return path
+
+
+def _coverage(storage, day):
+    bars = storage.load_daily_bars_by_date(day)
+    adjustments = storage.load_adj_factors_by_date(day)
+    codes = {r.instrument_id for r in bars}
+    factors = {r.instrument_id for r in adjustments if finite_positive(r.adj_factor)}
+    if not codes or not codes.issubset(factors):
+        return "daily_adjustment_instrument_coverage_unknown"
+    if (
+        len(codes) != len(bars)
+        or len({r.instrument_id for r in adjustments}) != len(adjustments)
+        or any(row.trade_date != day for row in bars + adjustments)
+    ):
+        return "partition_identity_or_duplicate_error"
+    return None
+
+
+def finite_positive(value):
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value > 0
+    )
+
+
+def _required(storage, root, days, asof):
+    methods = _methods(storage)
+    result = []
     for day in days:
         for api, (path, save) in methods.items():
             if api in {"daily_basic", "stk_limit"} and day != asof:
                 continue
-            if not path(day).resolve().is_relative_to(root.resolve()):
-                raise ValueError("Partition points outside isolated cloud volume")
-            if not path(day).exists():
+            result.append((day, api, _path(root, path, day), save))
+    return result
+
+
+def prepare_history(root, fetcher, now, *, partition_limit=40):
+    """Prepare a resumable isolated 120-session cache in bounded maintenance batches.
+
+    File existence is insufficient: every daily instrument must have a positive
+    matching factor. Invalid existing partitions are reported, never overwritten.
+    Fetcher still enforces the shared 100 calls/900 seconds and page bounds.
+    No model, prediction claim, notification or canonical path is touched.
+    """
+    if not isinstance(partition_limit, int) or not 1 <= partition_limit <= 40:
+        raise ValueError("History partition batch must be between one and forty")
+    root = guarded(root)
+    directory = root / "data_preparation"
+    if not directory.resolve().is_relative_to(root.resolve()):
+        raise ValueError("Data preparation path outside isolated volume")
+    with exclusive(directory / "history.lock"):
+        state_path = directory / "history120.json"
+        previous = read(state_path) if state_path.exists() else {}
+        sequence = previous.get("batch_sequence", 0) + 1
+        receipt = {
+            "version": "isolated_history120_v1",
+            "status": "preparing",
+            "history_sessions": 120,
+            "partition_limit": partition_limit,
+            "batch_sequence": sequence,
+            "updated_at": now.isoformat(),
+            "completed_this_batch": 0,
+            "provider_calls": 0,
+            "remaining_partitions": None,
+            "coverage_issues": [],
+        }
+        calls_before = fetcher.calls
+
+        def save_receipt():
+            receipt["provider_calls"] = fetcher.calls - calls_before
+            atomic(state_path, receipt)
+            atomic(directory / "batches" / f"batch-{sequence:06d}.json", receipt)
+
+        try:
+            storage = refresh_calendar(root, fetcher, now)
+            if not storage.load_securities():
+                _refresh_master(storage, fetcher)
+            asof, days = _window(storage, now, 120)
+            receipt.update(asof_session=asof.isoformat(), history_start=days[0].isoformat())
+            required = _required(storage, root, days, asof)
+            pending = [row for row in required if not row[2].is_file()]
+            receipt.update(
+                required_partitions=len(required),
+                remaining_partitions=len(pending),
+                reused_partitions=len(required) - len(pending),
+            )
+            save_receipt()
+            for day, api, _partition_path, save in pending[:partition_limit]:
+                receipt["last_operation"] = {"api": api, "session": day.isoformat()}
                 rows = fetcher.all_rows(api, trade_date=day.strftime("%Y%m%d"))
                 save(convert(api, rows, day), day)
-        bars = {r.instrument_id for r in storage.load_daily_bars_by_date(day)}
-        factors = {r.instrument_id for r in storage.load_adj_factors_by_date(day)}
-        if not bars or not bars.issubset(factors):
+                receipt["completed_this_batch"] += 1
+                receipt["remaining_partitions"] -= 1
+                save_receipt()
+            # Only check sessions whose pair now exists. Missing pairs stay pending.
+            for day in days:
+                if (
+                    storage.daily_bars_path(day).is_file()
+                    and storage.adj_factor_path(day).is_file()
+                ):
+                    issue = _coverage(storage, day)
+                    if issue:
+                        receipt["coverage_issues"].append(
+                            {"session": day.isoformat(), "reason": issue}
+                        )
+            receipt["status"] = (
+                "blocked_coverage"
+                if receipt["coverage_issues"]
+                else "pending"
+                if receipt["remaining_partitions"]
+                else "ready"
+            )
+            receipt["progress_fraction"] = (len(required) - receipt["remaining_partitions"]) / len(
+                required
+            )
+        except Exception as exc:
+            receipt.update(
+                status="failed",
+                error_type=type(exc).__name__,
+                coverage_state="unknown_not_complete",
+            )
+        save_receipt()
+        return receipt
+
+
+def refresh_market(root, fetcher, now, *, history_sessions=21, initialize_history=False):
+    """Refresh recent increments; longer missing history belongs to maintenance."""
+    if history_sessions not in {21, 120}:
+        raise ValueError("Supported fixed research history is 21 or 120 sessions")
+    root = guarded(root)
+    storage = ParquetStorage(root / "market")
+    if initialize_history and history_sessions == 120:
+        receipt = prepare_history(root, fetcher, now)
+        if receipt["status"] != "ready":
+            return receipt
+    try:
+        asof, days = _window(storage, now, history_sessions)
+    except ValueError:
+        if history_sessions == 120:
+            raise ValueError("history_bootstrap_required: calendar lacks 120 sessions") from None
+        raise
+    if history_sessions == 120:
+        for day in days[:-21]:
+            if (
+                not storage.daily_bars_path(day).is_file()
+                or not storage.adj_factor_path(day).is_file()
+                or _coverage(storage, day)
+            ):
+                raise ValueError("history_bootstrap_required: earlier cache missing/incomplete")
+    _refresh_master(storage, fetcher)
+    methods = _methods(storage)
+    for day in days:
+        for api, (path, save) in methods.items():
+            if api in {"daily_basic", "stk_limit"} and day != asof:
+                continue
+            if not _path(root, path, day).exists():
+                rows = fetcher.all_rows(api, trade_date=day.strftime("%Y%m%d"))
+                save(convert(api, rows, day), day)
+        if _coverage(storage, day):
             raise ValueError("Daily bars/adjustment factors do not cover the same instruments")
-    return {"asof_session": asof.isoformat(), "provider_calls": fetcher.calls}
+    return {
+        "asof_session": asof.isoformat(),
+        "provider_calls": fetcher.calls,
+        "history_sessions": history_sessions,
+        "status": "ready",
+    }

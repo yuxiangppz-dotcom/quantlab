@@ -30,6 +30,13 @@ def observe_ranking(
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     if digest != manifest["report_sha256"]:
         raise ValueError("Original report integrity check failed")
+    if report.get("nextday_freeze"):
+        from quantlab.scout.nextday_tracking import observe_nextday
+
+        return observe_nextday(
+            run_dir, canonical_dir, output_root, observed_at=observed_at,
+            allow_synthetic=allow_synthetic,
+        )
     synthetic = report.get("status") == "demo" or report.get("synthetic", False)
     if synthetic and not allow_synthetic:
         raise ValueError("Synthetic ranking cannot enter real observations")
@@ -395,6 +402,9 @@ def summarize_ranking(report_root: Path, observation_root: Path, output_path: Pa
     reports, excluded = {}, []
     for path in sorted(report_root.glob("*/report.json")):
         report = json.loads(path.read_text(encoding="utf-8"))
+        if report.get("nextday_freeze"):
+            excluded.append({"run_id": report["run_id"], "reason": "different_nextday_protocol"})
+            continue
         if report.get("status") == "demo" or report.get("synthetic"):
             excluded.append({"run_id": report["run_id"], "reason": "synthetic"})
             continue

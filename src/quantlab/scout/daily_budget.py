@@ -90,7 +90,9 @@ class DailyResearch:
             "prompt_text_sha256": sha256(prompt.encode()).hexdigest(),
             "schema_sha256": fingerprint(schema),
             "schema_id": schema.get("$id"),
-            "decision_prompt_version": "scout_decision_v2"
+            "decision_prompt_version": "scout_next_session_v1"
+            if "[SCOUT_NEXT_SESSION_V1]" in prompt
+            else "scout_decision_v2"
             if "[SCOUT_DECISION_V2]" in prompt
             else "legacy",
             "reserved_tokens": reservation,
@@ -194,6 +196,9 @@ class DailyResearch:
             "comparator_id",
             "fact_ids",
         )
+        nextday = "next_session" in schema.get("$id", "")
+        if nextday:
+            decision_keys += ("ranking_state", "participation_status")
         decisions = (
             [
                 [r.get(k) for k in decision_keys]
@@ -206,8 +211,14 @@ class DailyResearch:
         correction = (
             prompt + "\n这是唯一一次定向纠错。保留反证，不改变预算或来源。"
             "按全部错误清单纠正并输出符合schema的数据JSON，不输出schema定义。\n"
-            "保留此前未报错的分级和比较决定，不另选一套名单。比较对象必须同类型且unselected。"
-            "禁止词净流入/净流出改用对应资金事实占位符，保留资金反证；H5等固定期限可保留。"
+            "保留此前未报错的分级和比较决定，不另选一套名单。"
+            + (
+                "主目标为次日；比较对象来自冻结comparable_ids，可也是入选股。"
+                "研究排序与参与状态分开，保留次日条件和事实引用。"
+                if nextday
+                else "比较对象必须同类型且unselected。H5等固定期限可保留。"
+            )
+            + "禁止词净流入/净流出改用对应资金事实占位符，保留资金反证。"
             "事实清单由程序汇总，不需要重复输出fact_ids。只有报错处需要修复，并维护全局排名一致性。\n"
             + compact(
                 {

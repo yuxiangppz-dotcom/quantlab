@@ -54,7 +54,7 @@ export class ScoutStore {
   validJob(value) {
     const active=this.kv.get('active');
     if (!active || value.day!==active.day || value.owner!==active.owner) throw Error('job_owner');
-    return this.kv.get(`job:${active.day}`);
+    return this.kv.get(active.key || `job:${active.day}`);
   }
   async route(request) {
     const url=new URL(request.url), path=url.pathname, method=request.method;
@@ -99,9 +99,44 @@ export class ScoutStore {
       if (this.kv.get('active')) return response({status:'previous_job_unresolved'},409);
       if ((this.kv.get('bytes')||0)+MAX_SNAPSHOT>MAX_BYTES) return response({status:'archive_capacity_low'},507);
       const job={day:now.day,owner:crypto.randomUUID(),status:'claimed',app_commit:value.app_commit,
-        started_at:new Date().toISOString(),note:'Interrupted jobs never automatically retry.'};
+        started_at:this.now().toISOString(),note:'Interrupted jobs never automatically retry.'};
       this.ctx.storage.transactionSync(()=>{this.kv.put(`job:${now.day}`,job);this.kv.put('active',job);});
       return response(job);
+    }
+    if (method==='POST' && path==='/api/maintenance/claim') {
+      const value=await this.json(request,2000), now=chinaTime(this.now());
+      if (this.env.SCHEDULE_ENABLED!=='true') return response({status:'schedule_disabled'});
+      if (!['observation','prepare'].includes(value.kind) || value.day!==now.day ||
+          value.app_commit!==this.env.APP_COMMIT) throw Error('maintenance_identity');
+      if (value.kind==='observation' && !(now.hour===8 || now.hour>=18))
+        return response({status:'outside_observation_window'});
+      if (value.kind==='prepare' && (!Number.isInteger(value.batch) || value.batch<0 || value.batch>7))
+        throw Error('prepare_bound');
+      const slot=value.kind==='prepare'?String(value.batch):(now.hour===8?'morning':now.hour<20?'evening1':'evening2');
+      const key=`maintenance:${value.kind}:${now.day}:${slot}`;
+      const active=this.kv.get('active'), prior=this.kv.get(key);
+      // The workflow has a 65-minute hard limit. After 70 minutes without any
+      // checkpoint, fence the old writer but retain its paid-day claim forever.
+      // Model-free observation can recover without allowing a second forecast.
+      if (active && this.now().getTime()-Date.parse(active.heartbeat_at||active.started_at)<=4200000)
+        return response({status:'archive_busy'});
+      if (prior && prior.status==='completed') return response({status:'already_completed',job:prior});
+      if (prior && (prior.attempts||1)>=2) return response({status:'maintenance_attempt_bound'});
+      const job={day:now.day,kind:value.kind,key,owner:crypto.randomUUID(),status:'claimed',
+        attempts:(prior?.attempts||0)+1,app_commit:value.app_commit,started_at:this.now().toISOString()};
+      this.ctx.storage.transactionSync(()=>{
+        if(active) this.kv.put(active.key||`job:${active.day}`,{...active,status:'delivery_unknown_fenced',
+          fenced_at:this.now().toISOString(),note:'No forecast retry; stale writer rejected.'});
+        this.kv.put(key,job);this.kv.put('active',job);
+      });
+      return response(job);
+    }
+    if (method==='POST' && path==='/api/maintenance/finish') {
+      const value=await this.json(request,2000), job=this.validJob(value);
+      if (!job.kind || !['completed','failed','pending'].includes(value.status)) throw Error('maintenance_finish');
+      const record={...job,status:value.status,finished_at:new Date().toISOString()};
+      this.ctx.storage.transactionSync(()=>{this.kv.put(job.key,record);this.kv.delete('active');});
+      return response({status:record.status});
     }
     if (method==='GET' && path==='/api/snapshot') {
       return response({snapshot:this.kv.get('head')||null, bytes:this.kv.get('bytes')||0});
@@ -110,7 +145,8 @@ export class ScoutStore {
       const now=chinaTime(this.now());
       return response({enabled:this.env.SCHEDULE_ENABLED==='true',app_commit:this.env.APP_COMMIT,
         day:now.day,hour:now.hour,job:this.kv.get(`job:${now.day}`)||null,
-        active:!!this.kv.get('active'),bytes:this.kv.get('bytes')||0});
+        active:!!this.kv.get('active'),active_kind:this.kv.get('active')?.kind||null,
+        bytes:this.kv.get('bytes')||0});
     }
     const blob=path.match(/^\/api\/blobs\/([a-f0-9]{64})$/);
     if (blob && method==='GET') {
@@ -158,12 +194,14 @@ export class ScoutStore {
       // Every revision is retained. Head is updated only after all chunks exist.
       this.ctx.storage.transactionSync(()=>{
         this.kv.put(`snapshot:${snapshot.sha256}`,record);this.kv.put('head',record);
+        const active=this.kv.get('active');
+        if (active) this.kv.put('active',{...active,heartbeat_at:this.now().toISOString()});
       });
       return response({status:'checkpoint_saved'});
     }
     if (method==='POST' && path==='/api/publish') {
       const value=await this.json(request);
-      if (!value.import_only) this.validJob(value);
+      if (!value.import_only) { if (this.validJob(value).kind) throw Error('maintenance_cannot_publish'); }
       else if (this.env.SCHEDULE_ENABLED==='true' || this.kv.get('active')) throw Error('import_while_active');
       const m=value.metadata;
       if (!m || !ID.test(m.run_id) || !HASH.test(m.html_sha256) || !HASH.test(m.source_report_sha256) ||
@@ -200,10 +238,17 @@ export class ScoutStore {
       }
       const latest=this.kv.get('latest');
       if (!latest || latest.generated_at<=m.generated_at) this.kv.put('latest',m);
-      return response({status:'published'});
+      let publication=this.kv.get(`publication:${m.run_id}`);
+      if (!publication) {
+        publication={run_id:m.run_id,source_report_sha256:m.source_report_sha256,
+          status:'published',published_at:this.now().toISOString(),medium:'authenticated_cloud_report'};
+        this.kv.put(`publication:${m.run_id}`,publication);
+      }
+      return response({status:'published',publication});
     }
     if (method==='POST' && path==='/api/finish') {
       const value=await this.json(request,3000), job=this.validJob(value);
+      if (job.kind) throw Error('maintenance_cannot_finish_forecast');
       if (!['published','failed','non_trading_day','outside_morning_window'].includes(value.status)) throw Error('status');
       if (value.status==='published') {
         const report=this.kv.get(`report:${value.run_id}`);

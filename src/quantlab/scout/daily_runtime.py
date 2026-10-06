@@ -96,27 +96,42 @@ def display_report(state):
 
 def precheck(settings, now=None):
     now = now or datetime.now(SHANGHAI)
+    local = now.astimezone(SHANGHAI)
     manifest = verify_release(settings)
+    config_path = Path(settings["release_root"]) / "config/scout_daily.fixed.json"
+    nextday = bool(config_path.is_file() and read_config(config_path)["next_session_selection"])
     storage = ParquetStorage(Path(settings["canonical_dir"]))
     info = inspect_market_data(storage, now)
-    if not info["live_partition_files_present"]:
-        raise ValueError("行情数据未准备好；请更新孤立行情副本后再次打开入口")
-    asof = date.fromisoformat(info["expected_session"])
     open_days = [
         r.trade_date for r in storage.load_trading_calendar() if r.exchange == "SSE" and r.is_open
     ]
-    timing = report_timing(open_days, now, asof, True)
+    is_open = local.date() in open_days
+    data_ready = bool(info["live_partition_files_present"])
+    if not data_ready and (not nextday or is_open):
+        raise ValueError("行情数据未准备好；请更新孤立行情副本后再次打开入口")
+    if not info.get("expected_session"):
+        raise ValueError("交易日历缺少已完成行情日")
+    asof = date.fromisoformat(info["expected_session"])
+    timing = report_timing(open_days, now, asof, data_ready, nextday=nextday)
     if not timing["target_session"]:
         raise ValueError("交易日历缺少下一目标交易日")
-    is_open = now.date() in open_days
-    key = fingerprint(
-        {
-            "release": manifest["commit"],
-            "config": manifest["config_sha256"],
-            "asof": asof.isoformat(),
-            "target": timing["target_session"],
-            "local_date": now.astimezone(SHANGHAI).date().isoformat(),
-        }
+    key = (
+        fingerprint(
+            {
+                "runtime_contract": "one_paid_target_session_v1",
+                "target_session": timing["target_session"],
+            }
+        )
+        if nextday
+        else fingerprint(
+            {
+                "release": manifest["commit"],
+                "config": manifest["config_sha256"],
+                "asof": asof.isoformat(),
+                "target": timing["target_session"],
+                "local_date": now.astimezone(SHANGHAI).date().isoformat(),
+            }
+        )
     )
     return key, {
         "market": info,
@@ -124,14 +139,75 @@ def precheck(settings, now=None):
         "holiday": not is_open,
         "version": manifest["commit"],
         "budget": dict(POLICY),
+        "next_session_selection": nextday,
+        "paid_allowed": bool(nextday and is_open and timing["primary_eligible"]),
+        "data_ready": data_ready,
     }
 
 
-def claim(settings):
+def _target_job(root, target):
+    """A release upgrade never replaces an existing paid target-day claim.
+
+    Existing legacy claims are conservatively respected during migration. Choose
+    the earliest durable claim by creation time, never by its eventual outcome.
+    Malformed ledger entries stop lookup rather than permit a fresh paid task.
+    """
+    matches = []
+    for path in (root / "jobs").glob("*/state.json"):
+        value = read(path)
+        if value.get("timing", {}).get("target_session") == target:
+            matches.append((value.get("created_at", ""), str(path), path, value))
+    if not matches:
+        return None
+    _, _, path, value = min(matches, key=lambda item: item[:2])
+    return path, value
+
+
+def _idle(details):
+    if not details.get("next_session_selection"):
+        return {**details, "status": "ready", "message": "检查通过，等待生成"}
+    holiday = details["holiday"]
+    allowed = details["paid_allowed"]
+    return {
+        **details,
+        "status": "ready"
+        if allowed
+        else "non_trading_day"
+        if holiday
+        else "outside_publication_window",
+        "message": "检查通过，等待生成"
+        if allowed
+        else "今天为非交易日，仅查看下一目标日的已有结果，不生成付费预测"
+        if holiday
+        else "当前不在固定盘前发布窗口，仅查看已有结果，不生成付费预测",
+    }
+
+
+def claim(settings, now=None):
     """Same date/release/session never produces a second paid job, even after a crash."""
     root = Path(settings["state_root"])
     with exclusive(root / "registry.lock"):
-        key, details = precheck(settings)
+        key, details = precheck(settings) if now is None else precheck(settings, now)
+        if details.get("next_session_selection"):
+            existing = _target_job(root, details["timing"]["target_session"])
+            if existing:
+                path, saved = existing
+                return (
+                    path,
+                    {
+                        **saved,
+                        "holiday": details["holiday"],
+                        "paid_allowed": False,
+                        "current_market": details["market"],
+                    },
+                    False,
+                )
+            if not details["paid_allowed"]:
+                # View-only state does not consume the future trading day's claim.
+                path = root / "views" / key / "state.json"
+                value = {**_idle(details), "key": key, "events": [], "report_path": None}
+                atomic(path, value)
+                return path, value, False
         path = root / "jobs" / key / "state.json"
         if path.exists():
             return path, read(path), False
@@ -163,12 +239,16 @@ def update(path, message, **changes):
     atomic(path, value)
 
 
-def worker(settings, state_path):
+def worker(settings, state_path, *, application_commit=None):
     # Both immutable settings and source are checked again in the paid worker.
-    verify_release(settings)
+    manifest = verify_release(settings)
     update(state_path, "检查固定版本与数据新鲜度", status="running", pid=os.getpid())
     try:
-        precheck(settings)
+        current_key, details = precheck(settings)
+        if details.get("next_session_selection") and (
+            not details["paid_allowed"] or current_key != read(state_path)["key"]
+        ):
+            raise ValueError("Paid target/session or fixed publication window changed")
         run_dir, report = run_scout(
             Path(settings["canonical_dir"]),
             Path(settings["output_root"]),
@@ -176,6 +256,12 @@ def worker(settings, state_path):
             online=True,
             daily_journal=state_path.parent / "requests",
             progress=lambda message: update(state_path, message),
+            release_identity={
+                "engine_commit": manifest["commit"],
+                "application_commit": application_commit or manifest["commit"],
+                "config_sha256": manifest["config_sha256"],
+                "delivery_channel": "cloud" if application_commit else "local",
+            },
         )
         verify_release(settings)
         okay = (
@@ -270,7 +356,8 @@ async function poll(){const r=await fetch('/state');const s=await r.json();
  (s.holiday?'今天为非交易日。':'')+'行情截至 '+s.timing.asof_session+
  '；下一目标交易日 '+s.timing.target_session+'。固定版本 '+s.version.slice(0,8);}
  document.querySelector('#events').textContent=(s.events||[]).map(e=>e.message).join('\\n');
- document.querySelector('#run').disabled=['claimed','running','completed','failed'].includes(s.status);
+ document.querySelector('#run').disabled=['claimed','running','completed','failed',
+ 'non_trading_day','outside_publication_window'].includes(s.status);
  if(s.report_path){const a=document.querySelector('#report');a.hidden=false;a.href='/report';
  if(!redirected){redirected=true;location.assign('/report');}}
  if(s.status==='precheck_failed'){document.querySelector('#timing').textContent=s.message;}}
@@ -294,12 +381,19 @@ def serve(settings, port):
                 return {**current, "presentation_version": view_manifest["commit"]}
         try:
             key, details = precheck(settings)
+            if details.get("next_session_selection"):
+                existing = _target_job(state_root, details["timing"]["target_session"])
+                if existing:
+                    _, saved = existing
+                    return {
+                        **saved,
+                        "holiday": details["holiday"],
+                        "paid_allowed": False,
+                        "current_market": details["market"],
+                        "presentation_version": view_manifest["commit"],
+                    }
             path = state_root / "jobs" / key / "state.json"
-            value = (
-                read(path)
-                if path.exists()
-                else {**details, "status": "ready", "message": "检查通过，等待生成"}
-            )
+            value = read(path) if path.exists() else _idle(details)
             return {**value, "presentation_version": view_manifest["commit"]}
         except ValueError:
             return {

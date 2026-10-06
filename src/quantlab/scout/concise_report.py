@@ -8,7 +8,7 @@ from html import escape
 from quantlab.scout.models import web_url
 from quantlab.scout.review import validate_post_run_review
 
-VIEW_VERSION = "research_cards_v2"
+VIEW_VERSION = "research_cards_v3_next_session"
 
 
 def information_cutoff(report):
@@ -81,6 +81,80 @@ def card_content(report, row):
     note = row.get("invalidation_observation") or comparison.get("invalidation_observation")
     if not note:
         note = rule_text(comparison.get("invalidation_rule"))
+    if "next_session_thesis" in analysis:
+        from quantlab.scout.nextday_contract import rule_text as next_rule_text
+
+        participation = {
+            "observe_only": "仅观察",
+            "conditional_review": "条件待确认",
+            "restricted": "存在已知限制",
+        }.get(comparison.get("participation_status"), "参与状态未知")
+        facts = {f["fact_id"]: f for f in row.get("fact_cards", [])}
+        from quantlab.scout.daily_contract import format_fact
+
+        technical = "；".join(
+            format_fact(facts[ref])
+            for ref in comparison.get("technical_fact_ids", [])
+            if ref in facts
+        )
+        technical = technical or "未引用可用技术事实，覆盖不足"
+        return [
+            (
+                "类型与状态",
+                TYPE_LABELS.get(comparison.get("primary_type"), "研究类型未归档")
+                + " / "
+                + ("次日优先候选" if row["status"] == "focus" else "一般观察")
+                + " / "
+                + participation,
+            ),
+            (
+                "为什么关注",
+                "关键依据："
+                + reason_text(row, "thesis")
+                + "；次日假设（未验证）："
+                + analysis["next_session_thesis"],
+            ),
+            (
+                "为什么优先",
+                ("比较对象 " + peer + "；" if peer else "不可比/比较缺口；") + difference,
+            ),
+            (
+                "技术位置",
+                technical
+                + "；模型解释："
+                + comparison.get("technical_interpretation", "尚未解释")
+                + "；已有价格反应："
+                + comparison.get("price_reaction", "未知"),
+            ),
+            (
+                "主要反证与风险",
+                "模型最强反证："
+                + reason_text({**row, "program_risks": []}, "risk")
+                + "；程序风险："
+                + " ".join(dict.fromkeys(risks)),
+            ),
+            (
+                "确认与取消条件",
+                "已知："
+                + (conditions.get("known") or "未归档")
+                + "；尚缺："
+                + (conditions.get("unknown") or "未知")
+                + "；关键未知："
+                + (comparison.get("unknowns") or "未知")
+                + "；研究撤销："
+                + next_rule_text(comparison.get("invalidation_rule"))
+                + "；截点规则状态："
+                + {
+                    "missing": "规则缺失",
+                    "unknown": "未知",
+                    "pending_official_update": "后续正式更新待观察",
+                    "already_invalidated": "当前已失效，需重估研究",
+                    "not_invalidated_at_cutoff": "截点尚未失效，目标日待观察",
+                }.get(comparison.get("invalidation_state_at_cutoff"), "未归档")
+                + "；参与取消："
+                + next_rule_text(comparison.get("participation_cancel_rule")),
+            ),
+        ]
     return [
         (
             "研究类型与当前状态",
@@ -166,6 +240,7 @@ def markdown(report):
         f"行情截至：{safe(report['market']['session'])}",
         f"生成时间：{safe(report['finished_at'])}",
         f"信息截点：{safe(information_cutoff(report))}",
+        "发布状态：" + safe((report.get("timing") or {}).get("report_kind", "原版研究记录")),
         safe(source_gap_note(report)),
         "",
         "研究候选，效果待前瞻观察。",
@@ -203,7 +278,7 @@ def markdown(report):
             [
                 "本次未通过校验，没有可用候选。"
                 if report["status"] == "incomplete"
-                else "本次未选出候选。",
+                else "本次没有达到标准的候选。",
                 "",
             ]
         )
@@ -240,6 +315,7 @@ def html(report, review=None):
         f"行情截至 {h(report['market']['session'])}</p>",
         f"<p>生成时间 {h(report['finished_at'])}</p>"
         f"<p>信息截点 {h(information_cutoff(report))}</p>"
+        f"<p>发布状态 {h(timing.get('report_kind', '原版研究记录'))}</p>"
         f"<p>{h(source_gap_note(report))}</p><p>研究候选，效果待前瞻观察。</p></header>",
     ]
     if report.get("synthetic") or report["status"] == "demo":

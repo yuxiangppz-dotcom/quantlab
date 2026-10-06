@@ -46,6 +46,9 @@ def test_archive_restores_bytes_and_deduplicates_without_cache(tmp_path):
     (root / "runs/run").mkdir(parents=True)
     original = b"real saved bytes" * 10000
     (root / "runs/run/response.json").write_bytes(original)
+    for family in ("event_index", "hot_snapshots", "tushare_snapshots", "source_cache"):
+        (root / family).mkdir()
+        (root / family / "saved.json").write_text('{"saved":"source evidence"}')
     archive = free.Archive(root, cloud, {"day": "2026-10-08", "owner": "owner"})
     archive.checkpoint()
     puts = cloud.paths.count("/api/checkpoint")

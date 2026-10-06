@@ -18,9 +18,13 @@ from quantlab.scout.decision_contract import INVESTIGATION, SCHEMA_VERSION, SHAR
 from quantlab.scout.opportunity_ai import investigation_schema
 
 
-def discovery_contract():
+def discovery_contract(*, nextday=False):
     schema = deepcopy(DISCOVERY_SCHEMA)
     schema["$id"] = "urn:quantlab:" + SCHEMA_VERSION + ":discovery"
+    if nextday:
+        from quantlab.scout.nextday_contract import SCHEMA_VERSION as NEXT_SCHEMA
+
+        schema["$id"] = "urn:quantlab:" + NEXT_SCHEMA + ":discovery"
     rows = schema["properties"]["hypotheses"]
     rows["maxItems"] = 12
     props = rows["items"]["properties"]
@@ -39,7 +43,19 @@ def discovery_contract():
     return schema
 
 
-def packet_for_pool(pool, evidence, market, background, coverage, timing, hypotheses=()):
+def packet_for_pool(
+    pool,
+    evidence,
+    market,
+    background,
+    coverage,
+    timing,
+    hypotheses=(),
+    *,
+    nextday=False,
+    experiment_profile="fused",
+    opportunities=(),
+):
     return compact_fact_refs(
         research_packet(
             {
@@ -50,6 +66,15 @@ def packet_for_pool(pool, evidence, market, background, coverage, timing, hypoth
                 "coverage": coverage,
                 "timing": timing,
                 "hypotheses": list(hypotheses),
+                **(
+                    {
+                        "prediction_objective": "next_session",
+                        "experiment_profile": experiment_profile,
+                        "opportunity_hypotheses": list(opportunities),
+                    }
+                    if nextday
+                    else {}
+                ),
             }
         )
     )[0]
@@ -126,6 +151,17 @@ def investigation_contract(pool, packet=None):
                     },
                 }
             )
+    if packet and packet.get("prediction_objective") == "next_session":
+        from quantlab.scout.nextday_contract import SCHEMA_VERSION as NEXT_SCHEMA
+
+        schema["$id"] = "urn:quantlab:" + NEXT_SCHEMA + ":investigation"
+        props = analysis["properties"]
+        props["next_session_thesis"] = props.pop("h5_mechanism")
+        analysis["required"] = [
+            "next_session_thesis" if k == "h5_mechanism" else k for k in analysis["required"]
+        ]
+        # Subject/identity validation is done against the actual packet, once.
+        schema["properties"]["opportunities"]["items"].pop("allOf", None)
     return schema
 
 
@@ -186,9 +222,19 @@ def investigation_errors(output, packet, schema):
 
 
 def investigation_prompt(packet):
+    shared, stage = SHARED, INVESTIGATION
+    if packet.get("prediction_objective") == "next_session":
+        from quantlab.scout.nextday_contract import INVESTIGATION as NEXT_INVESTIGATION
+        from quantlab.scout.nextday_contract import SHARED as NEXT_SHARED
+
+        shared, stage = NEXT_SHARED, NEXT_INVESTIGATION
+        stage += (
+            "facts各行按fact_columns读取；subject_id/metric/period/unit整数是fact_dictionaries索引，"
+            "按字典还原不能当数值；value保持原值。technical_fact_indices按事实行从零索引。\n"
+        )
     return (
-        SHARED
-        + INVESTIGATION
+        shared
+        + stage
         + SEMANTIC_INSTRUCTION
         + "你负责判断，程序负责数字格式；量化值仅用[[fact_id]]引用统一facts表，不能自行写数字。"
         "当前仅调查，不输出最终排名或分级。保留反证和来源缺口；首次采集不等于市场新消息，标题不是正文。"

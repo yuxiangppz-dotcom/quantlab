@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
+from quantlab.scout.technical import snapshot_facts
+
 
 @dataclass(frozen=True)
 class CoreClaim:
@@ -128,6 +130,7 @@ def program_facts(candidate: dict, asof_session: str | None = None) -> list[dict
                         "source_location": f"candidate:{code}:metrics:{key}",
                     }
                 )
+    facts.extend(snapshot_facts(candidate, asof_session))
     return facts
 
 

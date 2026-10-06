@@ -79,6 +79,45 @@ test('atomic same-day claim and unresolved previous day suppress repeat paid wor
   assert.equal((await (await store.fetch(req('/api/claim',{...input,day:'2026-10-09'}))).json()).status,'outside_morning_window');
 });
 
+test('bounded model-free observation fences stale writer and retains paid claim',async()=>{
+  const ctx=context(), store=new ScoutStore(ctx,{...env,SCHEDULE_ENABLED:'true'});
+  store.now=()=>new Date('2026-10-08T00:03:00Z');
+  const input={day:'2026-10-08',app_commit:'a'.repeat(40)};
+  const first=await (await store.fetch(req('/api/claim',input))).json();
+  // A live writer cannot be taken over by a second archive writer.
+  assert.equal((await (await store.fetch(req('/api/maintenance/claim',
+    {...input,kind:'observation'}))).json()).status,'archive_busy');
+  ctx.data.set('active',{...first,started_at:'2026-10-08T00:03:00Z'});
+  store.now=()=>new Date('2026-10-08T10:10:00Z');
+  const job=await (await store.fetch(req('/api/maintenance/claim',
+    {...input,kind:'observation'}))).json();
+  assert.equal(job.status,'claimed');
+  assert.equal(ctx.data.get('job:2026-10-08').status,'delivery_unknown_fenced');
+  assert.equal(ctx.data.get('job:2026-10-08').owner,first.owner);
+  assert.equal((await store.fetch(req('/api/checkpoint',first))).status,400);
+  assert.equal((await store.fetch(req('/api/finish',{...job,status:'failed'}))).status,400);
+  assert.equal((await store.fetch(req('/api/maintenance/finish',
+    {...job,status:'completed'}))).status,200);
+  assert.equal((await (await store.fetch(req('/api/maintenance/claim',
+    {...input,kind:'observation'}))).json()).status,'already_completed');
+  store.now=()=>new Date('2026-10-08T00:23:00Z');
+  assert.equal((await (await store.fetch(req('/api/claim',input))).json()).status,'already_claimed');
+});
+
+test('maintenance time, identity and batch caps fail closed',async()=>{
+  const store=new ScoutStore(context(),{...env,SCHEDULE_ENABLED:'true'});
+  store.now=()=>new Date('2026-10-08T04:00:00Z');
+  const input={day:'2026-10-08',app_commit:'a'.repeat(40),kind:'observation'};
+  assert.equal((await (await store.fetch(req('/api/maintenance/claim',input))).json()).status,
+    'outside_observation_window');
+  assert.equal((await store.fetch(req('/api/maintenance/claim',
+    {...input,kind:'prepare',batch:8}))).status,400);
+  assert.equal((await store.fetch(req('/api/maintenance/claim',
+    {...input,app_commit:'b'.repeat(40)}))).status,400);
+  assert.equal((await (await store.fetch(req('/api/maintenance/claim',
+    {...input,kind:'prepare',batch:7}))).json()).status,'claimed');
+});
+
 test('chunks need durable owner, bad hashes and incomplete checkpoints rejected',async()=>{
   const ctx=context(), store=new ScoutStore(ctx,env);
   const chunk=encoder.encode('fixture bytes'), hash=await digest(chunk);

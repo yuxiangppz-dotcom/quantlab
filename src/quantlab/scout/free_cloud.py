@@ -10,17 +10,34 @@ import threading
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 from urllib.request import Request, build_opener
+from uuid import uuid4
 
 from quantlab.scout.cloud_artifacts import guarded, initialize
+from quantlab.scout.cloud_data import Fetcher, prepare_history, refresh_calendar, refresh_market
 from quantlab.scout.cloud_push import NoRedirect, public_origin
 from quantlab.scout.cloud_runner import tick
-from quantlab.scout.daily_runtime import read
-from quantlab.scout.models import SHANGHAI
+from quantlab.scout.daily_runtime import atomic, read
+from quantlab.scout.models import SHANGHAI, fingerprint
+from quantlab.scout.observation_runtime import scan_pending
 
 CHUNK = 131072
 MAX_FILE = 32 * 1024 * 1024
 MAX_ARCHIVE = 256 * 1024 * 1024
-PREFIXES = {"market", "runtime", "runs", "reports", "source_updates", "schedule", "outbox"}
+PREFIXES = {
+    "market",
+    "runtime",
+    "runs",
+    "reports",
+    "source_updates",
+    "schedule",
+    "outbox",
+    "source_cache",
+    "observations",
+    "data_preparation",
+    "event_index",
+    "hot_snapshots",
+    "tushare_snapshots",
+}
 ROOT_FILES = {".scout-cloud", "latest.json", "cloud-status.json"}
 
 
@@ -192,7 +209,83 @@ class Archive:
                 return
 
 
-def execute(settings, client, *, app_commit, now=None, run=tick):
+def observation_catchup(root, now, *, fetcher_factory=Fetcher, scan=scan_pending):
+    """Model-free bounded catch-up; preserve failures without blocking prediction."""
+    receipt = {"status": "running", "model_calls": 0, "started_at": now.isoformat()}
+    fetcher = None
+    storage = None
+    try:
+        fetcher = fetcher_factory(root, now)
+        storage = refresh_calendar(root, fetcher, now)
+        receipt["data"] = refresh_market(root, fetcher, now, history_sessions=120)
+    except Exception as exc:
+        receipt.update(status="data_unknown", error_type=type(exc).__name__)
+    try:
+        activation = root / "observations" / "activation.json"
+        if not activation.exists():
+            atomic(activation, {"started_at": now.isoformat(), "start_date": now.date().isoformat(),
+                                "version": "daily_facts_v9_next_session"})
+        start = read(activation)["start_date"]
+        eligible = None
+        if storage is not None:
+            eligible = sorted({r.trade_date.isoformat() for r in storage.load_trading_calendar()
+                               if r.exchange == "SSE" and r.is_open
+                               and start <= r.trade_date.isoformat()
+                               and (r.trade_date < now.date()
+                                    or r.trade_date == now.date() and now.hour >= 18)})
+        receipt["observation"] = scan(root / "runs", root / "market", root / "observations",
+                                      eligible_target_sessions=eligible, max_reports=200)
+        if receipt["status"] == "running":
+            receipt["status"] = "completed"
+    except Exception as exc:
+        receipt.update(status="observation_failed_preserved", error_type=type(exc).__name__)
+    receipt["provider_calls"] = getattr(fetcher, "calls", 0)
+    atomic(root / "observations" / "jobs" / (uuid4().hex + ".json"), receipt)
+    return receipt
+
+
+def maintenance(settings, client, *, app_commit, kind, batch=0, now=None,
+                fetcher_factory=Fetcher, scan=scan_pending):
+    now = (now or datetime.now(SHANGHAI)).astimezone(SHANGHAI)
+    if kind not in {"observation", "prepare"} or not 0 <= batch <= 7:
+        raise ValueError("maintenance_kind_or_batch")
+    if kind == "observation" and not (now.hour == 8 or now.hour >= 18):
+        return {"status": "outside_observation_window", "model_calls": 0}
+    job = client.request("/api/maintenance/claim", method="POST", value={
+        "day": now.date().isoformat(), "app_commit": app_commit, "kind": kind, "batch": batch})
+    if job["status"] != "claimed":
+        return job
+    root = initialize(Path(settings["canonical_dir"]).parent)
+    archive = Archive(root, client, job)
+    restore(root, client.request("/api/snapshot")["snapshot"], client)
+    archive.checkpoint()  # Durable owner/workspace before any provider work.
+    thread = threading.Thread(target=archive.background, daemon=True)
+    thread.start()
+    result = {"status": "failed", "model_calls": 0}
+    try:
+        if kind == "prepare":
+            fetcher = fetcher_factory(root, now)
+            result = prepare_history(root, fetcher, now, partition_limit=40)
+            result["model_calls"] = 0
+        else:
+            result = observation_catchup(root, now, fetcher_factory=fetcher_factory, scan=scan)
+    except Exception as exc:
+        result = {"status": "failed", "error_type": type(exc).__name__, "model_calls": 0}
+    finally:
+        archive.stop.set()
+        thread.join(timeout=60)
+        if thread.is_alive() or archive.error:
+            raise ValueError("archive_unresolved_maintenance_claim_retained")
+        atomic(root / "observations" / "maintenance_jobs" / (uuid4().hex + ".json"),
+               result | {"kind": kind, "batch": batch, "started_at": now.isoformat()})
+        archive.checkpoint()
+    state = ("completed" if result["status"] in {"completed", "ready"}
+             else "pending" if result["status"] == "pending" else "failed")
+    client.request("/api/maintenance/finish", method="POST", value=job | {"status": state})
+    return result | {"maintenance_status": state}
+
+
+def execute(settings, client, *, app_commit, now=None, run=tick, catchup=observation_catchup):
     now = (now or datetime.now(SHANGHAI)).astimezone(SHANGHAI)
     if now.hour != 8:
         return {"status": "outside_morning_window"}
@@ -213,6 +306,8 @@ def execute(settings, client, *, app_commit, now=None, run=tick):
         # Push key lives only in Cloudflare. Local tick therefore never sends notifications.
         if os.environ.get("SERVERCHAN_SENDKEY"):
             raise ValueError("push_secret_must_not_be_on_runner")
+        catchup(root, now)  # Independent observation failures are archived, never paid retries.
+        archive.checkpoint()
         result = run(settings, now, enabled=True, cancelled=lambda: bool(archive.error))
     finally:
         archive.stop.set()
@@ -224,7 +319,7 @@ def execute(settings, client, *, app_commit, now=None, run=tick):
         metadata = result["report"]
         folder = root / "reports" / metadata["run_id"]
         markdown = (folder / "report.md").read_text(encoding="utf-8")
-        client.request(
+        published = client.request(
             "/api/publish",
             method="POST",
             value=job
@@ -235,6 +330,21 @@ def execute(settings, client, *, app_commit, now=None, run=tick):
                 "markdown_sha256": sha(markdown.encode()),
             },
         )
+        publication = published.get("publication")
+        if publication:
+            if (publication.get("run_id") != metadata["run_id"]
+                    or publication.get("source_report_sha256") != metadata["source_report_sha256"]):
+                raise ValueError("cloud_publication_identity")
+            matches = list((root / "runs").rglob(metadata["run_id"] + "/report.json"))
+            if len(matches) != 1:
+                raise ValueError("cloud_publication_original_run_unknown")
+            if fingerprint(read(matches[0])) != metadata["source_report_sha256"]:
+                raise ValueError("cloud_publication_source_hash")
+            receipt_path = matches[0].parent / "cloud-publication.json"
+            if receipt_path.exists() and read(receipt_path) != publication:
+                raise ValueError("cloud_publication_immutable_conflict")
+            atomic(receipt_path, publication)
+            archive.checkpoint()
     state = (
         result["status"]
         if result["status"] in {"published", "non_trading_day", "outside_morning_window"}
@@ -260,12 +370,19 @@ def sealed_identity(settings):
     root = Path(engine["release_root"])
     code = (
         "import json,hashlib; "
-        "from quantlab.scout.daily_contract import VERSION,INSTRUCTION,selection_schema; "
+        "from quantlab.scout.daily_contract import VERSION,selection_instruction,selection_schema; "
         "from quantlab.scout.models import fingerprint; "
-        "print(json.dumps(dict(prompt_version=VERSION,"
-        "prompt_text_sha256=hashlib.sha256(INSTRUCTION.encode()).hexdigest(),"
-        "schema_id=selection_schema([]).get('$id'),"
-        "schema_sha256=fingerprint(selection_schema([])))))"
+        "from pathlib import Path; "
+        "cfg=json.loads(Path('config/scout_daily.fixed.json').read_text()); "
+        "pkt=dict(prediction_objective='next_session') "
+        "if cfg.get('next_session_selection') else {}; "
+        "from quantlab.scout.nextday_contract import VERSION as NEXT_VERSION; "
+        "ver=NEXT_VERSION if pkt else VERSION; "
+        "print(json.dumps(dict(prompt_version=ver,"
+        "decision_version=ver,config_sha256=fingerprint(cfg),"
+        "prompt_text_sha256=hashlib.sha256(selection_instruction(pkt).encode()).hexdigest(),"
+        "schema_id=selection_schema([],pkt).get('$id'),"
+        "schema_sha256=fingerprint(selection_schema([],pkt)))))"
     )
     result = subprocess.run(
         [str(root / ".venv/bin/python"), "-c", code],
@@ -289,7 +406,13 @@ def main():
     parser.add_argument(
         "--check", action="store_true", help="Archive connectivity only; zero provider/model calls"
     )
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--observe", action="store_true")
+    modes.add_argument("--prepare-data", action="store_true")
+    parser.add_argument("--prepare-batch", type=int, choices=range(8), default=0)
     args = parser.parse_args()
+    if args.check and (args.observe or args.prepare_data):
+        parser.error("check cannot be combined with maintenance")
     try:
         client = Client(os.environ["SCOUT_PUBLIC_URL"], os.environ["SCOUT_API_TOKEN"])
         if args.check:
@@ -301,7 +424,12 @@ def main():
             }
         else:
             app = read(Path("/bundle.json"))["app_commit"]
-            result = execute(read(args.settings), client, app_commit=app)
+            if args.observe or args.prepare_data:
+                result = maintenance(read(args.settings), client, app_commit=app,
+                                     kind="prepare" if args.prepare_data else "observation",
+                                     batch=args.prepare_batch)
+            else:
+                result = execute(read(args.settings), client, app_commit=app)
         print(json.dumps(result, ensure_ascii=False))
     except Exception as exc:
         print(json.dumps({"status": "failed_unknown_no_retry", "error_type": type(exc).__name__}))

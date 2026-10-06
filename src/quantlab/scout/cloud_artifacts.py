@@ -33,7 +33,21 @@ def guarded(root):
     root = Path(root)
     if root.is_symlink() or (root / ".scout-cloud").read_text() != MARKER:
         raise ValueError("Not an isolated Scout cloud volume")
-    for name in ("market", "runtime", "runs", "reports", "source_updates", "schedule", "outbox"):
+    for name in (
+        "market",
+        "runtime",
+        "runs",
+        "reports",
+        "source_updates",
+        "schedule",
+        "outbox",
+        "source_cache",
+        "observations",
+        "data_preparation",
+        "event_index",
+        "hot_snapshots",
+        "tushare_snapshots",
+    ):
         if not (root / name).resolve().is_relative_to(root.resolve()):
             raise ValueError("Cloud data subtree points outside its isolated volume")
     return root

@@ -26,6 +26,8 @@ def run_worker(engine, state_path, app):
                 str(Path(engine["release_root"]) / "daily-settings.json"),
                 "--state",
                 str(state_path),
+                "--application-commit",
+                read(Path(app) / "daily-manifest.json")["commit"],
             ],
             cwd=engine["release_root"],
             stdout=log,
@@ -100,7 +102,13 @@ def tick(
                 return result
             result["status"] = "preparing_data"
             atomic(schedule, result)
-            result["data"] = refresh_market(root, fetcher, now)
+            config = read(Path(engine["release_root"]) / "config/scout_daily.fixed.json")
+            result["data"] = refresh_market(
+                root,
+                fetcher,
+                now,
+                history_sessions=120 if config.get("next_session_selection") else 21,
+            )
             if cancelled():
                 raise ValueError("Schedule stopped before claiming a paid model job")
             current = clock() if clock else datetime.now(SHANGHAI)

@@ -8,6 +8,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--settings", type=Path, required=True)
     parser.add_argument("--state", type=Path, required=True)
+    parser.add_argument("--application-commit", required=True)
     args = parser.parse_args()
     # The engine Python imports its own quantlab package. Adapt only the SDK
     # transport, without replacing any engine module or strategy configuration.
@@ -25,7 +26,7 @@ def main():
     ts.pro_api = https_factory
     from quantlab.scout.daily_runtime import read, worker
 
-    worker(read(args.settings), args.state)
+    worker(read(args.settings), args.state, application_commit=args.application_commit)
 
 
 if __name__ == "__main__":

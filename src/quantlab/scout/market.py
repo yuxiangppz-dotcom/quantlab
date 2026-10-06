@@ -9,6 +9,7 @@ import pandas as pd
 
 from quantlab.data.storage import ParquetStorage
 from quantlab.scout.models import SHANGHAI, Candidate, finite
+from quantlab.scout.technical import HISTORY_SESSIONS, technical_snapshot
 
 
 def latest_completed_session(storage: ParquetStorage, now: datetime) -> date:
@@ -50,6 +51,7 @@ def inspect_market_data(storage: ParquetStorage, now: datetime) -> dict:
     )
     last_partition = None
     last_21_sessions = None
+    last_120_sessions = None
     consecutive = 0
     for day in sessions:
         if storage.daily_bars_path(day).is_file() and storage.adj_factor_path(day).is_file():
@@ -57,6 +59,8 @@ def inspect_market_data(storage: ParquetStorage, now: datetime) -> dict:
             consecutive += 1
             if consecutive >= 21:
                 last_21_sessions = day
+            if consecutive >= HISTORY_SESSIONS:
+                last_120_sessions = day
         else:
             consecutive = 0
     securities_present = storage.securities_path.is_file()
@@ -67,6 +71,8 @@ def inspect_market_data(storage: ParquetStorage, now: datetime) -> dict:
             last_partition.isoformat() if last_partition else None
         ),
         "latest_21_session_window": (last_21_sessions.isoformat() if last_21_sessions else None),
+        "latest_120_session_window": (last_120_sessions.isoformat() if last_120_sessions else None),
+        "technical_history_ready": bool(expected and last_120_sessions == expected),
         "sessions_behind": (
             sum(day > last_21_sessions for day in sessions)
             if expected and last_21_sessions
@@ -81,7 +87,8 @@ def inspect_market_data(storage: ParquetStorage, now: datetime) -> dict:
 
 
 def scan_market(
-    canonical_dir: Path, session: date, min_amount: float = 100_000_000
+    canonical_dir: Path, session: date, min_amount: float = 100_000_000,
+    *, technical_enabled: bool = True,
 ) -> tuple[dict[str, Candidate], dict]:
     storage = ParquetStorage(canonical_dir)
     days = sorted(
@@ -90,19 +97,23 @@ def scan_market(
             for x in storage.load_trading_calendar()
             if x.is_open and x.exchange == "SSE" and x.trade_date <= session
         }
-    )[-21:]
-    if len(days) != 21 or days[-1] != session:
+    )[-(HISTORY_SESSIONS if technical_enabled else 21):]
+    base_days = days[-21:]
+    if len(base_days) != 21 or base_days[-1] != session:
         raise ValueError("Need 21 trading sessions ending on requested session")
     securities = storage.load_securities()
     if not securities:
         raise ValueError("Missing securities master")
     histories: dict[str, list] = {}
     factors: dict[tuple[str, date], float] = {}
+    missing_technical_partitions = []
     for day in days:
         bars = storage.load_daily_bars_by_date(day)
         adj = storage.load_adj_factors_by_date(day)
-        if not bars or not adj:
+        if (not bars or not adj) and day in base_days:
             raise ValueError(f"Missing daily/adj_factor partition: {day}")
+        if not bars or not adj:
+            missing_technical_partitions.append(day.isoformat())
         for bar in bars:
             histories.setdefault(bar.instrument_id, []).append(bar)
         factors.update({(x.instrument_id, day): x.adj_factor for x in adj})
@@ -128,8 +139,9 @@ def scan_market(
         ):
             reject("universe")
             continue
-        bars = histories.get(code, [])
-        if len(bars) != 21 or [x.trade_date for x in bars] != days:
+        all_bars = histories.get(code, [])
+        bars = [bar for bar in all_bars if bar.trade_date in base_days]
+        if len(bars) != 21 or [x.trade_date for x in bars] != base_days:
             reject("incomplete_history")
             continue
         if any(
@@ -196,6 +208,12 @@ def scan_market(
         candidates[code] = Candidate(code, security.name, metrics, 0)
         candidates[code].cautions = cautions
         candidates[code].evidence_ids = [f"market:{code}"]
+        if technical_enabled:
+            snapshot = technical_snapshot(code, all_bars, factors, days, session, basic)
+            candidates[code].context["technical_history"] = snapshot.pop("history")
+            candidates[code].context["technical_snapshot"] = snapshot
+            if not snapshot["history_complete"]:
+                candidates[code].cautions.append("技术历史不足或有缺口；相关指标按预热规则降级")
     if not candidates:
         raise ValueError("No eligible stocks with complete valid history")
     frame = pd.DataFrame({k: v.metrics for k, v in candidates.items()}).T
@@ -231,6 +249,11 @@ def scan_market(
     return candidates, {
         "session": session.isoformat(),
         "history_start": days[0].isoformat(),
+        "eligibility_history_start": base_days[0].isoformat(),
+        "technical_enabled": technical_enabled,
+        "technical_history_sessions": HISTORY_SESSIONS if technical_enabled else 21,
+        "loaded_history_sessions": len(days),
+        "missing_technical_partitions": missing_technical_partitions,
         "eligible_count": len(candidates),
         "rejected": rejected,
         "rejected_by_code": rejected_by_code,

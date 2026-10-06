@@ -11,6 +11,7 @@ from dataclasses import asdict
 from datetime import date, datetime, time
 from hashlib import sha256
 from itertools import zip_longest
+from math import ceil
 from pathlib import Path
 from uuid import uuid4
 
@@ -27,6 +28,7 @@ from quantlab.scout.ai import (
     search_evidence,
 )
 from quantlab.scout.daily_contract import VERSION as DAILY_VERSION
+from quantlab.scout.daily_contract import unpack_facts
 from quantlab.scout.disclosures import (
     collect_disclosures,
     disclosure_context,
@@ -112,6 +114,8 @@ DEFAULT_CONFIG = {
     "max_input_chars": 180000,
     "opportunity_evidence_chars": 32000,
     "daily_delivery": False,
+    "next_session_selection": False,
+    "experiment_profile": "fused",
 }
 
 EVENT_LEAD_TERMS = (
@@ -258,6 +262,12 @@ def read_config(path: Path | None) -> dict:
         raise ValueError("opportunity_selection must be boolean")
     if type(config["daily_delivery"]) is not bool:
         raise ValueError("daily_delivery must be boolean")
+    if type(config["next_session_selection"]) is not bool:
+        raise ValueError("next_session_selection must be boolean")
+    if config["experiment_profile"] not in {"fused", "event_only", "technical_only"}:
+        raise ValueError("Unknown frozen experiment profile")
+    if config["next_session_selection"] and not config["daily_delivery"]:
+        raise ValueError("Next-session research requires the bounded daily runtime")
     if config["daily_delivery"] and (
         not config["opportunity_selection"]
         or config["provider"] != "deepseek"
@@ -306,8 +316,19 @@ def build_pool(
     limit: int,
     attention_codes: list[str] | None = None,
     diagnostics: dict | None = None,
+    *,
+    policy: str = "legacy_routes_v1",
+    asof: str | None = None,
 ) -> list:
     """Give each route unique slots, then share spare slots round robin."""
+    if policy == "evidence_marginal_v2":
+        from quantlab.scout.discovery_budget import build_dynamic_pool
+
+        return build_dynamic_pool(
+            universe, hypotheses, sector_codes, limit, attention_codes, diagnostics, asof=asof
+        )
+    if policy != "legacy_routes_v1":
+        raise ValueError("Unknown discovery budget policy")
     event_codes: list[str] = []
     hypothesis_attention: list[str] = []
     theme_groups: dict[str, list[str]] = {}
@@ -496,7 +517,13 @@ def build_pool(
 
 
 def report_timing(
-    open_sessions: list[date], finished: datetime, asof_session: date, valid: bool
+    open_sessions: list[date],
+    finished: datetime,
+    asof_session: date,
+    valid: bool,
+    *,
+    nextday=False,
+    frozen_target=None,
 ) -> dict:
     """Choose D from the frozen completion time, never from an assumed tomorrow."""
     if finished.tzinfo is None:
@@ -505,8 +532,8 @@ def report_timing(
     future = sorted(
         day for day in open_sessions if datetime.combine(day, time(9, 30), SHANGHAI) > local
     )
-    target = future[0] if future else None
-    return {
+    target = date.fromisoformat(frozen_target) if frozen_target else future[0] if future else None
+    result = {
         "timezone": "Asia/Shanghai",
         "asof_session": asof_session.isoformat(),
         "generated_at": local.isoformat(),
@@ -524,6 +551,25 @@ def report_timing(
             "last valid report frozen before target 09:30, by generated_at then run_id"
         ),
     }
+    if nextday:
+        deadline = datetime.combine(target, time(9), SHANGHAI) if target else None
+        formal = bool(valid and target == local.date() and time(8) <= local.time() < time(9))
+        result.update(
+            market_asof_session=asof_session.isoformat(),
+            publication_deadline=deadline.isoformat() if deadline else None,
+            primary_horizon_sessions=1,
+            auxiliary_horizons_sessions=[3, 5],
+            primary_eligible=formal,
+            report_kind="premarket"
+            if formal
+            else "late_research"
+            if target == local.date() and local.time() >= time(9)
+            else "manual_research",
+            primary_selection_rule=(
+                "one designated production day claim; no outcome-based replacement"
+            ),
+        )
+    return result
 
 
 def candidate_diagnostics(
@@ -609,6 +655,7 @@ def run_scout(
     demo: bool = False,
     daily_journal: Path | None = None,
     progress=None,
+    release_identity=None,
 ) -> tuple[Path, dict]:
     started_clock = run_clock.monotonic()
     daily_mode = config.get("daily_delivery", False)
@@ -656,7 +703,21 @@ def run_scout(
         raise ValueError("Future session is not allowed")
     if output_root.resolve().is_relative_to(canonical_dir.resolve()):
         raise ValueError("Scout output must not be written inside canonical data")
-    universe, market = scan_market(canonical_dir, session, config["min_amount_cny"])
+    nextday_mode = config.get("next_session_selection", False)
+    universe, market = scan_market(
+        canonical_dir, session, config["min_amount_cny"], technical_enabled=nextday_mode
+    )
+    pool_policy = (
+        {"policy": "evidence_marginal_v2", "asof": now.isoformat()} if nextday_mode else {}
+    )
+    if nextday_mode:
+        config = dict(config)
+        source_start = datetime.combine(session, time(15), SHANGHAI)
+        config["_source_window_start"] = source_start.isoformat()
+        config["_source_cache_root"] = str(output_root.parent / "source_cache")
+        config["lookback_hours"] = max(
+            config["lookback_hours"], ceil((now - source_start).total_seconds() / 3600) + 1
+        )
     progress("采集有界新闻、热榜、公告与公司证据")
     opportunity_mode = config.get("opportunity_selection", False)
     history_root = output_root.parent / "event_index"
@@ -910,6 +971,7 @@ def run_scout(
             sector_codes,
             min(config["candidate_limit"], 8),
             attention_codes,
+            **pool_policy,
         )
     ]
     announcements, announcement_coverage = collect_announcements(config, now, online, target_codes)
@@ -945,7 +1007,12 @@ def run_scout(
     hypotheses: list[dict] = []
     manual_hypotheses = upgrade_hypotheses + scoped_leads(evidence, set(universe))
     pool = build_pool(
-        universe, manual_hypotheses, sector_codes, config["candidate_limit"], attention_codes
+        universe,
+        manual_hypotheses,
+        sector_codes,
+        config["candidate_limit"],
+        attention_codes,
+        **pool_policy,
     )
     extra_evidence.extend(discussion_evidence)
     evidence.extend(extra_evidence)
@@ -992,6 +1059,7 @@ def run_scout(
         config["discovery_limit"],
         attention_codes,
         cheap_route_diagnostics,
+        **pool_policy,
     )
     pool = build_pool(
         {row["instrument_id"]: universe[row["instrument_id"]] for row in cheap_pool},
@@ -1000,6 +1068,7 @@ def run_scout(
         config["candidate_limit"],
         attention_codes,
         deep_route_diagnostics,
+        **pool_policy,
     )
     open_sessions = [
         row.trade_date
@@ -1129,12 +1198,36 @@ def run_scout(
                 from quantlab.scout.daily_stages import discovery_contract
                 from quantlab.scout.decision_contract import SHARED
 
-                discovery_prompt = (
-                    SHARED
-                    + "[STAGE_DISCOVERY_V2]仅发现来源线索，不给最终等级。\n"
-                    + discovery_prompt
+                stage_instruction = "[STAGE_DISCOVERY_V2]仅发现来源线索，不给最终等级。\n"
+                if nextday_mode:
+                    from quantlab.scout.nextday_contract import DISCOVERY
+                    from quantlab.scout.nextday_contract import SHARED as NEXT_SHARED
+
+                    SHARED, stage_instruction = NEXT_SHARED, DISCOVERY
+                    discovery_prompt += "\n市场背景与异常候选（仅发现，无收益概率）：" + json.dumps(
+                        {
+                            "market": {k: v for k, v in market.items() if k != "rejected_by_code"},
+                            "anomalies": [
+                                {
+                                    "instrument_id": c["instrument_id"],
+                                    "metrics": c["metrics"],
+                                    "recall_routes": c["recall_routes"],
+                                }
+                                for c in cheap_pool
+                            ],
+                            "timing": {
+                                "market_asof_session": session.isoformat(),
+                                "target_session": expected_target,
+                                "information_cutoff": datetime.now(SHANGHAI).isoformat(),
+                            },
+                        },
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )
+                discovery_prompt = SHARED + stage_instruction + discovery_prompt
+                discovery, raw = client.ask(
+                    bounded_prompt(discovery_prompt), discovery_contract(nextday=nextday_mode)
                 )
-                discovery, raw = client.ask(bounded_prompt(discovery_prompt), discovery_contract())
             else:
                 discovery, raw = client.ask(
                     bounded_prompt(discovery_prompt), DISCOVERY_SCHEMA, search=search_supported
@@ -1156,6 +1249,7 @@ def run_scout(
                 config["discovery_limit"],
                 attention_codes,
                 cheap_route_diagnostics,
+                **pool_policy,
             )
             pool = build_pool(
                 {row["instrument_id"]: universe[row["instrument_id"]] for row in cheap_pool},
@@ -1164,6 +1258,7 @@ def run_scout(
                 config["candidate_limit"],
                 attention_codes,
                 deep_route_diagnostics,
+                **pool_policy,
             )
             coverage.append(
                 Coverage(
@@ -1208,6 +1303,11 @@ def run_scout(
                     if config["provider"] == "deepseek" or opportunity_mode
                     else pool
                 )
+                if nextday_mode:
+                    for row in model_pool:
+                        row["technical_snapshot"] = universe[row["instrument_id"]].context.get(
+                            "technical_snapshot", {}
+                        )
                 investigation_evidence = (
                     balanced_evidence_packet if opportunity_mode else evidence_packet
                 )(
@@ -1266,7 +1366,11 @@ def run_scout(
                         + investigate_prompt
                     )
                 if daily_mode:
-                    from quantlab.scout.daily_contract import INSTRUCTION, compact, selection_schema
+                    from quantlab.scout.daily_contract import (
+                        compact,
+                        selection_instruction,
+                        selection_schema,
+                    )
                     from quantlab.scout.daily_stages import (
                         investigation_contract,
                         investigation_errors,
@@ -1280,16 +1384,29 @@ def run_scout(
                         market,
                         opportunity_background,
                         [asdict(x) for x in coverage + upgrade_pack.coverage()],
-                        {"asof_session": session.isoformat(), "target_session": expected_target},
+                        {
+                            "asof_session": session.isoformat(),
+                            "target_session": expected_target,
+                            "market_asof_session": session.isoformat(),
+                            "information_cutoff": datetime.now(SHANGHAI).isoformat(),
+                            "publication_deadline": datetime.combine(
+                                date.fromisoformat(expected_target), time(9), SHANGHAI
+                            ).isoformat()
+                            if expected_target
+                            else None,
+                        },
                         hypotheses,
+                        nextday=nextday_mode,
+                        experiment_profile=config.get("experiment_profile", "fused"),
+                        opportunities=deep_route_diagnostics.get("opportunity_hypotheses", []),
                     )
                     # Bound the entire investigation addition BEFORE paying for it.
                     # The schema caps hypotheses/URLs, strings, events and candidate count.
                     client.check_input(
-                        INSTRUCTION + compact(study_packet),
+                        selection_instruction(study_packet) + compact(study_packet),
                         selection_schema(pool, study_packet),
-                        extra_chars=45000,
-                        extra_bytes=100000,
+                        extra_chars=36000 if nextday_mode else 45000,
+                        extra_bytes=85000 if nextday_mode else 100000,
                     )
                     study_schema = investigation_contract(pool, study_packet)
                     progress("研究输入预算预检通过，调查全部候选")
@@ -1300,7 +1417,8 @@ def run_scout(
                             value, study_packet, study_schema
                         ),
                         fact_subjects={
-                            ref: values[0] for ref, values in study_packet["facts"].items()
+                            ref: fact["subject_id"]
+                            for ref, fact in unpack_facts(study_packet).items()
                         },
                     )
                 else:
@@ -1420,6 +1538,15 @@ def run_scout(
                             },
                         },
                         "program_facts": program_facts(row, session.isoformat()),
+                        **(
+                            {
+                                "technical_snapshot": universe[row["instrument_id"]].context.get(
+                                    "technical_snapshot", {}
+                                )
+                            }
+                            if nextday_mode
+                            else {}
+                        ),
                     }
                     for row in pool
                 ]
@@ -1427,7 +1554,13 @@ def run_scout(
                     "timing": {
                         "asof_session": session.isoformat(),
                         "target_session": expected_target,
-                        "primary_horizon_sessions": 5,
+                        "market_asof_session": session.isoformat(),
+                        "publication_deadline": datetime.combine(
+                            date.fromisoformat(expected_target), time(9), SHANGHAI
+                        ).isoformat()
+                        if expected_target
+                        else None,
+                        "primary_horizon_sessions": 1 if nextday_mode else 5,
                         "observation_horizons_sessions": [1, 3, 5, 10],
                     },
                     "market": market,
@@ -1442,6 +1575,17 @@ def run_scout(
                     ],
                     "evidence": final_evidence,
                     "coverage": [asdict(x) for x in coverage + upgrade_pack.coverage()],
+                    **(
+                        {
+                            "prediction_objective": "next_session",
+                            "experiment_profile": config.get("experiment_profile", "fused"),
+                            "opportunity_hypotheses": deep_route_diagnostics.get(
+                                "opportunity_hypotheses", []
+                            ),
+                        }
+                        if nextday_mode
+                        else {}
+                    ),
                 }
                 if opportunity_mode:
                     packet["opportunity_version"] = OPPORTUNITY_VERSION
@@ -1511,14 +1655,14 @@ def run_scout(
                     prompt = OPPORTUNITY_INSTRUCTION + prompt
                 if daily_mode:
                     from quantlab.scout.daily_contract import (
-                        INSTRUCTION,
                         compact,
                         compact_fact_refs,
                         research_packet,
+                        selection_instruction,
                     )
 
                     packet, selection_fact_aliases = compact_fact_refs(research_packet(packet))
-                    prompt = INSTRUCTION + compact(packet)
+                    prompt = selection_instruction(packet) + compact(packet)
                     progress("比较与分级：程序事实引用，完整校验")
                 # Archive construction before validation/transport can raise.
                 # An attempted request is not proof that the provider received it.
@@ -1549,7 +1693,9 @@ def run_scout(
                         final_prompt,
                         selection_input_schema,
                         validator=lambda value: validate_output(value, packet),
-                        fact_subjects={ref: values[0] for ref, values in packet["facts"].items()},
+                        fact_subjects={
+                            ref: fact["subject_id"] for ref, fact in unpack_facts(packet).items()
+                        },
                     )
                 else:
                     selection, raw = client.ask(final_prompt, selection_input_schema)
@@ -1671,7 +1817,12 @@ def run_scout(
     coverage.extend(upgrade_pack.coverage())
     finished = datetime.now(SHANGHAI)
     timing = report_timing(
-        open_sessions, finished, session, online and status == "live_research_unvalidated"
+        open_sessions,
+        finished,
+        session,
+        online and status == "live_research_unvalidated",
+        nextday=nextday_mode,
+        frozen_target=expected_target if nextday_mode else None,
     )
     timing["information_cutoff"] = final_input_cutoff.isoformat()
     if (
@@ -1747,12 +1898,19 @@ def run_scout(
         "config": config,
         "config_sha256": fingerprint(config),
         "input_fingerprint": input_fingerprint,
-        "prompt_version": DAILY_VERSION
+        "prompt_version": __import__(
+            "quantlab.scout.nextday_contract", fromlist=["VERSION"]
+        ).VERSION
+        if nextday_mode
+        else DAILY_VERSION
         if daily_mode
         else OPPORTUNITY_VERSION
         if opportunity_mode
         else "scout_core_facts_v4",
-        "market_universe": {code: item.to_dict() for code, item in universe.items()},
+        "market_universe": {
+            code: archived_candidate(item.to_dict(), drop_snapshot=True)
+            for code, item in universe.items()
+        },
         "industry_memberships": memberships,
         "candidates": pool,
         "hypotheses": hypotheses,
@@ -1819,6 +1977,33 @@ def run_scout(
     }
     if daily_mode and online:
         report["daily_delivery"] = client.summary()
+    if nextday_mode:
+        from quantlab.scout.nextday_contract import PARAMETER_VERSION, SCHEMA_VERSION
+        from quantlab.scout.technical import VERSION as FEATURE_VERSION
+
+        report.update(
+            prediction_objective="next_session",
+            feature_version=FEATURE_VERSION,
+            parameter_version=PARAMETER_VERSION,
+            decision_schema_version=SCHEMA_VERSION,
+            experiment_profile=config.get("experiment_profile", "fused"),
+            release_identity=release_identity or {"status": "development_unsealed"},
+        )
+        report["candidate_stages"].update(
+            recalled_candidates=[
+                r["instrument_id"]
+                for r in cheap_route_diagnostics.get("funnel", [])
+                if r.get("recalled")
+            ],
+            shortlist_candidates=sorted(cheap_codes),
+            frozen_at=final_input_cutoff.isoformat(),
+        )
+        # A full history is archived for the deep pool only. All-market serialized
+        # series would exceed the fixed archive bounds and are not model input.
+        report["technical_histories"] = {
+            code: universe[code].context.get("technical_history", []) for code in sorted(deep_codes)
+        }
+        report["candidates"] = [archived_candidate(row) for row in pool]
     if opportunity_mode:
         index_path = append_event_snapshot(history_root, events, final_input_cutoff)
         report["opportunity"] = {
@@ -1877,10 +2062,32 @@ def run_scout(
                 memberships,
             )
             report["opportunity_freeze"]["stages"] = report["candidate_stages"]
+            if nextday_mode:
+                from quantlab.scout.nextday_tracking import freeze_protocol
+
+                report["nextday_freeze"] = freeze_protocol(
+                    opportunity_result["comparisons"],
+                    selection_input_packet,
+                    universe,
+                    memberships,
+                    report["candidate_stages"],
+                )
     from quantlab.scout.report import write_report
 
     run_dir = write_report(output_root, report, raw_responses)
     return run_dir, report
+
+
+def archived_candidate(row, *, drop_snapshot=False):
+    value = dict(row)
+    value["context"] = {
+        k: v
+        for k, v in row.get("context", {}).items()
+        if k != "technical_history" and (not drop_snapshot or k != "technical_snapshot")
+    }
+    if drop_snapshot:
+        value.pop("technical_snapshot", None)
+    return value
 
 
 def compact_disclosure_body(body: str, max_chars: int) -> str | None:

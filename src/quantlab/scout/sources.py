@@ -25,6 +25,74 @@ CNINFO_QUERY = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
 CNINFO_PDF = re.compile(r"https://static\.cninfo\.com\.cn/finalpage/\d{4}-\d{2}-\d{2}/\d+\.PDF")
 
 
+def source_window(config: dict, now: datetime) -> tuple[datetime, datetime]:
+    """D0 close to cutoff, including long holidays; fallback is explicitly legacy."""
+    start = (
+        timestamp(config["_source_window_start"])
+        if config.get("_source_window_start")
+        else (now - timedelta(hours=config["lookback_hours"]))
+    )
+    if start > now:
+        raise ValueError("Source coverage start is after information cutoff")
+    return start.astimezone(SHANGHAI), now.astimezone(SHANGHAI)
+
+
+def window_detail(config: dict, now: datetime) -> str:
+    start, end = source_window(config, now)
+    return (
+        f"requested_window={start.isoformat()}~{end.isoformat()}; "
+        "bounded source acquisition, full coverage not established"
+    )
+
+
+def source_cache(
+    config: dict, kind: str, identity: str, now: datetime, fetch, *, historical: bool
+) -> tuple[object, str]:
+    """Reuse only completed historical query slices; current-day feeds stay fresh.
+
+    Watermarks are collection times, never publication or market novelty times.
+    Cache writes are used only when the runtime supplies its isolated Scout path.
+    """
+    root = config.get("_source_cache_root")
+    key = hashlib.sha256(identity.encode()).hexdigest()
+    path = Path(root) / kind / f"{key}.json" if root else None
+    if historical and path and path.is_file():
+        try:
+            if path.stat().st_size <= MAX_BYTES:
+                saved = json.loads(path.read_text(encoding="utf-8"))
+                if (
+                    saved.get("version") == "source_slice_cache_v1"
+                    and saved["identity"] == identity
+                    and timestamp(saved["collected_at"]) <= now
+                    and isinstance(saved["payload"], (dict, list))
+                ):
+                    return saved["payload"], saved["collected_at"]
+        except (ValueError, KeyError, OSError):
+            pass
+    payload = fetch()
+    collected = datetime.now(SHANGHAI).isoformat()
+    if historical and path:
+        serialized = json.dumps(
+            {
+                "version": "source_slice_cache_v1",
+                "identity": identity,
+                "collected_at": collected,
+                "payload": payload,
+            },
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        if len(serialized.encode()) <= MAX_BYTES:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # Cache immutable successful source slices. No failed response caching.
+            try:
+                with path.open("x", encoding="utf-8") as stream:
+                    stream.write(serialized)
+            except FileExistsError:
+                pass
+    return payload, collected
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise ValueError("Redirect refused; configure final public HTTPS feed URL")
@@ -123,8 +191,7 @@ def collect_announcements(
         api = ts.pro_api(os.environ["TUSHARE_TOKEN"], timeout=20)
     except Exception as exc:
         return [], Coverage(name, "failed", detail=type(exc).__name__)
-    lookback_days = min(8, (config["lookback_hours"] + 23) // 24 + 1)
-    earliest = now.date() - timedelta(days=lookback_days)
+    earliest = source_window(config, now)[0].date()
     start = earliest.strftime("%Y%m%d")
     end = now.date().strftime("%Y%m%d")
     evidence: list[Evidence] = []
@@ -192,7 +259,7 @@ def collect_announcements(
     detail = (
         f"TuShare anns_d index for {len(targets)} target stocks only; "
         f"{failed} failed queries, {invalid} rejected rows, {truncated} local/provider cap hits; "
-        "PDF content not read; empty is not proof of absence"
+        "PDF content not read; empty is not proof of absence" + "; " + window_detail(config, now)
     )
     return evidence, Coverage(name, status, len(evidence), detail)
 
@@ -219,6 +286,23 @@ def read_cninfo_json(url: str, form: dict | None = None) -> dict:
     if not isinstance(result, dict):
         raise ValueError("CNINFO response must be an object")
     return result
+
+
+def bounded_cninfo_pages(form: dict, max_pages: int = 2) -> tuple[list[dict], bool]:
+    """Bounded pagination; a remaining-page flag is never a negative search."""
+    rows, more = [], False
+    for page in range(1, max_pages + 1):
+        result = read_cninfo_json(CNINFO_QUERY, {**form, "pageNum": page})
+        batch = result.get("announcements")
+        if batch is None and result.get("totalAnnouncement", 0) == 0:
+            batch = []
+        if not isinstance(batch, list):
+            raise ValueError("Invalid announcement list")
+        rows.extend(batch[: form["pageSize"]])
+        more = bool(result.get("hasMore")) or len(batch) > form["pageSize"]
+        if not more:
+            break
+    return rows, more
 
 
 def collect_cninfo_announcements(
@@ -256,8 +340,7 @@ def collect_cninfo_announcements(
         }
     except (KeyError, TypeError, ValueError, OSError, urllib.error.URLError):
         return [], Coverage(name, "failed", detail="stock list unavailable")
-    lookback_days = min(8, (config["lookback_hours"] + 23) // 24 + 1)
-    earliest = now.date() - timedelta(days=lookback_days)
+    earliest = source_window(config, now)[0].date()
     date_range = f"{earliest.isoformat()}~{now.date().isoformat()}"
     evidence: list[Evidence] = []
     failed = invalid = truncated = 0
@@ -285,17 +368,12 @@ def collect_cninfo_announcements(
             "isHLtitle": "true",
         }
         try:
-            result = read_cninfo_json(CNINFO_QUERY, form)
-            rows = result["announcements"]
-            if rows is None and result.get("totalAnnouncement") == 0:
-                rows = []
-            if not isinstance(rows, list):
-                raise ValueError("Invalid announcement list")
-            truncated += int(bool(result.get("hasMore")) or len(rows) > 30)
+            rows, more = bounded_cninfo_pages(form)
+            truncated += int(more)
         except (KeyError, TypeError, ValueError, OSError, urllib.error.URLError):
             failed += 1
             continue
-        for row in rows[:30]:
+        for row in rows:
             try:
                 if row["secCode"] != short_code:
                     raise ValueError("Announcement stock mismatch")
@@ -344,6 +422,8 @@ def collect_cninfo_announcements(
         f"{failed} failed queries, {invalid} rejected rows, {truncated} page-cap hits; "
         "count is raw index rows before evidence deduplication; "
         "PDF content not read, publication time unknown; empty is not proof of absence"
+        + "; "
+        + window_detail(config, now)
         + ("; queried after model selection" if post_selection else "")
     )
     return evidence, Coverage(name, status, len(evidence), detail)
@@ -362,12 +442,27 @@ def collect_cninfo_market_index(
         return [], Coverage(name, "not_configured")
     if not online:
         return [], Coverage(name, "disabled", detail="offline mode")
-    lookback = min(3, (config["lookback_hours"] + 23) // 24)
-    earliest = now.date() - timedelta(days=lookback)
+    earliest = source_window(config, now)[0].date()
     rows_seen, failures, capped = 0, 0, 0
     evidence: list[Evidence] = []
-    for column, plate, suffix in (("sse", "sh", "SH"), ("szse", "sz", "SZ")):
+    queries = [
+        (column, plate, suffix, earliest, now.date())
+        for column, plate, suffix in (("sse", "sh", "SH"), ("szse", "sz", "SZ"))
+    ]
+    request_count, request_cap, windows, gaps = 0, 12, [], []
+    seen_documents = set()
+    while queries and request_count < request_cap:
+        column, plate, suffix, start_day, end_day = queries.pop(0)
+        window = {
+            "exchange": suffix,
+            "start": start_day.isoformat(),
+            "end": end_day.isoformat(),
+            "status": "sampled",
+        }
         for page in range(1, 3):
+            if request_count >= request_cap:
+                window["status"] = "truncated"
+                break
             form = {
                 "pageNum": page,
                 "pageSize": 50,
@@ -379,22 +474,43 @@ def collect_cninfo_market_index(
                 "secid": "",
                 "category": "",
                 "trade": "",
-                "seDate": f"{earliest.isoformat()}~{now.date().isoformat()}",
+                "seDate": f"{start_day.isoformat()}~{end_day.isoformat()}",
                 "sortName": "time",
                 "sortType": "desc",
                 "isHLtitle": "true",
             }
             try:
-                result = read_cninfo_json(CNINFO_QUERY, form)
+                request_count += 1
+                result, collected = source_cache(
+                    config,
+                    "cninfo_index",
+                    json.dumps(form, sort_keys=True),
+                    now,
+                    lambda form=form: read_cninfo_json(CNINFO_QUERY, form),
+                    historical=end_day < now.date(),
+                )
+                if not isinstance(result, dict):
+                    raise ValueError("Invalid cached announcement response")
                 rows = result.get("announcements") or []
                 if not isinstance(rows, list):
                     raise ValueError("Invalid announcement list")
-                capped += int(page == 2 and bool(result.get("hasMore")))
+                more = bool(result.get("hasMore")) or len(rows) > 50
+                if page == 2 and more:
+                    capped += 1
+                    window["status"] = "truncated"
+                    if start_day < end_day:
+                        # Date slices supplement a capped wide holiday window.
+                        # An explicit global cap bounds latency and provider cost.
+                        day = start_day
+                        while day <= end_day:
+                            queries.append((column, plate, suffix, day, day))
+                            day += timedelta(days=1)
             except (ValueError, OSError, urllib.error.URLError):
                 failures += 1
+                window["status"] = "failed"
                 break
-            rows_seen += len(rows)
-            for row in rows:
+            rows_seen += len(rows[:50])
+            for row in rows[:50]:
                 try:
                     code = f"{row['secCode']}.{suffix}"
                     if code not in valid_codes:
@@ -410,6 +526,10 @@ def collect_cninfo_market_index(
                         or not re.fullmatch(r"finalpage/\d{4}-\d{2}-\d{2}/\d+\.PDF", path)
                     ):
                         continue
+                    document_key = (code, path)
+                    if document_key in seen_documents:
+                        continue
+                    seen_documents.add(document_key)
                     evidence.append(
                         Evidence(
                             source="cninfo:market_index",
@@ -417,7 +537,7 @@ def collect_cninfo_market_index(
                             body="巨潮市场公告索引；仅标题和PDF链接，精确发布时间未知。",
                             url=f"https://static.cninfo.com.cn/{path}",
                             published_at=None,
-                            retrieved_at=datetime.now(SHANGHAI).isoformat(),
+                            retrieved_at=collected,
                             kind="official_announcement_index_unverified",
                             instrument_ids=(code,),
                             event_dates=(event.isoformat(),),
@@ -425,16 +545,39 @@ def collect_cninfo_market_index(
                     )
                 except (KeyError, TypeError, ValueError, OverflowError):
                     continue
-            if len(rows) < 50:
+            if not more:
                 break
-    status = "failed" if failures == 2 and not rows_seen else "partial" if failures else "sampled"
+        windows.append(window)
+        if window["status"] != "sampled":
+            gaps.append(window)
+    gaps.extend(
+        {
+            "exchange": suffix,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "status": "not_queried_budget",
+        }
+        for _, _, suffix, start, end in queries
+    )
+    status = (
+        "failed"
+        if failures == 2 and not rows_seen
+        else "possibly_truncated"
+        if gaps
+        else "partial"
+        if failures
+        else "sampled"
+    )
     return evidence, Coverage(
         name,
         status,
         len(evidence),
-        f"{rows_seen} raw rows across at most 2 pages per exchange; "
+        f"{rows_seen} raw rows, {request_count}/{request_cap} requests, 50 rows/page; "
         f"{failures} failed requests, {capped} page caps; market index is not exhaustive; "
-        "publication time unknown",
+        "publication time unknown; "
+        + window_detail(config, now)
+        + "; "
+        + json.dumps({"queried_windows": windows, "coverage_gaps": gaps}, ensure_ascii=False),
     )
 
 
@@ -463,20 +606,28 @@ def collect_cninfo_pdf_bodies(
         return [], Coverage(name, "not_configured")
     if not online or not config["cninfo_announcements"]:
         return [], Coverage(name, "disabled", detail="requires live official index")
-    priority = re.compile(r"停牌|业绩|财务|年度报告|季度报告|异常波动|股票交易")
+    priority = re.compile(
+        r"停牌|业绩|财务|年度报告|季度报告|异常波动|股票交易|"
+        r"重大合同|中标|订单|重组|收购|合作|框架协议|政策|补贴|终止|诉讼"
+    )
     chosen: dict[str, Evidence] = {}
     for item in notices:
         if (
-            item.source != "cninfo:official_index"
+            item.source not in {"cninfo:official_index", "cninfo:market_index"}
             or not item.url
             or not priority.search(item.title)
+            or not item.instrument_ids
         ):
             continue
         code = item.instrument_ids[0]
         current = chosen.get(code)
-        rank = ("停牌" in item.title, (item.event_dates or ("",))[0], item.url)
+        rank = (
+            bool(re.search(r"停牌|重大合同|中标|重组|终止|诉讼", item.title)),
+            (item.event_dates or ("",))[0],
+            item.url,
+        )
         if current is None or rank > (
-            "停牌" in current.title,
+            bool(re.search(r"停牌|重大合同|中标|重组|终止|诉讼", current.title)),
             (current.event_dates or ("",))[0],
             current.url,
         ):
@@ -487,29 +638,52 @@ def collect_cninfo_pdf_bodies(
 
     for item in list(chosen.values())[:max_stocks]:
         try:
-            raw = read_cninfo_pdf(item.url)
-            reader = PdfReader(io.BytesIO(raw), strict=True)
-            if reader.is_encrypted or not 1 <= len(reader.pages) <= 12:
+
+            def extract_pdf(item=item):
+                raw = read_cninfo_pdf(item.url)
+                reader = PdfReader(io.BytesIO(raw), strict=True)
+                if reader.is_encrypted or not 1 <= len(reader.pages) <= 12:
+                    return {"status": "encrypted_or_over_page_budget"}
+                parts = [page.extract_text() or "" for page in reader.pages]
+                body, extraction = pdf_relevant_text(parts)
+                return {
+                    "status": "extracted",
+                    "body": body,
+                    "extraction": extraction,
+                    "page_count": len(reader.pages),
+                    "sha256": hashlib.sha256(raw).hexdigest(),
+                }
+
+            extracted, collected = source_cache(
+                config,
+                "pdf_text",
+                item.url,
+                now,
+                extract_pdf,
+                historical=True,  # A fixed official archive URL identifies one document.
+            )
+            if extracted["status"] != "extracted":
                 oversized += 1
                 continue
-            parts = [page.extract_text() or "" for page in reader.pages]
-            body = "\n".join(parts).strip()
+            body, extraction = extracted["body"], extracted["extraction"]
             if len(body) < 80:
                 empty += 1
                 continue
-            sha = hashlib.sha256(raw).hexdigest()
+            sha = extracted["sha256"]
             evidence.append(
                 Evidence(
                     source="cninfo:official_pdf_text",
                     title=item.title + "（机器提取正文）",
                     body=(
-                        f"官方PDF SHA-256: {sha}; 页数: {len(reader.pages)}; "
+                        f"官方PDF SHA-256: {sha}; 页数: {extracted['page_count']}; "
                         "正文由机器提取，未人工核实；不能据公告日期推断精确披露时间。\n"
-                        + body[:12000]
+                        + body
+                        + "\n抽取覆盖: "
+                        + json.dumps(extraction, ensure_ascii=False)
                     ),
                     url=item.url,
                     published_at=None,
-                    retrieved_at=datetime.now(SHANGHAI).isoformat(),
+                    retrieved_at=collected,
                     kind="official_pdf_text_unverified",
                     instrument_ids=item.instrument_ids,
                     event_dates=item.event_dates,
@@ -531,8 +705,78 @@ def collect_cninfo_pdf_bodies(
         f"{empty} without extractable text, {oversized} encrypted/over 12 pages; "
         "machine text not manually verified, exact publication time unknown; "
         "no OCR, empty is not proof of absence"
+        + "; omitted_priority_evidence_ids="
+        + json.dumps(
+            [
+                item.evidence_id
+                for item in notices
+                if priority.search(item.title)
+                and item.evidence_id
+                not in {e.evidence_id for e in list(chosen.values())[:max_stocks]}
+            ]
+        )
     )
     return evidence, Coverage(name, status, len(evidence), detail)
+
+
+def pdf_relevant_text(parts: list[str], max_chars: int = 11000) -> tuple[str, dict]:
+    """Preserve page-located limits before benefits under a bounded text budget."""
+    adverse = re.compile(
+        r"风险|不确定|终止|解除|违约|尚需|尚未|不能|不构成|"
+        r"不保证|框架|意向|多年|分期|审批|条件|限制|亏损|减持|诉讼"
+    )
+    relevant = re.compile(
+        r"合同|中标|订单|重组|合作|补贴|金额|利润|收入|履行|"
+        r"实施|期限|交付|支付|业绩|财务|停牌"
+    )
+    entries = []
+    for page, text in enumerate(parts, 1):
+        paragraphs = re.split(r"\n\s*\n|(?<=[。；])", text)
+        for index, paragraph in enumerate(paragraphs):
+            paragraph = paragraph.strip()
+            if not paragraph:
+                continue
+            family = (
+                "counter_or_condition"
+                if adverse.search(paragraph)
+                else ("event_detail" if relevant.search(paragraph) else "background")
+            )
+            entries.append((family, page, index, paragraph))
+    # The first small packet is the one most likely to survive stage packing:
+    # one strongest restriction and one event detail, then all remaining clauses.
+    ordered = []
+    for family in ("counter_or_condition", "event_detail"):
+        first = next((entry for entry in entries if entry[0] == family), None)
+        if first:
+            ordered.append(first)
+    ordered.extend(
+        sorted(
+            (entry for entry in entries if entry not in ordered),
+            key=lambda entry: (entry[0] == "background", entry[1], entry[2]),
+        )
+    )
+    shown, used, omissions = [], 0, []
+    for family, page, index, text in ordered:
+        # Keep each selected fragment small enough for both evidence directions
+        # to fit in the actual final request's per-document excerpt.
+        excerpt = text[:450]
+        fragment = f"[第{page}页 段{index + 1} {family}] {excerpt}\n"
+        if used + len(fragment) > max_chars:
+            omissions.append({"page": page, "paragraph": index + 1, "reason": "text_budget"})
+            continue
+        shown.append(fragment)
+        used += len(fragment)
+        if len(text) > len(excerpt):
+            omissions.append(
+                {"page": page, "paragraph": index + 1, "reason": "paragraph_tail_truncated"}
+            )
+    return "".join(shown).strip(), {
+        "pages_scanned": len(parts),
+        "selected_fragments": len(shown),
+        "omitted_fragments": omissions,
+        "truncated": bool(omissions),
+        "priority": "restrictions and event clauses before background; no OCR",
+    }
 
 
 def collect_kpl_limit_reasons(
@@ -632,7 +876,15 @@ def collect_sources(config: dict, now: datetime, online: bool) -> tuple[list, li
         try:
             items = parse_feed(read_public_feed(feed["url"]), name, now)
             evidence.extend(items)
-            coverage.append(Coverage(name, "ok", len(items)))
+            coverage.append(
+                Coverage(
+                    name,
+                    "possibly_truncated" if len(items) >= 100 else "sampled",
+                    len(items),
+                    window_detail(config, now)
+                    + "; feed snapshot only; historical archive not queried",
+                )
+            )
         except Exception as exc:
             coverage.append(Coverage(name, "failed", detail=type(exc).__name__))
     if not config.get("rss"):
@@ -645,21 +897,87 @@ def collect_sources(config: dict, now: datetime, online: bool) -> tuple[list, li
     else:
         import tushare as ts
 
-        api = ts.pro_api(os.environ["TUSHARE_TOKEN"], timeout=20)
-        start = now - timedelta(hours=config["lookback_hours"])
+        try:
+            api = ts.pro_api(os.environ["TUSHARE_TOKEN"], timeout=20)
+        except Exception as exc:
+            coverage.extend(
+                Coverage(f"tushare:{source}", "failed", detail=type(exc).__name__)
+                for source in news_sources
+            )
+            return evidence, coverage
+        start, end = source_window(config, now)
         for source in news_sources:
-            try:
-                frame = api.news(
-                    src=source,
-                    start_date=start.astimezone(SHANGHAI).strftime("%Y-%m-%d %H:%M:%S"),
-                    end_date=now.astimezone(SHANGHAI).strftime("%Y-%m-%d %H:%M:%S"),
+            source_count, failures, invalid, gaps = 0, 0, 0, []
+            seen_news = set()
+            intervals, cursor = [], start
+            while cursor < end and len(intervals) < 8:
+                next_midnight = datetime.combine(
+                    cursor.date() + timedelta(days=1), time(), SHANGHAI
                 )
-                rows = frame.to_dict("records")
+                slice_end = end if len(intervals) == 7 else min(next_midnight, end)
+                intervals.append((cursor, slice_end))
+                cursor = slice_end
+            slices = len(intervals)
+            for slice_start, slice_end in intervals:
+                try:
+                    query = {
+                        "src": source,
+                        "start_date": slice_start.strftime("%Y-%m-%d %H:%M:%S"),
+                        "end_date": slice_end.strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+
+                    def fetch_news(query=query):
+                        return [
+                            {key: row.get(key) for key in ("datetime", "title", "content")}
+                            for row in api.news(**query).to_dict("records")
+                        ]
+
+                    rows, collected = source_cache(
+                        config,
+                        "news",
+                        json.dumps(query, sort_keys=True),
+                        now,
+                        fetch_news,
+                        historical=slice_end <= datetime.combine(now.date(), time(), SHANGHAI),
+                    )
+                except Exception as exc:
+                    failures += 1
+                    gaps.append(
+                        {
+                            "start": slice_start.isoformat(),
+                            "end": slice_end.isoformat(),
+                            "status": "failed",
+                            "failure_type": type(exc).__name__,
+                        }
+                    )
+                    continue
+                if len(rows) >= 100:
+                    gaps.append(
+                        {
+                            "start": slice_start.isoformat(),
+                            "end": slice_end.isoformat(),
+                            "status": "possibly_truncated",
+                        }
+                    )
                 for row in rows[:100]:
                     # Tushare news datetime is China local time; no supplied URL invented.
-                    published = datetime.fromisoformat(str(row["datetime"]))
+                    try:
+                        published = datetime.fromisoformat(str(row["datetime"]))
+                    except (KeyError, ValueError, TypeError):
+                        invalid += 1
+                        continue
                     if published.tzinfo is None:
                         published = published.replace(tzinfo=SHANGHAI)
+                    if not slice_start <= published <= slice_end:
+                        continue
+                    identity = (
+                        published.isoformat(),
+                        str(row.get("title")),
+                        str(row.get("content")),
+                    )
+                    if identity in seen_news:
+                        continue
+                    seen_news.add(identity)
                     evidence.append(
                         Evidence(
                             source=f"tushare:{source}",
@@ -667,12 +985,31 @@ def collect_sources(config: dict, now: datetime, online: bool) -> tuple[list, li
                             body=str(row.get("content") or "")[:6000],
                             url=None,
                             published_at=published.isoformat(),
-                            retrieved_at=now.isoformat(),
+                            retrieved_at=collected,
                         )
                     )
-                detail = "bounded to 100 rows; not exhaustive"
-                coverage.append(Coverage(f"tushare:{source}", "ok", min(len(rows), 100), detail))
-            except Exception as exc:
-                # Provider errors can contain tokens; never persist exception messages.
-                coverage.append(Coverage(f"tushare:{source}", "failed", detail=type(exc).__name__))
+                    source_count += 1
+            status = (
+                "failed"
+                if failures == slices
+                else "possibly_truncated"
+                if gaps
+                else "partial"
+                if invalid
+                else "sampled"
+                if source_count
+                else "empty_unconfirmed"
+            )
+            coverage.append(
+                Coverage(
+                    f"tushare:{source}",
+                    status,
+                    source_count,
+                    window_detail(config, now)
+                    + f"; {int(slices)}/8 bounded requests, 100 rows/request; "
+                    + json.dumps(
+                        {"coverage_gaps": gaps, "invalid_rows": invalid}, ensure_ascii=False
+                    ),
+                )
+            )
     return evidence, coverage
