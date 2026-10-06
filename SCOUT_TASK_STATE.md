@@ -1,4 +1,16 @@
 # Scout 本轮任务状态
+## 2026-10-06 新版云端单次运行与推送（用户再次明确授权，进行中）
+
+- 云端37461403853实际归档成功但预测INCOMPLETE（20261006T201714-fdc76727），首次调用前176284字符+36000预留超过180000。实际模型请求0、修复0、计费/预留token0、选中0；不能把workflow SUCCESS当预测成功。完整新artifact11412728994已下载至cloud_manual_v10_20261006，CRC通过，原失败完整保留。未推送失败或候选，付费运行授权未消耗。
+- 独立开发增加实际测量的输入容量：24为深查上限，优先顺序和探索比例沿用，固定36k字符/85k字节预留及总预算不变；超预算按完整股票输入逐级减少，保留已准入的事实/反证/出处，不截断单股事实。预算外明确未调查、不当负面证据；首次调用前和调查前保存精确packet/prompt/schema及每次完整预算错误，无额外模型调用。原路线分配保留，另显示实际准入人数。
+- 开发后全仓426 passed/1 skipped（27.08秒）、Ruff/锁/diff通过；有界24次失败零模型、容量不足保留顺序/反证及逐项预检归档、正常24股完整三阶段回归通过。Cloudflare仍读回旧日常APP c911350，当前active=false。接下来提交封版，再执行授权的一次实际模型云端运行，不重跑已有失败workflow。
+
+- 用户直接委托“云端加载新版，运行一次并推送”，授权一次实际模型/孤立数据刷新和手机通知。起点48ae77ba70d793918547c17c5fbe5ce6bef930eb干净。新版候选应用ceac2d1/引擎fb7a044固定，原Prompt/schema/配置/预算不临时改。
+- Cloudflare再部署在Workers service GET返回429，另一个settings只读端点也429；管理页面加载不可用。日常Worker/私库仍旧c911350一致，没有单改变量或删除旧领取。
+- 独立私库云端任务37461403853（scout-v10-manual-20261006.yml）已经启动；固定ceac2d1镜像/引擎fb7a044，真实时间和manual_research/非primary口径。同一工作流只允许run_number=1且attempt=1；授权先上传不可覆盖artifact。与原调度同concurrency组，只读恢复旧云快照，在临时孤立副本刷新/研究，不改原云档或canonical。
+- 新脚本和一次任务只保存于私库及本机tmp，未改预测引擎。云端结果归档新artifact，随后下载到cloud_manual_v10_20261006并校验manifest/版本/完整校验，再用本机既有ServerChan凭据一次推送候选正文；未通过则只发送未完成通知。当前不能宣称模型成功或微信已收到。
+- 恢复：先gh查看37461403853；不能再次dispatch或绕过run-number/attempt防重。完成后下载v10-manual-result-37461403853、读取manual-receipt/实际report/请求；推送先检查wechat-send-intent.json，未知发送不重试。日常新版切换仍待Cloudflare API恢复，需单独保存实际安装SHA。
+
 ## 2026-10-06 用户五项缺陷修复（代码/公开镜像通过，云端切换受API限流阻挡）
 
 - 最新交付：实现fb7a0441d10a1c58b893a399a103107e570106d2、固定封版候选APP ceac2d1c0f1bfc447ef9bbce6b60d7893c954a87均已推送，公开实际Docker CI37459641957 SUCCESS（实现CI37459343934也成功）。封版后完整424 passed/1 skipped再通过，Ruff/锁/diff通过。

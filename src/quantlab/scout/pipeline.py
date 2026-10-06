@@ -1243,31 +1243,38 @@ def run_scout(
                         selection_instruction,
                         selection_schema,
                     )
-                    from quantlab.scout.daily_stages import packet_for_pool
+                    from quantlab.scout.daily_stages import (
+                        fit_research_input,
+                        packet_for_pool,
+                        record_input_capacity,
+                    )
 
-                    baseline = packet_for_pool(
-                        pool,
-                        balanced_evidence_packet(
-                            evidence,
-                            {c["instrument_id"] for c in pool},
-                            max_chars=config["opportunity_evidence_chars"],
-                            max_body_chars=1000,
-                        ),
-                        market,
-                        opportunity_background,
-                        [asdict(x) for x in coverage + upgrade_pack.coverage()],
-                        {"asof_session": session.isoformat(), "target_session": expected_target},
-                        all_hypotheses,
-                        nextday=True,
-                        opportunities=deep_route_diagnostics.get("opportunity_hypotheses", []),
+                    def baseline_for_subset(subset):
+                        return packet_for_pool(
+                            subset,
+                            balanced_evidence_packet(
+                                evidence,
+                                {c["instrument_id"] for c in subset},
+                                max_chars=config["opportunity_evidence_chars"],
+                                max_body_chars=1000,
+                            ),
+                            market,
+                            opportunity_background,
+                            [asdict(x) for x in coverage + upgrade_pack.coverage()],
+                            {
+                                "asof_session": session.isoformat(),
+                                "target_session": expected_target,
+                            },
+                            all_hypotheses,
+                            nextday=True,
+                            opportunities=deep_route_diagnostics.get("opportunity_hypotheses", []),
+                        )
+
+                    pool, baseline, capacity = fit_research_input(
+                        pool, baseline_for_subset, client, stage="before_discovery"
                     )
-                    client.check_input(
-                        selection_instruction(baseline) + compact(baseline),
-                        selection_schema(pool, baseline),
-                        extra_chars=36000,
-                        extra_bytes=85000,
-                    )
-                    progress("首次模型调用前的深查基线预算预检通过")
+                    record_input_capacity(deep_route_diagnostics, capacity)
+                    progress(f"首次模型调用前预算预检通过，容量上限内保留{len(pool)}股")
                 discovery, raw = client.ask(
                     bounded_prompt(discovery_prompt), discovery_contract(nextday=nextday_mode)
                 )
@@ -1420,10 +1427,12 @@ def run_scout(
                         selection_schema,
                     )
                     from quantlab.scout.daily_stages import (
+                        fit_research_input,
                         investigation_contract,
                         investigation_errors,
                         investigation_prompt,
                         packet_for_pool,
+                        record_input_capacity,
                     )
 
                     study_packet = packet_for_pool(
@@ -1450,12 +1459,45 @@ def run_scout(
                     )
                     # Bound the entire investigation addition BEFORE paying for it.
                     # The schema caps hypotheses/URLs, strings, events and candidate count.
-                    client.check_input(
-                        selection_instruction(study_packet) + compact(study_packet),
-                        selection_schema(pool, study_packet),
-                        extra_chars=36000 if nextday_mode else 45000,
-                        extra_bytes=85000 if nextday_mode else 100000,
-                    )
+                    if nextday_mode:
+
+                        def study_for_subset(subset):
+                            codes = {c["instrument_id"] for c in subset}
+                            visible = [
+                                e
+                                for e in investigation_evidence
+                                if not e.get("instrument_ids")
+                                or codes.intersection(e["instrument_ids"])
+                            ]
+                            return packet_for_pool(
+                                subset,
+                                visible,
+                                market,
+                                opportunity_background,
+                                [asdict(x) for x in coverage + upgrade_pack.coverage()],
+                                study_packet["timing"],
+                                hypotheses,
+                                nextday=True,
+                                experiment_profile=config.get("experiment_profile", "fused"),
+                                opportunities=deep_route_diagnostics.get(
+                                    "opportunity_hypotheses", []
+                                ),
+                            )
+
+                        model_pool, study_packet, capacity = fit_research_input(
+                            model_pool, study_for_subset, client, stage="before_investigation"
+                        )
+                        admitted = {c["instrument_id"] for c in model_pool}
+                        pool = [c for c in pool if c["instrument_id"] in admitted]
+                        investigation_evidence = study_packet["evidence"]
+                        record_input_capacity(deep_route_diagnostics, capacity)
+                    else:
+                        client.check_input(
+                            selection_instruction(study_packet) + compact(study_packet),
+                            selection_schema(pool, study_packet),
+                            extra_chars=36000 if nextday_mode else 45000,
+                            extra_bytes=85000 if nextday_mode else 100000,
+                        )
                     study_schema = investigation_contract(pool, study_packet)
                     progress("研究输入预算预检通过，调查全部候选")
                     investigation, raw = client.ask(

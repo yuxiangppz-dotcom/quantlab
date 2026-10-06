@@ -1,6 +1,7 @@
 """Research-stage contracts using the same facts as the final comparison."""
 
 from copy import deepcopy
+from math import floor
 
 from jsonschema import Draft202012Validator
 
@@ -79,6 +80,91 @@ def packet_for_pool(
             }
         )
     )[0]
+
+
+def fit_research_input(pool, build_packet, client, *, stage):
+    """Measured input capacity within the fixed deep-pool upper bound and priorities.
+
+    Omitted stocks remain budget exclusions, never negative model judgments.
+    Keep the predeclared exploration fraction, all facts for admitted stocks,
+    and the exact checked input. No provider or model requests occur here.
+    """
+    from quantlab.scout.daily_budget import DailyBudgetError
+    from quantlab.scout.daily_contract import selection_instruction, selection_schema
+
+    if not 1 <= len(pool) <= 24:
+        raise DailyBudgetError("daily_deep_pool_bound")
+    last_error = None
+    for count in range(len(pool), 0, -1):
+        exploration_cap = 6 if count == len(pool) else floor(count / 4)
+        chosen, exploration = [], 0
+        for row in pool:
+            exploratory = bool(row.get("research_budget", {}).get("exploration"))
+            if exploratory and exploration >= exploration_cap:
+                continue
+            chosen.append(row)
+            exploration += exploratory
+            if len(chosen) == count:
+                break
+        if not chosen:
+            continue
+        packet = build_packet(chosen)
+        prompt = selection_instruction(packet) + compact(packet)
+        schema = selection_schema(chosen, packet)
+        sequence = len(client.input_checks) + 1
+        client._save(
+            0,
+            f"research-preflight-{sequence:02d}",
+            {
+                "stage": stage,
+                "packet": packet,
+                "prompt": prompt,
+                "schema": schema,
+                "candidate_ids": [c["instrument_id"] for c in chosen],
+                "reserved_chars": 36000,
+                "reserved_bytes": 85000,
+            },
+        )
+        try:
+            client.check_input(prompt, schema, extra_chars=36000, extra_bytes=85000)
+        except DailyBudgetError as exc:
+            if str(exc) not in {"daily_input_char_budget", "daily_input_byte_budget"}:
+                raise
+            last_error = exc
+            continue
+        admitted = {c["instrument_id"] for c in chosen}
+        diagnostics = {
+            "version": "measured_research_input_capacity_v1",
+            "stage": stage,
+            "upper_candidate_limit": 24,
+            "candidate_count": len(chosen),
+            "admitted_ids": sorted(admitted),
+            "exploration_cap": exploration_cap,
+            "exploration_count": exploration,
+            "exclusions": [
+                {
+                    "instrument_id": c["instrument_id"],
+                    "reason": "input_budget_excluded_not_negative_evidence",
+                }
+                for c in pool
+                if c["instrument_id"] not in admitted
+            ],
+        }
+        return chosen, packet, diagnostics
+    raise last_error or DailyBudgetError("daily_input_capacity_empty")
+
+
+def record_input_capacity(diagnostics, capacity):
+    diagnostics.setdefault("input_capacity", []).append(capacity)
+    # Preserve the original route allocation; label actual model admission separately.
+    diagnostics["model_admitted_count"] = capacity["candidate_count"]
+    diagnostics["model_admitted_ids"] = capacity["admitted_ids"]
+    diagnostics["model_exploration_count"] = capacity["exploration_count"]
+    excluded = {r["instrument_id"] for r in capacity["exclusions"]}
+    for row in diagnostics.get("funnel", []):
+        if row["instrument_id"] in excluded:
+            row.update(deep=False, exclusion_reason="input_budget_excluded_not_negative_evidence")
+    diagnostics.setdefault("budget_exclusions", []).extend(capacity["exclusions"])
 
 
 def investigation_contract(pool, packet=None):

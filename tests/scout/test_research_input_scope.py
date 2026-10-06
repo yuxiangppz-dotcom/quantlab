@@ -115,3 +115,89 @@ def test_budget_preflight_collects_both_errors_before_any_transport(tmp_path):
     record = json.loads((tmp_path / "00-budget-check-01.json").read_text())
     assert record["errors"] == ["daily_input_char_budget", "daily_input_byte_budget"]
     assert record["before_request_number"] == 1
+
+
+def test_measured_capacity_retains_order_counterfacts_and_archives_exact_checks(
+    tmp_path, monkeypatch
+):
+    from quantlab.scout.daily_stages import fit_research_input, record_input_capacity
+
+    class NeverCalls:
+        model = "offline"
+
+        def ask(self, *args, **kwargs):
+            pytest.fail("Preflight must not call a model")
+
+    pool = [
+        {"instrument_id": f"000{i:03d}.SZ", "research_budget": {"exploration": i % 4 == 3}}
+        for i in range(24)
+    ]
+    original = deepcopy(pool)
+    monkeypatch.setattr("quantlab.scout.daily_contract.selection_instruction", lambda p: "")
+    monkeypatch.setattr(
+        "quantlab.scout.daily_contract.selection_schema", lambda *a: {"type": "object"}
+    )
+
+    def packet(chosen):
+        return {
+            "candidates": deepcopy(chosen),
+            "facts_and_counterevidence": {c["instrument_id"]: "保留反证" for c in chosen},
+            # Explicit synthetic capacity pressure, not a new real market fact.
+            "size_pressure": "x" * (9000 * len(chosen)),
+        }
+
+    client = DailyResearch(NeverCalls(), journal=tmp_path)
+    chosen, built, capacity = fit_research_input(pool, packet, client, stage="before_discovery")
+    assert 0 < len(chosen) < 24
+    assert pool == original
+    assert [c["instrument_id"] for c in chosen] == [c["instrument_id"] for c in pool[: len(chosen)]]
+    assert capacity["exploration_count"] <= capacity["exploration_cap"]
+    assert built["facts_and_counterevidence"] == {c["instrument_id"]: "保留反证" for c in chosen}
+    assert client.requests == [] and client.spent == 0
+    assert client.input_checks[0]["errors"] == [
+        "daily_input_char_budget",
+        "daily_input_byte_budget",
+    ]
+    assert client.input_checks[-1]["errors"] == []
+    for index, check in enumerate(client.input_checks, 1):
+        saved = json.loads((tmp_path / f"00-research-preflight-{index:02d}.json").read_text())
+        assert len(saved["prompt"]) == check["prompt_chars"]
+        assert saved["reserved_chars"] == check["reserved_chars"] == 36000
+        assert saved["reserved_bytes"] == check["reserved_bytes"] == 85000
+    diag = {"funnel": [{"instrument_id": c["instrument_id"], "deep": True} for c in pool]}
+    record_input_capacity(diag, capacity)
+    assert diag["model_admitted_count"] == len(chosen)
+    assert sum(r["deep"] for r in diag["funnel"]) == len(chosen)
+    assert all(
+        r["reason"] == "input_budget_excluded_not_negative_evidence"
+        for r in diag["budget_exclusions"]
+    )
+
+
+def test_measured_capacity_keeps_all_when_fit_and_never_loops_model_calls(tmp_path, monkeypatch):
+    from quantlab.scout.daily_stages import fit_research_input
+
+    class NeverCalls:
+        model = "offline"
+
+    pool = [{"instrument_id": f"000{i:03d}.SZ"} for i in range(24)]
+    monkeypatch.setattr("quantlab.scout.daily_contract.selection_instruction", lambda p: "")
+    monkeypatch.setattr(
+        "quantlab.scout.daily_contract.selection_schema", lambda *a: {"type": "object"}
+    )
+    client = DailyResearch(NeverCalls(), journal=tmp_path / "fits")
+    chosen, _, capacity = fit_research_input(
+        pool, lambda c: {"candidates": c}, client, stage="before_investigation"
+    )
+    assert chosen == pool and capacity["exclusions"] == [] and len(client.input_checks) == 1
+    failing = DailyResearch(NeverCalls(), journal=tmp_path / "fails")
+    with pytest.raises(DailyBudgetError, match="daily_input_char_budget"):
+        fit_research_input(
+            pool,
+            lambda c: {"candidates": c, "oversize": "x" * 180001},
+            failing,
+            stage="before_discovery",
+        )
+    assert len(failing.input_checks) == 24
+    assert failing.requests == [] and failing.spent == 0
+    assert len(list((tmp_path / "fails").glob("00-research-preflight-*.json"))) == 24
