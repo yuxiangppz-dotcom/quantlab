@@ -9,7 +9,7 @@ from pathlib import Path
 from quantlab.scout.daily_runtime import read
 from quantlab.scout.models import fingerprint
 
-ENGINE_COMMIT = "fb7a0441d10a1c58b893a399a103107e570106d2"
+ENGINE_COMMIT = "b604f715fadebf1015410e6aac41a0c6c07f2798"
 
 
 def seal(app, engine, bundle, data_root):
