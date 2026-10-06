@@ -123,6 +123,12 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
                 )
                 if ref in REF.findall(get_at(previous, [*base, *suffix])):
                     add([*base, *suffix])
+            condition = rows[index].get("next_session_condition")
+            if isinstance(condition, dict):
+                if ref in REF.findall(condition.get("mechanism", "")):
+                    add([*base, "next_session_condition", "mechanism"])
+                if ref in condition.get("fact_ids", []):
+                    add([*base, "next_session_condition", "fact_ids"])
         elif code == "same_type_unselected_required":
             if not add([*base, "comparator_id"]):
                 return None
@@ -144,6 +150,20 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
                     for ref in REF.findall(text)
                 ):
                     add([*base, *suffix])
+        elif code == "focus_requires_specific_next_session_mechanism":
+            if not add([*base, "analysis", "next_session_thesis"]):
+                return None
+        elif code == "focus_requires_specific_selection_reason":
+            if not add([*base, "thesis"]):
+                return None
+        elif code == "focus_requires_specific_causal_link":
+            if not add([*base, "next_session_condition", "mechanism"]):
+                return None
+        elif code == "focus_requires_falsifiable_d1_observation":
+            if not all(
+                add([*base, "next_session_condition", key]) for key in ("driver", "observation")
+            ):
+                return None
         elif code in {
             "quantitative_prose_requires_fact_placeholder",
             "unsupported_microstructure_assertion",
@@ -157,6 +177,8 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
                 if field in current_analysis_fields
                 else ["trade_conditions", field.removeprefix("trade_")]
                 if field in {"trade_known", "trade_unknown"}
+                else ["next_session_condition", "mechanism"]
+                if field == "condition_mechanism"
                 else [field]
             )
             if not add([*base, *suffix]):

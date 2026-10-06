@@ -4,6 +4,7 @@ import math
 import os
 from datetime import datetime, timedelta
 from time import monotonic
+from uuid import uuid4
 
 import pandas as pd
 
@@ -406,3 +407,111 @@ def refresh_market(root, fetcher, now, *, history_sessions=21, initialize_histor
         "history_sessions": history_sessions,
         "status": "ready",
     }
+
+
+def refresh_observation_limits(root, fetcher, now, *, max_reports=200, max_sessions=20):
+    """Recover frozen D1 limits, including dates older than the refresh as-of day.
+
+    Only missing partitions are fetched. Existing incomplete/invalid partitions
+    remain untouched and retain unknown observations. The same Fetcher supplies
+    the shared provider call, pagination and elapsed-time budgets.
+    """
+    from quantlab.scout.nextday_tracking import verify_freeze
+
+    if not 1 <= max_reports <= 200 or not 1 <= max_sessions <= 20:
+        raise ValueError("Observation supplement bounds exceeded")
+    root = guarded(root)
+    storage = ParquetStorage(root / "market")
+    receipt = {
+        "version": "frozen_d1_limit_supplement_v1",
+        "status": "running",
+        "started_at": now.isoformat(),
+        "model_calls": 0,
+        "provider_calls": 0,
+        "rows": [],
+        "report_issues": [],
+    }
+    calls_before = fetcher.calls
+    with exclusive(root / "data_preparation" / "observation-limits.lock"):
+        try:
+            asof = latest_completed_session(storage, now)
+            calendar = {
+                row.trade_date
+                for row in storage.load_trading_calendar()
+                if row.exchange == "SSE" and row.is_open
+            }
+            paths = sorted((root / "runs").rglob("report.json"), reverse=True)
+            receipt["omitted_reports"] = max(0, len(paths) - max_reports)
+            targets = {}
+            for path in paths[:max_reports]:
+                try:
+                    report = read(path)
+                    if (
+                        not report.get("nextday_freeze")
+                        or report.get("synthetic")
+                        or report.get("status") == "demo"
+                    ):
+                        continue
+                    freeze = verify_freeze(report)
+                    frozen_target = freeze["timing"]["target_session"]
+                    if report["timing"]["target_session"] != frozen_target:
+                        raise ValueError("Observation target does not match frozen timing")
+                    day = datetime.fromisoformat(frozen_target).date()
+                    if day not in calendar or day > asof:
+                        continue
+                    targets.setdefault(day, set()).update(
+                        row["instrument_id"] for row in freeze["rows"]
+                    )
+                except (ValueError, KeyError, OSError, TypeError) as exc:
+                    receipt["report_issues"].append(
+                        {"run_id": path.parent.name, "error_type": type(exc).__name__}
+                    )
+            # Existing partitions cost no requests and must not consume the batch
+            # slots needed by missing target dates from interrupted observations.
+            ordered = sorted(
+                targets, key=lambda day: (storage.daily_price_limit_path(day).exists(), day)
+            )
+            receipt["omitted_target_sessions"] = max(0, len(ordered) - max_sessions)
+            for day in ordered[:max_sessions]:
+                row = {"target_session": day.isoformat(), "status": "unknown"}
+                receipt["rows"].append(row)
+                try:
+                    partition = _path(root, storage.daily_price_limit_path, day)
+                    if partition.exists():
+                        row["partition_action"] = "reused_without_overwrite"
+                    else:
+                        values = fetcher.all_rows("stk_limit", trade_date=day.strftime("%Y%m%d"))
+                        storage.save_daily_price_limits_by_date(
+                            convert("stk_limit", values, day), day
+                        )
+                        row["partition_action"] = "created_missing_partition"
+                    limits = storage.load_daily_price_limits_by_date(day)
+                    codes = {item.instrument_id for item in limits}
+                    if len(codes) != len(limits) or any(
+                        item.trade_date != day
+                        or not finite_positive(item.up_limit)
+                        or not finite_positive(item.down_limit)
+                        for item in limits
+                    ):
+                        row["reason"] = "existing_partition_invalid_preserved"
+                    else:
+                        missing = sorted(targets[day] - codes)
+                        row.update(
+                            status="partial_unknown" if missing else "ready",
+                            missing_instrument_ids=missing,
+                        )
+                except Exception as exc:
+                    row.update(status="failed_preserved", error_type=type(exc).__name__)
+            receipt["status"] = (
+                "unknown"
+                if receipt["report_issues"]
+                or receipt["omitted_reports"]
+                or receipt["omitted_target_sessions"]
+                or any(row["status"] != "ready" for row in receipt["rows"])
+                else "ready"
+            )
+        except Exception as exc:
+            receipt.update(status="failed_preserved", error_type=type(exc).__name__)
+        receipt["provider_calls"] = fetcher.calls - calls_before
+        atomic(root / "observations" / "data_supplements" / (uuid4().hex + ".json"), receipt)
+    return receipt

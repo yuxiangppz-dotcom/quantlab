@@ -98,6 +98,11 @@ def card_content(report, row):
             if ref in facts
         )
         technical = technical or "未引用可用技术事实，覆盖不足"
+        condition = comparison.get("next_session_condition") or {}
+        observation = condition.get("observation") or {}
+        observation_text = " / ".join(
+            str(observation.get(k) or "未知") for k in ("window", "metric", "expected_state")
+        )
         return [
             (
                 "类型与状态",
@@ -135,7 +140,11 @@ def card_content(report, row):
             ),
             (
                 "确认与取消条件",
-                "已知："
+                "目标日观察（待验证）："
+                + observation_text
+                + "；机制："
+                + (condition.get("mechanism") or "未知")
+                + "；已知："
                 + (conditions.get("known") or "未归档")
                 + "；尚缺："
                 + (conditions.get("unknown") or "未知")

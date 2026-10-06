@@ -319,13 +319,21 @@ def build_pool(
     *,
     policy: str = "legacy_routes_v1",
     asof: str | None = None,
+    hypothesis_sources: dict | None = None,
 ) -> list:
     """Give each route unique slots, then share spare slots round robin."""
     if policy == "evidence_marginal_v2":
         from quantlab.scout.discovery_budget import build_dynamic_pool
 
         return build_dynamic_pool(
-            universe, hypotheses, sector_codes, limit, attention_codes, diagnostics, asof=asof
+            universe,
+            hypotheses,
+            sector_codes,
+            limit,
+            attention_codes,
+            diagnostics,
+            asof=asof,
+            hypothesis_sources=hypothesis_sources,
         )
     if policy != "legacy_routes_v1":
         raise ValueError("Unknown discovery budget policy")
@@ -1050,6 +1058,8 @@ def run_scout(
     )
     all_hypotheses = manual_hypotheses + extra_hypotheses
     refresh_opportunities(evidence, datetime.now(SHANGHAI))
+    if nextday_mode:
+        pool_policy["hypothesis_sources"] = {e.evidence_id: e.to_dict() for e in evidence}
     cheap_route_diagnostics: dict = {}
     deep_route_diagnostics: dict = {}
     cheap_pool = build_pool(
@@ -1225,6 +1235,39 @@ def run_scout(
                         separators=(",", ":"),
                     )
                 discovery_prompt = SHARED + stage_instruction + discovery_prompt
+                if nextday_mode:
+                    # Reject an already oversized deep-pool baseline before the first paid call.
+                    # Newly discovered stocks/official/deep facts are checked again before study.
+                    from quantlab.scout.daily_contract import (
+                        compact,
+                        selection_instruction,
+                        selection_schema,
+                    )
+                    from quantlab.scout.daily_stages import packet_for_pool
+
+                    baseline = packet_for_pool(
+                        pool,
+                        balanced_evidence_packet(
+                            evidence,
+                            {c["instrument_id"] for c in pool},
+                            max_chars=config["opportunity_evidence_chars"],
+                            max_body_chars=1000,
+                        ),
+                        market,
+                        opportunity_background,
+                        [asdict(x) for x in coverage + upgrade_pack.coverage()],
+                        {"asof_session": session.isoformat(), "target_session": expected_target},
+                        all_hypotheses,
+                        nextday=True,
+                        opportunities=deep_route_diagnostics.get("opportunity_hypotheses", []),
+                    )
+                    client.check_input(
+                        selection_instruction(baseline) + compact(baseline),
+                        selection_schema(pool, baseline),
+                        extra_chars=36000,
+                        extra_bytes=85000,
+                    )
+                    progress("首次模型调用前的深查基线预算预检通过")
                 discovery, raw = client.ask(
                     bounded_prompt(discovery_prompt), discovery_contract(nextday=nextday_mode)
                 )
@@ -1241,6 +1284,11 @@ def run_scout(
                 set(universe),
             )
             all_hypotheses = manual_hypotheses + hypotheses + extra_hypotheses
+            if nextday_mode:
+                pool_policy["hypothesis_sources"] = {
+                    e.evidence_id: e.to_dict()
+                    for e in [x for x in input_evidence if x.evidence_id in discovery_ids] + found
+                }
             refresh_opportunities(evidence, datetime.now(SHANGHAI))
             cheap_pool = build_pool(
                 universe,

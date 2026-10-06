@@ -16,6 +16,7 @@ from quantlab.scout.daily_contract import (
     unpack_facts,
     validate_output,
 )
+from quantlab.scout.daily_correction import apply_patch_output, patch_plan
 from quantlab.scout.daily_stages import investigation_contract, investigation_prompt
 from quantlab.scout.models import SHANGHAI
 from quantlab.scout.nextday_contract import SCHEMA_VERSION, VERSION
@@ -136,6 +137,13 @@ def focus_row(row, packet):
             "kind": "price_structure_repair",
             "fact_ids": [own],
             "event_id": None,
+            "driver": "overhead_supply_absorption",
+            "mechanism": "若前期套牢卖压得到消化，价格才可能维持均线上方；卖压仍未知",
+            "observation": {
+                "window": "D1_close",
+                "metric": "close_to_ma20",
+                "expected_state": "positive",
+            },
         },
         invalidation_rule={"rule_id": "ma20_break_v1", "reference_id": own},
     )
@@ -145,6 +153,8 @@ def focus_row(row, packet):
         if fact["subject_id"] == row["comparator_id"] and fact["metric"] == "close_to_ma20"
     )
     row["difference"] = "本股[[" + own + "]]；同行[[" + peer + "]]；位置不同，均待观察"
+    row["analysis"]["next_session_thesis"] = "若套牢卖压继续消化，目标日才可能维持均线上方"
+    row["thesis"] = "卖压消化可能改善价格位置，仍需目标日观察而非已确认"
 
 
 def test_actual_stage_templates_and_schemas_migrate_objective_together():
@@ -168,9 +178,7 @@ def test_calculated_technical_facts_are_visible_cited_validated_and_rendered():
     original = deepcopy(result)
     assert validate_output(result, packet) == []
     ref = result["comparisons"][0]["technical_fact_ids"][0]
-    assert ref in unpack_facts(packet) and ref in selection_instruction(packet) + compact(
-        packet
-    )
+    assert ref in unpack_facts(packet) and ref in selection_instruction(packet) + compact(packet)
     assert unpack_facts(packet)[ref]["calculation_version"]
     view = render_output(result, packet)
     assert "close_to_ma20" in view["comparisons"][0]["technical_interpretation"]
@@ -181,12 +189,11 @@ def test_calculated_technical_facts_are_visible_cited_validated_and_rendered():
     assert any(e["code"].startswith("technical_requires_own_calculated_fact") for e in errors)
 
 
-def test_selected_strong_peer_allowed_and_short_mechanism_not_keyword_gate():
+def test_selected_strong_peer_allowed_and_concrete_price_mechanism_needs_no_news():
     packet = nextday_packet()
     result = nextday_result(packet)
     for row in result["comparisons"]:
         focus_row(row, packet)
-        row["analysis"]["next_session_thesis"] = "修复"
     assert validate_output(result, packet) == []
     row = result["comparisons"][0]
     row["next_session_condition"] = None
@@ -226,10 +233,19 @@ def test_unique_direct_event_can_have_no_comparable_without_invented_peer():
             "kind": "official_event_progress",
             "fact_ids": row["technical_fact_ids"][:1],
             "event_id": event_id,
+            "driver": "company_event_reassessment",
+            "mechanism": "若公司独特事项得到正式进展确认，经营关联才可能被重新评估",
+            "observation": {
+                "window": "D1_official_update",
+                "metric": "official_event_state",
+                "expected_state": "event_progress_confirmed",
+            },
         },
         invalidation_rule={"rule_id": "event_cancelled_d1_v1", "reference_id": event_id},
     )
     row["analysis"].update(novelty="new_event", exposure="direct", event_ids=[event_id])
+    row["analysis"]["next_session_thesis"] = "若独特事项出现正式进展，经营关联才可能重新评估"
+    row["thesis"] = "独特事项可能触发经营关联重估，正式确认尚未知"
     assert validate_output(result, packet) == []
 
 
@@ -248,6 +264,150 @@ def test_not_rankable_is_kept_but_cannot_be_selected():
     row["final_status"] = "focus"
     errors = validate_output(result, packet)
     assert any(e["code"] == "not_rankable_cannot_select" for e in errors)
+
+
+@pytest.mark.parametrize(
+    "vague", ["待验证", "已有走势较强，继续观察", "修复", "若强势延续则继续观察"]
+)
+def test_focus_placeholder_thesis_and_reason_are_rejected_even_with_past_facts(vague):
+    packet = nextday_packet()
+    result = nextday_result(packet)
+    row = result["comparisons"][0]
+    focus_row(row, packet)
+    assert validate_output(result, packet) == []
+    row["analysis"]["next_session_thesis"] = vague
+    row["thesis"] = vague
+    codes = {e["code"] for e in validate_output(result, packet)}
+    assert "focus_requires_specific_next_session_mechanism" in codes
+    assert "focus_requires_specific_selection_reason" in codes
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"driver": "unknown"},
+        {"mechanism": "待验证"},
+        {"observation": {"window": "unknown", "metric": "unknown", "expected_state": "unknown"}},
+        {
+            "observation": {
+                "window": "D1_close",
+                "metric": "relative_return_1d",
+                "expected_state": "positive",
+            }
+        },
+    ],
+)
+def test_focus_requires_matching_future_observation_and_mechanism_not_only_bound_past(change):
+    packet = nextday_packet()
+    result = nextday_result(packet)
+    row = result["comparisons"][0]
+    focus_row(row, packet)
+    row["next_session_condition"].update(change)
+    assert validate_output(result, packet)
+    row["final_status"] = "watch"
+    assert validate_output(result, packet) == []
+
+
+@pytest.mark.parametrize("term", ["MA20", "EMA12", "RSI14", "ATR14", "MACD", "5日", "20日"])
+def test_fixed_technical_terms_with_actual_fact_refs_are_not_unverified_values(term):
+    packet = nextday_packet()
+    result = nextday_result(packet)
+    row = result["comparisons"][0]
+    ref = row["technical_fact_ids"][0]
+    row["technical_interpretation"] = term + "位置依据：[[" + ref + "]]；未来变化待观察"
+    assert validate_output(result, packet) == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "MA20为20元",
+        "RSI14为70",
+        "EMA12.5",
+        "MA200",
+        "xMA20",
+        "MA20%",
+        "上涨5%",
+        "20日上涨10%",
+        "ATR14=2.5",
+        "MA20位置扩大2倍",
+        "1200日",
+        "5日%",
+    ],
+)
+def test_technical_label_allowlist_does_not_hide_quotes_percentages_or_fabricated_values(text):
+    packet = nextday_packet()
+    result = nextday_result(packet)
+    row = result["comparisons"][0]
+    ref = row["technical_fact_ids"][0]
+    row["technical_interpretation"] = text + "；程序事实：[[" + ref + "]]"
+    assert any(
+        e["code"] == "quantitative_prose_requires_fact_placeholder"
+        for e in validate_output(result, packet)
+    )
+
+
+def test_condition_mechanism_references_and_numeric_values_follow_same_fact_contract():
+    packet = nextday_packet()
+    result = nextday_result(packet)
+    row = result["comparisons"][0]
+    focus_row(row, packet)
+    row["next_session_condition"]["mechanism"] = "若卖压消化可能改善MA20位置；上涨10%"
+    assert any(
+        e["code"] == "quantitative_prose_requires_fact_placeholder"
+        and e["path"][-1] == "condition_mechanism"
+        for e in validate_output(result, packet)
+    )
+    row["next_session_condition"]["mechanism"] = "若卖压消化可能改善位置；[[fact:missing]]"
+    assert any(
+        e["code"].startswith("unknown_or_wrong_subject_fact:")
+        for e in validate_output(result, packet)
+    )
+
+
+def test_single_directed_patch_repairs_mechanism_without_changing_grade_peers_or_support():
+    packet = nextday_packet()
+    result = nextday_result(packet)
+    focus_row(result["comparisons"][0], packet)
+    valid = deepcopy(result)
+    row = result["comparisons"][0]
+    row["analysis"]["next_session_thesis"] = "待验证"
+    row["thesis"] = "已有走势较强，继续观察"
+    row["next_session_condition"]["mechanism"] = "待验证"
+    row["next_session_condition"]["driver"] = "unknown"
+    errors = validate_output(result, packet)
+    schema = selection_schema(packet["candidates"], packet)
+    plan = patch_plan(result, errors, schema)
+    assert plan is not None
+    assert set(plan["targets"]) == {
+        "/comparisons/0/analysis/next_session_thesis",
+        "/comparisons/0/thesis",
+        "/comparisons/0/next_session_condition/mechanism",
+        "/comparisons/0/next_session_condition/driver",
+        "/comparisons/0/next_session_condition/observation",
+    }
+    patches = []
+    for target, definition in plan["targets"].items():
+        value = valid
+        for key in definition["path"]:
+            value = value[key]
+        patches.append({"path": target, "op": "replace", "value": value})
+    repaired, patch_errors = apply_patch_output(result, {"patches": patches}, plan)
+    assert patch_errors == [] and repaired == valid
+    assert validate_output(repaired, packet) == []
+    assert row["thesis"] == "已有走势较强，继续观察"  # Archived original is untouched.
+
+
+def test_condition_numeric_error_patch_targets_nested_text_only():
+    packet = nextday_packet()
+    result = nextday_result(packet)
+    focus_row(result["comparisons"][0], packet)
+    result["comparisons"][0]["next_session_condition"]["mechanism"] = "卖压消化可能上涨10%"
+    errors = validate_output(result, packet)
+    plan = patch_plan(result, errors, selection_schema(packet["candidates"], packet))
+    assert plan is not None
+    assert "/comparisons/0/next_session_condition/mechanism" in plan["targets"]
+    assert "/comparisons/0/final_status" not in plan["targets"]
 
 
 @pytest.mark.parametrize("hour,minute", [(9, 0), (9, 35)])

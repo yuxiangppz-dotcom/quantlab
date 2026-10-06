@@ -13,11 +13,18 @@ from urllib.request import Request, build_opener
 from uuid import uuid4
 
 from quantlab.scout.cloud_artifacts import guarded, initialize
-from quantlab.scout.cloud_data import Fetcher, prepare_history, refresh_calendar, refresh_market
+from quantlab.scout.cloud_data import (
+    Fetcher,
+    prepare_history,
+    refresh_calendar,
+    refresh_market,
+    refresh_observation_limits,
+)
 from quantlab.scout.cloud_push import NoRedirect, public_origin
 from quantlab.scout.cloud_runner import tick
 from quantlab.scout.daily_runtime import atomic, read
 from quantlab.scout.models import SHANGHAI, fingerprint
+from quantlab.scout.nextday_contract import VERSION as NEXT_VERSION
 from quantlab.scout.observation_runtime import scan_pending
 
 CHUNK = 131072
@@ -220,11 +227,18 @@ def observation_catchup(root, now, *, fetcher_factory=Fetcher, scan=scan_pending
         receipt["data"] = refresh_market(root, fetcher, now, history_sessions=120)
     except Exception as exc:
         receipt.update(status="data_unknown", error_type=type(exc).__name__)
+    if fetcher is not None:
+        try:
+            receipt["target_limits"] = refresh_observation_limits(root, fetcher, now)
+            if receipt["target_limits"]["status"] != "ready":
+                receipt["status"] = "data_unknown"
+        except Exception as exc:
+            receipt.update(status="data_unknown", limit_error_type=type(exc).__name__)
     try:
         activation = root / "observations" / "activation.json"
         if not activation.exists():
             atomic(activation, {"started_at": now.isoformat(), "start_date": now.date().isoformat(),
-                                "version": "daily_facts_v9_next_session"})
+                                "version": NEXT_VERSION})
         start = read(activation)["start_date"]
         eligible = None
         if storage is not None:

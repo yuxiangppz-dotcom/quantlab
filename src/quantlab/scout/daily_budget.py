@@ -51,17 +51,35 @@ class DailyResearch:
         self.last_errors = []
         self.stage = 0
         self.correction = None
+        self.input_checks = []
 
     @property
     def calls(self):
         return self.client.calls
 
     def check_input(self, prompt, schema, *, extra_chars=0, extra_bytes=0):
+        size = len(prompt.encode()) + len(json.dumps(schema).encode()) + len(SYSTEM.encode()) + 1000
+        check = {
+            "prompt_chars": len(prompt),
+            "request_bytes": size,
+            "reserved_chars": extra_chars,
+            "reserved_bytes": extra_bytes,
+            "char_limit": self.policy["max_input_chars"],
+            "byte_limit": self.policy["max_input_bytes"],
+            "before_request_number": len(self.requests) + 1,
+            "schema_id": schema.get("$id"),
+            "errors": [],
+        }
         if len(prompt) + extra_chars > self.policy["max_input_chars"]:
+            check["errors"].append("daily_input_char_budget")
+        if size + extra_bytes > self.policy["max_input_bytes"]:
+            check["errors"].append("daily_input_byte_budget")
+        self.input_checks.append(check)
+        self._save(0, f"budget-check-{len(self.input_checks):02d}", check)
+        if "daily_input_char_budget" in check["errors"]:
             raise DailyBudgetError("daily_input_char_budget")
         # Include the schema and system prompt, not just user text.
-        size = len(prompt.encode()) + len(json.dumps(schema).encode()) + len(SYSTEM.encode()) + 1000
-        if size + extra_bytes > self.policy["max_input_bytes"]:
+        if "daily_input_byte_budget" in check["errors"]:
             raise DailyBudgetError("daily_input_byte_budget")
         return size + self.policy["max_output_tokens"]
 
@@ -90,7 +108,7 @@ class DailyResearch:
             "prompt_text_sha256": sha256(prompt.encode()).hexdigest(),
             "schema_sha256": fingerprint(schema),
             "schema_id": schema.get("$id"),
-            "decision_prompt_version": "scout_next_session_v1"
+            "decision_prompt_version": "scout_next_session_v2"
             if "[SCOUT_NEXT_SESSION_V1]" in prompt
             else "scout_decision_v2"
             if "[SCOUT_DECISION_V2]" in prompt
@@ -215,6 +233,9 @@ class DailyResearch:
             + (
                 "主目标为次日；比较对象来自冻结comparable_ids，可也是入选股。"
                 "研究排序与参与状态分开，保留次日条件和事实引用。"
+                "重点必须有对应kind的driver和具体mechanism，observation需填写给定D1时点、"
+                "指标与预期状态，unknown或待验证/强势继续观察不能支撑focus。"
+                "MA20/EMA12/RSI14/ATR14等固定技术术语可保留，读数/百分比仍须事实占位符。"
                 if nextday
                 else "比较对象必须同类型且unselected。H5等固定期限可保留。"
             )
@@ -235,7 +256,7 @@ class DailyResearch:
                 "\n本次只输出patches补丁JSON，不输出comparisons或完整报告。"
                 "只能修改授权path；索引与证券对应原回复，不能重排数组。"
                 "未授权字段由程序逐字保留；补丁合并后仍校验完整报告。"
-                "日期与资金方向只用已有事实/事件卡展示，不在修改段落里自行写数字。\n"
+                "日期与资金方向只用已有事实/事件卡展示，不在修改段落里自行写读数或数量。\n"
                 + compact({"authorized_fields": plan["context"]})
             )
 
@@ -278,4 +299,5 @@ class DailyResearch:
             "errors": self.last_errors,
             "request_hashes": [r["prompt_sha256"] for r in self.requests],
             "correction": self.correction,
+            "input_checks": self.input_checks,
         }

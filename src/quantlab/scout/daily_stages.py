@@ -6,6 +6,7 @@ from jsonschema import Draft202012Validator
 
 from quantlab.scout.ai import DISCOVERY_SCHEMA
 from quantlab.scout.daily_contract import (
+    OPPORTUNITY_ENCODING,
     REF,
     compact,
     compact_fact_refs,
@@ -232,11 +233,12 @@ def investigation_prompt(packet):
             "facts各行按fact_columns读取；subject_id/metric/period/unit整数是fact_dictionaries索引，"
             "按字典还原不能当数值；value保持原值。technical_fact_indices按事实行从零索引。\n"
         )
+        stage += OPPORTUNITY_ENCODING
     return (
         shared
         + stage
         + SEMANTIC_INSTRUCTION
-        + "你负责判断，程序负责数字格式；量化值仅用[[fact_id]]引用统一facts表，不能自行写数字。"
+        + "你负责判断，程序负责数字格式；量化值仅用[[fact_id]]引用统一facts表，不能自行写读数。"
         "当前仅调查，不输出最终排名或分级。保留反证和来源缺口；首次采集不等于市场新消息，标题不是正文。"
         "event_ids只填本股events的record_id（event-开头），绝不能填ev-来源ID；"
         "若本股events为空，event_ids必须[]；不得自行生成或猜测ID。"

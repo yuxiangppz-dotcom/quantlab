@@ -4,8 +4,8 @@ import re
 from copy import deepcopy
 from decimal import Decimal
 
-VERSION = "daily_facts_v9_next_session"
-SCHEMA_VERSION = "scout_next_session_schema_v1"
+VERSION = "daily_facts_v10_next_session"
+SCHEMA_VERSION = "scout_next_session_schema_v2"
 PARAMETER_VERSION = "next_session_parameters_v1"
 SHARED = """[SCOUT_NEXT_SESSION_V1]
 你负责A股盘前研究，主目标为输入target_session的次日相对强势，主观察一个目标交易日。
@@ -39,7 +39,13 @@ SELECTION = """[STAGE_SELECTION_NEXT_SESSION]
 最多三优先五观察，允许零。按次日机制与真实差异判断，不照抄发现分数或填满名额。
 comparator_id只能来自本股冻结comparable_ids，可以也是入选股；不可挑弱者制造优势。
 独特直接事件没有合适同行时可以null，comparison_strength=insufficient并说明不可比。
-next_session_condition以支持事实、事件和可观察条件表达假设；不以中文长度或关键词证明机制质量。
+next_session_condition绑定支持事实/事件，并声明driver、mechanism和observation。
+driver为relative_demand_persistence/overhead_supply_absorption/company_event_reassessment/unknown。
+observation含window/metric/expected_state：相对延续为D1_close/relative_return_1d/positive；
+结构修复为D1_close/close_to_ma20/positive；正式事件为D1_official_update/official_event_state/
+event_progress_confirmed。没有具体条件可填unknown，不能focus。以上是待观察假设，不是成交条件。
+mechanism和analysis.next_session_thesis说明支持事实如何导致尚未发生的目标日反应，保留反证；
+“待验证”“已有走势较强，继续观察”不是机制。纯量价允许需求延续或卖压消化假设，不强制新闻。
 technical_fact_ids只填本股已给技术事实，二至四项；technical_interpretation短句解释位置和风险。
 price_reaction说明已经反映的变化；不从无上涨断言未定价。thesis写特定假设，risk保留最强反证。
 参与状态observe_only/conditional_review/restricted独立；盘前目标日实际价格及成交均未知。
@@ -123,7 +129,7 @@ def rule_schema(ids):
 CONDITION_SCHEMA = {
     "type": ["object", "null"],
     "additionalProperties": False,
-    "required": ["kind", "fact_ids", "event_id"],
+    "required": ["kind", "fact_ids", "event_id", "driver", "mechanism", "observation"],
     "properties": {
         "kind": {
             "enum": [
@@ -140,8 +146,104 @@ CONDITION_SCHEMA = {
             "items": {"type": "string", "pattern": "^fact:"},
         },
         "event_id": {"type": ["string", "null"], "maxLength": 160},
+        "driver": {
+            "enum": [
+                "relative_demand_persistence",
+                "overhead_supply_absorption",
+                "company_event_reassessment",
+                "unknown",
+            ]
+        },
+        "mechanism": {"type": "string", "minLength": 1, "maxLength": 180},
+        "observation": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["window", "metric", "expected_state"],
+            "properties": {
+                "window": {"enum": ["D1_close", "D1_official_update", "unknown"]},
+                "metric": {
+                    "enum": [
+                        "relative_return_1d",
+                        "close_to_ma20",
+                        "official_event_state",
+                        "unknown",
+                    ]
+                },
+                "expected_state": {"enum": ["positive", "event_progress_confirmed", "unknown"]},
+            },
+        },
     },
 }
+
+# Closed observations define a falsifiable research hypothesis. They neither
+# establish causality nor authorize an order; unknown remains a valid non-focus answer.
+CONDITION_OBSERVATIONS = {
+    "relative_strength_extension": (
+        "relative_demand_persistence",
+        "D1_close",
+        "relative_return_1d",
+        "positive",
+    ),
+    "price_structure_repair": (
+        "overhead_supply_absorption",
+        "D1_close",
+        "close_to_ma20",
+        "positive",
+    ),
+    "official_event_progress": (
+        "company_event_reassessment",
+        "D1_official_update",
+        "official_event_state",
+        "event_progress_confirmed",
+    ),
+}
+
+
+def unspecified_mechanism(text):
+    """Reject placeholder-only prose, not judge causal truth or enforce text length."""
+    text = re.sub(r"\[\[[^\[\]]+\]\]", "", text)
+    text = re.sub(r"[\s，,。；;：:、（）()!?！？]", "", text)
+    for phrase in sorted(
+        (
+            "已有走势较强",
+            "已有走势强势",
+            "已有走势强",
+            "走势较强",
+            "走势强势",
+            "强势延续",
+            "继续走强",
+            "继续观察",
+            "持续观察",
+            "继续关注",
+            "待观察",
+            "待验证",
+            "待确认",
+            "尚待验证",
+            "未验证",
+            "假设",
+            "可能",
+            "目标日",
+            "次日",
+            "明日",
+            "若",
+            "需",
+            "则",
+            "仍",
+            "保持强势",
+            "修复",
+            "延续",
+            "未知",
+            "程序事实",
+            "本股",
+            "事实",
+            "依据",
+            "已发生变化",
+        ),
+        key=len,
+        reverse=True,
+    ):
+        text = text.replace(phrase, "")
+    return not text
 
 
 def adapt_schema(schema):
@@ -277,10 +379,26 @@ def focus_errors(row, facts, events, candidate=None):
         return errors
     if row["evidence_reliability"] == "insufficient":
         errors.append(("final_status", "focus_evidence_insufficient"))
+    if unspecified_mechanism(row["analysis"]["next_session_thesis"]):
+        errors.append(("next_session_thesis", "focus_requires_specific_next_session_mechanism"))
+    if unspecified_mechanism(row["thesis"]):
+        errors.append(("thesis", "focus_requires_specific_selection_reason"))
     if not condition:
         errors.append(
             ("next_session_condition", "focus_requires_structured_next_session_condition")
         )
+    else:
+        observation = condition.get("observation", {})
+        actual = (
+            condition.get("driver"),
+            observation.get("window"),
+            observation.get("metric"),
+            observation.get("expected_state"),
+        )
+        if actual != CONDITION_OBSERVATIONS.get(condition.get("kind")):
+            errors.append(("next_session_condition", "focus_requires_falsifiable_d1_observation"))
+        if unspecified_mechanism(condition.get("mechanism", "")):
+            errors.append(("next_session_condition", "focus_requires_specific_causal_link"))
     if not row.get("invalidation_rule"):
         errors.append(("invalidation_rule", "focus_requires_observable_invalidation"))
     if (

@@ -142,7 +142,7 @@ def test_actual_three_requests_d1_all_24_and_technical_fact_transport(tmp_path, 
     for prompt, schema in captured:
         assert "[SCOUT_NEXT_SESSION_V1]" in prompt
         assert "[SCOUT_DECISION_V2]" not in prompt
-        assert "scout_next_session_schema_v1" in schema["$id"]
+        assert "scout_next_session_schema_v2" in schema["$id"]
         assert len(prompt) <= POLICY["max_input_chars"]
         assert (
             len(prompt.encode()) + len(json.dumps(schema).encode()) + len(SYSTEM.encode()) + 1000
@@ -172,6 +172,39 @@ def test_actual_three_requests_d1_all_24_and_technical_fact_transport(tmp_path, 
     manifest = json.loads((path / "manifest.json").read_text())
     assert manifest["report_sha256"] == fingerprint(json.loads(frozen_before))
     assert (path / "report.html").exists()
+
+
+def test_deep_baseline_budget_failure_precedes_first_model_request(tmp_path, monkeypatch):
+    data = tmp_path / "synthetic-data"
+    d0 = make_synthetic_technical_market(data)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "synthetic-fixture-not-a-real-key")
+    monkeypatch.delenv("TUSHARE_TOKEN", raising=False)
+    config = DEFAULT_CONFIG | {
+        "provider": "deepseek",
+        "daily_delivery": True,
+        "next_session_selection": True,
+        "opportunity_selection": True,
+        "tushare_news_sources": [],
+        "tushare_industry": False,
+        "tushare_disclosures": False,
+        "max_output_tokens": 32768,
+        "candidate_limit": 24,
+    }
+    with (
+        patch("quantlab.scout.pipeline.latest_completed_session", return_value=d0),
+        patch("quantlab.scout.daily_contract.selection_instruction", return_value="中" * 180001),
+        patch("quantlab.scout.ai.DeepSeekResearch.ask") as transport,
+    ):
+        _, report = run_scout(
+            data, tmp_path / "runs", config, online=True, daily_journal=tmp_path / "requests"
+        )
+    transport.assert_not_called()
+    assert report["status"] == "incomplete"
+    assert report["daily_delivery"]["requests"] == 0
+    assert report["selection"]["selected"] == []
+    assert not report.get("nextday_freeze")
+    record = json.loads((tmp_path / "requests" / "00-budget-check-01.json").read_text())
+    assert record["errors"] == ["daily_input_char_budget", "daily_input_byte_budget"]
 
 
 def test_saved_real_24_input_with_explicit_synthetic_technical_pressure(tmp_path):

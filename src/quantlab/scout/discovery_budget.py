@@ -6,13 +6,17 @@ from collections import defaultdict
 
 from quantlab.scout.models import fingerprint, finite
 
-VERSION = "evidence_marginal_v2"
+VERSION = "evidence_marginal_v3_source_linked"
 FORMULA = (
-    "priority=60*direct_official_body_event + 40*qualified_market_anomaly + "
+    "priority=max(60*direct_official_body_event, 40*qualified_market_anomaly, "
+    "45*source_bound_non_sentiment_hypothesis) + "
     "2*body + 2*direct + 2*official + possible_update + timely; "
     "duplicate_hypothesis_overlap costs 1 per already allocated member; "
     "remaining attention/title/indirect leads compete for at most floor(limit/4) "
-    "exploration slots. Coefficients are engineering parameters, not probabilities."
+    "exploration slots; source-bound hypotheses require admitted news/official-PDF body refs, "
+    "summary and counterargument, "
+    "and remain unverified model linkages. No exploration seats are forced. "
+    "Coefficients are engineering parameters, not probabilities."
 )
 MARKET_ROUTES = {"量价异动", "趋势突破", "回撤放量", "温和放量"}
 OFFICIAL_RELATIONS = {
@@ -33,6 +37,7 @@ def build_dynamic_pool(
     diagnostics: dict | None = None,
     *,
     asof: str | None = None,
+    hypothesis_sources: dict[str, dict] | None = None,
 ) -> list[dict]:
     """Recall independently of momentum; deduplicate stocks and event clusters.
 
@@ -44,12 +49,84 @@ def build_dynamic_pool(
         raise ValueError("Research limit must be nonnegative")
     route_members = defaultdict(set)
     clues = defaultdict(list)
+    clusters = {}
     for hypothesis in hypotheses:
         route = hypothesis.get("route_type")
         relation = hypothesis.get("relation", "unknown")
         route = route or ("event" if relation in OFFICIAL_RELATIONS else "sector")
-        for code in set(hypothesis.get("instrument_ids", [])) & set(universe):
-            clues[code].append(hypothesis)
+        codes = sorted(set(hypothesis.get("instrument_ids", [])) & set(universe))
+        if not codes:
+            continue
+        refs = sorted(set(hypothesis.get("evidence_ids", [])))
+        summary = str(hypothesis.get("summary") or "").strip()
+        counterargument = str(hypothesis.get("counterargument") or "").strip()
+        # Caller supplies exact evidence admitted by the time/source boundary.
+        # A string ev-id or a candidate's own unioned references is not proof.
+        # Neither a source binding nor a body validates the economic linkage.
+        eligible_refs = [
+            ref
+            for ref in refs
+            if (source := (hypothesis_sources or {}).get(ref))
+            and source.get("kind") in {"news", "official_pdf_text_unverified"}
+            and str(source.get("body") or "").strip()
+            and str(source.get("body") or "").strip() != str(source.get("title") or "").strip()
+        ]
+        source_bound = bool(
+            eligible_refs
+            and summary
+            and counterargument
+            and relation in {"direct", "supply_chain", "theme"}
+            and route not in {"attention", "sentiment"}
+        )
+        priority_codes = [
+            code
+            for code in codes
+            if source_bound
+            and any(
+                not hypothesis_sources[ref].get("instrument_ids")
+                or code in hypothesis_sources[ref]["instrument_ids"]
+                for ref in eligible_refs
+            )
+        ]
+        overlap_group = "hyp-source-" + fingerprint([relation, route, refs or summary])[:20]
+        cluster_id = (
+            "hyp-linked-" + fingerprint([relation, route, refs, summary, counterargument])[:20]
+        )
+        cluster = clusters.setdefault(
+            cluster_id,
+            {
+                "hypothesis_id": cluster_id,
+                "allocation_overlap_group_id": overlap_group,
+                "opportunity_type": "source_linked_hypothesis",
+                "scope": "company_or_policy_industry_chain",
+                "relation": relation,
+                "route_type": route,
+                "source_ids": refs,
+                "instrument_ids": [],
+                "first_known_at": None,
+                "first_seen_at": asof,
+                "recent_update": None,
+                "increment": "model-proposed linkage; source increment is unverified",
+                "support": summary,
+                "counterevidence": counterargument or "linkage and relevance remain unknown",
+                "official_source": False,
+                "verification_state": "hypothesis_requires_source_and_economic_link_review",
+                "source_bound_research_priority": False,
+                "research_priority_instrument_ids": [],
+                "research_priority_source_ids": eligible_refs,
+                "timeliness_window": "source publication time and D1 mechanism require review",
+                "coverage_limits": "bound source references are not validated catalysts",
+            },
+        )
+        cluster["instrument_ids"] = sorted(set(cluster["instrument_ids"]) | set(codes))
+        cluster["research_priority_instrument_ids"] = sorted(
+            set(cluster["research_priority_instrument_ids"]) | set(priority_codes)
+        )
+        cluster["source_bound_research_priority"] = bool(
+            cluster["research_priority_instrument_ids"]
+        )
+        for code in codes:
+            clues[code].append((cluster_id, code in priority_codes))
             route_members[route].add(code)
             candidate = universe[code]
             label = f"信息关联:{relation}"
@@ -65,7 +142,7 @@ def build_dynamic_pool(
         if "热度观察" not in universe[code].routes:
             universe[code].routes.append("热度观察")
 
-    records, clusters = {}, {}
+    records = {}
     for code, candidate in sorted(universe.items()):
         opportunity = candidate.context.get("opportunity", {})
         events = opportunity.get("events", [])
@@ -102,7 +179,8 @@ def build_dynamic_pool(
             event.get("novelty") == "possible_update_requires_verification" for event in usable
         )
         timely = any(event.get("next_session_timely", False) for event in usable)
-        cluster_ids = []
+        cluster_ids = [cluster_id for cluster_id, _ in clues[code]]
+        linked = any(qualified for _, qualified in clues[code])
         for event in usable:
             cluster_id = (
                 "hyp-"
@@ -161,8 +239,7 @@ def build_dynamic_pool(
             }
         exploration = recalled and not strong and not qualified_market
         value = (
-            60 * bool(strong)
-            + 40 * qualified_market
+            max(60 * bool(strong), 40 * qualified_market, 45 * linked)
             + 2 * body
             + 2 * direct
             + 2 * official
@@ -182,13 +259,17 @@ def build_dynamic_pool(
                 "possible_update_not_proven_increment": update,
                 "timely": timely,
                 "qualified_market_anomaly": qualified_market,
+                "source_bound_non_sentiment_hypothesis": linked,
             },
             "hypothesis_ids": sorted(set(cluster_ids)),
+            "allocation_overlap_group_ids": sorted(
+                {clusters[key].get("allocation_overlap_group_id", key) for key in cluster_ids}
+            ),
             "recall_routes": memberships,
             "research_cost": 1,
             "unresolved_question": (
                 "verify event novelty/economic linkage and strongest restriction"
-                if usable
+                if usable or linked
                 else "test next-session price hypothesis; catalyst unknown"
             ),
         }
@@ -207,7 +288,9 @@ def build_dynamic_pool(
 
         def ordering(code):
             record = records[code]
-            overlap = max((exposure[key] for key in record["hypothesis_ids"]), default=0)
+            overlap = max(
+                (exposure[key] for key in record["allocation_overlap_group_ids"]), default=0
+            )
             score = universe[code].score if finite(universe[code].score) else -1
             return (
                 -(record["priority"] - overlap),
@@ -218,12 +301,12 @@ def build_dynamic_pool(
         code = min(eligible, key=ordering)
         record = records[code]
         record["marginal_priority_at_allocation"] = record["priority"] - max(
-            (exposure[key] for key in record["hypothesis_ids"]), default=0
+            (exposure[key] for key in record["allocation_overlap_group_ids"]), default=0
         )
         selected.append(code)
         remaining.remove(code)
         exploration_used += int(record["exploration"])
-        for key in record["hypothesis_ids"]:
+        for key in record["allocation_overlap_group_ids"]:
             exposure[key] += 1
     funnel, exclusions = [], []
     for code, record in records.items():

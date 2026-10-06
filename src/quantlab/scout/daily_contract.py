@@ -17,6 +17,7 @@ from quantlab.scout.daily_semantics import (
     claim_errors,
     prose_errors,
     render_claim,
+    without_technical_labels,
 )
 from quantlab.scout.daily_semantics import (
     INSTRUCTION as SEMANTIC_INSTRUCTION,
@@ -46,7 +47,7 @@ ANALYSIS_FIELDS = (
 REF = re.compile(r"\[\[([^\[\]]+)\]\]")
 FACT_COLUMNS = ("subject_id", "metric", "period", "value", "unit", "source_ann_date")
 INSTRUCTION = """你负责判断与比较，程序负责数字与格式。输入facts是唯一量化事实表。
-market_view只写定性概述，不写数字、日期或任何占位符。每项说明只写短句，避免复述输入。
+market_view只写定性概述，不写数值、日期或任何占位符。每项说明只写短句，避免复述输入。
 只有fact:开头的事实ID能写成[[fact_id]]；ev-来源ID仅进evidence_ids，不能做事实占位符。
 analysis.event_ids只填本股events.record_id（event-开头），不是source_ids或ev-来源ID。
 analysis.scale_fact_ids须为本股实际引用的事实；next_observation_date无来源就null。
@@ -56,7 +57,8 @@ analysis.scale_fact_ids须为本股实际引用的事实；next_observation_date
 primary_type=insufficient_evidence时rank=null且final_status=unselected；其余候选连续整数排名。
 其他股票即使未选也连续排名；最多三重点五观察。入选比较对象须同类型未选者。
 所有说明简短，保留最强反证、失效条件、来源缺口，不声称搜索或人工核实。
-正文不得自己写任何数字、日期、资金流方向或数量大小比较；需要数量时使用[[fact_id]]。
+正文不得自己写报价、指标读数、日期、资金流方向或数量大小比较；数量用[[fact_id]]。
+固定技术名称和窗口按术语约定书写，其参数不是指标读数；不能由术语附加未给数值。
 不用重复输出fact_ids，程序从正文占位符和scale_fact_ids自动汇总事实清单。
 事实卡含主体、期间、值和单位；同行数量的主体不从中文推断。
 行业统计只描述当时合格成员，不能证明个股受益。不要将首次采集当首次市场消息。
@@ -89,11 +91,125 @@ def selection_instruction(packet):
         "technical_fact_indices是facts插入顺序从零计的技术事实索引；"
         "fact_metadata补充非空公告日和缺数状态。\n"
     )
-    return NEXT_SHARED + facts_only + encoding + SEMANTIC_INSTRUCTION + NEXT_SELECTION
+    return (
+        NEXT_SHARED
+        + facts_only
+        + encoding
+        + OPPORTUNITY_ENCODING
+        + SEMANTIC_INSTRUCTION
+        + NEXT_SELECTION
+    )
 
 
 def compact(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+
+
+OPPORTUNITY_ENCODING = (
+    "opportunity_hypotheses仅列本池主体和ID。catalog_row指向opportunity_catalog.rows；"
+    "按columns取字段，-1表示字段未提供，其余整数是strings索引（包括嵌套数组），null/bool保持原值，"
+    "{$number:值}才是原始数值。完整支持、反证、来源和时间均在此无损目录，"
+    "不能把研究假设当已核实催化。\n"
+    "candidate_text_fields列出的候选注释数组为candidate_text_dictionary索引；"
+    "解码保留完整技术缺口、风险和召回路线，绝不能当事实数值。\n"
+)
+
+
+def compact_candidate_annotations(packet):
+    fields = ["cautions", "technical_gaps", "recall_routes", "source_gaps", "type_hints"]
+    strings = sorted({s for c in packet["candidates"] for k in fields for s in c.get(k, [])})
+    indices = {s: i for i, s in enumerate(strings)}
+    for candidate in packet["candidates"]:
+        for key in fields:
+            if key in candidate:
+                candidate[key] = [indices[s] for s in candidate[key]]
+    packet["candidate_text_fields"] = fields
+    packet["candidate_text_dictionary"] = strings
+
+
+def unpack_candidate_annotations(packet):
+    candidates = deepcopy(packet["candidates"])
+    for candidate in candidates:
+        for key in packet.get("candidate_text_fields", []):
+            if key in candidate:
+                candidate[key] = [packet["candidate_text_dictionary"][i] for i in candidate[key]]
+    return candidates
+
+
+def compact_opportunity_catalog(packet):
+    """Losslessly encode repeated hypothesis metadata, independently of quantitative facts."""
+    rows = packet.get("opportunity_hypotheses", [])
+    if not rows:
+        return
+    columns = sorted(set().union(*(r.keys() for r in rows)) - {"hypothesis_id", "instrument_ids"})
+    strings, indices = [], {}
+
+    def encode(value):
+        if isinstance(value, str):
+            if value not in indices:
+                indices[value] = len(strings)
+                strings.append(value)
+            return indices[value]
+        if value is None or isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return {"$number": value}
+        if isinstance(value, list):
+            return [encode(v) for v in value]
+        if isinstance(value, dict):
+            return {k: encode(v) for k, v in value.items()}
+        raise ValueError("Unsupported opportunity metadata")
+
+    metadata = []
+    descriptors = []
+    for index, row in enumerate(rows):
+        # Absent fields must remain absent rather than become explicit null.
+        metadata.append([encode(row[k]) if k in row else -1 for k in columns])
+        descriptors.append(
+            {
+                "hypothesis_id": row["hypothesis_id"],
+                "instrument_ids": row["instrument_ids"],
+                "catalog_row": index,
+            }
+        )
+    packet["opportunity_hypotheses"] = descriptors
+    packet["opportunity_catalog"] = {
+        "encoding": "text_dictionary_v1",
+        "absent": -1,
+        "columns": columns,
+        "strings": strings,
+        "rows": metadata,
+    }
+
+
+def unpack_opportunity_catalog(packet):
+    """Restore scoped provenance for audits without changing the model packet."""
+    catalog = packet.get("opportunity_catalog")
+    if not catalog:
+        return deepcopy(packet.get("opportunity_hypotheses", []))
+
+    def decode(value):
+        if isinstance(value, bool) or value is None:
+            return value
+        if isinstance(value, int):
+            return catalog["strings"][value]
+        if isinstance(value, list):
+            return [decode(v) for v in value]
+        if isinstance(value, dict):
+            if "$number" in value:
+                return value["$number"]
+            return {k: decode(v) for k, v in value.items()}
+        raise ValueError("Invalid opportunity catalog cell")
+
+    result = []
+    for descriptor in packet.get("opportunity_hypotheses", []):
+        cells = catalog["rows"][descriptor["catalog_row"]]
+        row = {k: deepcopy(descriptor[k]) for k in ("hypothesis_id", "instrument_ids")}
+        for key, value in zip(catalog["columns"], cells, strict=True):
+            if value != -1 or isinstance(value, bool):
+                row[key] = decode(value)
+        result.append(row)
+    return result
 
 
 def clean_paths(value):
@@ -329,7 +445,24 @@ def research_packet(packet):
             "technical_prices": "D0_factor_anchor_adjusted_research_prices_not_executable_prices",
             "data_units": "amount_CNY_volume_shares_turnover_ratio_circ_mv_CNY",
         }
-        result["opportunity_hypotheses"] = clean_paths(packet.get("opportunity_hypotheses", []))
+        scoped_codes = {c["instrument_id"] for c in candidates}
+        result["opportunity_hypotheses"] = [
+            {
+                **clean_paths(deepcopy(h)),
+                "instrument_ids": sorted(scoped_codes & set(h.get("instrument_ids", []))),
+                **(
+                    {
+                        "research_priority_instrument_ids": sorted(
+                            scoped_codes & set(h["research_priority_instrument_ids"])
+                        )
+                    }
+                    if "research_priority_instrument_ids" in h
+                    else {}
+                ),
+            }
+            for h in packet.get("opportunity_hypotheses", [])
+            if scoped_codes & set(h.get("instrument_ids", []))
+        ]
         # Comparator set is frozen from industry/type overlap and score proximity,
         # before final model ranking; an equally strong selected peer is allowed.
         for candidate in candidates:
@@ -361,7 +494,8 @@ def research_packet(packet):
                 candidate["technical_gaps"] = ["disabled_by_fixed_event_only_profile"]
         elif profile == "technical_only":
             result["facts"] = {
-                k: v for k, v in result["facts"].items()
+                k: v
+                for k, v in result["facts"].items()
                 if ":technical:" in k or ":market:" in k or v[0].startswith("industry:")
             }
             result["evidence"] = []
@@ -453,6 +587,11 @@ def compact_fact_refs(packet):
                     ann_date
                 )
         result["fact_columns"] = list(FACT_COLUMNS[:-1])
+        result["opportunity_hypotheses"] = remap_generated_refs(
+            result.get("opportunity_hypotheses", []), aliases
+        )
+        compact_opportunity_catalog(result)
+        compact_candidate_annotations(result)
     return result, aliases
 
 
@@ -473,6 +612,9 @@ def referenced_facts(row):
     texts = [row[f] for f in FIELDS] + [row["analysis"][f] for f in analysis_fields(row)]
     texts += [row.get(k, "") for k in ("technical_interpretation", "price_reaction")]
     texts += list(row["trade_conditions"].values())
+    condition = row.get("next_session_condition")
+    if isinstance(condition, dict) and isinstance(condition.get("mechanism"), str):
+        texts.append(condition["mechanism"])
     claims = row.get("semantic_claims", [])
     if not Draft202012Validator(CLAIM_SCHEMA).is_valid(claims):
         claims = []
@@ -842,6 +984,8 @@ def validate_output(output, packet):
             "trade_known": row["trade_conditions"]["known"],
             "trade_unknown": row["trade_conditions"]["unknown"],
         }
+        if nextday and row.get("next_session_condition"):
+            fields["condition_mechanism"] = row["next_session_condition"]["mechanism"]
         for field, text in fields.items():
             for issue in prose_errors(text, facts, (code, peer)):
                 error(code, field, issue, actual=text)
@@ -849,6 +993,7 @@ def validate_output(output, packet):
             prose = re.sub(
                 r"(?<![A-Za-z0-9])[HD](?:1|2|3|5|10)(?![A-Za-z0-9])", "固定观察期限", prose
             )
+            prose = without_technical_labels(prose)
             for subject in (code, peer):
                 if subject:
                     prose = prose.replace(subject, "证券")
@@ -879,7 +1024,7 @@ def validate_output(output, packet):
             if node not in source and node.replace("-", "") not in source:
                 error(code, "next_observation_date", "node_not_in_shown_source")
     if isinstance(output.get("market_view"), str):
-        if re.search(r"\d|\[\[", output["market_view"]):
+        if re.search(r"\d|\[\[", without_technical_labels(output["market_view"])):
             error("all", "market_view", "market_view_qualitative_only")
     return errors
 
@@ -983,6 +1128,10 @@ def render_output(output, packet):
             )
             for field in ("technical_interpretation", "price_reaction"):
                 row[field] = render(row[field])
+            if row.get("next_session_condition"):
+                row["next_session_condition"]["mechanism"] = render(
+                    row["next_session_condition"]["mechanism"]
+                )
         else:
             row["invalidation_observation"] = rule_text(row.get("invalidation_rule"))
     result["render_version"] = packet.get("version", VERSION)

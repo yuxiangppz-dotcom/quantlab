@@ -45,7 +45,21 @@ fund_windows_same_sign/amount_multiple，绑定subject_id、fact_ids、periods�
 正文里的核心事实引用须为单独分句，只可加本股/同行/行业/事实/资金反证/当时日线等中性标签。
 禁止在事实引用分句附加“走强/一致/量比/改善”等自由解释，含义由程序事实和声明渲染。
 未来条件假设另写句子，明确“若/需/待观察”，不冒充已发生事实。成交额倍数不是成交量量比。
+MA5/MA10/MA20/MA60、EMA12/EMA26、RSI14/ATR14/MACD及固定日线窗口是术语，
+可用事实引用解释；报价、百分比、倍数或指标读数仍必须使用事实占位符。
 """
+
+TECHNICAL_LABEL = re.compile(
+    r"(?<![A-Za-z0-9_.+\-])"
+    r"(?:MA(?:5|10|20|60)|EMA(?:12|26)|RSI14|ATR14|MACD|(?:5|10|20|60|120)日)"
+    r"(?![A-Za-z0-9_.%％元万亿倍手笔])",
+    re.IGNORECASE,
+)
+
+
+def without_technical_labels(text):
+    """Strip finite indicator/window names, never adjacent values or numeric suffixes."""
+    return TECHNICAL_LABEL.sub("技术术语", text)
 
 
 def claim_errors(claims, facts, allowed):
