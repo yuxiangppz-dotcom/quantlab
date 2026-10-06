@@ -71,6 +71,28 @@ uv run python -m quantlab.scout.free_cloud --help
 
 ## 需求对应与未验证事项
 
+实验 profile 是同池研究输入剥离诊断：event_only 移除技术/市场事实，technical_only 移除事件/正文/先前调查语境；发现池仍来自混合召回。因此不能称全链路纯事件/纯技术因果消融，也不日常重复付费跑 A/B。
+
+### 2026-10-06 实际封版
+
+实现引擎 `f5f78ae7075909161270b7f44d1349f9331a532a`，应用 `8e305e04ca37e17343f6baa565d2dd388ddc283c`，两者已推送。公开 CI 37449341432、私有实际固定容器 check 37449980624 成功，确认 v9 Prompt/schema，零供应商/模型调用。
+
+先将已有 Scout 孤立副本的 120 个交易日（4/9 至 9/30）复制到全新 marked cloud volume，核验 242 必需分区与日线/复权证券匹配，约 38.6 MB；较早原覆盖受限，不能声称全市场每股 120 日完整。随后用独立维护领取将数据连同旧云档恢复归档，供应商/模型调用 0，375 次有限归档 API，维护结束无活跃写入者，云存储约 31.5 MB。原数据哈希核对、旧档保留。
+
+缓存完成后切换 Worker 与私库变量到应用 8e305e0，enabled=true、workflow active。原 08:03/23/43 保留，新增 18:10/20:10 独立观察与晨间有界补齐。Worker deployment ID d99825d2-ef05-4209-b9a2-98e4b8c037b2。真实观察验收 37450101970 回执另行记录；不能用 check 成功代替观察完成或新模型成功。
+
+最终本机 Python 378 passed / 1 skipped、Ruff、锁和 diff 检查通过；Node 13 passed。桌面 `Scout次日升级_2026-10-06` 包含 Git-only ZIP、真实回放、合成三请求与六项卡示例、实际版本验收及 Astra 审查说明。ZIP 私密凭据匹配 0。未修改原 canonical、未追加付费预测/微信测试、未下单、未恢复优化或清理未决领取。
+
+真实云端观察 37450101970 SUCCESS：隔离行情刷新 4 次 provider 调用、模型 0；120 日数据 ready，扫描新预测 0，原始分母 0、命中率 null，没有用空集宣称效果。回执和观察归档持久保存。
+
+收尾审查发现动态日期窗口进入运行配置指纹，可能把同一封版的多个交易日拆成多个统计版本。独立修复提交 `810c111545599f65f49a9dfcfc4e91494bb5bb36`：有可核验 engine/installed config 时，版本分组忽略动态运行指纹，但单份观察保留该指纹；未封版实验继续保留运行指纹隔离。新增跨日期分组回归通过，完整 378 项再次通过。
+
+**最终安装版本**：应用 `c911350a41786c0de457ca02561ce5b3ae9bf3c5`、引擎 `810c111545599f65f49a9dfcfc4e91494bb5bb36`，均已推送。公开 CI 37450820137 和私库固定容器 check 37451130230 SUCCESS；Worker ID 96bf6c9e-3414-49ac-b3c0-974fdaf6b302。两端实际 APP 相同，enabled=true、workflow active、active=false。选股配置、Prompt/schema 与初始 v9 封版一致，预算未改变；此前观察验收是初始封版，统计修复以离线回归与最终真实引擎检查核验，没有重复行情/模型验收冒充质量提升。
+
+最终真实引擎 Prompt SHA256 `42401c2f282304f5fbd5d84689b434b524aae8c808ad393a9d8c887ad4a8ef7b`、schema SHA256 `7b796ace408787d0a54cb96716eabf535b745d94dc5498f2a1f74060f3c9c334`、固定配置 JSON 内容指纹 `590e1b9939c36e36085904023d9a0f31f99bb5c5544429a62b803b62fc075cf2`。该配置指纹是规范 JSON hash，报告 release_identity 中 installed config 则是封版文件字节 SHA，二者不能混用。
+
+结论：工程/部署与自动观察流程已验收；新版真实模型完整运行待 10/8 正常盘前；选股效果及可信净收益优势均待成熟前瞻。普通文档提交不自动改变已安装应用/引擎。
+
 | 要求 | 实现/证据 | 状态 |
 |---|---|---|
 | A D1主目标与旧H5兼容 | nextday_contract/nextday_tracking，旧reader路由隔离 | 已实现 |
