@@ -589,15 +589,21 @@ def summarize_nextday(observations, *, eligible_target_sessions=None):
     coverage_denominator = len(coverage_days) if coverage_days is not None else len(accepted)
     recommendation_days = sum(g["original_count"] > 0 for g in groups)
     per_version = {}
+    version_identities = {}
     for item in accepted:
-        key = fingerprint(item.get("version_identity", {}))
+        identity = dict(item.get("version_identity", {}))
+        # Dates/cache paths belong to run provenance, not the sealed experiment version.
+        if identity.get("engine_commit") and identity.get("installed_config_sha256"):
+            identity.pop("runtime_config_fingerprint", None)
+        key = fingerprint(identity)
+        version_identities[key] = identity
         per_version.setdefault(key, []).append(item)
     version_groups = {}
     for key, items in per_version.items():
         focus_groups = [i["controls"]["groups"]["focus"] for i in items]
         valid = sum(g["observable_count"] for g in focus_groups)
         version_groups[key] = {
-            "identity": items[0].get("version_identity", {}),
+            "identity": version_identities[key],
             "target_sessions": [i["target_session"] for i in items],
             "formal_days": len(items),
             "observable_stocks": valid,

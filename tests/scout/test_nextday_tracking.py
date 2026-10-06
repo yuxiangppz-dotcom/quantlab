@@ -283,6 +283,24 @@ def test_summary_abstention_unknown_denominators_and_duplicate_guard():
     assert calendar["missing_formal_target_sessions"] == ["2026-10-09"]
     with pytest.raises(ValueError, match="Multiple formal"):
         summarize_nextday([base, {**base, "run_id": "b"}])
+    identity = {
+        "engine_commit": "fixed-engine",
+        "installed_config_sha256": "fixed-config",
+        "runtime_config_fingerprint": "d0-window-one",
+    }
+    second_identity = {**identity, "runtime_config_fingerprint": "d0-window-two"}
+    paired = summarize_nextday(
+        [
+            {**base, "version_identity": identity},
+            {
+                **base,
+                "run_id": "b",
+                "target_session": "2026-10-09",
+                "version_identity": second_identity,
+            },
+        ]
+    )
+    assert len(paired["version_groups"]) == 1
 
 
 def test_late_cloud_publication_overrides_local_and_missing_is_unknown(sample):
