@@ -48,7 +48,7 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
     targets = {}
     invalid_refs = {}
     for error in errors:
-        if error["code"].startswith("unknown_or_wrong_subject_fact:"):
+        if error["code"].startswith(("unknown_or_wrong_subject_fact:", "unknown_fact:")):
             invalid_refs.setdefault(error["path"][0], set()).add(error["code"].split(":", 1)[1])
 
     def add(path, op="replace"):
@@ -100,6 +100,20 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
                 [*base, "analysis", "scale_fact_ids"]
             ):
                 continue
+            if field in current_analysis_fields and (
+                code
+                in {
+                    "quantitative_prose_requires_fact_placeholder",
+                    "unsupported_microstructure_assertion",
+                    "core_fact_clause_requires_neutral_label",
+                    "fund_improvement_requires_cross_time_facts",
+                    "fund_consistency_requires_structured_claim",
+                    "unbound_quantitative_interpretation",
+                }
+                or code.startswith("unknown_fact:")
+            ):
+                if add([*base, "analysis", field]):
+                    continue
             return None
         if code.startswith("placeholder_not_declared:"):
             if not add([*base, "fact_ids"]):

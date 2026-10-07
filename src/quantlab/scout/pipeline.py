@@ -1276,7 +1276,19 @@ def run_scout(
                     record_input_capacity(deep_route_diagnostics, capacity)
                     progress(f"首次模型调用前预算预检通过，容量上限内保留{len(pool)}股")
                 discovery, raw = client.ask(
-                    bounded_prompt(discovery_prompt), discovery_contract(nextday=nextday_mode)
+                    bounded_prompt(discovery_prompt),
+                    discovery_contract(
+                        nextday=nextday_mode,
+                        instrument_ids=(
+                            {c["instrument_id"] for c in cheap_pool}
+                            | {
+                                code
+                                for e in discovery_evidence
+                                for code in e.get("instrument_ids", [])
+                                if code in universe
+                            }
+                        ),
+                    ),
                 )
             else:
                 discovery, raw = client.ask(

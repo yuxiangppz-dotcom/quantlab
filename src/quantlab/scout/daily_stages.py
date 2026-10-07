@@ -20,7 +20,18 @@ from quantlab.scout.decision_contract import INVESTIGATION, SCHEMA_VERSION, SHAR
 from quantlab.scout.opportunity_ai import investigation_schema
 
 
-def discovery_contract(*, nextday=False):
+def hypothesis_subjects(instrument_ids=None):
+    """The subject domain is the shown input, never an arbitrary group size."""
+    node = {"type": "array", "uniqueItems": True, "items": {"type": "string", "maxLength": 16}}
+    if instrument_ids is not None:
+        ids = sorted(set(instrument_ids))
+        node["maxItems"] = len(ids)
+        if ids:
+            node["items"]["enum"] = ids
+    return node
+
+
+def discovery_contract(*, nextday=False, instrument_ids=None):
     schema = deepcopy(DISCOVERY_SCHEMA)
     schema["$id"] = "urn:quantlab:" + SCHEMA_VERSION + ":discovery"
     if nextday:
@@ -32,11 +43,7 @@ def discovery_contract(*, nextday=False):
     props = rows["items"]["properties"]
     for key in ("summary", "counterargument"):
         props[key] = {"type": "string", "minLength": 1, "maxLength": 180}
-    props["instrument_ids"] = {
-        "type": "array",
-        "maxItems": 4,
-        "items": {"type": "string", "maxLength": 16},
-    }
+    props["instrument_ids"] = hypothesis_subjects(instrument_ids)
     props["source_urls"] = {
         "type": "array",
         "maxItems": 3,
@@ -176,11 +183,7 @@ def investigation_contract(pool, packet=None):
     properties = hypotheses["items"]["properties"]
     for key in ("summary", "counterargument"):
         properties[key] = {"type": "string", "minLength": 1, "maxLength": 180}
-    properties["instrument_ids"] = {
-        "type": "array",
-        "maxItems": 4,
-        "items": {"type": "string", "maxLength": 16},
-    }
+    properties["instrument_ids"] = hypothesis_subjects(c["instrument_id"] for c in pool)
     properties["source_urls"] = {
         "type": "array",
         "maxItems": 3,
