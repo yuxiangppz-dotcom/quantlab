@@ -74,7 +74,7 @@ def test_failed_empty_view_does_not_suggest_model_found_no_opportunity():
         assert "未通过校验" in view and "重点股" not in view
 
 
-def test_six_card_items_and_source_gaps_shared_by_markdown_html_without_audit_dump():
+def test_six_card_items_preserve_audit_coverage_without_global_source_dump():
     from quantlab.scout.concise_report import card_content
 
     saved = report()
@@ -96,9 +96,6 @@ def test_six_card_items_and_source_gaps_shared_by_markdown_html_without_audit_du
     before = deepcopy(saved)
     for view in (render_report(saved), render_html_report(saved)):
         for required in (
-            "news:cls",
-            "akshare:hot",
-            "local:comments",
             "2026-10-05T18:00",
             "后续假设",
             "比较对象 c",
@@ -107,4 +104,6 @@ def test_six_card_items_and_source_gaps_shared_by_markdown_html_without_audit_du
         ):
             assert required in view
         assert "候选阶段诊断" not in view
+        for source in ("news:cls", "akshare:hot", "local:comments"):
+            assert source not in view
     assert saved == before

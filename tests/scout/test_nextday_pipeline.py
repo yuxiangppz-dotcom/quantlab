@@ -69,7 +69,10 @@ def make_synthetic_technical_market(root):
     return d0
 
 
-def test_actual_three_requests_d1_all_24_and_technical_fact_transport(tmp_path, monkeypatch):
+@pytest.mark.parametrize("program_assembly", [False, True])
+def test_actual_three_requests_d1_all_24_and_technical_fact_transport(
+    tmp_path, monkeypatch, program_assembly
+):
     data = tmp_path / "synthetic-data"
     d0 = make_synthetic_technical_market(data)
     monkeypatch.setenv("DEEPSEEK_API_KEY", "synthetic-fixture-not-a-real-key")
@@ -109,14 +112,50 @@ def test_actual_three_requests_d1_all_24_and_technical_fact_transport(tmp_path, 
                     ],
                 }
             else:
-                result = {"market_view": "合成纯量价假设，非真实预测", "comparisons": rows}
-                assert validate_output(result, packet) == []
+                if program_assembly:
+                    from quantlab.scout.selection_judgments import decode_model_packet, errors
+
+                    packet = decode_model_packet(packet)
+
+                    result = {"market_view": "合成纯量价假设，非真实预测", "comparisons": []}
+                    facts = unpack_facts(packet)
+                    for i, candidate in enumerate(packet["candidates"]):
+                        code = candidate["instrument_id"]
+                        own = next(
+                            ref
+                            for ref, f in facts.items()
+                            if f["subject_id"] == code and f["metric"] == "close_to_ma20"
+                        )
+                        result["comparisons"].append(
+                            {
+                                "instrument_id": code,
+                                "primary_type": "trend_continuation",
+                                "final_status": "watch" if i < 5 else "unselected",
+                                "evidence_reliability": "program_facts",
+                                "comparison_strength": "weak",
+                                "comparator_id": None,
+                                "condition_id": code + ":price_structure_repair",
+                                "support_fact_ids": [own],
+                                "counter_fact_ids": [],
+                                "reason": "价格位置修复可能持续，等待目标日观察",
+                                "counterargument": "没有独立经营催化，可能回撤",
+                                "difference": "同行比较不足，不声称优于同行",
+                                "independent_basis": "纯量价假设，未验证",
+                                "unknowns": "目标日需求未知",
+                                "mechanism": "若套牢卖压得到消化，目标日价格才可能维持均线上方",
+                            }
+                        )
+                    assert errors(result, packet) == []
+                else:
+                    result = {"market_view": "合成纯量价假设，非真实预测", "comparisons": rows}
+                    assert validate_output(result, packet) == []
         return result, {"usage": {"total_tokens": 100}, "choices": []}
 
     config = DEFAULT_CONFIG | {
         "provider": "deepseek",
         "daily_delivery": True,
         "next_session_selection": True,
+        "program_assembled_selection": program_assembly,
         "opportunity_selection": True,
         "tushare_news_sources": [],
         "tushare_industry": False,
@@ -139,6 +178,13 @@ def test_actual_three_requests_d1_all_24_and_technical_fact_transport(tmp_path, 
     assert report["status"] == "live_research_unvalidated", (report.get("failure"), budget_checks)
     assert report["daily_delivery"]["requests"] == len(captured) == 3
     assert report["daily_delivery"]["repairs"] == 0
+    if program_assembly:
+        assert len(report["selection"]["selected"]) == 5
+        assert report["selection_judgments"]["comparisons"][0]["final_status"] == "watch"
+        assert report["selection_assembly"]["program_selection_score"] is None
+        assert (
+            report["selection_validation"]["selection_origin"] == "model_judgments_program_assembly"
+        )
     for prompt, schema in captured:
         assert "[SCOUT_NEXT_SESSION_V1]" in prompt
         assert "[SCOUT_DECISION_V2]" not in prompt
@@ -155,13 +201,22 @@ def test_actual_three_requests_d1_all_24_and_technical_fact_transport(tmp_path, 
     final = report["selection_input_packet"]
     for packet in (study, final):
         metrics = {value["metric"] for value in unpack_facts(packet).values()}
-        assert {"ma60", "close_location", "rsi14", "atr14", "macd_hist2_to_close"} <= metrics
+        if program_assembly and packet is final:
+            assert {"close_location", "rsi14", "atr14_to_close", "macd_hist2_to_close"} <= metrics
+            assert packet["omitted_redundant_technical_fact_counts"]["ma60"] == 24
+        else:
+            assert {"ma60", "close_location", "rsi14", "atr14", "macd_hist2_to_close"} <= metrics
         assert len(packet["candidates"]) == 24
         assert packet["technical_fact_indices"]
         assert '"technical_history":' not in compact(packet)
     rendered = report["opportunity"]["comparisons"]
     assert len(rendered) == 24
-    assert all("close_to_ma20" in row["technical_interpretation"] for row in rendered)
+    if program_assembly:
+        assert all(
+            any(f["metric"] == "close_to_ma20" for f in row["fact_cards"]) for row in rendered
+        )
+    else:
+        assert all("close_to_ma20" in row["technical_interpretation"] for row in rendered)
     assert all("[[" not in row["technical_interpretation"] for row in rendered)
     assert all(
         unpack_facts(final)[ref]["calculation_version"]

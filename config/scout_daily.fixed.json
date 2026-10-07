@@ -26,5 +26,6 @@
   "rss": [],
   "daily_delivery": true,
   "next_session_selection": true,
+  "program_assembled_selection": true,
   "experiment_profile": "fused"
 }

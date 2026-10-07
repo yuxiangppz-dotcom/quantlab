@@ -126,7 +126,7 @@ def card_content(report, row):
             (
                 "技术位置",
                 technical
-                + "；模型解释："
+                + "；位置说明："
                 + comparison.get("technical_interpretation", "尚未解释")
                 + "；已有价格反应："
                 + comparison.get("price_reaction", "未知"),
@@ -250,7 +250,6 @@ def markdown(report):
         f"生成时间：{safe(report['finished_at'])}",
         f"信息截点：{safe(information_cutoff(report))}",
         "发布状态：" + safe((report.get("timing") or {}).get("report_kind", "原版研究记录")),
-        safe(source_gap_note(report)),
         "",
         "研究候选，效果待前瞻观察。",
         "",
@@ -325,7 +324,7 @@ def html(report, review=None):
         f"<p>生成时间 {h(report['finished_at'])}</p>"
         f"<p>信息截点 {h(information_cutoff(report))}</p>"
         f"<p>发布状态 {h(timing.get('report_kind', '原版研究记录'))}</p>"
-        f"<p>{h(source_gap_note(report))}</p><p>研究候选，效果待前瞻观察。</p></header>",
+        "<p>研究候选，效果待前瞻观察。</p></header>",
     ]
     if report.get("synthetic") or report["status"] == "demo":
         parts.append("<p><strong>合成演示，不是真实预测。</strong></p>")

@@ -208,6 +208,8 @@ class DailyResearch:
         if self.repairs >= self.policy["max_repairs"]:
             raise DailyValidationError(errors)
         self.repairs += 1
+        if schema.get("$id", "").endswith(":judgments"):
+            return self._correct_judgments(prompt, schema, validator, previous, errors)
         # The full response/error list is archived. Resend only the original facts
         # and a compact complete error matrix, never previous replies/history.
         matrix = [
@@ -307,6 +309,63 @@ class DailyResearch:
             self.correction = {"mode": "single_full_correction", "stage": self.stage}
         if errors:
             raise DailyValidationError(errors)
+        self.failed_response = None
+        return result, raw
+
+    def _correct_judgments(self, prompt, schema, validator, previous, errors):
+        from quantlab.scout.selection_judgments import merge_repairs, repair_plan
+
+        plan = repair_plan(previous, errors, schema)
+        correction = prompt + "\n唯一一次纠错，预算和事实固定。不要重写analysis或规则对象。\n"
+        correction += compact(
+            {
+                "complete_errors": [
+                    [e.get("path", []), e["code"], e.get("detail", "")[:120]] for e in errors
+                ]
+            }
+        )
+        if plan is None:
+            correction += (
+                "\n原文未形成可恢复的完整判断对象；依据原事实重新输出完整短judgments JSON。"
+            )
+            result, raw, remaining = self._attempt(correction, schema, validator)
+            self.correction = {"mode": "single_complete_judgment_regeneration", "stage": self.stage}
+        else:
+            correction += (
+                "\n只输出repairs中授权证券的完整短判断行，不输出comparisons。"
+                "其他行及原排序由程序逐字保留。只有market_view获授权时才输出该字段。"
+                "数字和日期从说明移到事实引用；需修正无依据的选择，允许授权行降低等级，不能新增来源。\n"
+                + compact(
+                    {
+                        "authorized_subjects": plan["targets"],
+                        "previous_judgments": plan["previous_rows"],
+                        "market_view_authorized": plan["market"],
+                    }
+                )
+            )
+
+            def check(patch):
+                merged, issues = merge_repairs(previous, patch, plan)
+                return issues or validator(merged)
+
+            patch, raw, remaining = self._attempt(correction, plan["schema"], check)
+            result, issues = merge_repairs(previous, patch, plan)
+            self.correction = {
+                "mode": "single_directed_judgment_repair",
+                "stage": self.stage,
+                "authorized_subjects": plan["targets"],
+                "previous_output_sha256": fingerprint(previous),
+                "patch_sha256": fingerprint(patch),
+                "assembled_output_sha256": fingerprint(result) if result else None,
+                "unchanged_order_preserved": not issues,
+            }
+            self._save(
+                len(self.requests),
+                "assembled-output",
+                {"provenance": self.correction, "output": result},
+            )
+        if remaining:
+            raise DailyValidationError(remaining)
         self.failed_response = None
         return result, raw
 

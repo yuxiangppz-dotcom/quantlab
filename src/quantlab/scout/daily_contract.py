@@ -725,7 +725,7 @@ def selection_schema(candidates, packet=None):
     if packet and packet.get("prediction_objective") == "next_session":
         from quantlab.scout.nextday_contract import adapt_schema
 
-        schema = adapt_schema(schema)
+        schema = adapt_schema(schema, packet)
     return schema
 
 

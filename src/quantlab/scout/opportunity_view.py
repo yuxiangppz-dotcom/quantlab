@@ -32,8 +32,11 @@ def lines(report: dict) -> list[str]:
         return []
     rows = opportunity.get("comparisons", [])
     counts = Counter(r.get("primary_type", "insufficient_evidence") for r in rows)
+    nextday = report.get("prediction_objective") == "next_session" or any(
+        "next_session_thesis" in r.get("analysis", {}) for r in rows
+    )
     output = [
-        "机会比较版本：opportunity_v1；主观察期限 H5。",
+        "机会比较版本：opportunity_v1；主观察期限 " + ("D1。" if nextday else "H5。"),
         "完整比较状态："
         + opportunity["validation"]["status"]
         + "；"
@@ -55,7 +58,9 @@ def lines(report: dict) -> list[str]:
                 f"{row['difference']}",
                 f"新增变化：{a['incremental_change']}；经济关系：{a['economic_link']}；"
                 f"重要程度：{a['importance']}",
-                f"H5机制：{a['h5_mechanism']}；下一观察节点："
+                f"{'次日' if nextday else 'H5'}机制："
+                f"{a.get('next_session_thesis') if nextday else a.get('h5_mechanism')}"
+                "；下一观察节点："
                 f"{a['next_observation_date'] or '日期未知'}，{a['next_node_basis']}",
                 f"独立依据：{row['independent_basis']}；关键未知：{row['unknowns']}",
                 f"最强反证：{row['risk']}；失效条件：{row['invalidation']}",

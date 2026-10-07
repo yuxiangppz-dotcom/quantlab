@@ -117,6 +117,7 @@ DEFAULT_CONFIG = {
     "opportunity_evidence_chars": 32000,
     "daily_delivery": False,
     "next_session_selection": False,
+    "program_assembled_selection": False,
     "experiment_profile": "fused",
 }
 
@@ -270,6 +271,10 @@ def read_config(path: Path | None) -> dict:
         raise ValueError("daily_delivery must be boolean")
     if type(config["next_session_selection"]) is not bool:
         raise ValueError("next_session_selection must be boolean")
+    if type(config["program_assembled_selection"]) is not bool:
+        raise ValueError("program_assembled_selection must be boolean")
+    if config["program_assembled_selection"] and not config["next_session_selection"]:
+        raise ValueError("Program assembly requires next-session selection")
     if config["experiment_profile"] not in {"fused", "event_only", "technical_only"}:
         raise ValueError("Unknown frozen experiment profile")
     if config["next_session_selection"] and not config["daily_delivery"]:
@@ -1124,6 +1129,8 @@ def run_scout(
     raw_responses = []
     prompt_evidence_audit = []
     selection_raw = None
+    selection_judgments = None
+    selection_assembly = None
     selection_input_evidence: list[dict] = []
     selection_input_packet: dict = {}
     selection_input_prompt = None
@@ -1277,7 +1284,11 @@ def run_scout(
                         )
 
                     pool, baseline, capacity = fit_research_input(
-                        pool, baseline_for_subset, client, stage="before_discovery"
+                        pool,
+                        baseline_for_subset,
+                        client,
+                        stage="before_discovery",
+                        program_assembly=config.get("program_assembled_selection", False),
                     )
                     record_input_capacity(deep_route_diagnostics, capacity)
                     progress(f"首次模型调用前预算预检通过，容量上限内保留{len(pool)}股")
@@ -1503,7 +1514,11 @@ def run_scout(
                             )
 
                         model_pool, study_packet, capacity = fit_research_input(
-                            model_pool, study_for_subset, client, stage="before_investigation"
+                            model_pool,
+                            study_for_subset,
+                            client,
+                            stage="before_investigation",
+                            program_assembly=config.get("program_assembled_selection", False),
                         )
                         admitted = {c["instrument_id"] for c in model_pool}
                         pool = [c for c in pool if c["instrument_id"] in admitted]
@@ -1771,6 +1786,12 @@ def run_scout(
 
                     packet, selection_fact_aliases = compact_fact_refs(research_packet(packet))
                     prompt = selection_instruction(packet) + compact(packet)
+                    if config.get("program_assembled_selection"):
+                        from quantlab.scout.selection_judgments import prepare_packet
+                        from quantlab.scout.selection_judgments import prompt as judgment_prompt
+
+                        packet = prepare_packet(packet)
+                        prompt = judgment_prompt(packet)
                     progress("比较与分级：程序事实引用，完整校验")
                 # Archive construction before validation/transport can raise.
                 # An attempted request is not proof that the provider received it.
@@ -1784,12 +1805,20 @@ def run_scout(
                     if opportunity_mode
                     else SELECTION_SCHEMA
                 )
+                if config.get("program_assembled_selection"):
+                    from quantlab.scout.selection_judgments import schema as judgment_schema
+
+                    selection_input_schema = judgment_schema(packet)
                 selection_request.update(
                     state="built",
                     packet_sha256=fingerprint(packet),
                     prompt_sha256=sha256(prompt.encode()).hexdigest(),
                     schema_sha256=fingerprint(selection_input_schema),
                 )
+                if config.get("program_assembled_selection"):
+                    client.check_input(
+                        prompt, selection_input_schema, extra_chars=24000, extra_bytes=70000
+                    )
                 final_prompt = bounded_prompt(prompt)
                 selection_request.update(
                     state="request_attempted", delivery_status="attempted_delivery_unknown"
@@ -1797,14 +1826,26 @@ def run_scout(
                 if daily_mode:
                     from quantlab.scout.daily_contract import validate_output
 
-                    selection, raw = client.ask(
-                        final_prompt,
-                        selection_input_schema,
-                        validator=lambda value: validate_output(value, packet),
-                        fact_subjects={
-                            ref: fact["subject_id"] for ref, fact in unpack_facts(packet).items()
-                        },
-                    )
+                    if config.get("program_assembled_selection"):
+                        from quantlab.scout.selection_judgments import assemble, errors, provenance
+
+                        selection_judgments, raw = client.ask(
+                            final_prompt,
+                            selection_input_schema,
+                            validator=lambda value: errors(value, packet),
+                        )
+                        selection = assemble(selection_judgments, packet)
+                        selection_assembly = provenance(selection_judgments, packet, selection)
+                    else:
+                        selection, raw = client.ask(
+                            final_prompt,
+                            selection_input_schema,
+                            validator=lambda value: validate_output(value, packet),
+                            fact_subjects={
+                                ref: fact["subject_id"]
+                                for ref, fact in unpack_facts(packet).items()
+                            },
+                        )
                 else:
                     selection, raw = client.ask(final_prompt, selection_input_schema)
                 selection_request.update(
@@ -1844,6 +1885,11 @@ def run_scout(
                         if client.correction and client.correction.get("stage") == 3
                         else None,
                     }
+                    if selection_assembly:
+                        selection_validation.update(
+                            selection_origin="model_judgments_program_assembly",
+                            assembly_provenance=selection_assembly,
+                        )
                 else:
                     if opportunity_mode:
                         opportunity_result = selection
@@ -2055,6 +2101,8 @@ def run_scout(
         "failure": failure,
         "selection": result,
         "selection_raw": selection_raw,
+        "selection_judgments": selection_judgments,
+        "selection_assembly": selection_assembly,
         "selection_input_evidence": selection_input_evidence,
         "selection_input_packet": selection_input_packet,
         "selection_input_prompt": selection_input_prompt,

@@ -89,7 +89,7 @@ def packet_for_pool(
     )[0]
 
 
-def fit_research_input(pool, build_packet, client, *, stage):
+def fit_research_input(pool, build_packet, client, *, stage, program_assembly=False):
     """Measured input capacity within the fixed deep-pool upper bound and priorities.
 
     Omitted stocks remain budget exclusions, never negative model judgments.
@@ -116,24 +116,36 @@ def fit_research_input(pool, build_packet, client, *, stage):
         if not chosen:
             continue
         packet = build_packet(chosen)
+        checked_packet = packet
         prompt = selection_instruction(packet) + compact(packet)
         schema = selection_schema(chosen, packet)
+        reserve_chars, reserve_bytes = 36000, 85000
+        if program_assembly:
+            from quantlab.scout.selection_judgments import prepare_packet
+            from quantlab.scout.selection_judgments import prompt as judgment_prompt
+            from quantlab.scout.selection_judgments import schema as judgment_schema
+
+            checked_packet = prepare_packet(packet)
+            prompt, schema = judgment_prompt(checked_packet), judgment_schema(checked_packet)
+            # Reserve investigation additions and one bounded row correction
+            # before paying for discovery/investigation, not just before ranking.
+            reserve_chars, reserve_bytes = 50000, 110000
         sequence = len(client.input_checks) + 1
         client._save(
             0,
             f"research-preflight-{sequence:02d}",
             {
                 "stage": stage,
-                "packet": packet,
+                "packet": checked_packet,
                 "prompt": prompt,
                 "schema": schema,
                 "candidate_ids": [c["instrument_id"] for c in chosen],
-                "reserved_chars": 36000,
-                "reserved_bytes": 85000,
+                "reserved_chars": reserve_chars,
+                "reserved_bytes": reserve_bytes,
             },
         )
         try:
-            client.check_input(prompt, schema, extra_chars=36000, extra_bytes=85000)
+            client.check_input(prompt, schema, extra_chars=reserve_chars, extra_bytes=reserve_bytes)
         except DailyBudgetError as exc:
             if str(exc) not in {"daily_input_char_budget", "daily_input_byte_budget"}:
                 raise

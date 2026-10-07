@@ -4,7 +4,7 @@ import re
 from copy import deepcopy
 from decimal import Decimal
 
-VERSION = "daily_facts_v10_next_session"
+VERSION = "daily_facts_v11_program_selection"
 SCHEMA_VERSION = "scout_next_session_schema_v2"
 PARAMETER_VERSION = "next_session_parameters_v1"
 SHARED = """[SCOUT_NEXT_SESSION_V1]
@@ -246,7 +246,7 @@ def unspecified_mechanism(text):
     return not text
 
 
-def adapt_schema(schema):
+def adapt_schema(schema, packet=None):
     schema = deepcopy(schema)
     schema["$id"] = "urn:quantlab:" + SCHEMA_VERSION + ":selection"
     item = schema["properties"]["comparisons"]["items"]
@@ -277,6 +277,8 @@ def adapt_schema(schema):
         "participation_cancel_rule": rule_schema(CANCEL_RULES),
     }
     props.update(additions)
+    if (packet or {}).get("selection_assembly_version"):
+        props["opportunity_ids"]["maxItems"] = len(packet.get("opportunity_hypotheses", []))
     props["invalidation_rule"] = rule_schema(RESEARCH_RULES)
     item["required"] += list(additions)
     item["allOf"][0] = {
