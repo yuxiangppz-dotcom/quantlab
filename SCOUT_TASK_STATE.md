@@ -1,5 +1,9 @@
 # Scout 本轮任务状态
-## 2026-10-07 用户纠正32k输出上限及要求解释纠错（独立开发修复中）
+## 2026-10-07 用户纠正32k输出上限及要求解释纠错（修复及云端安装完成，真实模型待验收）
+
+- 实现6c9007dbd0eaa6a472a4c2919eabb60f1c41d980、固定APP 1db94babeac67480769560cfecee0ba966585f91已提交推送。公开实际Docker/Node/质量CI37600210441 SUCCESS，私库真实容器check37600602588 SUCCESS、provider_model_calls=0，身份/config语义SHA f0248fc0e6939da2ee14b4a1f77d503a26884037617318e9bd55820abc9f051b与固定131072配置匹配。Worker及私库APP一致、enabled=true、无活跃任务、原31,746,926字节云档未变。启用Worker Version67b60ff1-4d8a-4799-9b6b-363d3a434e4c。
+- 保存真实截断样本离线诊断在output_budget_fix_20261007/real-saved-truncation-audit.json，16个原始模型文件SHA未变；只模拟读取原回复，不做模型/供应商新请求、不重评旧报告。实际安装回执同目录actual-cloud-install-check.json。核验辅助脚本最初将原始字节SHA与配置语义fingerprint比较而断言失败，检查sealed_identity定义并修正后真实身份核验通过，未更改实际配置。上传后CLI退出延迟，仅在上传及API验证完成后关闭本次CLI；后续启用CLI正常退出。
+- 桌面交付Scout输出预算修复_2026-10-07含解释、固定代码包、真实样本诊断与安装/最终状态回执。PR正文追加本轮并保留旧失败。后续文档提交不改变已安装固定APP；本轮新模型/供应商/微信调用0。新输出上限仍未通过真实模型完整预测验收，未来结果不能由本次工程测试替代。
 
 - 起点10fa366已推送干净，无旧本机执行/审查写入者。用户先前明确质疑32,768太少，本轮再次纠正；应在独立开发流程更新固定版本，而非沿用过低上限。官方Chat Completions当前max_tokens最大393216，允许思考与正文；本地32768为Scout配置。https://api-docs.deepseek.com/api/create-chat-completion/
 - 修改固定日常输出为131072，通用DeepSeek配置校验跟随官方393216上限；四总调用/一次纠错/1200000总token/输入及超时不变，发送前按更大输出上限预留并检查总预算。请求/回执明确存实际max_output_tokens，length错误记录思考/完成token，完整错误清单解释残缺JSON需一次全量重新输出；残缺不拼接、不当事实，不新增策略。
