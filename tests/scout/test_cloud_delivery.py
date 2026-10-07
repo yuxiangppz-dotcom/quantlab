@@ -442,3 +442,105 @@ def test_stop_requested_during_data_preparation_does_not_start_paid_worker(volum
         fetcher_factory=lambda r, n: Fetcher(r, n, FixtureClient()),
     )
     assert result["status"] == "failed"
+
+
+def test_transient_data_failure_recovers_with_bounded_reads_and_preserved_receipts(volume):
+    class Client:
+        calls = 0
+
+        def query(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls < 3:
+                raise TimeoutError("SECRET-transient-token")
+            return pd.DataFrame([{"exchange": "SSE", "cal_date": "20261008", "is_open": 1}])
+
+    client, waits = Client(), []
+    fetcher = Fetcher(
+        volume, datetime(2026, 10, 8, 8, tzinfo=SHANGHAI), client, retry_wait=waits.append
+    )
+    rows = fetcher.fetch("trade_cal", exchange="SSE")
+    assert rows[0]["is_open"] == 1 and client.calls == fetcher.calls == 3
+    assert waits == [5, 15]
+    receipts = sorted((volume / "source_updates").rglob("*.attempt-*.json"))
+    assert [read(p)["status"] for p in receipts] == ["failed", "failed", "ok"]
+    assert not any(
+        "SECRET-transient-token" in p.read_text()
+        for p in (volume / "source_updates").rglob("*.json")
+    )
+    assert fetcher.fetch("trade_cal", exchange="SSE") == rows and client.calls == 3
+
+
+def test_transient_data_failure_stops_after_three_and_is_not_retried_on_restart(volume):
+    class Client:
+        calls = 0
+
+        def query(self, *args, **kwargs):
+            self.calls += 1
+            raise TimeoutError("not-a-real-provider")
+
+    client = Client()
+    for _ in range(2):
+        fetcher = Fetcher(
+            volume,
+            datetime(2026, 10, 8, 8, tzinfo=SHANGHAI),
+            client,
+            retry_wait=lambda seconds: None,
+        )
+        with pytest.raises(ValueError):
+            fetcher.fetch("trade_cal", exchange="SSE")
+    assert client.calls == 3
+    assert len(list((volume / "source_updates").rglob("*.attempt-*.json"))) == 3
+
+
+def test_data_recovery_keeps_global_call_budget(volume):
+    class Client:
+        calls = 0
+
+        def query(self, *args, **kwargs):
+            self.calls += 1
+            raise TimeoutError("not-a-real-provider")
+
+    client = Client()
+    fetcher = Fetcher(
+        volume, datetime(2026, 10, 8, 8, tzinfo=SHANGHAI), client, retry_wait=lambda seconds: None
+    )
+    fetcher.calls = 98
+    with pytest.raises(ValueError, match="budget"):
+        fetcher.fetch("trade_cal", exchange="SSE")
+    assert fetcher.calls == 100 and client.calls == 2
+
+
+def test_data_transport_retry_classification_is_explicit():
+    from urllib.error import HTTPError
+
+    from quantlab.scout.cloud_data import transient_transport_failure
+
+    for status in (429, 500, 502, 503, 504):
+        assert transient_transport_failure(
+            HTTPError("https://example.invalid", status, "fake", {}, None)
+        )
+    for status in (400, 401, 403, 404):
+        assert not transient_transport_failure(
+            HTTPError("https://example.invalid", status, "fake", {}, None)
+        )
+    assert not transient_transport_failure(ValueError("invalid prices or schema"))
+    assert not transient_transport_failure(RuntimeError("credentials or unknown provider failure"))
+
+
+def test_data_integrity_errors_are_not_retried_or_cached_as_facts(volume):
+    class Client:
+        calls = 0
+
+        def query(self, *args, **kwargs):
+            self.calls += 1
+            return pd.DataFrame([{"is_open": 1}, {"is_open": 0}])
+
+    client, waits = Client(), []
+    fetcher = Fetcher(
+        volume, datetime(2026, 10, 8, 8, tzinfo=SHANGHAI), client, retry_wait=waits.append
+    )
+    with pytest.raises(ValueError, match="provider request failed"):
+        fetcher.fetch("trade_cal", exchange="SSE", limit=1)
+    assert client.calls == 1 and waits == []
+    for file in (volume / "source_updates").rglob("*.json"):
+        assert read(file)["status"] == "failed" and "rows" not in read(file)

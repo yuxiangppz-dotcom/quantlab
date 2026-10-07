@@ -3,7 +3,8 @@
 import math
 import os
 from datetime import datetime, timedelta
-from time import monotonic
+from time import monotonic, sleep
+from urllib.error import HTTPError, URLError
 from uuid import uuid4
 
 import pandas as pd
@@ -48,12 +49,34 @@ def secure_tushare_factory(factory):
     return create
 
 
+DATA_ATTEMPTS = 3
+DATA_RETRY_DELAYS = (5, 15)
+
+
+def transient_transport_failure(exc):
+    """Retry known read-only transport faults, not bad credentials/data/schema."""
+    if isinstance(exc, HTTPError):
+        return exc.code in {429, 500, 502, 503, 504}
+    if isinstance(exc, (URLError, TimeoutError, ConnectionError)):
+        return True
+    try:
+        from requests.exceptions import ConnectionError as RequestsConnectionError
+        from requests.exceptions import HTTPError as RequestsHTTPError
+        from requests.exceptions import Timeout
+    except ImportError:
+        return False
+    if isinstance(exc, RequestsHTTPError):
+        return exc.response is not None and exc.response.status_code in {429, 500, 502, 503, 504}
+    return isinstance(exc, (RequestsConnectionError, Timeout))
+
+
 class Fetcher:
-    def __init__(self, root, now, client=None):
+    def __init__(self, root, now, client=None, *, retry_wait=sleep):
         self.root = guarded(root)
         self.now = now
         self.calls = 0
         self.started = monotonic()
+        self.retry_wait = retry_wait
         if client is None:
             import tushare as ts
 
@@ -68,22 +91,49 @@ class Fetcher:
             if saved["status"] != "ok":
                 raise ValueError("Previous data request failed; no automatic same-day retry")
             return saved["rows"]
-        if self.calls >= 100 or monotonic() - self.started >= 900:
-            raise ValueError("Cloud data update budget reached")
-        self.calls += 1
         saved = {"api": api, "params": params, "retrieved_at": self.now.isoformat()}
-        try:
-            frame = self.client.query(api, fields=FIELDS[api], **params)
-            if len(frame) > params.get("limit", 10_000):
-                raise ValueError("Provider ignored requested row bound")
-            rows = frame.astype(object).where(pd.notna(frame), None).to_dict("records")
-            saved.update(status="ok", rows=rows)
-        except Exception as exc:
-            saved.update(status="failed", error_type=type(exc).__name__)
-            atomic(path, saved)
-            raise ValueError("Cloud data provider request failed; see private receipt") from None
-        atomic(path, saved)
-        return rows
+        attempts = []
+        for attempt in range(1, DATA_ATTEMPTS + 1):
+            receipt = path.with_name(path.stem + f".attempt-{attempt}.json")
+            if receipt.exists():
+                raise ValueError("Previous data attempt unresolved; preserve receipt")
+            if self.calls >= 100 or monotonic() - self.started >= 900:
+                atomic(
+                    path,
+                    saved | {"status": "failed", "error_type": "DataBudget", "attempts": attempts},
+                )
+                raise ValueError("Cloud data update budget reached")
+            self.calls += 1
+            # Archive intent before transport. No tokens or exception messages enter receipts.
+            record = {**saved, "attempt": attempt, "status": "delivery_unknown"}
+            atomic(receipt, record)
+            try:
+                frame = self.client.query(api, fields=FIELDS[api], **params)
+                if len(frame) > params.get("limit", 10_000):
+                    raise ValueError("Provider ignored requested row bound")
+                rows = frame.astype(object).where(pd.notna(frame), None).to_dict("records")
+            except Exception as exc:
+                retryable = transient_transport_failure(exc)
+                record.update(status="failed", error_type=type(exc).__name__, retryable=retryable)
+                atomic(receipt, record)
+                attempts.append(record)
+                if retryable and attempt < DATA_ATTEMPTS:
+                    self.retry_wait(DATA_RETRY_DELAYS[attempt - 1])
+                    continue
+                atomic(
+                    path,
+                    saved
+                    | {"status": "failed", "error_type": type(exc).__name__, "attempts": attempts},
+                )
+                raise ValueError(
+                    "Cloud data provider request failed; see private receipt"
+                ) from None
+            record.update(status="ok", row_count=len(rows))
+            attempts.append(record)
+            atomic(path, saved | {"status": "ok", "rows": rows, "attempts": attempts})
+            atomic(receipt, record)
+            return rows
+        raise AssertionError("Bounded data attempt loop must return or fail")
 
     def all_rows(self, api, **params):
         limit = CAPS[api]
