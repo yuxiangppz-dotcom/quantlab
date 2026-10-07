@@ -1,4 +1,15 @@
 # Scout 本轮任务状态
+## 2026-10-07 新131k预测与每交易日微信（运行失败已通知，日常推送启用）
+
+- 实际完成37602028626，报告20261007T175055-d4e8a66c INCOMPLETE、目标10/8/行情9/30、0合格候选。4真实请求/1完整纠错/348911实际total tokens；4份原回执均max_output_tokens=131072、finish_reason=stop。第3输出41878 tokens（思考25907），已超过32k且不是length截断；adapter_invalid_response后唯一纠错仍有schema、事实主体、条件规则、未绑定数值/同行差异等错误。不能把workflow SUCCESS当推荐成功；日常稳定生成完整新报告验收仍未通过。
+- delivery artifact11473627621、result artifact11473776964；16原始模型文件SHA、原报告字节SHA及manifest规范化SHA核验通过，已知凭据扫描0。完整供应商归档留私库，桌面只含报告及核心原请求，未冒充全包。real-output-audit.json保存逐次实际usage/finish_reason/输出上限及错误类型统计；审计不新增模型请求、不重评旧报告。
+- 本次失败通知已单次发送，ServerChan provider_code=0/provider_accepted，手机收件未知；wechat-send-intent.json在网络前保存，恢复不得重发。桌面Scout新预测_131k_2026-10-07含开始阅读、原报告/模型记录、真实输出及每日调度核验。每交易日自动预测/微信继续启用，不把本次休市手动失败替代明早盘前任务、不自动补发本次付费纠错。用户的“新合格推荐”本次未达成，须另行独立开发处理最终输出可靠性，不能靠放宽错误主体或缺事实校验发布。
+
+- 用户明确授权“生成预测并推送，后续每个交易日都推送”。起点d2d61c10aaf60ad8473b1de465faef650a9cb933，工作树干净，无旧并发写入者。已安装固定APP 1db94babeac67480769560cfecee0ba966585f91/ENGINE 6c9007dbd0eaa6a472a4c2919eabb60f1c41d980；131072输出、4请求/1纠错/1200000总token，运行期间不改代码/提示词/schema/预算。
+- 私库一次任务37602028626已dispatch，request user-v10-output131k-manual-20261007-once；同daily并发组，run_number=1/attempt=1防重，授权先归档。恢复只能查看已有run，不能重复dispatch。结果新目录cloud_manual_v10_output131k_20261007；完整原请求/失败/新数据归档，旧报告及canonical不写。完成后核验身份、manifest及完整校验，再单次微信候选正文；失败只发如实未完成通知，不用旧报告替代。
+- 日常私库scout.yml为active，远程工作流与跟踪文件逐字规范化匹配，Worker enabled=true、APP一致。北京时间08:03/08:23/08:43启动检查，真实交易日历跳过休市、同日领取去重；完成后微信全文通知。18:10/20:10无模型前瞻观察。GitHub调度可能延迟，不能保证准点；无需本机开机。旧自动优化不恢复、不新建重复Codex心跳。
+- schedule-check.json记录实际云状态/工作流SHA/固定APP。本机WSL直连Workers TLS EOF，代理localhost在WSL不监听，均在真实请求前失败；改由Windows既有系统代理安全读取状态后核验通过，不输出密钥、不改变云端模型配置。后续下载、微信意图、桌面结果与最终判断待补本节。
+
 ## 2026-10-07 用户纠正32k输出上限及要求解释纠错（修复及云端安装完成，真实模型待验收）
 
 - 实现6c9007dbd0eaa6a472a4c2919eabb60f1c41d980、固定APP 1db94babeac67480769560cfecee0ba966585f91已提交推送。公开实际Docker/Node/质量CI37600210441 SUCCESS，私库真实容器check37600602588 SUCCESS、provider_model_calls=0，身份/config语义SHA f0248fc0e6939da2ee14b4a1f77d503a26884037617318e9bd55820abc9f051b与固定131072配置匹配。Worker及私库APP一致、enabled=true、无活跃任务、原31,746,926字节云档未变。启用Worker Version67b60ff1-4d8a-4799-9b6b-363d3a434e4c。
