@@ -1,0 +1,106 @@
+name: Scout daily cloud
+on:
+  schedule:
+    - cron: '3,23,43 0 * * *'
+    - cron: '10 10,12 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'check: no data/model; daily: morning; observe: no model; prepare: explicit bounded data batch'
+        type: choice
+        options: [check, daily, observe, prepare]
+        default: check
+      prepare_batch:
+        description: 'Explicit preparation batch slot (0 through 7), at most 40 missing partitions'
+        type: choice
+        options: ['0', '1', '2', '3', '4', '5', '6', '7']
+        default: '0'
+permissions:
+  contents: read
+concurrency:
+  group: scout-fixed-daily
+  cancel-in-progress: false
+jobs:
+  forecast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - name: Verify private deployment and pinned application
+        env:
+          IS_PRIVATE: ${{ github.event.repository.private }}
+          APP_COMMIT: ${{ vars.SCOUT_APP_COMMIT }}
+        run: |
+          test "$IS_PRIVATE" = true
+          [[ "$APP_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+      - name: Skip disabled, duplicate, late or unresolved jobs before building
+        id: preflight
+        env:
+          SCOUT_PUBLIC_URL: ${{ vars.SCOUT_PUBLIC_URL }}
+          SCOUT_API_TOKEN: ${{ secrets.SCOUT_API_TOKEN }}
+          APP_COMMIT: ${{ vars.SCOUT_APP_COMMIT }}
+          MODE: ${{ inputs.mode || 'auto' }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from urllib.request import Request, build_opener, HTTPRedirectHandler
+          from urllib.parse import urlsplit
+          origin=os.environ['SCOUT_PUBLIC_URL']
+          parts=urlsplit(origin)
+          assert parts.scheme=='https' and parts.hostname and not parts.username
+          assert parts.path in ('','/') and not parts.query and not parts.fragment
+          req=Request(origin.rstrip('/')+'/api/state',headers={'Authorization':'Bearer '+os.environ['SCOUT_API_TOKEN'],'User-Agent':'QuantLab-Scout-Cloud/1.0'})
+          class NoRedirect(HTTPRedirectHandler):
+              def redirect_request(self,*args,**kwargs): return None
+          try:
+              with build_opener(NoRedirect()).open(req,timeout=30) as reply:
+                  state=json.loads(reply.read(10000))
+          except Exception:
+              raise SystemExit('Cloud preflight unavailable; no model request') from None
+          assert state['app_commit']==os.environ['APP_COMMIT'], 'Fixed release mismatch'
+          mode=os.environ['MODE']
+          if mode=='auto': mode='daily' if state['hour']==8 else 'observe'
+          window=(mode=='daily' and state['hour']==8 or mode=='observe' and
+                  (state['hour']==8 or state['hour']>=18) or mode=='prepare')
+          go=mode=='check' or (state['enabled'] and window and
+                              (mode!='daily' or not state['job'] and not state['active']))
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output:
+              output.write('should_run='+str(go).lower()+'\n')
+              output.write('mode='+mode+'\n')
+          print('Cloud preflight: '+('ready' if go else 'skipped; no paid work'))
+          PY
+      - uses: actions/checkout@v4
+        if: steps.preflight.outputs.should_run == 'true'
+        with:
+          repository: yuxiangppz-dotcom/quantlab
+          ref: ${{ vars.SCOUT_APP_COMMIT }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build fixed release (never update prediction configuration)
+        if: steps.preflight.outputs.should_run == 'true'
+        run: |
+          python -m pip install --disable-pip-version-check uv==0.12.9
+          uv sync --frozen --no-dev
+          uv run python scripts/scout_cloud_bundle.py --output /tmp/scout-free-bundle
+          docker build -t scout-fixed:daily /tmp/scout-free-bundle
+      - name: Run bounded job with durable claim and archive
+        if: steps.preflight.outputs.should_run == 'true'
+        env:
+          SCOUT_PUBLIC_URL: ${{ vars.SCOUT_PUBLIC_URL }}
+          SCOUT_API_TOKEN: ${{ secrets.SCOUT_API_TOKEN }}
+          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          MODE: ${{ steps.preflight.outputs.mode }}
+          PREPARE_BATCH: ${{ inputs.prepare_batch || '0' }}
+        run: |
+          args=()
+          case "$MODE" in
+            check) args+=(--check);;
+            observe) args+=(--observe);;
+            prepare) args+=(--prepare-data --prepare-batch "$PREPARE_BATCH");;
+            daily) ;;
+            *) exit 1;;
+          esac
+          docker run --rm --read-only --tmpfs /tmp --tmpfs /data/scout:uid=1000,gid=1000,mode=0700 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --env SCOUT_PUBLIC_URL --env SCOUT_API_TOKEN --env TUSHARE_TOKEN --env DEEPSEEK_API_KEY \
+            scout-fixed:daily /app/.venv/bin/python -m quantlab.scout.free_cloud "${args[@]}"

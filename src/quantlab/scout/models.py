@@ -43,6 +43,7 @@ class Evidence:
     instrument_ids: tuple[str, ...] = ()
     evidence_id: str = ""
     event_dates: tuple[str, ...] = ()
+    snapshot_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         timestamp(self.retrieved_at)
@@ -82,7 +83,7 @@ class Coverage:
 class Candidate:
     instrument_id: str
     name: str
-    metrics: dict[str, float | None]
+    metrics: dict[str, float | bool | None]
     score: float
     routes: list[str] = field(default_factory=list)
     evidence_ids: list[str] = field(default_factory=list)
@@ -113,8 +114,17 @@ def admit_evidence(
         if published and (cutoff - published).total_seconds() > lookback_hours * 3600:
             counts["stale"] += 1
             continue
-        # Exact cross-provider syndicated copies count once; no fuzzy factual merger.
-        identity = fingerprint([" ".join(item.title.split()), " ".join(item.body.split())])
+        # Keep separate stocks and official PDF documents even when titles match.
+        # Generic cross-provider syndicated news can still be deduplicated by content.
+        identity_parts = [
+            " ".join(item.title.split()),
+            " ".join(item.body.split()),
+            item.instrument_ids,
+            item.event_dates,
+        ]
+        if item.kind == "official_announcement_index_unverified":
+            identity_parts.append(item.url)
+        identity = fingerprint(identity_parts)
         if identity in seen:
             counts["duplicate"] += 1
             continue

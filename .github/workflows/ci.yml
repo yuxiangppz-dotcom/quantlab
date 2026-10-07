@@ -45,6 +45,30 @@ jobs:
       - name: Ruff
         run: uv run ruff check .
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Free cloud auth, durable storage and deployment dry-run
+        working-directory: deploy/scout_free
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npm run build
+
+      - name: Cloud deployment image smoke (no provider or model calls)
+        shell: bash
+        run: |
+          uv run python scripts/scout_cloud_bundle.py --output /tmp/scout-cloud-bundle
+          docker build -t scout-cloud:ci /tmp/scout-cloud-bundle
+          mkdir -p /tmp/scout-cloud-volume/scout
+          sudo chown 1000:1000 /tmp/scout-cloud-volume/scout
+          docker run --rm --read-only --tmpfs /tmp \
+            --mount type=bind,src=/tmp/scout-cloud-volume/scout,dst=/data/scout \
+            scout-cloud:ci /app/.venv/bin/python -c \
+            'from pathlib import Path; from quantlab.scout.cloud_artifacts import initialize; from quantlab.scout.daily_runtime import read,prediction_settings; from quantlab.scout.cloud_runner import tick; from quantlab.scout.free_cloud import sealed_identity; from quantlab.scout.cloud_setup import ENGINE_COMMIT; initialize(Path("/data/scout")); settings=read(Path("/app/daily-settings.json")); assert prediction_settings(settings)["release_root"]=="/engine"; identity=sealed_identity(settings); assert identity["engine_commit"]==ENGINE_COMMIT; assert identity["prompt_version"]=="daily_facts_v13_source_qualified_judgments"; assert identity["schema_id"]=="urn:quantlab:scout_next_session_schema_v2:judgments"; assert tick(settings,enabled=False)["status"]=="schedule_disabled"; print(identity); print("Sealed cloud engine and disabled schedule verified; zero live calls")'
+
       - name: Diff whitespace check
         shell: bash
         run: |

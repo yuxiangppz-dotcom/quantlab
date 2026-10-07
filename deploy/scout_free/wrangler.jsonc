@@ -1,0 +1,11 @@
+{
+  "name": "quantlab-scout-phone",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-05",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {"enabled": false},
+  "durable_objects": {"bindings": [{"name": "SCOUT", "class_name": "ScoutStore"}]},
+  "migrations": [{"tag": "v1", "new_sqlite_classes": ["ScoutStore"]}],
+  "vars": {"SCHEDULE_ENABLED": "false"}
+}

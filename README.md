@@ -1,5 +1,11 @@
 # Scout · AI 选股研究助手
 
+**当前任务书版本：** 已接入巨潮市场公告抽样、AKShare 东方财富热榜快照和多入口候选；
+在本机完成一份真实报告，目标交易日与实际生成时间分别保存。新增固定 1/3/5/10
+交易日的前瞻价格观察和累计查看。功能已跑通，选股效果仍待未来真实样本观察。
+请从 [当前版操作说明](docs/scout_taskbook_zh.md) 开始使用。本页以下部分保留早期
+原型的技术背景；涉及规则基线对照、旧观察期限或“尚未真实运行”的说法已由新版说明取代。
+
 面向 A 股短线研究：从**量价异动、板块领先、信息关联**三条路径发现候选，
 用 AI 联网调查业务关系和反证，输出有来源、可复查的中文观察报告。
 
@@ -23,6 +29,10 @@ uv run scout --demo
 
 `--demo` 无需密钥、不联网，使用临时合成行情演示候选筛选和报告。
 命令会打印 `report.md` 的绝对路径。演示不会伪造 AI 分析或真实推荐。
+`--doctor` 只读检查本地证券表、日历和日线／复权分区，显示预期交易日、
+最近连续 21 个交易日的完整分区日期及落后交易日数。它只核对文件存在；
+正式研究运行仍会校验文件内容。行情落后时，使用显式 `--session` 可做历史离线诊断，
+不能将其称作当日结果。
 
 也可以使用 `uv run python -m quantlab.scout`，或原来的
 `uv run python scripts/run_scout.py`，参数相同。
@@ -39,7 +49,10 @@ uv run scout --demo
 | 后续观察 | 报告发布后的收盘数据 | 1／3／5 个交易日价格变化，与规则基线对照 |
 
 无重大事件但量价明显的股票也能进入候选。公司名称相似只算情绪联想，不能冒充股权或业务关系。
-模型输出必须引用候选自身的行情和已收集的来源；引用存在不等于内容已经核实。
+模型输出必须引用候选自身的行情和实际提供给最终比较、且已绑定到该股票的来源；
+引用存在不等于内容已经核实。
+报告中的 AI 仅给出候选研究优先级；展示的量价和披露说明由程序从输入生成。
+模型自由论述封存在原始响应中，未经事实审查不作为报告依据。
 
 ## 接入真实数据与 AI
 
@@ -54,7 +67,45 @@ uv run scout --offline --canonical-dir /absolute/path/to/quantlab/data/canonical
 连续 21 个交易日的日线和复权因子；换手率、涨跌停价可选。具体格式见
 [行情数据约定](docs/market_data.md)。缺失必需数据时停止，不会偷偷联网补齐。
 
-**2. 在本地配置密钥。**
+**2. 在本地配置 AI。** 默认仍为 OpenAI Responses。使用 DeepSeek V4.1 Flash 时：
+
+```bash
+export DEEPSEEK_API_KEY='你的 DeepSeek API Key'
+uv run scout --doctor --config config/scout_deepseek.example.json \
+  --canonical-dir /absolute/path/to/quantlab/data/canonical
+uv run scout --live --config config/scout_deepseek.example.json \
+  --canonical-dir /absolute/path/to/quantlab/data/canonical
+```
+
+官方 API 名称是 `deepseek-flash`。Scout 默认使用 `reasoning_effort=high` 和本地结构校验；
+可在配置中改为 `max`，但复杂多股调查可能耗尽输出 token 并使整轮标记为未完成。
+DeepSeek 示例将深查候选限制为 8 只；20 只候选的真实高思考运行在调查阶段耗尽
+16,000 输出 token，结果标记为未完成。规则候选池与 AI 深查容量是两种口径。
+DeepSeek API 在此模式没有内置网页搜索，模型只调查 Scout 已采集的行情、新闻、
+披露及导入线索。报告会标明网页搜索未覆盖，不允许模型编造新 URL。
+需要配置真实信息源并检查覆盖状态，才能评估调查内容。
+[模型名称](https://api-docs.deepseek.com/updates/)、
+[Responses 工具限制](https://api-docs.deepseek.com/guides/responses_api/)。
+
+若使用 GLM-5.3，复制
+[`config/scout_zai.example.json`](config/scout_zai.example.json) 并在运行时传入：
+
+```bash
+export ZAI_API_KEY='你的 Z.ai 开放平台 API Key'
+uv run scout --doctor --config config/scout_zai.example.json \
+  --canonical-dir /absolute/path/to/quantlab/data/canonical
+uv run scout --live --config config/scout_zai.example.json \
+  --canonical-dir /absolute/path/to/quantlab/data/canonical
+```
+
+GLM-5.3 接口使用 `reasoning_effort=max`、JSON 模式和前两阶段联网搜索；
+程序仍会在本地校验 JSON 结构、来源归属和完整结束状态。每轮最多 3 次模型请求，
+GLM 每次搜索最多返回配置的 `max_tool_calls` 条（上限 5），并非美元费用上限。
+请使用 Z.ai **开放平台 API Key**；Coding Plan 的订阅凭据有独立使用范围。
+联网请求和真实账户权限尚需本地联调。[GLM-5.3 接口](https://docs.z.ai/guides/llm/glm-5.3)、
+[Coding Plan 使用规则](https://docs.z.ai/devpack/usage-policy)。
+
+继续使用 OpenAI 时：
 
 ```bash
 cp config/scout.env.example .env.scout
@@ -98,9 +149,26 @@ uv run scout --live --canonical-dir /absolute/path/to/quantlab/data/canonical
 | 文件 | 内容 |
 |---|---|
 | `report.md` | 中文候选、依据、风险、失效观察点、来源与覆盖状态 |
+| `report.html` | 可离线打开的只读候选卡、公告风险、来源索引和覆盖表；不加载脚本或外部资源 |
 | `report.json` | 行情指标快照、规则基线、行业映射、证据、配置和模型用量 |
-| `ai_responses.json` | 本地保存的原始 AI 响应 |
+| `ai_responses.json` | 本地保存的 AI 响应；GLM 与 DeepSeek 的私有推理内容不入档 |
 | `manifest.json` | 内容哈希，用于后续核对原报告 |
+
+要给已有报告生成单独的 HTML 视图，指定一个尚不存在的输出文件：
+
+```bash
+uv run python scripts/render_scout_html.py data/scout/runs/实际运行目录/report.json /absolute/path/to/scout-view.html
+```
+
+该命令只读取归档 JSON；输出文件已存在时会报错，避免覆盖旧视图或实验产物。
+正式公告索引的公告日期和获取时间不证明收盘前已经披露；报告会提示晚于行情日的公告，
+模型分级不能直接当作该收盘时点的回测信号。
+报告也汇总模型观察股中收盘价等于当日涨停价及一价行情的数量；这些是行情事实，
+不能据此推断次日开盘价或成交机会。
+
+若人工读过公告正文，可另存复核 JSON，并用 `--review-json /absolute/path/to/review.json`
+生成一份新的 HTML 视图。复核备注只与报告里已有的官方公告链接绑定，标注为报告生成之后的核查，
+不改变原报告和模型分级。格式见 [Scout 使用说明](docs/scout_zh.md)。
 
 观察报告之后的价格变化：
 
@@ -112,6 +180,17 @@ uv run scout --track-run data/scout/runs/实际运行目录 \
 
 结果从报告发布后第一个收盘价开始计算，缺失值保留为空。
 它不是实际买卖收益，不假设涨停能买到或跌停能卖出。
+
+开盘前需要复查已保存候选的正式公告索引时，可运行：
+
+```bash
+uv run python scripts/recheck_scout_notices.py data/scout/runs/实际运行目录/report.json \
+  /absolute/path/to/new-notice-check.json
+```
+
+该命令只读查询最多8只最终候选的巨潮公告索引并另存差异，不调用AI、不写旧run。
+运行前核对 `report.json` 与同目录 `manifest.json` 的哈希；输出必须在旧run目录之外。
+“原归档未见”不等于“刚发布”；查询失败或为空不能证明没有公告，正文和精确发布时间仍需人工核查。
 
 ## 代码结构与开发
 
