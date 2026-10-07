@@ -55,7 +55,7 @@ def test_daily_pipeline_three_calls_exact_input_facts_and_immutable_reports(tmp_
         "daily_delivery": True,
         "opportunity_selection": True,
         "tushare_news_sources": [],
-        "max_output_tokens": 32768,
+        "max_output_tokens": 131072,
         "candidate_limit": 2,
     }
     with (

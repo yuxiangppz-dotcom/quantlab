@@ -121,7 +121,7 @@ def test_actual_three_requests_d1_all_24_and_technical_fact_transport(tmp_path, 
         "tushare_news_sources": [],
         "tushare_industry": False,
         "tushare_disclosures": False,
-        "max_output_tokens": 32768,
+        "max_output_tokens": 131072,
         "candidate_limit": 24,
     }
     with (
@@ -187,7 +187,7 @@ def test_deep_baseline_budget_failure_precedes_first_model_request(tmp_path, mon
         "tushare_news_sources": [],
         "tushare_industry": False,
         "tushare_disclosures": False,
-        "max_output_tokens": 32768,
+        "max_output_tokens": 131072,
         "candidate_limit": 24,
     }
     with (

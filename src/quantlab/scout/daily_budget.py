@@ -17,7 +17,7 @@ from quantlab.scout.models import fingerprint
 POLICY = {
     "max_calls": 4,
     "max_repairs": 1,
-    "max_output_tokens": 32768,
+    "max_output_tokens": 131072,
     "max_input_chars": 180000,
     "max_input_bytes": 300000,
     "max_total_tokens": 1200000,
@@ -114,6 +114,7 @@ class DailyResearch:
             if "[SCOUT_DECISION_V2]" in prompt
             else "legacy",
             "reserved_tokens": reservation,
+            "max_output_tokens": getattr(self.client, "max_output_tokens", None),
             "delivery_status": "attempted_delivery_unknown",
         }
         self.requests.append(record)
@@ -168,6 +169,18 @@ class DailyResearch:
             errors = [
                 {"code": "adapter_invalid_response", "finish_reason": choice.get("finish_reason")}
             ]
+            if choice.get("finish_reason") == "length":
+                usage = raw.get("usage", {})
+                details = usage.get("completion_tokens_details") or {}
+                errors.append(
+                    {
+                        "code": "output_token_limit_reached",
+                        "configured_output_limit": self.policy["max_output_tokens"],
+                        "completion_tokens": usage.get("completion_tokens"),
+                        "reasoning_tokens": details.get("reasoning_tokens"),
+                        "partial_output_accepted": False,
+                    }
+                )
             if result is None:
                 errors.append({"code": "invalid_or_truncated_json"})
             else:
@@ -250,6 +263,13 @@ class DailyResearch:
                 }
             )
         )
+        if previous is None:
+            correction += (
+                "\n原回复未形成完整可解析JSON，无法取得此前完整的比较决定。"
+                "请依据原输入中的事实及已通过调查的内容重新输出完整JSON；"
+                "不要拼接残缺正文，不得把残缺回复作为新增事实。"
+                "使用原始事实占位符，减少重复描述，完成全部必需字段。"
+            )
         plan = patch_plan(previous, errors, schema, fact_subjects=fact_subjects)
         if plan is not None and validator is not None:
             correction += (

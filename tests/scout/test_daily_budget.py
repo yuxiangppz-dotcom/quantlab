@@ -130,3 +130,49 @@ def test_second_adapter_failure_collects_all_schema_errors_without_third_call(tm
     assert sum(e["code"] == "schema" for e in exc.value.errors) == 2
     assert any(e.get("finish_reason") == "length" for e in exc.value.errors)
     assert (tmp_path / "02-errors.json").exists()
+
+
+def test_larger_output_reservation_blocks_before_paid_request():
+    fake = Fake([{}])
+    client = DailyResearch(fake)
+    # This balance could cover the old 32768 reserve, but not the new 131072 reserve.
+    client.spent = client.policy["max_total_tokens"] - 100000
+    with pytest.raises(DailyBudgetError, match="daily_total_token_budget"):
+        client.ask("small", {})
+    assert fake.calls == [] and client.requests == []
+
+
+def test_truncated_reply_uses_one_complete_repair_and_retains_usage(tmp_path):
+    class Truncated(Fake):
+        max_output_tokens = 131072
+
+        def ask(self, prompt, schema):
+            if self.calls:
+                return super().ask(prompt, schema)
+            self.calls.append(prompt)
+            self.failed_response = {
+                "choices": [{"finish_reason": "length", "message": {"content": '{"x":'}}],
+                "usage": {
+                    "total_tokens": 150000,
+                    "completion_tokens": 131072,
+                    "completion_tokens_details": {"reasoning_tokens": 100000},
+                },
+            }
+            raise ValueError("incomplete")
+
+    client = DailyResearch(Truncated([{}]), journal=tmp_path)
+    result, _ = client.ask("original frozen facts", {"type": "object"})
+    assert result == {} and client.repairs == 1 and len(client.calls) == 2
+    assert client.spent == 150100
+    errors = json.loads((tmp_path / "01-errors.json").read_text())
+    truncation = next(e for e in errors if e["code"] == "output_token_limit_reached")
+    assert truncation["completion_tokens"] == 131072
+    assert truncation["reasoning_tokens"] == 100000
+    assert truncation["partial_output_accepted"] is False
+    repair = client.calls[1]
+    assert "原回复未形成完整可解析JSON" in repair
+    assert "131072" in repair and "100000" in repair
+    assert '{"x":' not in repair
+    assert client.correction["mode"] == "single_full_correction"
+    request = json.loads((tmp_path / "01-request.json").read_text())
+    assert request["max_output_tokens"] == 131072

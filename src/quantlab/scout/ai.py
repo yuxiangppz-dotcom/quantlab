@@ -532,6 +532,9 @@ class ZAIResearch:
         return parsed, archived
 
 
+DEEPSEEK_MAX_OUTPUT_TOKENS = 393216  # Official Chat Completions API maximum, 384 Ki tokens.
+
+
 class DeepSeekResearch:
     """V4.1 Flash over Chat Completions; searches must come from Scout sources."""
 

@@ -46,13 +46,13 @@ def test_deepseek_request_and_private_reasoning_redaction(monkeypatch):
         return Response()
 
     monkeypatch.setattr("urllib.request.urlopen", fetch)
-    client = DeepSeekResearch(max_output_tokens=12000, reasoning_effort="max")
+    client = DeepSeekResearch(max_output_tokens=131072, reasoning_effort="max")
     result, archived = client.ask("仅分析给定材料", DISCOVERY_SCHEMA)
     assert result == {"hypotheses": []}
     assert requests[0]["model"] == "deepseek-flash"
     assert requests[0]["reasoning_effort"] == "max"
     assert requests[0]["thinking"] == {"type": "enabled"}
-    assert requests[0]["max_tokens"] == 12000
+    assert requests[0]["max_tokens"] == 131072
     assert requests[0]["response_format"] == {"type": "json_object"}
     assert "tools" not in requests[0]
     assert "不能联网搜索" in requests[0]["messages"][0]["content"]
@@ -185,8 +185,8 @@ def test_discovery_cannot_bind_a_source_omitted_from_its_prompt(tmp_path, monkey
 
 def test_deepseek_bounded_long_output_config(tmp_path):
     config_path = tmp_path / "long-output.json"
-    config_path.write_text('{"provider":"deepseek","max_output_tokens":65536}')
-    assert read_config(config_path)["max_output_tokens"] == 65536
-    config_path.write_text('{"provider":"deepseek","max_output_tokens":65537}')
+    config_path.write_text('{"provider":"deepseek","max_output_tokens":393216}')
+    assert read_config(config_path)["max_output_tokens"] == 393216
+    config_path.write_text('{"provider":"deepseek","max_output_tokens":393217}')
     with pytest.raises(ValueError, match="max_output_tokens"):
         read_config(config_path)

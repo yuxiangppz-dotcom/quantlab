@@ -276,8 +276,9 @@ uv run python scripts/run_scout.py --live --clues /path/to/clues.json
 配置缺失或行情不完整会在调用付费模型前停止。
 
 每次最多3次模型调用、每次输出token上限默认6000；DeepSeek 示例设为24000，
-用于容纳思考与最终 JSON，上限32768。此前16000的真实运行曾在第二阶段截断，
-见[官方模型输出上限](https://api-docs.deepseek.com/api/list-models/)与
+用于容纳思考与最终 JSON。固定日常版本每请求输出上限131072，含思考与正文；
+总调用4次、一次纠错、总token 1200000预算保持。DeepSeek通用配置最大393216，
+见[官方模型输出上限](https://api-docs.deepseek.com/api/create-chat-completion/)与
 [思考模式说明](https://api-docs.deepseek.com/guides/thinking_mode/)。OpenAI 搜索调用上限默认5；
 GLM 搜索每阶段最多返回5条结果，最多两个含搜索的阶段。
 限制是请求数量/token上限，不是美元硬封顶；搜索结果token和输入仍计费。

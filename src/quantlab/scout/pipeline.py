@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from quantlab.data.storage import ParquetStorage
 from quantlab.scout.ai import (
+    DEEPSEEK_MAX_OUTPUT_TOKENS,
     DISCOVERY_SCHEMA,
     SELECTION_SCHEMA,
     DeepSeekResearch,
@@ -27,6 +28,7 @@ from quantlab.scout.ai import (
     retain_valid_selection,
     search_evidence,
 )
+from quantlab.scout.daily_budget import POLICY as DAILY_POLICY
 from quantlab.scout.daily_contract import VERSION as DAILY_VERSION
 from quantlab.scout.daily_contract import unpack_facts
 from quantlab.scout.disclosures import (
@@ -218,7 +220,11 @@ def read_config(path: Path | None) -> dict:
     ] not in {"low", "high", "max"}:
         raise ValueError("deepseek_reasoning_effort must be low, high or max")
     for name, lower, upper in (
-        ("max_output_tokens", 1000, 65536 if config["provider"] == "deepseek" else 16000),
+        (
+            "max_output_tokens",
+            1000,
+            DEEPSEEK_MAX_OUTPUT_TOKENS if config["provider"] == "deepseek" else 16000,
+        ),
         ("max_tool_calls", 1, 10),
         ("lookback_hours", 1, 168),
         ("candidate_limit", 8, 40),
@@ -271,7 +277,7 @@ def read_config(path: Path | None) -> dict:
     if config["daily_delivery"] and (
         not config["opportunity_selection"]
         or config["provider"] != "deepseek"
-        or config["max_output_tokens"] != 32768
+        or config["max_output_tokens"] != DAILY_POLICY["max_output_tokens"]
         or config["max_input_chars"] != 180000
         or config["deepseek_reasoning_effort"] != "low"
     ):
