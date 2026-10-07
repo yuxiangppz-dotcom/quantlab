@@ -1534,7 +1534,10 @@ def run_scout(
                     study_schema = investigation_contract(pool, study_packet)
                     progress("研究输入预算预检通过，调查全部候选")
                     investigation, raw = client.ask(
-                        investigation_prompt(study_packet),
+                        investigation_prompt(
+                            study_packet,
+                            program_assembly=config.get("program_assembled_selection", False),
+                        ),
                         study_schema,
                         validator=lambda value: investigation_errors(
                             value, study_packet, study_schema

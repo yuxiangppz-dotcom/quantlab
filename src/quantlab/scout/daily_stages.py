@@ -323,7 +323,7 @@ def investigation_errors(output, packet, schema):
     return errors
 
 
-def investigation_prompt(packet):
+def investigation_prompt(packet, *, program_assembly=False):
     shared, stage = SHARED, INVESTIGATION
     if packet.get("prediction_objective") == "next_session":
         from quantlab.scout.nextday_contract import INVESTIGATION as NEXT_INVESTIGATION
@@ -335,6 +335,17 @@ def investigation_prompt(packet):
             "按字典还原不能当数值；value保持原值。technical_fact_indices按事实行从零索引。\n"
         )
         stage += OPPORTUNITY_ENCODING
+    qualitative = (
+        "\n[QUALITATIVE_STUDY_V1]程序组装模式：本阶段只输出短定性调查判断，"
+        "数字、日期、涨跌方向、资金净额及窗口比较不在说明段落重写，也不在段落插入[[引用]]。"
+        "事实引用放独立scale_fact_ids，事件身份放event_ids；程序保留完整事实表供最终比较展示。"
+        "incremental_change/economic_link/importance/next_session_thesis/next_node_basis"
+        "只写定性变化、因果假设、反证及未知。不要复述行情日期或标题中的数字。"
+        "例如证据缺口可写‘仅有价格迹象，缺公司层面催化’，不为通过校验删除反证事实。"
+        "合法有来源的后续日期仅填next_observation_date，没有依据就null。\n"
+        if program_assembly
+        else ""
+    )
     return (
         shared
         + stage
@@ -348,5 +359,5 @@ def investigation_prompt(packet):
         "hypotheses.relation只能是direct/supply_chain/theme/sentiment；纯量价假设使用sentiment，"
         "price_only只用于analysis.exposure或novelty。不要把两个字段枚举混用。"
         "分组假设的summary/counterargument保持短句，事实引用使用表内短ID；不重复复述全文。"
-        "说明简短，量化值不自行改写，只使用事实引用。\n" + compact(packet)
+        "说明简短，量化值不自行改写，只使用事实引用。\n" + qualitative + compact(packet)
     )

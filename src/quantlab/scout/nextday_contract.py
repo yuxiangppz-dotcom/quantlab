@@ -4,7 +4,7 @@ import re
 from copy import deepcopy
 from decimal import Decimal
 
-VERSION = "daily_facts_v11_program_selection"
+VERSION = "daily_facts_v12_qualitative_study"
 SCHEMA_VERSION = "scout_next_session_schema_v2"
 PARAMETER_VERSION = "next_session_parameters_v1"
 SHARED = """[SCOUT_NEXT_SESSION_V1]

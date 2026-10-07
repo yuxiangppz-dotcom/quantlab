@@ -4,9 +4,15 @@ import pytest
 from test_daily_contract import inputs, output
 
 from quantlab.scout.daily_contract import render_output, unpack_facts, validate_output
-from quantlab.scout.daily_semantics import BENCHMARK, claim_errors, render_claim
+from quantlab.scout.daily_semantics import BENCHMARK, claim_errors, prose_errors, render_claim
 from quantlab.scout.html_report import render_html_report
 from quantlab.scout.report import present_selection, render_report
+
+
+def test_neutral_funding_sample_category_is_not_a_numeric_assertion():
+    assert prose_errors("仅量价与资金样本，缺产业证据", {}) == []
+    for text in ("资金样本净流入", "资金样本增加", "资金样本较强", "资金样本十倍", "资金持续改善"):
+        assert prose_errors(text, {})
 
 
 def facts():

@@ -148,10 +148,11 @@ def prose_errors(text, facts, identities=()):
         # A qualitative risk label is not a quantitative funding observation.
         # Keep the word guard when a number, direction or causal assertion appears.
         if not re.search(
-            r"\d|[％%元倍]|净额|净流|流入|流出|买入|卖出|窗口|改善|走强|推动|承接|封单|封板",
+            r"\d|[％%元倍]|净额|净流|流入|流出|买入|卖出|窗口|改善|走强|推动|承接|封单|封板"
+            r"|增加|减少|扩大|较强|更强|同向|一致|支撑|吸筹|聚集|活跃",
             clause,
         ):
-            clause = clause.replace("资金博弈", "")
+            clause = clause.replace("资金博弈", "").replace("资金样本", "")
         if re.search(r"相对收益|超额收益|跑赢行业|资金|净额|量比", clause):
             errors.append("unbound_quantitative_interpretation")
     return list(dict.fromkeys(errors))

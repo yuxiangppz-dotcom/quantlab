@@ -198,6 +198,7 @@ def test_actual_three_requests_d1_all_24_and_technical_fact_transport(
     assert len(report["nextday_freeze"]["rows"]) == 24
     assert report["nextday_freeze"]["focus_k"] == 0
     study = json.loads(captured[1][0][captured[1][0].index('{"version"') :])
+    assert ("[QUALITATIVE_STUDY_V1]" in captured[1][0]) == program_assembly
     final = report["selection_input_packet"]
     for packet in (study, final):
         metrics = {value["metric"] for value in unpack_facts(packet).values()}

@@ -92,6 +92,8 @@ class DailyResearch:
 
     def _call(self, prompt, schema):
         self.failed_response = None
+        # A generated repair contract must be legal before a paid request.
+        Draft202012Validator.check_schema(schema)
         if len(self.requests) >= self.policy["max_calls"]:
             raise DailyBudgetError("daily_call_budget")
         if time.monotonic() - self.started_clock >= self.policy["run_timeout_seconds"]:

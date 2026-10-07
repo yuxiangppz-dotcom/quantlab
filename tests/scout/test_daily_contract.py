@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 import pytest
+from jsonschema import Draft202012Validator
 
 from quantlab.scout.daily_budget import DailyResearch, DailyValidationError
 from quantlab.scout.daily_contract import (
@@ -318,6 +319,8 @@ def test_patch_cannot_change_unreported_selection_or_duplicate_path():
         previous, validate_output(previous, packet), selection_schema(packet["candidates"])
     )
     assert plan is not None
+    # A no-reference prose repair used to generate forbidden allOf: [].
+    Draft202012Validator.check_schema(plan["schema"])
     malicious = {
         "patches": [{"path": "/comparisons/0/final_status", "op": "replace", "value": "unselected"}]
     }

@@ -223,16 +223,20 @@ def patch_plan(previous, errors, schema, *, fact_subjects=None):
 
             if row and path[-1] == "fact_ids":
                 keep = [r for r in row["fact_ids"] if not prior_peer_ref(r) and r not in bad_refs]
-                properties["value"]["allOf"] = [{"contains": {"const": ref}} for ref in keep]
+                if keep:
+                    properties["value"].setdefault("allOf", []).extend(
+                        {"contains": {"const": ref}} for ref in keep
+                    )
             elif isinstance(get_at(previous, path), str):
                 keep = [
                     r
                     for r in REF.findall(get_at(previous, path))
                     if not prior_peer_ref(r) and r not in bad_refs
                 ]
-                properties["value"]["allOf"] = [
-                    {"pattern": re.escape("[[" + ref + "]]")} for ref in keep
-                ]
+                if keep:
+                    properties["value"].setdefault("allOf", []).extend(
+                        {"pattern": re.escape("[[" + ref + "]]")} for ref in keep
+                    )
             required.append("value")
         branches.append(
             {

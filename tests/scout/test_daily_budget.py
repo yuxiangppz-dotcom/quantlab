@@ -2,6 +2,7 @@ import json
 import time
 
 import pytest
+from jsonschema.exceptions import SchemaError
 
 from quantlab.scout.daily_budget import DailyBudgetError, DailyResearch, DailyValidationError
 
@@ -25,6 +26,15 @@ class Fake:
             "usage": {"total_tokens": 100},
         }
         return result, raw
+
+
+def test_invalid_generated_schema_is_rejected_before_paid_transport(tmp_path):
+    fake = Fake([{}])
+    client = DailyResearch(fake, journal=tmp_path)
+    with pytest.raises(SchemaError):
+        client.ask("fixed", {"type": "string", "allOf": []})
+    assert fake.calls == [] and client.requests == [] and client.spent == 0
+    assert not list(tmp_path.glob("*-request.json"))
 
 
 def test_fixed_policy_input_precheck_and_call_ceiling(tmp_path):
