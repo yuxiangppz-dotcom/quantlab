@@ -1,4 +1,4 @@
-"""Small model judgments assembled into the unchanged, fully checked D1 report.
+"""Model opinions with independently checked program facts and D1 bindings.
 
 Order, grades and explanations belong to the model. Subject/metric bindings,
 observation tuples, ranks and display facts belong to the program. No invalid
@@ -19,15 +19,16 @@ from quantlab.scout.daily_contract import (
     validate_output,
 )
 from quantlab.scout.models import fingerprint
-from quantlab.scout.nextday_contract import CONDITION_OBSERVATIONS, SHARED
+from quantlab.scout.nextday_contract import CONDITION_OBSERVATIONS, SHARED, unspecified_mechanism
 from quantlab.scout.opportunities import TYPE_LABELS
 
-VERSION = "program_assembled_selection_v1"
+VERSION = "program_assembled_selection_v2"
 SCHEMA_ID = "urn:quantlab:scout_next_session_schema_v2:judgments"
 INSTRUCTION = (
     SHARED
     + OPPORTUNITY_ENCODING
     + """[PROGRAM_ASSEMBLED_SELECTION_V1]
+[OPINION_AND_FACTS_V2]判断不当作已核实事实，程序单独展示事实卡；短句尽量避免重复数字。
 facts按fact_columns读取，subject_id/metric/period/unit整数按fact_dictionaries还原，value保留原值。
 technical_fact_indices按当前facts行从零索引。绝对均线/原MACD与其归一指标同源；
 未用于调查的冗余绝对指标保留于审计，当前输入不提供，不能猜测或引用省略ID。
@@ -46,8 +47,10 @@ comparator_id从本股comparable_ids选，确实不可比时null；comparison_fa
 focus若有同行必须有可用事实对并解释实际差异；中性事实卡不证明经济因果。
 condition_id仅从本股condition_options选，与primary_type相容；程序固定观察指标及失效规则。
 focus必须有条件和具体机制；“待验证/走势强/继续观察”不够。watch允许条件未知为null。
-事件选项不代表事件已核实增量，仍以原调查novelty/exposure及官方正文状态约束focus。
-不重写novelty，不把首次采集当新消息。调查原文、反证和缺口都在输入，必须考虑。
+调查原文是未验证的模型研究笔记，不是事实。数值只取facts及原来源，不取笔记中的数值断言。
+allowed_primary_types是本股合法研究类型；study_source_qualification是程序核对后的来源资格。
+无此前记录的material_update等不成立判断只降为unknown并保留原声明，绝不升级为新增事件。
+事件仅有合法类型选项时可选；首次采集不等于新消息。原调查、反证和缺口保留于输入与审计。
 保留价格已扩张、减持、亏损等反证，不为通过校验隐去。无订单或可成交保证。
 只输出符合schema的短JSON数据，不输出schema定义。程序附上技术位置、价格反应、
 规则、原调查身份和来源，不需要你复制这些字段；这不代表已证明能赚钱。
@@ -116,6 +119,45 @@ def prepare_packet(packet):
     options = {}
     for candidate in result["candidates"]:
         code = candidate["instrument_id"]
+        claimed = study.get(code, {})
+        chosen_events = [
+            e for e in candidate.get("events", []) if e["record_id"] in claimed.get("event_ids", [])
+        ]
+        novelty = claimed.get("novelty", "unknown")
+        rejected = []
+        if novelty in {"new_event", "material_update"} and (
+            not chosen_events
+            or all(
+                e.get("novelty") in {"routine_schedule", "long_term_background", "repeated_content"}
+                for e in chosen_events
+            )
+        ):
+            rejected.append("old_or_routine_cannot_be_new")
+        if novelty == "material_update" and not any(
+            e.get("previous_record_id") for e in chosen_events
+        ):
+            rejected.append("update_without_prior")
+        candidate["study_source_qualification"] = {
+            "claimed_novelty": novelty,
+            "novelty": "unknown" if rejected else novelty,
+            "exposure": claimed.get("exposure", "unknown"),
+            "rejection_codes": rejected,
+            "original_study_sha256": fingerprint(claimed),
+            "narratives_are_unverified_model_notes": True,
+        }
+        event_eligible = (
+            candidate["study_source_qualification"]["novelty"] in {"new_event", "material_update"}
+            and claimed.get("exposure", "unknown") != "unknown"
+            and any(
+                e.get("official_source")
+                and not e.get("title_only", True)
+                and e.get("relation") == "direct_subject"
+                for e in chosen_events
+            )
+        )
+        candidate["allowed_primary_types"] = [
+            kind for kind in TYPE_LABELS if kind != "event_update" or event_eligible
+        ]
         own_options = []
         for metric, kind, rule in (
             ("relative_return_1d", "relative_strength_extension", "relative_d1_nonpositive_v1"),
@@ -146,6 +188,7 @@ def prepare_packet(packet):
         for event in candidate.get("events", []):
             if not (
                 refs
+                and event_eligible
                 and event.get("official_source")
                 and not event.get("title_only", True)
                 and event.get("relation") == "direct_subject"
@@ -236,6 +279,38 @@ def schema(packet):
                     "additionalProperties": False,
                     "required": list(props),
                     "properties": props,
+                    "allOf": [
+                        {
+                            "if": {"properties": {"instrument_id": {"const": c["instrument_id"]}}},
+                            "then": {
+                                "properties": {
+                                    "primary_type": {"enum": c["allowed_primary_types"]},
+                                    "comparator_id": {"enum": [None, *c.get("comparable_ids", [])]},
+                                    "condition_id": {"enum": [None, *c["condition_options"]]},
+                                }
+                            },
+                        }
+                        for c in packet["candidates"]
+                    ]
+                    + [
+                        {
+                            "if": {
+                                "anyOf": [
+                                    {
+                                        "properties": {
+                                            "primary_type": {"const": "insufficient_evidence"}
+                                        }
+                                    },
+                                    {
+                                        "properties": {
+                                            "evidence_reliability": {"const": "insufficient"}
+                                        }
+                                    },
+                                ]
+                            },
+                            "then": {"properties": {"final_status": {"const": "unselected"}}},
+                        }
+                    ],
                 },
             },
         },
@@ -253,6 +328,10 @@ def assemble(value, packet):
     studies = {
         r["instrument_id"]: r["analysis"] for r in packet.get("investigation_opportunities", [])
     }
+
+    def opinion(text):
+        return "模型判断（非已核实事实）：" + text
+
     rows, rank = [], 0
     for judgment in value["comparisons"]:
         code = judgment["instrument_id"]
@@ -266,7 +345,7 @@ def assemble(value, packet):
                 "fact_ids": option["fact_ids"],
                 "event_id": option["event_id"],
                 "driver": driver,
-                "mechanism": judgment["mechanism"],
+                "mechanism": opinion(judgment["mechanism"]),
                 "observation": {"window": window, "metric": metric, "expected_state": state},
             }
             rule = {"rule_id": option["rule_id"], "reference_id": option["reference_id"]}
@@ -315,14 +394,14 @@ def assemble(value, packet):
         status = candidate.get("trading_status")
         status = status.get("status") if isinstance(status, dict) else status
         analysis = {
-            "novelty": study.get("novelty", "unknown"),
+            "novelty": candidate["study_source_qualification"]["novelty"],
             "event_ids": event_ids,
             "exposure": study.get("exposure", "unknown"),
             "incremental_change": "变化及新旧状态沿用本次调查记录，首次采集不等于新消息",
-            "economic_link": judgment["reason"],
-            "importance": judgment["counterargument"],
+            "economic_link": opinion(judgment["reason"]),
+            "importance": opinion(judgment["counterargument"]),
             "scale_fact_ids": [],
-            "next_session_thesis": judgment["mechanism"],
+            "next_session_thesis": opinion(judgment["mechanism"]),
             "next_observation_date": None,
             "next_node_basis": "条件性目标日观察，不宣称已有后续日程",
             "next_node_is_hypothesis": True,
@@ -338,10 +417,13 @@ def assemble(value, packet):
             "comparison_strength": judgment["comparison_strength"],
             "evidence_reliability": judgment["evidence_reliability"],
             "thesis": "；".join(
-                filter(None, (_clauses(judgment["support_fact_ids"]), judgment["reason"]))
+                filter(None, (_clauses(judgment["support_fact_ids"]), opinion(judgment["reason"])))
             ),
             "risk": "；".join(
-                filter(None, (_clauses(judgment["counter_fact_ids"]), judgment["counterargument"]))
+                filter(
+                    None,
+                    (_clauses(judgment["counter_fact_ids"]), opinion(judgment["counterargument"])),
+                )
             ),
             "difference": "；".join(
                 filter(
@@ -350,12 +432,12 @@ def assemble(value, packet):
                         _clauses(
                             candidate["comparison_fact_pairs"].get(judgment["comparator_id"], [])
                         ),
-                        judgment["difference"],
+                        opinion(judgment["difference"]),
                     ),
                 )
             ),
-            "independent_basis": judgment["independent_basis"],
-            "unknowns": judgment["unknowns"],
+            "independent_basis": opinion(judgment["independent_basis"]),
+            "unknowns": opinion(judgment["unknowns"]),
             "invalidation": "按选定规则在目标日对应时点核查；缺数据保持未知",
             "invalidation_rule": rule,
             "next_session_condition": condition,
@@ -364,7 +446,8 @@ def assemble(value, packet):
             "semantic_claims": [],
             "technical_fact_ids": tech,
             "technical_interpretation": (
-                "技术指标来自同一价格家族，未来需求和成交条件未知" if tech
+                "技术指标来自同一价格家族，未来需求和成交条件未知"
+                if tech
                 else "技术事实不足，位置未知"
             ),
             "price_reaction": _clauses(reaction) or "历史价格反应未知",
@@ -403,6 +486,17 @@ def errors(value, packet):
         return [{"path": ["comparisons"], "code": "duplicate_or_missing_subject"}]
     for row in value["comparisons"]:
         code = row["instrument_id"]
+        if row["final_status"] == "focus":
+            for field, issue in (
+                ("mechanism", "focus_requires_specific_next_session_mechanism"),
+                ("reason", "focus_requires_specific_selection_reason"),
+            ):
+                if unspecified_mechanism(row[field]):
+                    issues.append({"path": [code, field], "code": issue})
+        if row["primary_type"] not in candidates[code]["allowed_primary_types"]:
+            issues.append(
+                {"path": [code, "primary_type"], "code": "source_qualified_type_required"}
+            )
         for field in ("support_fact_ids", "counter_fact_ids"):
             for ref in row[field]:
                 if (
@@ -428,7 +522,18 @@ def errors(value, packet):
             issues.append({"path": [code, "condition_id"], "code": "condition_type_mismatch"})
     if issues:
         return issues
-    return validate_output(assemble(value, packet), packet)
+    return validate_output(assemble(value, packet), packet, opinion_warnings=[])
+
+
+def opinion_audit(value, packet):
+    """Audit prose without claiming an NLP parser can certify its truth."""
+    warnings = []
+    validate_output(assemble(value, packet), packet, opinion_warnings=warnings)
+    return {
+        "scope": "model_opinions_not_verified_facts",
+        "warnings": warnings,
+        "unverified_model_numbers_are_not_fact_cards": True,
+    }
 
 
 def provenance(value, packet, output):
@@ -442,6 +547,11 @@ def provenance(value, packet, output):
         "model_grades": [[r["instrument_id"], r["final_status"]] for r in value["comparisons"]],
         "program_selection_score": None,
         "invalid_rows_promoted": False,
+        "validation_scope": "structured_identity_facts_conditions_not_opinion_truth",
+        "opinion_audit": opinion_audit(value, packet),
+        "source_qualifications": {
+            c["instrument_id"]: c["study_source_qualification"] for c in packet["candidates"]
+        },
     }
 
 

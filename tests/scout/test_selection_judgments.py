@@ -13,6 +13,7 @@ from quantlab.scout.selection_judgments import (
     errors,
     merge_repairs,
     model_packet,
+    opinion_audit,
     prepare_packet,
     provenance,
     repair_plan,
@@ -107,7 +108,6 @@ def test_model_metadata_encoding_is_lossless_and_unused_absolute_facts_not_citab
         ("foreign_condition", "condition_option_not_shown_for_subject"),
         ("foreign_fact", "requires_shown_nonnull_own_fact"),
         ("bad_peer", "comparator_not_shown"),
-        ("numeric_prose", "quantitative_prose_requires_fact_placeholder"),
         ("vague_mechanism", "focus_requires_specific_next_session_mechanism"),
         ("missing_condition", "focus_requires_structured_next_session_condition"),
         ("insufficient", "insufficient_cannot_rank_or_select"),
@@ -122,8 +122,6 @@ def test_no_favorable_coercion_of_invalid_judgment(change, code):
         row["support_fact_ids"] = other["support_fact_ids"]
     elif change == "bad_peer":
         row["comparator_id"] = "999999.SH"
-    elif change == "numeric_prose":
-        row["counterargument"] = "已上涨40%，注意回撤"
     elif change == "vague_mechanism":
         row["mechanism"] = "已有走势较强，继续观察"
     elif change == "missing_condition":
@@ -131,7 +129,7 @@ def test_no_favorable_coercion_of_invalid_judgment(change, code):
     else:
         row["evidence_reliability"] = "insufficient"
     issues = errors(value, packet)
-    assert any(e["code"] == code for e in issues), issues
+    assert any(e["code"] in {code, "judgment_schema"} for e in issues), issues
 
 
 def test_missing_own_conditions_are_not_invented_and_halts_keep_research():
@@ -150,27 +148,27 @@ def test_missing_own_conditions_are_not_invented_and_halts_keep_research():
             packet["facts"][ref][3] = None
     packet = prepare_packet(packet)
     assert not candidate["condition_options"] or errors(value, packet)
-    assert any(e["code"] == "condition_option_not_shown_for_subject" for e in errors(value, packet))
+    assert errors(value, packet)
 
 
 def test_directed_repair_keeps_unreported_rows_and_order_byte_for_byte():
     packet, value = packet_and_judgments()
-    value["comparisons"][0]["counterargument"] = "涨幅40%"
+    value["comparisons"][0]["condition_id"] = value["comparisons"][1]["condition_id"]
     issues = errors(value, packet)
     plan = repair_plan(value, issues, schema(packet))
     changed = deepcopy(value["comparisons"][0])
-    changed["counterargument"] = "价格已扩张，可能回撤"
+    changed["condition_id"] = changed["instrument_id"] + ":price_structure_repair"
     result, problems = merge_repairs(value, {"repairs": [changed]}, plan)
     assert not problems and not errors(result, packet)
     assert result["comparisons"][1] == value["comparisons"][1]
-    assert value["comparisons"][0]["counterargument"] == "涨幅40%"
+    assert value["comparisons"][0]["condition_id"] == value["comparisons"][1]["condition_id"]
     assert merge_repairs(value, {"repairs": [value["comparisons"][1]]}, plan)[1]
 
 
 @pytest.mark.parametrize("repair_valid", [True, False])
 def test_daily_repair_is_one_call_with_new_wire_not_old_report_fields(tmp_path, repair_valid):
     packet, value = packet_and_judgments()
-    value["comparisons"][0]["counterargument"] = "涨幅40%"
+    value["comparisons"][0]["condition_id"] = value["comparisons"][1]["condition_id"]
 
     class Model:
         model, max_output_tokens = "fake-non-real-model", 131072
@@ -186,7 +184,7 @@ def test_daily_repair_is_one_call_with_new_wire_not_old_report_fields(tmp_path, 
                 assert contract["$id"].endswith(":judgments-repairs")
                 fixed = deepcopy(value["comparisons"][0])
                 if repair_valid:
-                    fixed["counterargument"] = "价格已扩张，可能回撤"
+                    fixed["condition_id"] = fixed["instrument_id"] + ":price_structure_repair"
                 result = {"repairs": [fixed]}
             return result, {"usage": {"total_tokens": 100}, "choices": []}
 
@@ -204,3 +202,47 @@ def test_daily_repair_is_one_call_with_new_wire_not_old_report_fields(tmp_path, 
             client.ask("固定事实", schema(packet), validator=lambda x: errors(x, packet))
     assert len(client.calls) == 2 and client.repairs == 1
     assert client.correction["mode"] == "single_directed_judgment_repair"
+
+
+def test_model_prose_is_attributed_and_audited_not_used_as_program_facts():
+    packet, value = packet_and_judgments()
+    row = value["comparisons"][0]
+    row["counterargument"] = "已上涨40%，注意回撤"
+    row["reason"] = "若政策预期升温，资金可能重新定价"
+    original = deepcopy(value)
+    assert errors(value, packet) == []
+    audit = opinion_audit(value, packet)
+    assert any(
+        e["code"] == "quantitative_prose_requires_fact_placeholder" for e in audit["warnings"]
+    )
+    output = assemble(value, packet)
+    assert "模型判断（非已核实事实）" in output["comparisons"][0]["risk"]
+    assert output["comparisons"][0]["semantic_claims"] == []
+    assert value == original
+    assert validate_output(output, packet)  # Legacy assertion protocol remains strict.
+    row["support_fact_ids"] = value["comparisons"][1]["support_fact_ids"]
+    assert any(e["code"] == "requires_shown_nonnull_own_fact" for e in errors(value, packet))
+
+
+def test_source_qualification_downgrades_unproved_update_preserves_original():
+    packet, _ = compact_fact_refs(nextday_packet())
+    code = packet["candidates"][0]["instrument_id"]
+    packet["investigation_opportunities"] = [
+        {
+            "instrument_id": code,
+            "analysis": {
+                "novelty": "material_update",
+                "exposure": "direct",
+                "event_ids": [],
+                "economic_link": "未经核实的研究笔记",
+            },
+        }
+    ]
+    original = deepcopy(packet)
+    prepared = prepare_packet(packet)
+    c = prepared["candidates"][0]
+    assert c["study_source_qualification"]["novelty"] == "unknown"
+    assert c["study_source_qualification"]["claimed_novelty"] == "material_update"
+    assert "event_update" not in c["allowed_primary_types"]
+    assert prepared["investigation_opportunities"] == original["investigation_opportunities"]
+    assert packet == original

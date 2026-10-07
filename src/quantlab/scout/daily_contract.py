@@ -729,8 +729,13 @@ def selection_schema(candidates, packet=None):
     return schema
 
 
-def validate_output(output, packet):
-    """Collect the complete schema and semantic error list without stopping at row one."""
+def validate_output(output, packet, *, opinion_warnings=None):
+    """Check machine facts/bindings; optionally audit model prose as opinions.
+
+    Legacy responses still require prose to carry verified assertions. The short
+    judgment protocol attributes prose to the model and never turns it into facts.
+    Its prose findings are retained, but cannot invalidate structured fact cards.
+    """
     nextday = packet.get("prediction_objective") == "next_session"
     if nextday:
         from quantlab.scout.nextday_contract import (
@@ -928,7 +933,10 @@ def validate_output(output, packet):
             ):
                 error(code, "participation_status", "known_halt_requires_restricted")
         for field, issue in legacy_errors(row, candidates[code], packet["evidence"]):
-            error(code, field, issue)
+            if opinion_warnings is not None and issue != "discussion_only_cannot_focus":
+                opinion_warnings.append({"path": [code, field], "code": issue})
+            else:
+                error(code, field, issue)
         for event_id in row["analysis"]["event_ids"]:
             if event_id not in own_events:
                 error(code, "event_ids", "event_not_shown_for_subject:" + event_id)
@@ -987,8 +995,15 @@ def validate_output(output, packet):
         if nextday and row.get("next_session_condition"):
             fields["condition_mechanism"] = row["next_session_condition"]["mechanism"]
         for field, text in fields.items():
+
+            def prose_finding(issue, code=code, field=field, text=text):
+                if opinion_warnings is None:
+                    error(code, field, issue, actual=text)
+                else:
+                    opinion_warnings.append({"path": [code, field], "code": issue, "actual": text})
+
             for issue in prose_errors(text, facts, (code, peer)):
-                error(code, field, issue, actual=text)
+                prose_finding(issue)
             prose = REF.sub("事实", text)
             prose = re.sub(
                 r"(?<![A-Za-z0-9])[HD](?:1|2|3|5|10)(?![A-Za-z0-9])", "固定观察期限", prose
@@ -1007,9 +1022,9 @@ def validate_output(output, packet):
                         prose,
                     )
             if re.search(r"\d|净流[入出]", prose):
-                error(code, field, "quantitative_prose_requires_fact_placeholder", actual=text)
+                prose_finding("quantitative_prose_requires_fact_placeholder")
             if daily_microstructure_assertion(prose, field):
-                error(code, field, "unsupported_microstructure_assertion", actual=text)
+                prose_finding("unsupported_microstructure_assertion")
         node = row["analysis"]["next_observation_date"]
         if node:
             try:
@@ -1025,7 +1040,12 @@ def validate_output(output, packet):
                 error(code, "next_observation_date", "node_not_in_shown_source")
     if isinstance(output.get("market_view"), str):
         if re.search(r"\d|\[\[", without_technical_labels(output["market_view"])):
-            error("all", "market_view", "market_view_qualitative_only")
+            if opinion_warnings is None:
+                error("all", "market_view", "market_view_qualitative_only")
+            else:
+                opinion_warnings.append(
+                    {"path": ["all", "market_view"], "code": "market_view_qualitative_only"}
+                )
     return errors
 
 

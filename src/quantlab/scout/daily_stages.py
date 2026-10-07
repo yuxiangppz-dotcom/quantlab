@@ -267,7 +267,7 @@ def investigation_contract(pool, packet=None):
     return schema
 
 
-def investigation_errors(output, packet, schema):
+def investigation_errors(output, packet, schema, *, unverified_notes=False):
     errors = [
         {"path": list(e.path), "code": "schema", "detail": e.message[:300]}
         for e in Draft202012Validator(schema).iter_errors(output)
@@ -307,8 +307,9 @@ def investigation_errors(output, packet, schema):
                 )
         for key, value in row["analysis"].items():
             if isinstance(value, str):
-                for issue in prose_errors(value, facts, (code,)):
-                    errors.append({"path": [code, key], "code": issue, "actual": value})
+                if not unverified_notes:
+                    for issue in prose_errors(value, facts, (code,)):
+                        errors.append({"path": [code, key], "code": issue, "actual": value})
                 for ref in REF.findall(value):
                     if ref not in facts or facts[ref]["subject_id"] not in allowed:
                         errors.append({"path": [code, key], "code": "unknown_fact:" + ref})

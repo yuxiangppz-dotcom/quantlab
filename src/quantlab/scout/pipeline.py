@@ -1540,7 +1540,10 @@ def run_scout(
                         ),
                         study_schema,
                         validator=lambda value: investigation_errors(
-                            value, study_packet, study_schema
+                            value,
+                            study_packet,
+                            study_schema,
+                            unverified_notes=config.get("program_assembled_selection", False),
                         ),
                         fact_subjects={
                             ref: fact["subject_id"]
@@ -1892,6 +1895,8 @@ def run_scout(
                         selection_validation.update(
                             selection_origin="model_judgments_program_assembly",
                             assembly_provenance=selection_assembly,
+                            validation_scope=selection_assembly["validation_scope"],
+                            model_opinions_verified=False,
                         )
                 else:
                     if opportunity_mode:
