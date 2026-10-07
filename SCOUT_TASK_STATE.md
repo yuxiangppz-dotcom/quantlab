@@ -1,5 +1,14 @@
 # Scout 本轮任务状态
-## 2026-10-07 动态关联与调查定向纠错（直接委托修复并更新云端，进行中）
+## 2026-10-07 动态关联与调查定向纠错（工程及云端交付已完成，效果待观察）
+
+- 最终交付至桌面`Scout云端修复_2026-10-07`：开始阅读/说明、固定APP 2ad646c源代码ZIP、实际安装及启用回执、原失败完整report/核心9个模型文件和清楚标注的离线回放。原report原始SHA及manifest规范化SHA均匹配；已知私密凭据扫描0。完整供应商包仍留私库artifact，不冒充已下载。PR #192保留旧正文并追加本轮，保持草稿。
+- 最终状态回执`dynamic_subjects_20261007/final-cloud-state.json`确认两端APP 2ad646c、enabled=true、workflow active、无活跃任务及旧云档字节不变。桌面打包首次WSL Git路径不兼容，修正为显式Git目录后完成；一次状态读取缺客户端User-Agent返回403，按既有协议补齐后读取成功。没有因此再次部署、调用供应商/模型或发微信。后续记录提交只改文档，不更换已安装固定APP。
+
+- 已完成部署：实现9ce89a2712f5643c9cc920245c698d12c5aaa66b、封版APP 2ad646c83746e9ee85fb723abf4931c4dc708c49均已推送；公开CI37594113232实际Docker/Node/质量SUCCESS，私库check37594681162 SUCCESS，实际容器回执已核对ENGINE/APP/v10/schema v2/原配置SHA，provider_model_calls=0。
+- 切换时先确认无活跃任务，将Worker临时disabled，随后同步私库APP并通过上述零付费检查，再恢复enabled=true。最终读回Worker及私库变量均2ad646c，workflow active，active=false/job=null，31,746,926字节原云档不变。Cloudflare启用版Version ID 3261ee98-ab51-4e9d-a208-4ca65d9d8e89；安装回执保存在dynamic_subjects_20261007/actual-cloud-install-check.json，最终状态另存。
+- 最终442 passed/1 skipped（26.70秒）、Ruff/锁/diff通过，16个新定点测试包含1/5/13/24/160输入域、池外/重复、定性风险/量化断言、实际唯一补丁的成功和失败。Git日志收尾提交不改变已安装APP/ENGINE。
+- 原35MB完整report.json现已通过Azure范围读取、CRC取得，来源SHA及manifest已在桌面交付核对通过；供应商完整ZIP仍在私库，缺失供应商分区不补造。整体GH下载曾卡住、旧180秒下载已保留partial失败，核心认证读取和report范围读取成功。CLI完成上传后Node进程退出延迟，依据安装API和实际私库容器检查确认成功；只关闭本次已完成CLI，不修改旧产物。
+- 本轮新模型/供应商/微信调用0；昨日运行失败仍失败，没有把离线调查通过当正式预测。日常盘前任务已恢复使用新版，下一真实结果依原交易日入口产生，策略效果和收益仍待前瞻。自动优化未重新启用，不下单、不改canonical、不上传CF部署令牌、不覆盖旧报告。
 
 - 起点c3836e1d9e9a516d743ac6ae4d23a51a45d1f647，仅本线程昨日未提交的状态记录；保留不覆盖。未发现agent-loop/Scout/pytest并发写入者，Worker读回active=false、旧APP c911350/engine810c111，与私库变量一致。新授权为开发/封版/云端更新；昨日一次真实模型授权已执行，不自动再次付费重跑。
 - 昨日真实云端37466287587已结束：20261006T210101-c9521fa5 INCOMPLETE，3真实请求/1纠错/212201 tokens，目标10/8、行情9/30、选中0。微信未完成通知已在10/6 21:06被ServerChan接口接受（手机送达未知），意图持久化，不重复发送。预算容量实际通过：首次14股，调查前21股；没有进入最终排序，不能把workflow SUCCESS当预测成功。
