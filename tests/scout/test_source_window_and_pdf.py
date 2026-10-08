@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
 
-from quantlab.scout.models import SHANGHAI, Evidence
+from quantlab.scout.models import SHANGHAI, Evidence, admit_evidence
 from quantlab.scout.pipeline import DEFAULT_CONFIG
 from quantlab.scout.sources import (
     collect_cninfo_market_index,
@@ -104,16 +104,40 @@ def test_contract_without_old_financial_terms_can_receive_pdf_body():
 def test_historical_source_cache_has_collection_watermark_and_current_day_refreshes(tmp_path):
     config = CONFIG | {"_source_cache_root": str(tmp_path)}
     fetch = Mock(return_value={"announcements": []})
-    first, watermark = source_cache(config, "index", "past-day-query", NOW, fetch, historical=True)
-    again, saved_watermark = source_cache(
-        config, "index", "past-day-query", NOW, fetch, historical=True
-    )
-    assert first == again and watermark == saved_watermark
-    assert fetch.call_count == 1
-    source_cache(config, "index", "today-query", NOW, fetch, historical=False)
-    source_cache(config, "index", "today-query", NOW, fetch, historical=False)
-    assert fetch.call_count == 3
-    assert len(list(tmp_path.rglob("*.json"))) == 1
+    with patch("quantlab.scout.sources.datetime", wraps=datetime) as clock:
+        clock.now.return_value = NOW
+        first, watermark = source_cache(
+            config, "index", "past-day-query", NOW, fetch, historical=True
+        )
+        again, saved_watermark = source_cache(
+            config, "index", "past-day-query", NOW, fetch, historical=True
+        )
+        assert first == again and watermark == saved_watermark == NOW.isoformat()
+        assert fetch.call_count == 1
+        source_cache(config, "index", "today-query", NOW, fetch, historical=False)
+        source_cache(config, "index", "today-query", NOW, fetch, historical=False)
+        assert fetch.call_count == 3
+        assert len(list(tmp_path.rglob("*.json"))) == 1
+
+        # A past publication/query date must not backdate actual acquisition.
+        later = NOW + timedelta(hours=1)
+        clock.now.return_value = later
+        late_fetch = Mock(side_effect=[{"version_seen": "late"}, {"version_seen": "refetch"}])
+        saved, late_watermark = source_cache(
+            config, "index", "late-past-day-query", later, late_fetch, historical=True
+        )
+        refetched, refetched_watermark = source_cache(
+            config, "index", "late-past-day-query", NOW, late_fetch, historical=True
+        )
+        assert late_fetch.call_count == 2  # The later cache was not used at the earlier cutoff.
+        assert refetched != saved
+        assert late_watermark == refetched_watermark == later.isoformat()
+        assert datetime.fromisoformat(refetched_watermark) > NOW
+        restored, restored_watermark = source_cache(
+            config, "index", "late-past-day-query", later, late_fetch, historical=True
+        )
+        assert restored == saved and restored_watermark == late_watermark
+        assert late_fetch.call_count == 2  # The original immutable cache remains reusable later.
 
 
 def test_news_covers_early_holiday_and_reuses_completed_slices(tmp_path):
@@ -139,12 +163,27 @@ def test_news_covers_early_holiday_and_reuses_completed_slices(tmp_path):
     with (
         patch.dict("os.environ", {"TUSHARE_TOKEN": "synthetic-test-token"}),
         patch("tushare.pro_api", return_value=api),
+        patch("quantlab.scout.sources.datetime", wraps=datetime) as clock,
     ):
+        clock.now.return_value = NOW
         rows, coverage = collect_sources(config, NOW, True)
         first_calls = len(queries)
         again, _ = collect_sources(config, NOW, True)
-    assert first_calls == 8
-    assert len(queries) == 9  # Only the current-day final slice is refreshed.
+        assert first_calls == 8
+        assert len(queries) == 9  # Only the current-day final slice is refreshed.
+        assert {row.retrieved_at for row in rows + again} == {NOW.isoformat()}
+
+        # Historical slices first acquired later cannot be reused or admitted earlier.
+        later = NOW + timedelta(hours=1)
+        clock.now.return_value = later
+        late_config = CONFIG | {"_source_cache_root": str(tmp_path / "late-acquisition")}
+        late_rows, _ = collect_sources(late_config, later, True)
+        calls_before_replay = len(queries)
+        earlier_replay, _ = collect_sources(late_config, NOW, True)
+        assert len(queries) - calls_before_replay == 8
+        assert {row.retrieved_at for row in late_rows + earlier_replay} == {later.isoformat()}
+        admitted, rejected = admit_evidence(earlier_replay, NOW, lookback_hours=24 * 10)
+        assert admitted == [] and rejected["future"] == len(earlier_replay) == 8
     assert any(row.published_at.startswith("2026-10-01") for row in rows)
     assert {row.evidence_id for row in rows} == {row.evidence_id for row in again}
     assert "8/8 bounded requests" in coverage[-1].detail
