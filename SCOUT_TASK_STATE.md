@@ -1,4 +1,15 @@
 # Scout 本轮任务状态
+## 2026-10-09 本轮实际报告交付（Codex日线模式，盈利与无人值守尚待）
+
+- 固定一次真实运行20261008T235436-f236c665完成：行情10/8、目标10/9、信息/主agent浏览时点10/9 00:01:02；候选申能股份600642.SH watch 1只，优先0。新流程外部模型0调用/0token，程序source+官方公告补查→main agent本次浏览review→同research_hash绑定→冻结HTML/MD/JSON→初始D1/D3/D5观察完成；运行中代码/config/skill/预算未改。
+- 实现4ae84ef和edcdafa已推送独立codex/scout-article-strategy-20261008；草稿PR193 https://github.com/yuxiangppz-dotcom/quantlab/pull/193，叠加旧PR192分支并已附加当前线程。原始固定代码ZIPedcdafa在桌面；后续文档提交不改本次运行版本。WindowsSSH host校验失败，改用既有WSL验证身份推送，未关闭校验/force/amend。
+- 真实报告freeze_hash e7f90bfead5f48819bdf669963566256bc22d22584a7641764eebb676d5b4f18；report/frozen-report原字节一致。实际acceptance receipt actual-run-acceptance.json，220交付文件/ZIP展开项私密值匹配0。初始观察00:01:07保存，目标未到，绩效待观察；旧全部数据/失败/report保留，canonical不写，没有订单/成交/净收益声明。
+- 最终全仓730 passed/4 optional skipped（34.35秒），Ruff、uv lock、diff通过；4实际漏洞反例独立重验均关闭，合法控制样本仍可priority，财务硬排除/风险上限/市场名额无越权。真实CLI集成试验发现config深拷贝tuple→list导致错误的object-equality drift；已在付费/真实验收前修为canonical fingerprint，两阶段/恢复/重复冻结3tests通过。原helperGBK文本读取失败后用UTF8读同报告，无额外provider/model。
+- 桌面 Scout八步短线研究_2026-10-09：本轮候选报告HTML/MD、原冻结JSON、Codex研究、真实事实包、固定配置、初始前瞻、旧云暂停回执、实际验收、固定项目ZIP、操作/来源/40反例与交付审查说明。open_in_codex返回queued，不能称用户已打开。CUA file://预览被协议策略拒绝，没有绕过/另起HTTP服务；HTML内容通过实际源文件和渲染测试核对，不能冒称本次浏览器视觉验收。
+- 如实未成熟/缺口：市场R4和成员多日持续性冷启动unknown；同组合格同行不足；公告正文覆盖不全；雪球实际日K页可读报价/主体但canvas曲线、量柱、图内日期不可读，仅partial且support空/qualityunknown。用户不用截图，未保存新截图，也没用外部模型补写视觉判断。龙虎榜单日+交易所原文联合单位验证未完成，绝对阈值仍unknown不启用；20独立交易日与盈利优势尚未达标。
+- 旧DeepSeek云预测保持enabled=false、active=false、旧31,746,926字节云档不变，实际认证回执已存；Wrangler退出180秒超时但远端暂停核对成功，没有重复deploy。新Codex本机研究需要在线agent，尚无无人值守云端Codex研究链路；没有把新实验替换旧云报告或宣传每日自动预测已完成。
+- 恢复：读取本节/任务书/当前Git和活跃写入者，本次完成报告不得重跑或重评覆盖。新源取数仅孤立卷、固定预算；观察追加，未知保留。下一次需明确在线Codex研究后新冻结；暂停的旧DeepSeek不自行开启。研究交付完成，收益/视觉覆盖/连续日与无人值守条件继续待观察或补证，不能当策略已达标。
+
 ## 2026-10-08 用户更新：停用 DeepSeek，主 agent 查看雪球日线（开发收尾，真实冻结待完成）
 
 - 用户明确“模型不用deepseek了，你自己来看日线……不用截图了”。第7步改 codex_browser_daily_v1：主 agent浏览雪球日K、基于冻结程序事实比较，不再保存/上传新截图或调用外部模型；八步顺序、初始参数及前瞻观察保留。新CLI的live仅取源数据，程序包→Codex本次浏览review→冻结报告；不宣称该模式已实现无人值守云端每日研究。
