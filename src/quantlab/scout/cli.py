@@ -35,6 +35,7 @@ def _main() -> int:
         "--live", action="store_true", help="Read sources and call the configured paid AI API"
     )
     modes.add_argument("--track-run", type=Path, help="Original run directory to observe forward")
+    modes.add_argument("--article-finalize", type=Path, help="Prepared article run to freeze")
     modes.add_argument("--tracking-summary", action="store_true", help="Aggregate frozen reports")
     modes.add_argument(
         "--track-ranking",
@@ -48,6 +49,19 @@ def _main() -> int:
         "--hot-snapshot", action="store_true", help="Save one public hot-rank snapshot"
     )
     parser.add_argument("--config", type=Path, default=None)
+    parser.add_argument(
+        "--article-strategy", action="store_true", help="Independent eight-step article research"
+    )
+    parser.add_argument(
+        "--article-root", type=Path, help="Explicit scout_article_* isolated volume"
+    )
+    parser.add_argument(
+        "--article-source-pack", type=Path, help="Immutable article source evidence export"
+    )
+    parser.add_argument(
+        "--article-chart-manifest", type=Path, help="Original recent chart capture manifest"
+    )
+    parser.add_argument("--article-review-file", type=Path, help="Source-bound Codex daily review")
     parser.add_argument("--canonical-dir", type=Path, default=root / "data/canonical")
     parser.add_argument("--output-dir", type=Path, default=root / "data/scout/runs")
     parser.add_argument("--session", type=date.fromisoformat)
@@ -60,6 +74,46 @@ def _main() -> int:
     parser.add_argument("--hot-file", type=Path, help="Use a saved recent AKShare hot snapshot")
     parser.add_argument("--portfolio-file", type=Path, help="Timestamped holdings/watchlist JSON")
     args = parser.parse_args()
+    if args.article_strategy:
+        from quantlab.scout.article_pipeline import (
+            finalize_article,
+            frozen_config,
+            run_article,
+            track_article,
+        )
+
+        if args.doctor:
+            print(json.dumps(frozen_config(), ensure_ascii=False, indent=2))
+            return 0
+        if args.article_root and args.article_finalize:
+            if not args.article_review_file:
+                parser.error("Freezing requires the actual Codex review file")
+            print(
+                finalize_article(args.article_root, args.article_finalize, args.article_review_file)
+            )
+            return 0
+        if args.article_root and args.track_run:
+            report_path = (args.track_run / "report.json").resolve()
+            if report_path.parent.parent != (args.article_root / "article_runs").resolve():
+                parser.error("Article tracking requires a frozen report in the isolated volume")
+            print(track_article(args.article_root, json.loads(report_path.read_text())))
+            return 0
+        if not args.article_root or not (args.live or args.offline):
+            parser.error("Article research requires --article-root and --live or --offline")
+        pack = (
+            json.loads(args.article_source_pack.read_text(encoding="utf-8"))
+            if args.article_source_pack
+            else None
+        )
+        print(
+            run_article(
+                args.article_root,
+                online=args.live,
+                source_pack=pack,
+                chart_manifest=args.article_chart_manifest,
+            )
+        )
+        return 0
     config = read_config(args.config)
     if args.track_ranking:
         print(
